@@ -1,18 +1,18 @@
 # Wusuq Deployment Verification Log
 
-Executed At: 2026-03-18T20:02:06.721Z
-API Base URL: https://your-api-domain/api
-Web Base URL: https://your-web-domain
+Executed At: 2026-03-18T22:35:46.755Z
+API Base URL: https://wusuq-api.onrender.com/api
+Web Base URL: https://wusuq-web.vercel.app
 Allow insecure URLs: false
-Duration: 0s
+Duration: 75s
 
 ## Results
 
 | Check | Status | Required | Details |
 | --- | --- | --- | --- |
 | API base URL configured | PASS | Yes |  |
-| API /health | FAIL | Yes | fetch failed |
+| API /health | PASS | Yes | status=ok, database=up |
 | Web base URL configured | PASS | Yes |  |
-| Web home page | FAIL | Yes | fetch failed |
+| Web home page | PASS | Yes | Returned HTML with 200 |
 
-Overall: FAIL
+Overall: PASS

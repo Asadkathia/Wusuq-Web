@@ -50,3 +50,8 @@ Last Updated: 2026-03-19
 - 72-hour hypercare completes without Sev1 incidents.
 - UAT checklist fully signed off.
 - Error budget and performance SLOs remain within target.
+
+## 7. Execution Tracking
+- Active execution log: `DOcs/runbooks/wusuq_cutover_execution_log.md`
+- Automated check command: `pnpm hypercare:check`
+- Automated snapshot log: `DOcs/runbooks/wusuq_hypercare_check_log.md`

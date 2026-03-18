@@ -13,6 +13,7 @@
     "typecheck": "pnpm -r typecheck",
     "format": "pnpm -r format",
     "perf:smoke": "k6 run tests/performance/api_smoke.js",
+    "hypercare:check": "node tests/ops/hypercare_check.mjs",
     "deploy:verify": "node tests/deploy/verify_deployment.mjs",
     "deploy:verify:file": "bash scripts/deploy/verify_from_env_file.sh",
     "uat:smoke": "node tests/uat/api_uat_smoke.mjs",

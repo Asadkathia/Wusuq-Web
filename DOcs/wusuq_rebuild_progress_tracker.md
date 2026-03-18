@@ -5,7 +5,7 @@ Status Legend: `Not Started` | `In Progress` | `Blocked` | `Completed`
 
 ## Overall Progress
 - Phase 0: ~~Completed~~
-- Phase 1: In Progress
+- Phase 1: ~~Completed~~
 - Phase 2: ~~Completed~~
 - Phase 3: ~~Completed~~
 - Phase 4: ~~Completed~~
@@ -28,8 +28,8 @@ Status Legend: `Not Started` | `In Progress` | `Blocked` | `Completed`
 - ~~Add stage/prod env templates + deployment verification script (`pnpm deploy:verify`)~~
 - ~~Add file-based deploy verification workflow (`.env.deploy.example`, `pnpm deploy:verify:file`)~~
 - ~~Deploy web to Vercel (`https://wusuq-web.vercel.app`)~~
-- [ ] Deploy skeleton to Vercel + Render
-- [ ] Configure Neon environments (dev/stage/prod branches)
+- ~~Deploy skeleton to Vercel + Render~~
+- ~~Configure Neon environments (dev/stage/prod branches)~~
 
 ## Phase 2 — Identity, RBAC, and user management (Completed)
 - ~~Implement JWT access/refresh flow~~
@@ -75,13 +75,17 @@ Status Legend: `Not Started` | `In Progress` | `Blocked` | `Completed`
 - ~~Run baseline smoke UAT and publish execution log (`DOcs/runbooks/wusuq_uat_execution_log.md`)~~
 - ~~Automate non-functional smoke checks (health + auth rate-limit)~~
 - ~~Implement role-UAT automation runner (`pnpm uat:roles`)~~
-- [ ] UAT by role (super-admin/admin/consumer/clerk)
+- ~~Validate deployed web+api health (`pnpm deploy:verify:file` PASS with `database=up`)~~
+- ~~Execute production super-admin UAT role flow (`DOcs/runbooks/wusuq_role_uat_execution_log.md`)~~
+- ~~UAT by role (super-admin/admin/consumer/clerk)~~
+- ~~Cutover executed and hypercare window started (`DOcs/runbooks/wusuq_cutover_execution_log.md`)~~
+- ~~Automate hypercare validation command (`pnpm hypercare:check`)~~
 - [ ] Cutover + hypercare completion
 
 ---
 
 ## Blockers
-- Render API service created, but latest deploy failed at build (Prisma client generation missing in remote commit).
+- None
 
 ## Decisions Log
 - DB: Neon

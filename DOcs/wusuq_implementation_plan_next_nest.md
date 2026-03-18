@@ -224,6 +224,7 @@ Rebuild the current Wusuq portal as a maintainable, modular system with clear AP
   - deployment runbook: `DOcs/runbooks/wusuq_deployment_runbook.md`
   - environment templates: `apps/api/.env.stage.example`, `apps/api/.env.prod.example`, `apps/web/.env.stage.example`, `apps/web/.env.prod.example`
   - deployment verification automation: `tests/deploy/verify_deployment.mjs` (`pnpm deploy:verify`)
+  - current state: web deployed to Vercel at `https://wusuq-web.vercel.app`; API deployed to Render at `https://wusuq-api.onrender.com`; Neon DB env wiring still pending
 
 ## 12) Current Gap to Reach Feature Parity
 Current repository state is a strong scaffold and contract baseline. Remaining work is implementation depth: DB-backed services, production auth/RBAC guards, workflow rules, invoice/report engines, and UAT hardening.

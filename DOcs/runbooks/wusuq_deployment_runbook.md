@@ -2,6 +2,12 @@
 
 Last Updated: 2026-03-19
 
+## Current Status
+- Web deployed on Vercel: `https://wusuq-web.vercel.app` (verified 200 HTML response)
+- API deployed on Render: `https://wusuq-api.onrender.com` (health endpoint reachable, DB connected)
+- Neon project provisioned: `wusuq` (`orange-wind-04356254`) with `dev/stage/prod` branches
+- Deployment verification status: PASS (`/api/health` => `status=ok`, `database=up`)
+
 ## 1. Deployment Targets
 - Web: Vercel (`apps/web`)
 - API: Render (`render.yaml` service `wusuq-api`)
