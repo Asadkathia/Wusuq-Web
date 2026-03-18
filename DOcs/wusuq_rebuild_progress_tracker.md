@@ -27,6 +27,7 @@ Status Legend: `Not Started` | `In Progress` | `Blocked` | `Completed`
 - ~~Prepare deployment manifests and runbook (`render.yaml`, `apps/web/vercel.json`, `DOcs/runbooks/wusuq_deployment_runbook.md`)~~
 - ~~Add stage/prod env templates + deployment verification script (`pnpm deploy:verify`)~~
 - ~~Add file-based deploy verification workflow (`.env.deploy.example`, `pnpm deploy:verify:file`)~~
+- ~~Deploy web to Vercel (`https://wusuq-web.vercel.app`)~~
 - [ ] Deploy skeleton to Vercel + Render
 - [ ] Configure Neon environments (dev/stage/prod branches)
 
@@ -80,7 +81,7 @@ Status Legend: `Not Started` | `In Progress` | `Blocked` | `Completed`
 ---
 
 ## Blockers
-- None
+- Render API service created, but latest deploy failed at build (Prisma client generation missing in remote commit).
 
 ## Decisions Log
 - DB: Neon
