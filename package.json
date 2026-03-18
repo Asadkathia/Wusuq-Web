@@ -1,0 +1,24 @@
+{
+  "name": "wusuq-rebuild",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@10.6.5",
+  "scripts": {
+    "dev": "pnpm -r --parallel dev",
+    "dev:web": "pnpm --filter @wusuq/web dev",
+    "dev:api": "pnpm --filter @wusuq/api start:dev",
+    "build": "pnpm -r build",
+    "lint": "pnpm -r lint",
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck",
+    "format": "pnpm -r format",
+    "perf:smoke": "k6 run tests/performance/api_smoke.js",
+    "deploy:verify": "node tests/deploy/verify_deployment.mjs",
+    "deploy:verify:file": "bash scripts/deploy/verify_from_env_file.sh",
+    "uat:smoke": "node tests/uat/api_uat_smoke.mjs",
+    "uat:roles": "node tests/uat/role_uat_matrix.mjs"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}

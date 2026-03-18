@@ -1,0 +1,669 @@
+# Wusuq Paralegal Platform — Comprehensive System Report
+**Prepared for:** Mobile App Development Initiative  
+**Date:** March 2026  
+**Exploration Method:** Live admin portal walkthrough (read-only)  
+**URL:** https://wusuq.com  
+
+---
+
+## 1. Executive Overview
+
+**Wusuq** is a paralegal services management platform designed for the Pakistani legal market. It connects consumers who need legal document processing (case files, FIR copies, registry deeds, etc.) with field representatives ("Clerks") who physically acquire these documents from courts and government offices.
+
+The platform operates on a **ticket-based workflow**: consumers create service requests, administrators assign them to local clerks, and clerks fulfill them — all tracked via a centralized admin portal with financial management, wallet-based payments, and reporting.
+
+**Brand Identity:** "Helping You Is Our Purpose"  
+**Primary Market:** Pakistan (Province/District/City structure, PKR currency, Pakistani payment methods)
+
+---
+
+## 2. Architecture & Navigation
+
+### 2.1 Header Bar
+- **Left:** Hamburger menu toggle, breadcrumb navigation
+- **Center:** Page title
+- **Right:** Account balance (wallet), notification bell, user avatar/name
+
+### 2.2 Sidebar Navigation (10 Modules)
+| # | Module | Sub-sections |
+|---|--------|-------------|
+| 1 | **Dashboard** | Analytics |
+| 2 | **Paralegal Services** | Judicial, Non-Judicial |
+| 3 | **Paralegal Tickets** | Pending, Completed, Immature, Assigned, In Progress |
+| 4 | **Finance** | — |
+| 5 | **Wallet** | — |
+| 6 | **Manage Users** | Users, Representatives |
+| 7 | **Manage Cost** | Service Cost, Clerk Cost |
+| 8 | **Elections & Cabinet** | Elections, Cabinet |
+| 9 | **Reports** | — |
+| 10 | **Documents** | — |
+
+---
+
+## 3. Module-by-Module Breakdown
+
+---
+
+### 3.1 Dashboard
+
+**Purpose:** High-level analytics and performance overview.
+
+**Analytics Cards:**
+- Weekly Revenue
+- Weekly Expense  
+- Weekly Growth
+
+**Charts:**
+- Revenue vs. Expense (line/bar chart)
+- Ticket Trends: New vs. Completed cases over time
+
+**Entry Point:** Defaults to "Pending Tickets" upon login, with analytics accessible via Dashboard nav link.
+
+---
+
+### 3.2 Paralegal Services
+
+**Purpose:** Service catalog and order creation interface. Acts as the gateway to create new paralegal tickets.
+
+#### 3.2.1 Judicial Services
+
+**Case Files** (5-Step Form)
+
+| Step | Name | Fields |
+|------|------|--------|
+| 1 | Service Selection | Select Service (Lower/High/Special/Federal Shariat/Supreme Court), Select Court, Select Court City |
+| 2 | Case Details | Case Status (Pending/Decided/Unknown), Case Type, Case/Petition No, Case Year, Case Title (A vs B), Judge Name, Judge Designation |
+| 3 | Required Documents | Previous/Future/Decided Case Dates, Document selection (Paperbook, Petition, Orders, etc.) |
+| 4 | Others Info | No. of Sets, Set Type (Attested/Non-Attested/Both), Mode of Delivery (Courier/Self Collected), Address, Notes |
+| 5 | Documents & Delivery | File upload for supporting documentation |
+
+**Case Information** (4-Step Form)
+- Similar to Case Files with streamlined 4-step process
+- Focus: Case identification and basic document requirements
+
+**Case Search** 
+- Search for existing case records in court systems
+
+**Case Filling**
+- Filing petitions/documents with courts
+- Multi-step form for petition details
+
+**Power of Attorney**
+- Legal authorization document service
+- Multi-step form for party details and authorization scope
+
+#### 3.2.2 Non-Judicial Services
+
+**Copy of Registry/Deed** (4-Step Form)
+
+| Step | Name | Fields |
+|------|------|--------|
+| 1 | Service Selection & City | Office Name, Select City, City Type (City/Sadar/Unknown) |
+| 2 | Case Particulars | Doc No., Year, Title, Date |
+| 3 | Required Documents & Other | Delivery mode, Address, No. of Sets, Set Type |
+| 4 | Images & Delivery Mode | File upload |
+
+**Copy of FIR** (4-Step Form)
+
+| Step | Name | Fields |
+|------|------|--------|
+| 1 | Service Selection & City | Province/Capital, District, Police Station, City Type |
+| 2 | Case Particulars | FIR No, Year, Title, Date |
+| 3 | Required Documents | Delivery mode, Address, No. of Sets, Set Type |
+| 4 | Images & Delivery | File upload |
+
+---
+
+### 3.3 Paralegal Tickets
+
+**Purpose:** Central operations hub — tracks all service orders from creation to completion.
+
+#### Ticket Statuses
+| Status | Description |
+|--------|-------------|
+| **Pending** | Newly created, awaiting assignment |
+| **Assigned** | Assigned to a representative/clerk |
+| **In Progress** | Clerk is actively working on it |
+| **Completed** | Service delivered to consumer |
+| **Immature/Archive** | Cancelled or incomplete tickets |
+
+#### Table Columns (All Ticket Lists)
+- SR #
+- Batch No
+- Consumer Name
+- Service Type
+- Service Category
+- Service City
+- Case Type
+- Assign Members
+- Other Charges (Delivery/Photocopy)
+- Service Cost (e.g., PKR 3,500)
+- Status
+- Actions
+
+#### Ticket Actions
+| Action | Description |
+|--------|-------------|
+| **Ticket Panel** | Deep detail view with all case info + representative assignment |
+| **Edit** | Modify ticket details |
+| **Update Status** | Quick status change |
+| **Delete** | Remove ticket |
+| **Regenerate/Clone** | Duplicate a ticket |
+| **Download Invoice** | Generate PDF invoice |
+| **Upload Supporting Files** | Attach additional documents |
+
+#### Ticket Detail Panel Fields
+- Consumer Info (Name, Contact, CNIC)
+- Case Details (all form data from creation)
+- Requirements (documents requested)
+- Representative Assignment (assign/unassign clerk)
+- Charges Breakdown
+- Payment Status
+- Timeline/History
+
+#### Filters & Search
+- Search box (real-time by batch/consumer/ID)
+- Grouped by status (sidebar navigation)
+- Date range filter
+- Service type filter
+
+---
+
+### 3.4 Finance
+
+**Purpose:** Financial overview and tracking of all ticket-related transactions.
+
+#### Table Columns
+| Column | Description |
+|--------|-------------|
+| Batch No | Unique ticket identifier |
+| Consumer Name | Client name |
+| Service Type | Type of paralegal service |
+| Case Type | Case category |
+| Charges Breakdown | Itemized line items per service |
+| Total Amount | Full service cost |
+| Amount Paid | Amount received |
+| Remaining | Outstanding balance |
+| Payment Status | Paid/Partial/Unpaid |
+
+#### Features
+- **Export:** CSV and PDF
+- **Search:** By Batch No, Clerk, Order Status
+- **Wallet Integration:** Consumer balance shown in top header at all times
+
+---
+
+### 3.5 Wallet
+
+**Purpose:** Manage consumer account balances and payment top-ups.
+
+#### Transaction Table Columns
+- SR #
+- Consumer Name
+- Transaction Amount
+- Added By (admin who processed)
+- Account Balance (post-transaction)
+- Payment Mode
+- Verification Status
+- Payment Receipt (image/document)
+- Created At
+
+#### Top-Up Modal Fields
+- Select User (consumer dropdown)
+- Topup Amount (PKR)
+- Payment Mode (JazzCash / EasyPaisa / Bank Transfer)
+- Payment Currency
+- Upload Receipt (image upload)
+
+> **Payment Info Displayed:** System shows the platform's own payment details (JazzCash, EasyPaisa, Bank account) inside the top-up modal so the consumer knows where to send money.
+
+#### Features
+- Export (CSV / PDF)
+- Column visibility toggle
+- Manual admin verification of payments
+
+---
+
+### 3.6 Manage Users
+
+**Purpose:** User account administration for all platform roles.
+
+#### User Roles (9 Types)
+1. super-admin
+2. manager-admin
+3. staff-admin
+4. lead-admin
+5. lawyer
+6. consumer
+7. representative (clerk)
+8. investor
+9. company
+
+#### Users Table Columns
+- SR No
+- Name
+- Email
+- Phone
+- User Type
+- Verified (boolean)
+- Action
+
+#### User Actions
+| Action | Description |
+|--------|-------------|
+| Top Up Amount | Add wallet funds to user account |
+| Show Tickets | View all tickets for this user |
+| View Profile Details | Read-only profile view |
+| Edit Profile | Modify user information |
+| Delete User | Remove account |
+| Deactivate/Activate | Toggle account status |
+
+#### User Profile Fields
+- Full Name
+- Email
+- Phone
+- CNIC (National ID)
+- Date of Birth
+- Address
+- User Role
+- Verification Status
+
+#### Representatives (Clerks) Sub-module
+
+**Table Columns:**
+- Name
+- Service Type
+- Service Court
+- Service City
+- Address
+- Phone Number
+- Action
+
+**Actions:**
+- Edit Clerk
+- Delete Clerk
+- Impersonate Clerk (admin can log in as clerk)
+
+**Filters:**
+- Select Service
+- Select Court
+- Select Court City
+- Order (sort)
+- Pagination
+
+**Create Clerk Form Fields:**
+- Name, Email, Phone, Password
+- Select Service Type
+- Select Court Type
+- Select Service City
+- Address details
+
+---
+
+### 3.7 Manage Cost
+
+**Purpose:** Dynamic pricing configuration for services and clerk commissions.
+
+#### Service Cost Configuration
+**Structure:** Costs are set based on combination of service type + province + case type + year range.
+
+**Form Fields:**
+- Select Service (Judicial/Non-Judicial type)
+- Select Service Category (court level or office type)
+- Select Case Type (Pending / Decided / Unknown)
+- Select Province
+- Select Audience (consumer type)
+- Cost (PKR amount)
+- Year Mode: Current/Single Year vs Year Range
+- Year Selection
+
+#### Clerk Cost Configuration
+**Structure:** Same as service cost but sets what clerks earn per service.
+
+**Form Fields:**
+- Select Service
+- Select Service Category
+- Select Case Type
+- Select Province
+- Cost (PKR amount for clerk commission)
+- Year Selection
+
+---
+
+### 3.8 Elections & Cabinet
+
+**Purpose:** Manage bar association and legal body elections.
+
+#### Elections Features
+- Create elections for specific legal bodies/bar associations
+- Define positions (President, Secretary, Treasurer, General Secretary, etc.)
+- Track candidates per position
+- Track election status (upcoming / active / completed)
+- Filter by Province and City
+
+#### Cabinet Features
+- View results of completed elections
+- Lists positions held, candidate/winner names
+- Votes received per candidate
+- Tenure tracking (e.g., 2025–2030)
+- Association/bar linked to each cabinet
+
+---
+
+### 3.9 Reports
+
+**Purpose:** Data analytics and audit trails.
+
+#### Report Types
+1. **User Logs** — Activity audit trail for all users
+2. **Cases Processed** — Count and details of processed tickets
+3. **Service Breakdown** — Performance per service type
+4. **City Performance** — Volume by city/court
+5. **Pending vs. Completed** — Comparison chart
+6. **Turnaround Time** — Avg. completion time per service
+
+#### Filters
+- Status (Pending / Answered / Decided / etc.)
+- Clerk / Assignee
+- Courts
+- Date Range
+- Search (User / Tracking ID / Email)
+
+#### Export
+- CSV
+- PDF
+
+---
+
+### 3.10 Documents
+
+**Purpose:** Central repository for all uploaded files and documents.
+
+#### Features
+- Centralized listing of all uploaded documents (from all tickets)
+- Document Name, Type, Associated Service
+- Download / View actions
+- Export list to CSV / PDF
+- Add Document (upload modal with title, type, file)
+
+---
+
+## 4. User Roles & Journeys
+
+### 4.1 Super Admin
+**Journey:** Full system access — configure costs, manage all users, view all tickets, manage elections, view reports.  
+**Key Actions:** Create users, configure pricing, manage representatives, view financial analytics.
+
+### 4.2 Admin (Manager/Staff/Lead)
+**Journey:** Day-to-day operations — review pending tickets, assign clerks, update statuses, process wallet top-ups.  
+**Key Actions:** Assign pending tickets → track progress → mark completed → manage finance.
+
+### 4.3 Consumer
+**Journey:** Request legal document services, pay via wallet, track ticket status.  
+**Key Actions:** Select service → fill form → pay → track ticket → receive documents.
+
+### 4.4 Lawyer
+**Journey:** Similar to consumer but may have specialized professional services or rates.
+
+### 4.5 Representative (Clerk)
+**Journey:** Receive assigned tickets → physically obtain documents from courts → mark complete.  
+**Key Actions:** View assigned tickets → update in-progress status → upload delivery proof → mark completed.
+
+### 4.6 Investor / Company
+**Journey:** Monitoring/investment roles (exact features TBD — may have custom dashboards).
+
+---
+
+## 5. Key Workflows
+
+### 5.1 Ticket Creation Workflow
+```
+Consumer/Admin → Paralegal Services → Select Category (Judicial/Non-Judicial)
+→ Select Service Type → Multi-step form (4–5 steps) → Submit
+→ Ticket created (Pending status) → Admin assigns clerk
+→ Clerk marks "In Progress" → Clerk delivers → Marks "Completed"
+```
+
+### 5.2 Payment Workflow
+```
+Consumer needs to pay → Admin processes wallet top-up
+→ Consumer sends money (JazzCash/EasyPaisa/Bank)
+→ Admin uploads receipt and verifies → Wallet credited
+→ Wallet balance deducted when ticket completed
+```
+
+### 5.3 Representative Assignment Workflow
+```
+Admin views Pending Tickets → Opens Ticket Panel
+→ Selects "Assign Representative" → Filters by service/city → Assigns clerk
+→ Ticket moves to "Assigned" → Clerk sees ticket in their queue
+→ Clerk starts work → Updates to "In Progress"
+→ Clerk completes → Admin verifies → "Completed"
+```
+
+---
+
+## 6. Technology Observations
+
+| Aspect | Observation |
+|--------|-------------|
+| **Frontend** | Next.js / React-based SPA |
+| **UI Framework** | Custom design with sidebar layout |
+| **Navigation** | Left sidebar (collapsible via hamburger toggle) |
+| **Data Tables** | Sortable, paginated, with column visibility control |
+| **File Handling** | Multi-file upload for case documents |
+| **Payment** | Manual verification (upload receipt model) |
+| **Notifications** | Bell icon with in-app notifications |
+| **Geography** | Pakistan-specific (Province → District → City → Court) |
+| **Currency** | PKR (Pakistani Rupee) |
+
+---
+
+## 7. Data Entities
+
+| Entity | Key Fields |
+|--------|-----------|
+| **User** | id, name, email, phone, CNIC, DOB, role, verified, wallet_balance |
+| **Ticket** | batch_no, consumer_id, service_type, service_category, court, city, status, cost, clerk_id |
+| **Service** | type (judicial/non-judicial), category, court_level, description |
+| **Transaction** | id, user_id, amount, payment_mode, receipt, verified_by, balance_after |
+| **Clerk** | id, name, service_type, court, city, phone, commission |
+| **ServiceCost** | service, category, case_type, province, year_range, cost |
+| **Election** | id, body_name, province, city, positions, status, year |
+| **Cabinet** | id, election_id, position, member_name, votes, tenure |
+| **Document** | id, ticket_id, name, type, file_url, uploaded_at |
+
+---
+
+## 8. Identified Gaps & Opportunities for Mobile App
+
+1. **No mobile app** — currently web-only
+2. **Sidebar navigation** is not mobile-optimized
+3. **Multi-step forms** need tap-friendly redesign for mobile
+4. **Document scanning** via camera would improve UX significantly
+5. **Real-time push notifications** not present (web only has bell icon)
+6. **Clerk workflow** is entirely admin-driven — a dedicated clerk app would improve field operations
+7. **Payment is manual** — mobile could enable direct payment gateways
+8. **No offline support** — needed for clerks in remote court areas with poor connectivity
+
+---
+
+*Report compiled via live exploration of https://wusuq.com admin portal as Super Admin.*
+
+---
+
+## 9. Verified Additions (Live Re-Analysis on March 18, 2026)
+
+This section adds **confirmed technical and functional details** found during a second authenticated walkthrough of `https://app.wusuq.com`.
+
+### 9.1 Deployment Split (Corrected)
+- `https://wusuq.com` is a **WordPress marketing site** (theme/plugins based, public pages, sitemap, wp-json).
+- `https://app.wusuq.com` is the **actual operations portal** used for tickets, finance, wallet, users, pricing, reports, etc.
+
+### 9.2 App Tech Stack (Verified from rendered pages/assets)
+- Backend/session/auth: **Laravel** (`/login` form + CSRF token + Laravel-style session cookies).
+- Frontend pattern: **Laravel Blade + jQuery-heavy admin UI**, not a pure Next.js SPA.
+- Build/assets: Vite-like bundled assets under `/build/assets/...`.
+- Libraries observed in runtime pages:
+  - `jQuery`
+  - `DataTables` + `Buttons` (`csv`, `pdf`, `colvis`)
+  - `ApexCharts`
+  - `TomSelect` / `choices.js`
+  - `flatpickr`
+  - `intl-tel-input`
+  - `inputmask`
+  - `axios`
+  - `toastr`
+
+### 9.3 Auth & Access Behavior
+- Login form accepts **Email or Phone** + Password.
+- Dashboard role label observed: **Super Admin**.
+- Password reset route present: `/forgot-password`.
+
+### 9.4 Core Authenticated Route Map (Observed)
+- Dashboard: `/dashboard-analytic`
+- Services:
+  - `/services/judicial`
+  - `/services/nonjudicial`
+- Tickets:
+  - `/tickets` (Pending)
+  - `/completed-tickets`
+  - `/archive-tickets` (Immature)
+  - `/assigned-tickets`
+  - `/active-tickets` (In Progress)
+- Finance & Wallet:
+  - `/finance`
+  - `/wallet`
+  - `/transactionsHistory?id={user_id}`
+- Users & Clerks:
+  - `/users`, `/users/create`
+  - `/clerks`, `/clerks/create`
+  - `/profiles`
+- Cost Management:
+  - `/servicecosts`, `/servicecosts/create`
+  - `/clerkcosts`, `/clerkcosts/create`
+- Elections:
+  - `/election/listings`
+  - `/elections/create`
+  - candidates flow: `/addCandidates/{id}`, `/candidates/{id}`
+- Reports:
+  - `/report`
+  - `/report/logs`
+  - `/report/cases/processed`
+  - `/report/cases/services`
+  - `/report/cases/city`
+  - `/report/cases/status`
+  - `/report/cases/turnaround`
+- Documents:
+  - `/documents`
+
+### 9.5 Confirmed Ticket Grid Structure and Operations
+- Ticket list headers confirmed:
+  - `Batch No`, `Consumer Name`, `Service Type`, `Service Category`, `Service City`, `Case Type`, `Assign Members`, `Case No`, `Case Title`, `Judge Name & Designation`, `Case / Decided Date`, `Future Date`, `Other Charges`, `Service Cost`, `Status`, `Action`.
+- Bulk actions confirmed:
+  - `Immature Tickets`, `Complete Tickets`, `Delete Tickets`, `Assign Members`, `Download Invoice`, `Send Invoice`.
+- Per-ticket actions confirmed:
+  - `View (ticket panel)`, `Edit`, `Delete`, `Download Invoice`, `Upload Case Files`, `Regenerate`.
+- Inline editable financial/status fields observed on ticket/payment grids:
+  - `delivery_charges`, `printing_charges`, `attested_charges`, `service_cost`, `additional_service_cost`, `ticket_status`.
+- Assignment modal confirms:
+  - dynamic representative selection by service geography (city/district)
+  - explicit `Clerk Cost` input and assignment submit.
+
+### 9.6 Service Catalog and Wizard Flows (Field-Level Verification)
+
+#### Judicial service cards/routes confirmed
+- Case Files: `/create/judicialService/case-files`
+- Case Information: `/create/judicialService/case-information`
+- Case Search: `/create/judicialService/case-search`
+- Case Filling: `/create/judicialService/case-filling`
+- Power of Attorney: `/create/judicialService/power-of-attorney`
+
+#### Judicial service types/options confirmed
+- Lower Court, Special Court, High Court, Federal Shariat Court, Supreme Court.
+
+#### Judicial wizard labels/steps confirmed (across forms)
+- Step patterns include:
+  - `Service Selection`
+  - `Case Details`
+  - `Required Documents` / `Required Documents & Notes`
+  - `Others Info` / delivery section
+  - `Documents & Delivery` (image upload step)
+- Common fields confirmed:
+  - `Select Service`, `Select Court`, `Select Court City`
+  - `Case/Petition No`, `Case year`, `Case Type`, `Case Status`
+  - `Case Title`, `Judge Name`, `Judge Designation`
+  - `Previous/Decided/Future Case Date`
+  - `No. of Sets`, `Set Type`, `Mode of Delivery`, `Address`, `Note`
+  - multi-file image/document upload.
+
+#### Non-judicial service cards/routes confirmed
+- Copy of FIR: `/create/NonjudicialService/copy-of-fir`
+- Registry/Deed: `/create/NonjudicialService/registry`
+
+#### Non-judicial fields confirmed
+- FIR flow includes:
+  - `Select Province / Capital`, `Select District`, `Police Station`, `FIR No`, `Year`, `FIR Date`, `Offence`, `Title`, city type, delivery mode, sets, notes, upload.
+- Registry flow includes:
+  - `Office Name`, `Select City`, `City Type`, `Doc no.`, `Year`, `Date`, `Title (A vs B)`, delivery mode, sets, notes, upload.
+
+### 9.7 Finance Module (Confirmed)
+- Grid headers confirmed:
+  - `Batch No`, `Consumer Name`, `Service Type`, `Service Category`, `Service City`, `Case Type`, `Assign Members`, `Case No`, `Charges`, `Total Amount`, `Amount Paid`, `Remaining`, `Payment Status`.
+- Charges are split into editable sub-lines (e.g., Delivery/Photocopy/Attested).
+
+### 9.8 Wallet Module (Confirmed)
+- Grid headers confirmed:
+  - `Sr #`, `Consumer Name`, `Account Balance`, `Total Transactions`, `Created At`, `Action`.
+- Top-up modal confirmed fields:
+  - `Select User`, `Topup Amount`, `Payment Mode` (Jazz Cash / Easy Paisa / Bank Transfer), `Payment Currency` (PKR/USD), `Upload Receipt`.
+- In-modal payment instruction block is present (JazzCash/EasyPaisa/Bank details shown to operator).
+
+### 9.9 Users, Clerks, and Roles (Confirmed)
+- Users table headers confirmed:
+  - `Sr No`, `Name`, `Email`, `Phone`, `User Type`, `Verified`, `Action`.
+- Users list actions confirmed:
+  - wallet top-up shortcut, delete, and create user flow.
+- `Create User` roles confirmed:
+  - `super-admin`, `manager-admin`, `staff-admin`, `lead-admin`, `lawyer`, `consumer`, `representative`, `investor`, `company`.
+- Representative/clerk creation confirmed fields:
+  - `Name`, `Email`, `Phone`, `Address`, `Select Service`, `Select Court`, `Select Court City`.
+
+### 9.10 Cost Configuration (Confirmed)
+- `Create Service Cost` confirms:
+  - Service, service category, multi-case-type, province, audience (local/overseas), cost, single-year vs year-range toggle.
+- `Create Clerk Cost` confirms:
+  - Service, service category, multi-case-type, province, cost, single-year vs year-range toggle.
+
+### 9.11 Elections & Cabinet (Confirmed)
+- Elections listing headers confirmed:
+  - `Election Name`, `Election Year`, `Election Tenure`, `Status`, `Total Candidates`, `Created By`, `Actions`.
+- Election actions confirmed:
+  - `Edit Election`, `Add Candidates`, `View Candidates`, `Finalize Election`, `Delete Election`.
+- Election creation confirms:
+  - election name/year, multi-select positions, tenure, province/capital, multi-city scope.
+- Cabinet listing headers confirmed:
+  - `Member`, `Position`, `Election`, `Year`, `Tenure`, `Votes`.
+
+### 9.12 Reports (Confirmed)
+- Report landing page is card-based and links to:
+  - User Logs
+  - Cases Processed
+  - Service Breakdown
+  - City Performance
+  - Pending vs Completed Cases
+  - Turnaround
+
+### 9.13 Documents (Confirmed)
+- Documents list headers confirmed:
+  - `Document`, `Document Name`, `Document Type`, `Action`.
+
+### 9.14 Profile Management (Confirmed)
+- Basic profile form includes:
+  - Name, Email, Phone, CNIC, DOB, Gender, Photo.
+- Additional profile form includes:
+  - Country, Province/Capital, District, Tehsil/City, Postal Code, Address.
+- Security section visible with 2FA status toggle area.
+
+### 9.15 Operational Issue Observed
+- `GET /invoice/history` returned **HTTP 500 Server Error** during authenticated access (not usable at time of analysis).

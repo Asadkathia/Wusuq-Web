@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: wusuq-api
+    runtime: node
+    rootDir: .
+    plan: free
+    autoDeploy: true
+    buildCommand: pnpm install --frozen-lockfile && pnpm --filter @wusuq/api build
+    startCommand: pnpm --filter @wusuq/api start:prod
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: 22
+      - key: PORT
+        value: 4000
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_ACCESS_SECRET
+        sync: false
+      - key: JWT_REFRESH_SECRET
+        sync: false

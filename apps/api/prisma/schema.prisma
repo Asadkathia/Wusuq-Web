@@ -1,0 +1,295 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  super_admin
+  manager_admin
+  staff_admin
+  lead_admin
+  lawyer
+  consumer
+  representative
+  investor
+  company
+}
+
+enum TicketStatus {
+  PENDING
+  ASSIGNED
+  IN_PROGRESS
+  COMPLETED
+  IMMATURE
+}
+
+enum PaymentMode {
+  JAZZ_CASH
+  EASY_PAISA
+  BANK_TRANSFER
+}
+
+enum ServiceType {
+  JUDICIAL
+  NON_JUDICIAL
+}
+
+enum TicketPaymentStatus {
+  UNPAID
+  PARTIALLY_PAID
+  PAID
+}
+
+enum WalletTransactionStatus {
+  PENDING_VERIFICATION
+  VERIFIED
+  REJECTED
+}
+
+enum InvoiceStatus {
+  GENERATED
+  SENT
+  PARTIALLY_PAID
+  PAID
+}
+
+enum ElectionStatus {
+  DRAFT
+  ACTIVE
+  FINALIZED
+}
+
+model User {
+  id            String      @id @default(cuid())
+  name          String
+  email         String      @unique
+  phone         String?
+  address       String?
+  district      String?
+  city          String?
+  serviceFocus  String?
+  court         String?
+  courtCity     String?
+  passwordHash  String
+  hashedRefreshToken String?
+  role          UserRole
+  verified      Boolean     @default(false)
+  isActive      Boolean     @default(true)
+  walletBalance Decimal     @default(0)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  tickets       Ticket[]
+  assignments   Assignment[]
+  walletTransactions WalletTransaction[]
+  createdElections Election[] @relation("ElectionCreator")
+}
+
+model Service {
+  id          String      @id @default(cuid())
+  name        String
+  type        ServiceType
+  category    String
+  courtLevel  String?
+  description String?
+  isActive    Boolean     @default(true)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  tickets     Ticket[]
+  serviceCostRules ServiceCostRule[]
+  clerkCostRules   ClerkCostRule[]
+}
+
+model Ticket {
+  id              String              @id @default(cuid())
+  batchNo         String              @unique
+  consumerId      String
+  serviceId       String
+  status          TicketStatus        @default(PENDING)
+  serviceCity     String?
+  caseType        String?
+  intakeFlow      String?
+  formPayload     Json?
+  deliveryCharges Decimal             @default(0)
+  printingCharges Decimal             @default(0)
+  attestedCharges Decimal             @default(0)
+  additionalServiceCost Decimal       @default(0)
+  clerkCost       Decimal             @default(0)
+  totalAmount     Decimal             @default(0)
+  amountPaid      Decimal             @default(0)
+  paymentStatus   TicketPaymentStatus @default(UNPAID)
+  serviceCost     Decimal             @default(0)
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  consumer        User                @relation(fields: [consumerId], references: [id])
+  service         Service             @relation(fields: [serviceId], references: [id])
+  history         TicketStatusHistory[]
+  assignments     Assignment[]
+  documents       TicketDocument[]
+  walletPayments  WalletTransaction[]
+  invoice         Invoice?
+}
+
+model Election {
+  id              String         @id @default(cuid())
+  name            String
+  bodyName        String
+  province        String?
+  city            String?
+  year            Int
+  tenure          String
+  status          ElectionStatus @default(DRAFT)
+  createdByUserId String?
+  finalizedAt     DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  createdBy       User?          @relation("ElectionCreator", fields: [createdByUserId], references: [id])
+  candidates      Candidate[]
+  cabinetSeats    CabinetSeat[]
+}
+
+model Candidate {
+  id          String   @id @default(cuid())
+  electionId  String
+  position    String
+  memberName  String
+  votes       Int      @default(0)
+  isWinner    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  election    Election @relation(fields: [electionId], references: [id])
+  cabinetSeats CabinetSeat[]
+}
+
+model CabinetSeat {
+  id           String   @id @default(cuid())
+  electionId   String
+  candidateId  String
+  position     String
+  memberName   String
+  votes        Int      @default(0)
+  year         Int
+  tenure       String
+  createdAt    DateTime @default(now())
+  election     Election @relation(fields: [electionId], references: [id])
+  candidate    Candidate @relation(fields: [candidateId], references: [id])
+}
+
+model TicketIntakeDraft {
+  id            String   @id @default(cuid())
+  flow          String
+  consumerId    String
+  serviceId     String?
+  step          Int      @default(1)
+  payload       Json?
+  savedByUserId String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model TicketStatusHistory {
+  id        String       @id @default(cuid())
+  ticketId  String
+  from      TicketStatus?
+  to        TicketStatus
+  note      String?
+  createdAt DateTime     @default(now())
+  ticket    Ticket       @relation(fields: [ticketId], references: [id])
+}
+
+model Assignment {
+  id               String   @id @default(cuid())
+  ticketId         String
+  representativeId String
+  createdAt        DateTime @default(now())
+  ticket           Ticket   @relation(fields: [ticketId], references: [id])
+  representative   User     @relation(fields: [representativeId], references: [id])
+}
+
+model TicketDocument {
+  id        String   @id @default(cuid())
+  ticketId  String
+  name      String
+  type      String
+  fileUrl   String
+  createdAt DateTime @default(now())
+  ticket    Ticket   @relation(fields: [ticketId], references: [id])
+}
+
+model WalletTransaction {
+  id          String      @id @default(cuid())
+  userId      String
+  ticketId    String?
+  amount      Decimal
+  paymentMode PaymentMode
+  currency    String      @default("PKR")
+  status      WalletTransactionStatus @default(PENDING_VERIFICATION)
+  receiptUrl  String?
+  reviewedByUserId String?
+  verifiedAt  DateTime?
+  note        String?
+  createdAt   DateTime    @default(now())
+  user        User        @relation(fields: [userId], references: [id])
+  ticket      Ticket?     @relation(fields: [ticketId], references: [id])
+}
+
+model Invoice {
+  id          String      @id @default(cuid())
+  ticketId    String      @unique
+  invoiceNo   String      @unique
+  totalAmount Decimal
+  amountPaid  Decimal     @default(0)
+  dueAmount   Decimal
+  status      InvoiceStatus @default(GENERATED)
+  sentAt      DateTime?
+  paidAt      DateTime?
+  pdfUrl      String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  ticket      Ticket      @relation(fields: [ticketId], references: [id])
+}
+
+model ServiceCostRule {
+  id          String   @id @default(cuid())
+  serviceId   String
+  category    String
+  caseType    String?
+  province    String?
+  audience    String?
+  yearFrom    Int
+  yearTo      Int
+  amount      Decimal
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  service     Service  @relation(fields: [serviceId], references: [id])
+}
+
+model ClerkCostRule {
+  id          String   @id @default(cuid())
+  serviceId   String
+  category    String
+  caseType    String?
+  province    String?
+  yearFrom    Int
+  yearTo      Int
+  amount      Decimal
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  service     Service  @relation(fields: [serviceId], references: [id])
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  action      String
+  entity      String
+  entityId    String?
+  actorUserId String?
+  actorEmail  String?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+}
