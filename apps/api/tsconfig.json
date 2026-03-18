@@ -19,9 +19,6 @@
     "strictNullChecks": true,
     "noImplicitAny": true,
     "strictBindCallApply": true,
-    "noFallthroughCasesInSwitch": true,
-    "paths": {
-      "@wusuq/shared": ["../../packages/shared/src/index.ts"]
-    }
+    "noFallthroughCasesInSwitch": true
   }
 }
