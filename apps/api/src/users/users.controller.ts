@@ -87,4 +87,34 @@ export class UsersController {
       actorEmail: actor?.email,
     });
   }
+
+  @RequirePermissions('users.write')
+  @Post(':id/activate')
+  activate(
+    @Param('id') id: string,
+    @CurrentUser() actor: JwtUser | undefined,
+  ) {
+    return this.usersService.activate(id, {
+      actorUserId: actor?.sub,
+      actorEmail: actor?.email,
+    });
+  }
+
+  @RequirePermissions('users.write')
+  @Post(':id/deactivate')
+  deactivateByPost(
+    @Param('id') id: string,
+    @CurrentUser() actor: JwtUser | undefined,
+  ) {
+    return this.usersService.deactivate(id, {
+      actorUserId: actor?.sub,
+      actorEmail: actor?.email,
+    });
+  }
+
+  @RequirePermissions('users.read')
+  @Get(':id/tickets')
+  userTickets(@Param('id') id: string) {
+    return this.usersService.userTickets(id);
+  }
 }

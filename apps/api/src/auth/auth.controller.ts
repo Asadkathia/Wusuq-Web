@@ -1,4 +1,4 @@
-import { Body, Controller, Post } from '@nestjs/common';
+import { Body, Controller, Post, Param, ForbiddenException } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { CurrentUser } from './decorators/current-user.decorator';
 import { Public } from './decorators/public.decorator';
@@ -28,5 +28,16 @@ export class AuthController {
   @Post('logout')
   logout(@CurrentUser() user: JwtUser | undefined) {
     return this.authService.logout(user?.sub);
+  }
+
+  @Post('impersonate/:id')
+  impersonate(
+    @Param('id') targetId: string,
+    @CurrentUser() actor: JwtUser | undefined,
+  ) {
+    if (actor?.role !== 'super-admin') {
+      throw new ForbiddenException('Only super admin can impersonate');
+    }
+    return this.authService.impersonate(targetId, actor);
   }
 }

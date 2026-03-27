@@ -22,6 +22,8 @@ import { PrismaModule } from './prisma/prisma.module';
 import { HealthModule } from './health/health.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { PermissionsGuard } from './roles-permissions/guards/permissions.guard';
+import { DashboardModule } from './dashboard/dashboard.module';
+import { CasesModule } from './cases/cases.module';
 
 @Module({
   imports: [
@@ -61,6 +63,8 @@ import { PermissionsGuard } from './roles-permissions/guards/permissions.guard';
     GeoModule,
     PrismaModule,
     HealthModule,
+    DashboardModule,
+    CasesModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { subDays, startOfDay } from 'date-fns';
 
 @Injectable()
 export class ReportsService {
@@ -16,21 +17,35 @@ export class ReportsService {
     ];
   }
 
-  async run(type: string) {
+  async run(type: string, filters?: { dateRange?: string; status?: string }) {
+    const where: any = {};
+    if (filters?.dateRange && filters.dateRange !== 'all') {
+      const days = parseInt(filters.dateRange.replace('d', ''), 10);
+      if (!isNaN(days)) {
+        where.createdAt = { gte: startOfDay(subDays(new Date(), days - 1)) };
+      }
+    }
+    if (filters?.status && filters.status !== 'all') {
+      where.status = filters.status;
+    }
+
     if (type === 'logs') {
+      const logsWhere: any = {};
+      if (where.createdAt) logsWhere.createdAt = where.createdAt;
       return {
         type,
         data: await this.prisma.auditLog.findMany({
+          where: logsWhere,
           orderBy: { createdAt: 'desc' },
-          take: 200,
+          take: 500,
         }),
       };
     }
 
     if (type === 'cases-processed') {
-      const total = await this.prisma.ticket.count();
+      const total = await this.prisma.ticket.count({ where });
       const completed = await this.prisma.ticket.count({
-        where: { status: 'COMPLETED' },
+        where: { ...where, status: 'COMPLETED' },
       });
       return {
         type,
@@ -45,6 +60,7 @@ export class ReportsService {
     if (type === 'cases-services') {
       const rows = await this.prisma.ticket.groupBy({
         by: ['serviceId'],
+        where,
         _count: { _all: true },
       });
       const services = await this.prisma.service.findMany({
@@ -66,6 +82,7 @@ export class ReportsService {
     if (type === 'cases-city') {
       const rows = await this.prisma.ticket.groupBy({
         by: ['serviceCity'],
+        where,
         _count: { _all: true },
       });
 
@@ -81,6 +98,7 @@ export class ReportsService {
     if (type === 'cases-status') {
       const rows = await this.prisma.ticket.groupBy({
         by: ['status'],
+        where,
         _count: { _all: true },
       });
 
@@ -95,7 +113,7 @@ export class ReportsService {
 
     if (type === 'cases-turnaround') {
       const completed = await this.prisma.ticket.findMany({
-        where: { status: 'COMPLETED' },
+        where: { ...where, status: 'COMPLETED' },
         select: { createdAt: true, updatedAt: true, batchNo: true },
       });
 

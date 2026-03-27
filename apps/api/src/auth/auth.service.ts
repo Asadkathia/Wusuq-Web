@@ -138,6 +138,47 @@ export class AuthService {
     return tokens;
   }
 
+  async impersonate(targetUserId: string, actor: JwtUser) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: targetUserId },
+    });
+
+    if (!user || (!user.isActive && actor.role !== 'super-admin')) {
+      throw new UnauthorizedException('Target user is invalid');
+    }
+
+    const payload: JwtUser = {
+      sub: user.id,
+      email: user.email,
+      role: mapPrismaRoleToShared(user.role),
+    };
+
+    const tokens = await this.issueTokens(payload);
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { hashedRefreshToken: await hash(tokens.refreshToken, 10) },
+    });
+
+    await this.auditLogsService.create({
+      action: 'AUTH_IMPERSONATE',
+      entity: 'AUTH',
+      actorUserId: actor.sub,
+      actorEmail: actor.email,
+      metadata: { targetUserId },
+    });
+
+    return {
+      ...tokens,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: payload.role,
+        verified: user.verified,
+      },
+    };
+  }
+
   async logout(userId?: string) {
     if (userId) {
       await this.prisma.user.update({
@@ -155,18 +196,12 @@ export class AuthService {
 
   private async issueTokens(payload: JwtUser): Promise<AuthTokens> {
     const accessToken = await this.jwtService.signAsync(payload, {
-      secret: this.configService.get<string>(
-        'JWT_ACCESS_SECRET',
-        'dev-access-secret',
-      ),
+      secret: this.configService.getOrThrow<string>('JWT_ACCESS_SECRET'),
       expiresIn: '15m',
     });
 
     const refreshToken = await this.jwtService.signAsync(payload, {
-      secret: this.configService.get<string>(
-        'JWT_REFRESH_SECRET',
-        'dev-refresh-secret',
-      ),
+      secret: this.configService.getOrThrow<string>('JWT_REFRESH_SECRET'),
       expiresIn: '7d',
     });
 
@@ -176,10 +211,7 @@ export class AuthService {
   private async verifyRefreshToken(refreshToken: string): Promise<JwtUser> {
     try {
       return await this.jwtService.verifyAsync<JwtUser>(refreshToken, {
-        secret: this.configService.get<string>(
-          'JWT_REFRESH_SECRET',
-          'dev-refresh-secret',
-        ),
+        secret: this.configService.getOrThrow<string>('JWT_REFRESH_SECRET'),
       });
     } catch {
       throw new UnauthorizedException('Invalid refresh token');

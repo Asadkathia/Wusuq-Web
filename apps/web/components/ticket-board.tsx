@@ -1,7 +1,19 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-unused-vars */
+/* eslint-disable react/no-unescaped-entities */
+/* eslint-disable @next/next/no-img-element */
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { TicketStatus } from '@wusuq/shared';
+import { apiClient } from '@/lib/api-client';
+import { DataTableShell } from '@/components/ui/data-table-shell';
+import { FilterBar } from '@/components/ui/filter-bar';
+import { SectionHeader } from '@/components/ui/section-header';
+import { StatusPill } from '@/components/ui/status-pill';
+import { PanelCard } from '@/components/ui/panel-card';
+import { UserCircle, MapPin, Tag, RefreshCw, CheckSquare, Clock, History, FileOutput, Eye } from 'lucide-react';
+import { TicketDetailPanel } from './ticket-detail-panel';
 
 type TicketBoardProps = {
   title: string;
@@ -25,34 +37,18 @@ type Representative = {
   district?: string | null;
 };
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:4000/api';
-
-async function apiRequest(path: string, method = 'GET', body?: unknown) {
-  const token =
-    typeof window !== 'undefined' ? localStorage.getItem('wusuq_access_token') : null;
-
-  const response = await fetch(`${API_BASE}${path}`, {
-    method,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-
-  if (!response.ok) {
-    throw new Error(`Request failed (${response.status})`);
-  }
-
-  return response.json();
-}
-
 export function TicketBoard({ title, status }: TicketBoardProps) {
   const [tickets, setTickets] = useState<TicketRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
+  const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [bulkAction, setBulkAction] = useState('complete');
+
+  const [dateRange, setDateRange] = useState('all');
+  const [serviceFilter, setServiceFilter] = useState('all');
+
+  const [viewTicketId, setViewTicketId] = useState<string | null>(null);
 
   const [assignTicket, setAssignTicket] = useState<TicketRow | null>(null);
   const [representatives, setRepresentatives] = useState<Representative[]>([]);
@@ -77,35 +73,55 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
   const loadTickets = useCallback(async () => {
     setLoading(true);
     try {
-      const result = await apiRequest(`/tickets?status=${status}&limit=200`);
+      const q = new URLSearchParams({ status, limit: '200' });
+      if (dateRange !== 'all') q.set('dateRange', dateRange);
+      if (serviceFilter !== 'all') q.set('serviceCategory', serviceFilter);
+      
+      const result = await apiClient.get<any>(`/tickets?${q.toString()}`);
       setTickets(result.items ?? []);
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Failed to load tickets');
+    } catch (error: any) {
+      setMessage(error.message || 'Failed to load tickets');
     } finally {
       setLoading(false);
     }
-  }, [status]);
+  }, [status, dateRange, serviceFilter]);
 
   useEffect(() => {
-    void loadTickets();
+    loadTickets();
   }, [loadTickets]);
 
-  const runBulkAction = async () => {
-    if (selectedIds.length === 0) {
-      setMessage('Select at least one ticket');
-      return;
-    }
+  const filteredTickets = useMemo(() => {
+    if (!search) return tickets;
+    const lower = search.toLowerCase();
+    return tickets.filter(t => 
+       t.batchNo.toLowerCase().includes(lower) || 
+       t.consumer.name.toLowerCase().includes(lower) ||
+       t.service.name.toLowerCase().includes(lower)
+    );
+  }, [tickets, search]);
 
+  const toggleAll = (checked: boolean) => {
+    const newSelected: Record<string, boolean> = {};
+    filteredTickets.forEach(t => { newSelected[t.id] = checked; });
+    setSelected(newSelected);
+  };
+
+  const getStatusVariant = (st: string) => {
+    if (st === 'COMPLETED') return 'success';
+    if (st === 'PENDING') return 'warning';
+    if (st === 'ASSIGNED' || st === 'IN_PROGRESS') return 'info';
+    return 'neutral';
+  };
+
+  const runBulkAction = async () => {
+    if (selectedIds.length === 0) return setMessage('Select at least one ticket');
     try {
-      await apiRequest('/tickets/bulk-actions', 'POST', {
-        action: bulkAction,
-        ticketIds: selectedIds,
-      });
+      await apiClient.post('/tickets/bulk-actions', { action: bulkAction, ticketIds: selectedIds });
       setMessage('Bulk action applied');
       setSelected({});
-      await loadTickets();
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Bulk action failed');
+      loadTickets();
+    } catch (error: any) {
+      setMessage(error.message || 'Bulk action failed');
     }
   };
 
@@ -113,10 +129,9 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
     setAssignTicket(ticket);
     setRepresentativeId('');
     setClerkCost('');
-
     try {
       const query = ticket.serviceCity ? `?city=${encodeURIComponent(ticket.serviceCity)}` : '';
-      const reps = await apiRequest(`/tickets/representatives${query}`);
+      const reps = await apiClient.get<Representative[]>(`/tickets/representatives${query}`);
       setRepresentatives(reps);
     } catch {
       setRepresentatives([]);
@@ -124,231 +139,298 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
   };
 
   const submitAssign = async () => {
-    if (!assignTicket || !representativeId) {
-      setMessage('Select representative');
-      return;
-    }
-
+    if (!assignTicket || !representativeId) return setMessage('Select representative');
     try {
-      await apiRequest(`/tickets/${assignTicket.id}/assign`, 'POST', {
+      await apiClient.post(`/tickets/${assignTicket.id}/assign`, {
         representativeId,
         clerkCost: clerkCost ? Number(clerkCost) : undefined,
       });
       setAssignTicket(null);
       setMessage('Ticket assigned');
-      await loadTickets();
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Assignment failed');
+      loadTickets();
+    } catch (error: any) {
+      setMessage(error.message || 'Assignment failed');
     }
   };
 
   const openTimeline = async (ticketId: string) => {
     try {
-      const result = await apiRequest(`/tickets/${ticketId}/timeline`);
+      const result = await apiClient.get<any>(`/tickets/${ticketId}/timeline`);
       setTimeline(result);
       setTimelineTicketId(ticketId);
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Failed to load timeline');
+    } catch (error: any) {
+      setMessage(error.message || 'Failed to load timeline');
     }
   };
 
   const regenerateTicket = async (ticketId: string) => {
     try {
-      await apiRequest(`/tickets/${ticketId}/regenerate`, 'POST');
+      await apiClient.post(`/tickets/${ticketId}/regenerate`);
       setMessage('Ticket regenerated');
-      await loadTickets();
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Regenerate failed');
+      loadTickets();
+    } catch (error: any) {
+      setMessage(error.message || 'Regenerate failed');
     }
   };
 
   return (
-    <section className="rounded-lg border border-slate-200 bg-white p-6">
-      <h2 className="text-2xl font-semibold">{title}</h2>
+    <div className="space-y-6">
+      <SectionHeader 
+        title={title} 
+        description={`Manage ${status.toLowerCase()} tickets and assignments.`}
+        action={
+          <button
+            onClick={loadTickets}
+            disabled={loading}
+            className="inline-flex items-center gap-2 rounded-lg bg-surface px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-inset ring-border-soft hover:bg-surface-muted disabled:opacity-50 transition-colors"
+          >
+            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
+        }
+      />
 
-      <div className="mt-4 flex flex-wrap items-center gap-2">
-        <select
-          className="rounded border border-slate-300 p-2 text-sm"
-          value={bulkAction}
-          onChange={(event) => setBulkAction(event.target.value)}
-        >
-          <option value="complete">Complete Tickets</option>
-          <option value="immature">Immature Tickets</option>
-          <option value="delete">Delete Tickets</option>
-          <option value="download-invoice">Download Invoice</option>
-          <option value="send-invoice">Send Invoice</option>
-        </select>
-        <button
-          type="button"
-          className="rounded bg-slate-900 px-3 py-2 text-sm text-white"
-          onClick={() => void runBulkAction()}
-        >
-          Apply Bulk Action
-        </button>
-        <button
-          type="button"
-          className="rounded border border-slate-300 px-3 py-2 text-sm"
-          onClick={() => void loadTickets()}
-          disabled={loading}
-        >
-          Refresh
-        </button>
-      </div>
-
-      <div className="mt-4 overflow-x-auto">
-        <table className="min-w-full border border-slate-200 text-sm">
-          <thead className="bg-slate-100 text-left">
+      <DataTableShell
+        header={
+          <FilterBar 
+            searchPlaceholder="Search batch, consumer, or service..."
+            onSearch={setSearch}
+            actions={
+              <div className="flex items-center gap-2">
+                <select 
+                  className="rounded-lg border-0 py-2 pl-3 pr-8 text-slate-900 shadow-sm ring-1 ring-inset ring-border-soft focus:ring-2 focus:ring-primary-600 sm:text-sm"
+                  value={dateRange} 
+                  onChange={e => setDateRange(e.target.value)}
+                >
+                  <option value="all">Any Date</option>
+                  <option value="7d">Last 7 Days</option>
+                  <option value="30d">Last 30 Days</option>
+                </select>
+                <select 
+                  className="rounded-lg border-0 py-2 pl-3 pr-8 text-slate-900 shadow-sm ring-1 ring-inset ring-border-soft focus:ring-2 focus:ring-primary-600 sm:text-sm"
+                  value={serviceFilter} 
+                  onChange={e => setServiceFilter(e.target.value)}
+                >
+                  <option value="all">Any Service</option>
+                  <option value="JUDICIAL">Judicial</option>
+                  <option value="NON_JUDICIAL">Non-Judicial</option>
+                </select>
+                <span className="h-6 w-px bg-slate-200 mx-1"></span>
+                <select
+                  className="rounded-lg border-0 py-2 pl-3 pr-8 text-slate-900 shadow-sm ring-1 ring-inset ring-border-soft focus:ring-2 focus:ring-primary-600 sm:text-sm"
+                  value={bulkAction}
+                  onChange={(e) => setBulkAction(e.target.value)}
+                >
+                  <option value="complete">Complete Tickets</option>
+                  <option value="immature">Immature Tickets</option>
+                  <option value="delete">Delete Tickets</option>
+                  <option value="download-invoice">Download Invoice</option>
+                  <option value="send-invoice">Send Invoice</option>
+                </select>
+                <button
+                  type="button"
+                  onClick={runBulkAction}
+                  disabled={selectedIds.length === 0}
+                  className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 disabled:opacity-50 transition-colors"
+                >
+                  Apply
+                </button>
+              </div>
+            }
+          />
+        }
+      >
+        <table className="min-w-full divide-y divide-slate-200">
+          <thead className="bg-slate-50">
             <tr>
-              <th className="p-2">Select</th>
-              <th className="p-2">Batch No</th>
-              <th className="p-2">Consumer</th>
-              <th className="p-2">Service</th>
-              <th className="p-2">City</th>
-              <th className="p-2">Case Type</th>
-              <th className="p-2">Status</th>
-              <th className="p-2">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {tickets.map((ticket) => (
-              <tr key={ticket.id} className="border-t border-slate-200">
-                <td className="p-2">
+              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                <div className="flex items-center gap-2">
                   <input
                     type="checkbox"
-                    checked={Boolean(selected[ticket.id])}
-                    onChange={(event) =>
-                      setSelected((current) => ({
-                        ...current,
-                        [ticket.id]: event.target.checked,
-                      }))
-                    }
+                    className="h-4 w-4 rounded border-slate-300 text-primary-600 focus:ring-primary-600"
+                    checked={filteredTickets.length > 0 && selectedIds.length === filteredTickets.length}
+                    onChange={(e) => toggleAll(e.target.checked)}
                   />
+                  <span>Batch No</span>
+                </div>
+              </th>
+              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Consumer</th>
+              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Service Details</th>
+              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Status</th>
+              <th scope="col" className="relative px-6 py-3"><span className="sr-only">Actions</span></th>
+            </tr>
+          </thead>
+          <tbody className="bg-white divide-y divide-slate-100">
+            {filteredTickets.map((ticket) => (
+              <tr key={ticket.id} className="hover:bg-slate-50 transition-colors group">
+                <td className="px-6 py-4 whitespace-nowrap">
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 rounded border-slate-300 text-primary-600 focus:ring-primary-600 mt-0.5"
+                      checked={Boolean(selected[ticket.id])}
+                      onChange={(e) => setSelected(s => ({ ...s, [ticket.id]: e.target.checked }))}
+                    />
+                    <div className="text-sm font-medium text-slate-900">{ticket.batchNo}</div>
+                  </div>
                 </td>
-                <td className="p-2">{ticket.batchNo}</td>
-                <td className="p-2">{ticket.consumer.name}</td>
-                <td className="p-2">{ticket.service.name}</td>
-                <td className="p-2">{ticket.serviceCity ?? '-'}</td>
-                <td className="p-2">{ticket.caseType ?? '-'}</td>
-                <td className="p-2">{ticket.status}</td>
-                <td className="p-2">
-                  <div className="flex flex-wrap gap-1">
-                    <button
-                      type="button"
-                      className="rounded border border-slate-300 px-2 py-1"
-                      onClick={() => void openAssign(ticket)}
-                    >
-                      Assign
+                <td className="px-6 py-4 whitespace-nowrap">
+                  <div className="flex items-center gap-2">
+                     <UserCircle className="h-4 w-4 text-slate-400" />
+                     <span className="text-sm text-slate-700">{ticket.consumer.name}</span>
+                  </div>
+                </td>
+                <td className="px-6 py-4">
+                  <div className="text-sm font-medium text-slate-900">{ticket.service.name}</div>
+                  <div className="mt-1 flex items-center gap-3 text-xs text-slate-500">
+                    <span className="flex items-center gap-1"><MapPin className="h-3 w-3" /> {ticket.serviceCity || 'Anywhere'}</span>
+                    <span className="flex items-center gap-1"><Tag className="h-3 w-3" /> {ticket.caseType || 'Standard'}</span>
+                  </div>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap">
+                  <StatusPill label={ticket.status} variant={getStatusVariant(ticket.status)} />
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                  <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button onClick={() => setViewTicketId(ticket.id)} className="text-slate-600 hover:text-primary-700 bg-slate-100 hover:bg-primary-50 px-3 py-1.5 rounded-md flex items-center gap-1">
+                      <Eye className="h-3.5 w-3.5" /> View Details
                     </button>
-                    <button
-                      type="button"
-                      className="rounded border border-slate-300 px-2 py-1"
-                      onClick={() => void openTimeline(ticket.id)}
-                    >
-                      Timeline
+                    {status !== 'COMPLETED' && (
+                      <button onClick={() => openAssign(ticket)} className="text-primary-600 hover:text-primary-900 bg-primary-50 px-3 py-1.5 rounded-md flex items-center gap-1">
+                        <CheckSquare className="h-3.5 w-3.5" /> Assign
+                      </button>
+                    )}
+                    <button onClick={() => openTimeline(ticket.id)} className="text-slate-600 hover:text-slate-900 bg-slate-100 px-3 py-1.5 rounded-md flex items-center gap-1">
+                      <History className="h-3.5 w-3.5" /> Timeline
                     </button>
-                    <button
-                      type="button"
-                      className="rounded border border-slate-300 px-2 py-1"
-                      onClick={() => void regenerateTicket(ticket.id)}
-                    >
-                      Regenerate
+                    <button onClick={() => regenerateTicket(ticket.id)} className="text-slate-600 hover:text-rose-600 bg-slate-100 hover:bg-rose-50 px-3 py-1.5 rounded-md flex items-center gap-1" title="Regenerate Ticket">
+                      <FileOutput className="h-3.5 w-3.5" />
                     </button>
                   </div>
                 </td>
               </tr>
             ))}
+            {filteredTickets.length === 0 && (
+              <tr>
+                <td colSpan={5} className="px-6 py-12 text-center text-sm text-slate-500">
+                  <div className="flex flex-col items-center gap-2">
+                    <div className="h-10 w-10 rounded-full bg-slate-100 flex items-center justify-center">
+                      <FilterBar /> {/* Just as an icon placeholder, wait no */}
+                    </div>
+                    No tickets found matching your criteria.
+                  </div>
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
-      </div>
+      </DataTableShell>
 
-      {assignTicket ? (
-        <div className="mt-6 rounded border border-slate-300 p-4">
-          <h3 className="text-lg font-semibold">Assign Ticket {assignTicket.batchNo}</h3>
-          <div className="mt-3 grid gap-3 md:grid-cols-2">
-            <label className="space-y-1 text-sm">
-              <span>Representative</span>
+      {/* Assignment Modal (Inline for now) */}
+      {assignTicket && (
+        <PanelCard className="mt-6">
+          <SectionHeader title={`Assign Ticket ${assignTicket.batchNo}`} description="Select a representative to forward this ticket to." />
+          <div className="mt-6 grid gap-6 md:grid-cols-2">
+            <label className="block">
+              <span className="text-sm font-medium text-slate-700">Representative</span>
               <select
-                className="w-full rounded border border-slate-300 p-2"
+                className="mt-1 block w-full rounded-xl border-0 py-2.5 pl-3 pr-10 text-slate-900 ring-1 ring-inset ring-border-soft focus:ring-2 focus:ring-primary-600 sm:text-sm sm:leading-6"
                 value={representativeId}
-                onChange={(event) => setRepresentativeId(event.target.value)}
+                onChange={(e) => setRepresentativeId(e.target.value)}
               >
                 <option value="">Select Representative</option>
                 {representatives.map((rep) => (
                   <option key={rep.id} value={rep.id}>
-                    {rep.name} ({rep.city ?? '-'} / {rep.district ?? '-'})
+                    {rep.name} ({rep.city || '-'} / {rep.district || '-'})
                   </option>
                 ))}
               </select>
             </label>
 
-            <label className="space-y-1 text-sm">
-              <span>Clerk Cost</span>
+            <label className="block">
+              <span className="text-sm font-medium text-slate-700">Clerk Cost Override (Optional)</span>
               <input
-                className="w-full rounded border border-slate-300 p-2"
+                type="number"
+                className="mt-1 block w-full rounded-xl border-0 py-2.5 px-3 text-slate-900 ring-1 ring-inset ring-border-soft placeholder:text-slate-400 focus:ring-2 focus:ring-primary-600 sm:text-sm sm:leading-6"
+                placeholder="0.00"
                 value={clerkCost}
-                onChange={(event) => setClerkCost(event.target.value)}
+                onChange={(e) => setClerkCost(e.target.value)}
               />
             </label>
           </div>
-
-          <div className="mt-3 flex gap-2">
+          <div className="mt-6 flex gap-3">
             <button
-              type="button"
-              className="rounded bg-slate-900 px-3 py-2 text-sm text-white"
-              onClick={() => void submitAssign()}
+              onClick={submitAssign}
+              className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-primary-500 transition-colors"
             >
-              Submit Assignment
+              Confirm Assignment
             </button>
             <button
-              type="button"
-              className="rounded border border-slate-300 px-3 py-2 text-sm"
               onClick={() => setAssignTicket(null)}
+              className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm ring-1 ring-inset ring-border-soft hover:bg-slate-50 transition-colors"
             >
-              Close
+              Cancel
             </button>
           </div>
-        </div>
-      ) : null}
+        </PanelCard>
+      )}
 
-      {timelineTicketId && timeline ? (
-        <div className="mt-6 rounded border border-slate-300 p-4">
-          <h3 className="text-lg font-semibold">Timeline - {timelineTicketId}</h3>
-          <div className="mt-3 grid gap-4 md:grid-cols-2">
+      {/* Timeline Modal */}
+      {timelineTicketId && timeline && (
+        <PanelCard className="mt-6 bg-slate-50 border-slate-200">
+          <SectionHeader title={`Timeline for ${timelineTicketId}`} />
+          <div className="mt-6 grid gap-8 md:grid-cols-2">
             <div>
-              <h4 className="font-medium">Status History</h4>
-              <ul className="mt-2 space-y-1 text-sm">
-                {timeline.history.map((item) => (
-                  <li key={item.id}>
-                    {item.from ?? 'N/A'} -&gt; {item.to} ({new Date(item.createdAt).toLocaleString()})
+              <h4 className="text-sm font-semibold flex items-center gap-2 text-slate-900 border-b border-slate-200 pb-2"><Clock className="h-4 w-4" /> Status History</h4>
+              <ul className="mt-4 space-y-4">
+                {timeline.history.map((item, idx) => (
+                  <li key={item.id} className="relative flex gap-4">
+                    <div className="absolute top-5 left-1.5 -bottom-5 w-px bg-slate-200" />
+                    <div className="relative flex h-3 w-3 mt-1.5 flex-none items-center justify-center bg-white rounded-full ring-2 ring-primary-600" />
+                    <div className="flex-auto py-0.5 text-sm leading-5">
+                      <span className="font-medium text-slate-900">{item.to}</span>
+                      {item.from && <span className="text-slate-500"> (from {item.from})</span>}
+                      <p className="text-xs text-slate-500 mt-0.5">{new Date(item.createdAt).toLocaleString()}</p>
+                    </div>
                   </li>
                 ))}
+                {timeline.history.length === 0 && <p className="text-sm text-slate-500 mt-2">No status history found.</p>}
               </ul>
             </div>
             <div>
-              <h4 className="font-medium">Assignments</h4>
-              <ul className="mt-2 space-y-1 text-sm">
+              <h4 className="text-sm font-semibold flex items-center gap-2 text-slate-900 border-b border-slate-200 pb-2"><History className="h-4 w-4" /> Assignments</h4>
+              <ul className="mt-4 space-y-4">
                 {timeline.assignments.map((item) => (
-                  <li key={item.id}>
-                    {item.representative.name} ({new Date(item.createdAt).toLocaleString()})
+                  <li key={item.id} className="relative flex gap-4">
+                     <div className="absolute top-5 left-1.5 -bottom-5 w-px bg-slate-200" />
+                     <div className="relative flex h-3 w-3 mt-1.5 flex-none items-center justify-center bg-white rounded-full ring-2 ring-emerald-500" />
+                     <div className="flex-auto py-0.5 text-sm leading-5">
+                       <span className="font-medium text-slate-900">{item.representative.name}</span> assigned
+                       <p className="text-xs text-slate-500 mt-0.5">{new Date(item.createdAt).toLocaleString()}</p>
+                     </div>
                   </li>
                 ))}
+                {timeline.assignments.length === 0 && <p className="text-sm text-slate-500 mt-2">No assignments found.</p>}
               </ul>
             </div>
           </div>
-          <button
-            type="button"
-            className="mt-3 rounded border border-slate-300 px-3 py-2 text-sm"
-            onClick={() => {
-              setTimelineTicketId(null);
-              setTimeline(null);
-            }}
-          >
-            Close Timeline
-          </button>
-        </div>
-      ) : null}
+          <div className="mt-8 border-t border-slate-200 pt-4 flex justify-end">
+            <button onClick={() => { setTimelineTicketId(null); setTimeline(null); }} className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm ring-1 ring-inset ring-slate-300 hover:bg-slate-50 transition-colors">
+              Close Timeline
+            </button>
+          </div>
+        </PanelCard>
+      )}
 
-      {message ? <p className="mt-4 text-sm text-slate-700">{message}</p> : null}
-    </section>
+      {message && (
+        <div className={`mt-4 rounded-lg p-4 text-sm font-medium ${message.toLowerCase().includes('failed') || message.toLowerCase().includes('select') ? 'bg-rose-50 text-rose-800 border border-rose-200' : 'bg-emerald-50 text-emerald-800 border border-emerald-200'}`}>
+          {message}
+        </div>
+      )}
+
+      {viewTicketId && (
+        <TicketDetailPanel ticketId={viewTicketId} onClose={() => setViewTicketId(null)} />
+      )}
+    </div>
   );
 }

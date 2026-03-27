@@ -4,9 +4,6 @@ const ACTIONS = [
   'complete',
   'immature',
   'delete',
-  'assign',
-  'download-invoice',
-  'send-invoice',
 ] as const;
 
 export class BulkTicketActionDto {

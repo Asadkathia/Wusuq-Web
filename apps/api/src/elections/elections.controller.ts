@@ -6,10 +6,12 @@ import {
   Param,
   Patch,
   Post,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { JwtUser } from '../auth/types/jwt-user.type';
 import { RequirePermissions } from '../roles-permissions/decorators/permissions.decorator';
+import { CastVoteDto } from './dto/cast-vote.dto';
 import { CreateCandidateDto } from './dto/create-candidate.dto';
 import { CreateElectionDto } from './dto/create-election.dto';
 import { UpdateCandidateDto } from './dto/update-candidate.dto';
@@ -91,6 +93,17 @@ export class ElectionsController {
       actorUserId: actor?.sub,
       actorEmail: actor?.email,
     });
+  }
+
+  @RequirePermissions('elections.vote')
+  @Post(':id/vote')
+  castVote(
+    @Param('id') id: string,
+    @Body() dto: CastVoteDto,
+    @CurrentUser() actor: JwtUser | undefined,
+  ) {
+    if (!actor?.sub) throw new UnauthorizedException();
+    return this.electionsService.castVote(id, dto, actor.sub);
   }
 
   @RequirePermissions('elections.write')

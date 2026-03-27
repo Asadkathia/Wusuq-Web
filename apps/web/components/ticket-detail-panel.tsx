@@ -1,0 +1,211 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+'use client';
+
+import { useCallback, useEffect, useState } from 'react';
+import { apiClient } from '@/lib/api-client';
+import { PanelCard } from '@/components/ui/panel-card';
+import { StatusPill } from '@/components/ui/status-pill';
+import {
+  X, User, FileText, Package, CreditCard, Clock,
+  Phone, MapPin, Briefcase, Download
+} from 'lucide-react';
+
+type Props = {
+  ticketId: string;
+  onClose: () => void;
+};
+
+const STATUS_VARIANT: Record<string, 'success' | 'warning' | 'error' | 'neutral' | 'info'> = {
+  PENDING: 'warning',
+  ASSIGNED: 'info',
+  IN_PROGRESS: 'info',
+  COMPLETED: 'success',
+  IMMATURE: 'neutral',
+};
+
+export function TicketDetailPanel({ ticketId, onClose }: Props) {
+  const [ticket, setTicket] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const data = await apiClient.get<any>(`/tickets/${ticketId}`);
+      setTicket(data);
+    } catch (e: any) {
+      setError(e.message || 'Failed to load ticket');
+    } finally {
+      setLoading(false);
+    }
+  }, [ticketId]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const totalCharges = ticket
+    ? Number(ticket.serviceCost || 0) +
+      Number(ticket.deliveryCharges || 0) +
+      Number(ticket.printingCharges || 0) +
+      Number(ticket.attestedCharges || 0) +
+      Number(ticket.clerkCost || 0)
+    : 0;
+
+  const renderPayload = (payload: Record<string, unknown>) =>
+    Object.entries(payload)
+      .filter(([, v]) => v !== null && v !== '' && !String(v).includes('upload'))
+      .map(([k, v]) => (
+        <div key={k} className="flex gap-2 text-sm py-1 border-b border-slate-50 last:border-0">
+          <span className="w-40 flex-shrink-0 font-medium text-slate-500 capitalize">
+            {k.replace(/_/g, ' ')}
+          </span>
+          <span className="text-slate-800">{String(v)}</span>
+        </div>
+      ));
+
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end">
+      <div className="absolute inset-0 bg-slate-900/30 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative z-10 flex h-full w-full max-w-2xl flex-col bg-white shadow-2xl animate-in slide-in-from-right duration-300">
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+          <div>
+            <h2 className="text-base font-semibold text-slate-900">
+              Ticket Detail
+              {ticket?.batchNo && <span className="ml-2 text-xs font-mono bg-slate-100 text-slate-600 px-2 py-0.5 rounded">{ticket.batchNo}</span>}
+            </h2>
+            {ticket && (
+              <div className="mt-1">
+                <StatusPill label={ticket.status} variant={STATUS_VARIANT[ticket.status] ?? 'neutral'} />
+              </div>
+            )}
+          </div>
+          <button onClick={onClose} className="rounded-full p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        {/* Scrollable Content */}
+        <div className="flex-1 overflow-y-auto p-6 space-y-5">
+          {loading && <div className="py-20 text-center text-slate-400 animate-pulse">Loading ticket...</div>}
+          {error && <div className="py-10 text-center text-rose-500">{error}</div>}
+
+          {ticket && (
+            <>
+              {/* Consumer Info */}
+              <PanelCard className="p-4">
+                <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2"><User className="h-4 w-4 text-primary-500" />Consumer Information</h3>
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div><span className="text-slate-500">Name</span><p className="font-medium text-slate-900 mt-0.5">{ticket.consumer?.name ?? '—'}</p></div>
+                  <div><span className="text-slate-500">Email</span><p className="font-medium text-slate-900 mt-0.5">{ticket.consumer?.email ?? '—'}</p></div>
+                  <div><span className="text-slate-500 flex items-center gap-1"><Phone className="h-3 w-3" />Phone</span><p className="font-medium text-slate-900 mt-0.5">{ticket.consumer?.phone ?? '—'}</p></div>
+                  <div><span className="text-slate-500">CNIC</span><p className="font-medium text-slate-900 mt-0.5">{ticket.consumer?.cnic ?? '—'}</p></div>
+                  <div><span className="text-slate-500 flex items-center gap-1"><MapPin className="h-3 w-3" />Province</span><p className="font-medium text-slate-900 mt-0.5">{ticket.consumer?.province ?? '—'}</p></div>
+                  <div><span className="text-slate-500">City</span><p className="font-medium text-slate-900 mt-0.5">{ticket.consumer?.city ?? '—'}</p></div>
+                </div>
+              </PanelCard>
+
+              {/* Service & Case Details */}
+              <PanelCard className="p-4">
+                <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2"><Briefcase className="h-4 w-4 text-primary-500" />Service Details</h3>
+                <div className="grid grid-cols-2 gap-3 text-sm mb-4">
+                  <div><span className="text-slate-500">Service</span><p className="font-medium text-slate-900 mt-0.5">{ticket.service?.name ?? '—'}</p></div>
+                  <div><span className="text-slate-500">Category</span><p className="font-medium text-slate-900 mt-0.5">{ticket.service?.category ?? '—'}</p></div>
+                  <div><span className="text-slate-500">Service City</span><p className="font-medium text-slate-900 mt-0.5">{ticket.serviceCity ?? '—'}</p></div>
+                  <div><span className="text-slate-500">Case Type</span><p className="font-medium text-slate-900 mt-0.5">{ticket.caseType ?? '—'}</p></div>
+                </div>
+                {ticket.formPayload && typeof ticket.formPayload === 'object' && (
+                  <div className="border-t border-slate-100 pt-3">
+                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Case Payload</p>
+                    {renderPayload(ticket.formPayload)}
+                  </div>
+                )}
+              </PanelCard>
+
+              {/* Representative */}
+              {ticket.assignments?.length > 0 && (
+                <PanelCard className="p-4">
+                  <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2"><Package className="h-4 w-4 text-primary-500" />Assigned Representative</h3>
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div><span className="text-slate-500">Name</span><p className="font-medium text-slate-900 mt-0.5">{ticket.assignments[0].representative?.name}</p></div>
+                    <div><span className="text-slate-500">Phone</span><p className="font-medium text-slate-900 mt-0.5">{ticket.assignments[0].representative?.phone ?? '—'}</p></div>
+                    <div><span className="text-slate-500">City</span><p className="font-medium text-slate-900 mt-0.5">{ticket.assignments[0].representative?.city ?? '—'}</p></div>
+                    <div><span className="text-slate-500">Court</span><p className="font-medium text-slate-900 mt-0.5">{ticket.assignments[0].representative?.court ?? '—'}</p></div>
+                  </div>
+                </PanelCard>
+              )}
+
+              {/* Charges Breakdown */}
+              <PanelCard className="p-4">
+                <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2"><CreditCard className="h-4 w-4 text-primary-500" />Charges Breakdown</h3>
+                <div className="space-y-2 text-sm">
+                  {[
+                    ['Service Cost', ticket.serviceCost],
+                    ['Delivery Charges', ticket.deliveryCharges],
+                    ['Printing Charges', ticket.printingCharges],
+                    ['Attested Charges', ticket.attestedCharges],
+                    ['Clerk Cost', ticket.clerkCost],
+                  ].map(([label, val]) => (
+                    <div key={label as string} className="flex justify-between border-b border-slate-50 pb-1.5">
+                      <span className="text-slate-500">{label}</span>
+                      <span className="font-medium text-slate-800">PKR {Number(val || 0).toLocaleString()}</span>
+                    </div>
+                  ))}
+                  <div className="flex justify-between pt-1 font-semibold text-slate-900">
+                    <span>Total</span><span>PKR {totalCharges.toLocaleString()}</span>
+                  </div>
+                  <div className="flex justify-between text-emerald-700">
+                    <span>Amount Paid</span><span className="font-medium">PKR {Number(ticket.amountPaid || 0).toLocaleString()}</span>
+                  </div>
+                  <div className="flex justify-between text-rose-700">
+                    <span>Remaining</span><span className="font-medium">PKR {Math.max(0, totalCharges - Number(ticket.amountPaid || 0)).toLocaleString()}</span>
+                  </div>
+                </div>
+              </PanelCard>
+
+              {/* Documents */}
+              {ticket.documents?.length > 0 && (
+                <PanelCard className="p-4">
+                  <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2"><FileText className="h-4 w-4 text-primary-500" />Documents ({ticket.documents.length})</h3>
+                  <ul className="space-y-2">
+                    {ticket.documents.map((doc: any) => (
+                      <li key={doc.id} className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2">
+                        <span className="text-sm text-slate-700 truncate">{doc.name}</span>
+                        <a href={doc.fileUrl} target="_blank" rel="noreferrer" download
+                          className="ml-2 flex-shrink-0 p-1 text-slate-400 hover:text-primary-600 transition-colors">
+                          <Download className="h-4 w-4" />
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                </PanelCard>
+              )}
+
+              {/* Status History */}
+              {ticket.history?.length > 0 && (
+                <PanelCard className="p-4">
+                  <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2"><Clock className="h-4 w-4 text-primary-500" />Status Timeline</h3>
+                  <ol className="relative border-l border-slate-200 space-y-4 pl-4">
+                    {ticket.history.map((h: any, i: number) => (
+                      <li key={i} className="relative">
+                        <span className="absolute -left-[19px] flex h-4 w-4 items-center justify-center rounded-full bg-primary-100 ring-4 ring-white">
+                          <span className="h-1.5 w-1.5 rounded-full bg-primary-600" />
+                        </span>
+                        <div className="text-sm">
+                          <span className="font-medium text-slate-900">{h.to}</span>
+                          {h.from && <span className="text-slate-400"> ← {h.from}</span>}
+                          {h.note && <p className="text-xs text-slate-500 mt-0.5">{h.note}</p>}
+                          <p className="text-xs text-slate-400 mt-0.5">{new Date(h.createdAt).toLocaleString('en-PK')}</p>
+                        </div>
+                      </li>
+                    ))}
+                  </ol>
+                </PanelCard>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

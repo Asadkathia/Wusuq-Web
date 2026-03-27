@@ -3,7 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import type { Prisma } from '@prisma/client';
+import { UserRole, type Prisma } from '@prisma/client';
 import type { TicketStatus } from '@wusuq/shared';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { CostingService } from '../costing/costing.service';
@@ -13,6 +13,8 @@ import { BulkTicketActionDto } from './dto/bulk-ticket-action.dto';
 import { CreateTicketIntakeDto } from './dto/create-ticket-intake.dto';
 import { FilterTicketsDto } from './dto/filter-tickets.dto';
 import { SaveTicketIntakeDraftDto } from './dto/save-ticket-intake-draft.dto';
+import { UpdateTicketDto } from './dto/update-ticket.dto';
+import { NotificationsService } from '../notifications/notifications.service';
 
 const INTAKE_FLOWS = new Set([
   'judicial_case_files',
@@ -91,32 +93,43 @@ const REQUIRED_FIELDS_BY_FLOW: Record<string, string[]> = {
     'mode_of_delivery',
   ],
   non_judicial_copy_of_fir: [
-    'province_capital',
-    'select_district',
-    'police_station',
+    'province',
+    'district_id',
+    'station_id',
     'fir_no',
     'year',
-    'fir_date',
+    'case_date',
     'offence',
-    'title',
+    'case_title',
     'city_type',
-    'mode_of_delivery',
-    'no_of_sets',
+    'delivery_mode',
+    'sets',
     'set_type',
   ],
   non_judicial_registry_deed: [
     'office_name',
-    'select_city',
+    'city',
     'city_type',
     'doc_no',
     'year',
-    'date',
-    'title_party_a',
-    'title_party_b',
-    'mode_of_delivery',
-    'no_of_sets',
+    'case_date',
+    'case_title',
+    'delivery_mode',
+    'sets',
     'set_type',
   ],
+};
+
+const PAYLOAD_FIELD_ALIASES: Record<string, readonly string[]> = {
+  province: ['province_capital'],
+  district_id: ['select_district'],
+  station_id: ['police_station', 'other_station_id'],
+  city: ['select_city'],
+  case_date: ['fir_date', 'date'],
+  case_title: ['title', 'title_party_a'],
+  delivery_mode: ['mode_of_delivery'],
+  sets: ['no_of_sets'],
+  notes: ['note'],
 };
 
 const STATUS_TRANSITIONS: Record<TicketStatus, TicketStatus[]> = {
@@ -133,6 +146,7 @@ export class TicketsService {
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService,
     private readonly costingService: CostingService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   async findAll(query: FilterTicketsDto) {
@@ -203,7 +217,65 @@ export class TicketsService {
     };
   }
 
+  async findOne(id: string) {
+    const ticket = await this.prisma.ticket.findUnique({
+      where: { id },
+      include: {
+        consumer: {
+          select: {
+            id: true, name: true, email: true, phone: true,
+            cnic: true, address: true, province: true, district: true, city: true,
+          },
+        },
+        service: {
+          select: { id: true, name: true, category: true, type: true },
+        },
+        assignments: {
+          orderBy: { createdAt: 'desc' },
+          include: {
+            representative: {
+              select: { id: true, name: true, phone: true, city: true, district: true, court: true },
+            },
+          },
+        },
+        documents: true,
+        history: { orderBy: { createdAt: 'asc' } },
+      },
+    });
+
+    if (!ticket) {
+      throw new NotFoundException('Ticket not found');
+    }
+
+    return ticket;
+  }
+
+  async update(
+    id: string,
+    dto: UpdateTicketDto,
+    actor?: { actorUserId?: string; actorEmail?: string },
+  ) {
+    const ticket = await this.prisma.ticket.update({
+      where: { id },
+      data: {
+        ...dto,
+      },
+    });
+
+    await this.auditLogsService.create({
+      action: 'TICKET_UPDATED',
+      entity: 'TICKET',
+      entityId: ticket.id,
+      actorUserId: actor?.actorUserId,
+      actorEmail: actor?.actorEmail,
+      metadata: { updates: dto as any },
+    });
+
+    return ticket;
+  }
+
   async createIntakeTicket(
+
     dto: CreateTicketIntakeDto,
     actor?: { actorUserId?: string; actorEmail?: string },
   ) {
@@ -217,12 +289,18 @@ export class TicketsService {
       dto.serviceCity ??
       this.firstPayloadValue(dto.payload, [
         'select_court_city',
+        'city',
         'select_city',
         'select_district',
       ]);
     const inferredCaseType =
       dto.caseType ??
-      this.firstPayloadValue(dto.payload, ['case_type', 'offence', 'title']);
+      this.firstPayloadValue(dto.payload, [
+        'case_type',
+        'offence',
+        'case_title',
+        'title',
+      ]);
     const inferredProvince =
       dto.province ??
       this.firstPayloadValue(dto.payload, ['province_capital', 'province']);
@@ -362,7 +440,44 @@ export class TicketsService {
     const updated = await this.prisma.ticket.update({
       where: { id },
       data: { status },
+      include: {
+        consumer: { select: { id: true, name: true, phone: true } },
+        service: { select: { id: true, name: true } },
+      },
     });
+
+    if (status === 'COMPLETED' && updated.caseId) {
+      await this.prisma.caseEvent.create({
+        data: {
+          caseId: updated.caseId,
+          type: 'TICKET_COMPLETED',
+          title: `Completed: ${updated.service.name} (${updated.batchNo})`,
+          ticketId: id,
+          actorUserId: actor?.actorUserId,
+        },
+      });
+
+      const docs = await this.prisma.ticketDocument.findMany({ where: { ticketId: id } });
+      for (const doc of docs) {
+        await this.prisma.caseDocument.create({
+          data: {
+            caseId: updated.caseId,
+            ticketId: id,
+            name: doc.name,
+            type: doc.type,
+            fileUrl: doc.fileUrl,
+          },
+        });
+      }
+    }
+
+    if (status === 'COMPLETED') {
+      await this.notificationsService.create({
+        userId: updated.consumer.id,
+        title: 'Service completed',
+        body: `${updated.service.name} has been completed`,
+      });
+    }
 
     await this.prisma.ticketStatusHistory.create({
       data: {
@@ -396,7 +511,12 @@ export class TicketsService {
     if (!ticket) {
       throw new NotFoundException('Ticket not found');
     }
-    await this.ensureUserExists(dto.representativeId);
+    await this.ensureActiveRepresentativeExists(dto.representativeId);
+    if (!STATUS_TRANSITIONS[ticket.status].includes('ASSIGNED')) {
+      throw new BadRequestException(
+        `Invalid transition from ${ticket.status} to ASSIGNED`,
+      );
+    }
 
     const inferredProvince = this.firstPayloadValue(
       (ticket.formPayload as Record<string, unknown> | undefined) ?? undefined,
@@ -411,29 +531,36 @@ export class TicketsService {
     });
 
     const clerkCost = dto.clerkCost ?? autoClerkCost.amount;
-
-    await this.prisma.ticket.update({
-      where: { id },
-      data: {
-        clerkCost,
-        additionalServiceCost: clerkCost,
-        totalAmount:
-          Number(ticket.serviceCost) +
-          Number(ticket.deliveryCharges) +
-          Number(ticket.printingCharges) +
-          Number(ticket.attestedCharges) +
+    const nextTotalAmount =
+      Number(ticket.serviceCost) +
+      Number(ticket.deliveryCharges) +
+      Number(ticket.printingCharges) +
+      Number(ticket.attestedCharges) +
+      clerkCost;
+    await this.prisma.$transaction([
+      this.prisma.ticket.update({
+        where: { id },
+        data: {
           clerkCost,
-      },
-    });
-
-    await this.prisma.assignment.create({
-      data: {
-        ticketId: id,
-        representativeId: dto.representativeId,
-      },
-    });
-
-    await this.updateStatus(id, 'ASSIGNED', actor);
+          additionalServiceCost: clerkCost,
+          totalAmount: nextTotalAmount,
+          status: 'ASSIGNED',
+        },
+      }),
+      this.prisma.assignment.create({
+        data: {
+          ticketId: id,
+          representativeId: dto.representativeId,
+        },
+      }),
+      this.prisma.ticketStatusHistory.create({
+        data: {
+          ticketId: id,
+          from: ticket.status,
+          to: 'ASSIGNED',
+        },
+      }),
+    ]);
 
     await this.auditLogsService.create({
       action: 'TICKET_ASSIGNED',
@@ -450,16 +577,17 @@ export class TicketsService {
     return { id, representativeId: dto.representativeId, assigned: true };
   }
 
-  async representativeCandidates(filters: {
+  async representativeCandidates(_filters: {
     city?: string;
     district?: string;
   }) {
+    // Return all active representatives — admins select from the full pool.
+    // Geographic filters were previously hard-excluding reps without a matching
+    // city, leaving the dropdown empty for most tickets.
     return this.prisma.user.findMany({
       where: {
         role: 'representative',
         isActive: true,
-        ...(filters.city ? { city: filters.city } : {}),
-        ...(filters.district ? { district: filters.district } : {}),
       },
       select: {
         id: true,
@@ -472,7 +600,7 @@ export class TicketsService {
         court: true,
         courtCity: true,
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { name: 'asc' },
     });
   }
 
@@ -499,7 +627,6 @@ export class TicketsService {
         where: { id: { in: dto.ticketIds } },
       });
     }
-
     await this.auditLogsService.create({
       action: 'TICKET_BULK_ACTION',
       entity: 'TICKET',
@@ -596,6 +723,14 @@ export class TicketsService {
         formPayload: (original.formPayload ?? undefined) as
           | Prisma.InputJsonValue
           | undefined,
+        deliveryCharges: original.deliveryCharges,
+        printingCharges: original.printingCharges,
+        attestedCharges: original.attestedCharges,
+        additionalServiceCost: original.additionalServiceCost,
+        clerkCost: original.clerkCost,
+        totalAmount: original.totalAmount,
+        amountPaid: original.amountPaid,
+        paymentStatus: original.paymentStatus,
         serviceCost: original.serviceCost,
       },
     });
@@ -645,10 +780,9 @@ export class TicketsService {
       throw new BadRequestException('Payload is required for selected flow');
     }
 
-    const missing = required.find((key) => {
-      const value = payload[key];
-      return !(typeof value === 'string' && value.trim().length > 0);
-    });
+    const missing = required.find(
+      (key) => !this.hasPayloadStringValue(payload, [key, ...(PAYLOAD_FIELD_ALIASES[key] ?? [])]),
+    );
 
     if (missing) {
       throw new BadRequestException(
@@ -672,6 +806,16 @@ export class TicketsService {
     return typeof value === 'string' ? value : undefined;
   }
 
+  private hasPayloadStringValue(
+    payload: Record<string, unknown>,
+    keys: string[],
+  ): boolean {
+    return keys.some((key) => {
+      const value = payload[key];
+      return typeof value === 'string' && value.trim().length > 0;
+    });
+  }
+
   private async ensureUserExists(id: string) {
     const user = await this.prisma.user.findUnique({
       where: { id },
@@ -680,6 +824,22 @@ export class TicketsService {
 
     if (!user) {
       throw new NotFoundException('User not found');
+    }
+  }
+
+  private async ensureActiveRepresentativeExists(id: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id },
+      select: { id: true, role: true, isActive: true },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    if (user.role !== UserRole.representative || !user.isActive) {
+      throw new BadRequestException(
+        'Representative must be active and have representative role',
+      );
     }
   }
 

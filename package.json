@@ -4,9 +4,9 @@
   "private": true,
   "packageManager": "pnpm@10.6.5",
   "scripts": {
-    "dev": "pnpm -r --parallel dev",
+    "dev": "pnpm -r --parallel --if-present dev",
     "dev:web": "pnpm --filter @wusuq/web dev",
-    "dev:api": "pnpm --filter @wusuq/api start:dev",
+    "dev:api": "pnpm --filter @wusuq/api dev",
     "build": "pnpm -r build",
     "lint": "pnpm -r lint",
     "test": "pnpm -r test",
@@ -17,9 +17,13 @@
     "deploy:verify": "node tests/deploy/verify_deployment.mjs",
     "deploy:verify:file": "bash scripts/deploy/verify_from_env_file.sh",
     "uat:smoke": "node tests/uat/api_uat_smoke.mjs",
-    "uat:roles": "node tests/uat/role_uat_matrix.mjs"
+    "uat:roles": "node tests/uat/role_uat_matrix.mjs",
+    "e2e": "playwright test",
+    "e2e:ui": "playwright test --ui",
+    "e2e:headed": "playwright test --headed"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
     "typescript": "^5.9.3"
   }
 }

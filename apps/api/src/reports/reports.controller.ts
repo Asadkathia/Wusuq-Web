@@ -1,4 +1,4 @@
-import { Controller, Get, Param } from '@nestjs/common';
+import { Controller, Get, Param, Query } from '@nestjs/common';
 import { RequirePermissions } from '../roles-permissions/decorators/permissions.decorator';
 import { ReportsService } from './reports.service';
 
@@ -14,7 +14,11 @@ export class ReportsController {
 
   @RequirePermissions('reports.read')
   @Get(':type')
-  run(@Param('type') type: string) {
-    return this.reportsService.run(type);
+  run(
+    @Param('type') type: string,
+    @Query('dateRange') dateRange?: string,
+    @Query('status') status?: string,
+  ) {
+    return this.reportsService.run(type, { dateRange, status });
   }
 }

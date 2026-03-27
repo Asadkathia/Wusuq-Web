@@ -68,6 +68,11 @@ export class UsersService {
         name: dto.name,
         email: dto.email,
         phone: dto.phone,
+        cnic: (dto as any).cnic,
+        address: (dto as any).address,
+        province: (dto as any).province,
+        district: (dto as any).district,
+        city: (dto as any).city,
         passwordHash: await hash(dto.password, 10),
         role: mapSharedRoleToPrisma(dto.role),
       },
@@ -164,6 +169,35 @@ export class UsersService {
     return { success: true };
   }
 
+  async activate(
+    id: string,
+    actor?: { actorUserId?: string; actorEmail?: string },
+  ) {
+    await this.ensureExists(id);
+    await this.prisma.user.update({
+      where: { id },
+      data: { isActive: true },
+    });
+    await this.auditLogsService.create({
+      action: 'USER_ACTIVATED',
+      entity: 'USER',
+      entityId: id,
+      actorUserId: actor?.actorUserId,
+      actorEmail: actor?.actorEmail,
+    });
+
+    return { success: true };
+  }
+
+  async userTickets(userId: string) {
+    const tickets = await this.prisma.ticket.findMany({
+      where: { consumerId: userId },
+      orderBy: { createdAt: 'desc' },
+      include: { service: { select: { name: true, category: true } } },
+    });
+    return { items: tickets, total: tickets.length };
+  }
+
   roles() {
     return USER_ROLES;
   }
@@ -179,37 +213,30 @@ export class UsersService {
     }
   }
 
-  private serializeUser(user: {
-    id: string;
-    name: string;
-    email: string;
-    phone: string | null;
-    address: string | null;
-    district: string | null;
-    city: string | null;
-    serviceFocus: string | null;
-    court: string | null;
-    courtCity: string | null;
-    role: Parameters<typeof mapPrismaRoleToShared>[0];
-    verified: boolean;
-    isActive: boolean;
-    createdAt: Date;
-    updatedAt: Date;
-  }) {
+  private serializeUser(user: Record<string, any>) {
     return {
       id: user.id,
       name: user.name,
       email: user.email,
       phone: user.phone,
+      cnic: user.cnic,
+      dateOfBirth: user.dateOfBirth,
+      gender: user.gender,
+      photoUrl: user.photoUrl,
       address: user.address,
+      country: user.country,
+      province: user.province,
       district: user.district,
+      tehsil: user.tehsil,
       city: user.city,
+      postalCode: user.postalCode,
       serviceFocus: user.serviceFocus,
       court: user.court,
       courtCity: user.courtCity,
       role: mapPrismaRoleToShared(user.role),
       verified: user.verified,
       isActive: user.isActive,
+      walletBalance: user.walletBalance,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
     };

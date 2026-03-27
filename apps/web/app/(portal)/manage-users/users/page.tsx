@@ -1,3 +1,5 @@
+import { UsersBoard } from '@/components/users-board';
+
 export default function UsersPage() {
-  return <h2 className="text-2xl font-semibold">Manage Users / Users</h2>;
+  return <UsersBoard />;
 }

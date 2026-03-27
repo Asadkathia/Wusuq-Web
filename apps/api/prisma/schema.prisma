@@ -63,29 +63,62 @@ enum ElectionStatus {
   FINALIZED
 }
 
+enum CaseStatus {
+  OPEN
+  CLOSED
+  ARCHIVED
+}
+
+enum CaseEventType {
+  CASE_CREATED
+  CASE_UPDATED
+  CASE_CLOSED
+  CASE_REOPENED
+  HEARING_SCHEDULED
+  HEARING_UPDATED
+  TICKET_CREATED
+  TICKET_ASSIGNED
+  TICKET_IN_PROGRESS
+  TICKET_COMPLETED
+  TICKET_IMMATURE
+  DOCUMENT_UPLOADED
+  NOTE_ADDED
+}
+
 model User {
-  id            String      @id @default(cuid())
-  name          String
-  email         String      @unique
-  phone         String?
-  address       String?
-  district      String?
-  city          String?
-  serviceFocus  String?
-  court         String?
-  courtCity     String?
-  passwordHash  String
+  id                 String      @id @default(cuid())
+  name               String
+  email              String      @unique
+  phone              String?
+  cnic               String?
+  dateOfBirth        DateTime?
+  gender             String?
+  photoUrl           String?
+  address            String?
+  country            String?
+  province           String?
+  district           String?
+  tehsil             String?
+  city               String?
+  postalCode         String?
+  serviceFocus       String?
+  court              String?
+  courtCity          String?
+  passwordHash       String
   hashedRefreshToken String?
-  role          UserRole
-  verified      Boolean     @default(false)
-  isActive      Boolean     @default(true)
-  walletBalance Decimal     @default(0)
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
-  tickets       Ticket[]
-  assignments   Assignment[]
+  role               UserRole
+  verified           Boolean     @default(false)
+  isActive           Boolean     @default(true)
+  walletBalance      Decimal     @default(0)
+  lastLoginAt        DateTime?
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+  tickets            Ticket[]
+  assignments        Assignment[]
   walletTransactions WalletTransaction[]
-  createdElections Election[] @relation("ElectionCreator")
+  createdElections   Election[]  @relation("ElectionCreator")
+  notifications      Notification[]
+  cases              Case[]
 }
 
 model Service {
@@ -113,23 +146,31 @@ model Ticket {
   caseType        String?
   intakeFlow      String?
   formPayload     Json?
-  deliveryCharges Decimal             @default(0)
-  printingCharges Decimal             @default(0)
-  attestedCharges Decimal             @default(0)
-  additionalServiceCost Decimal       @default(0)
+  deliveryCharges       Decimal             @default(0)
+  printingCharges       Decimal             @default(0)
+  attestedCharges       Decimal             @default(0)
+  nonAttestedCharges    Decimal             @default(0)
+  discountPrice         Decimal             @default(0)
+  additionalServiceCost Decimal             @default(0)
   clerkCost       Decimal             @default(0)
   totalAmount     Decimal             @default(0)
   amountPaid      Decimal             @default(0)
   paymentStatus   TicketPaymentStatus @default(UNPAID)
   serviceCost     Decimal             @default(0)
+  caseId          String?
+  hearingId       String?
   createdAt       DateTime            @default(now())
   updatedAt       DateTime            @updatedAt
   consumer        User                @relation(fields: [consumerId], references: [id])
   service         Service             @relation(fields: [serviceId], references: [id])
+  case            Case?               @relation(fields: [caseId], references: [id], onDelete: SetNull)
+  hearing         Hearing?            @relation(fields: [hearingId], references: [id], onDelete: SetNull)
   history         TicketStatusHistory[]
   assignments     Assignment[]
   documents       TicketDocument[]
   walletPayments  WalletTransaction[]
+  caseEvents      CaseEvent[]
+  caseDocuments   CaseDocument[]
   invoice         Invoice?
 }
 
@@ -149,6 +190,7 @@ model Election {
   createdBy       User?          @relation("ElectionCreator", fields: [createdByUserId], references: [id])
   candidates      Candidate[]
   cabinetSeats    CabinetSeat[]
+  votes           Vote[]
 }
 
 model Candidate {
@@ -162,6 +204,7 @@ model Candidate {
   updatedAt   DateTime @updatedAt
   election    Election @relation(fields: [electionId], references: [id])
   cabinetSeats CabinetSeat[]
+  castVotes    Vote[]
 }
 
 model CabinetSeat {
@@ -176,6 +219,19 @@ model CabinetSeat {
   createdAt    DateTime @default(now())
   election     Election @relation(fields: [electionId], references: [id])
   candidate    Candidate @relation(fields: [candidateId], references: [id])
+}
+
+model Vote {
+  id          String    @id @default(cuid())
+  electionId  String
+  candidateId String
+  voterId     String
+  position    String
+  createdAt   DateTime  @default(now())
+  election    Election  @relation(fields: [electionId], references: [id])
+  candidate   Candidate @relation(fields: [candidateId], references: [id])
+
+  @@unique([electionId, voterId, position])
 }
 
 model TicketIntakeDraft {
@@ -292,4 +348,146 @@ model AuditLog {
   actorEmail  String?
   metadata    Json?
   createdAt   DateTime @default(now())
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  body      String?
+  type      String   @default("system")
+  isRead    Boolean  @default(false)
+  metadata  Json?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id])
+}
+
+model GeoProvince {
+  id        String        @id @default(cuid())
+  name      String        @unique
+  districts GeoDistrict[]
+}
+
+model GeoDistrict {
+  id         String       @id @default(cuid())
+  provinceId String
+  name       String
+  province   GeoProvince  @relation(fields: [provinceId], references: [id])
+  cities     GeoCity[]
+}
+
+model GeoCity {
+  id             String             @id @default(cuid())
+  districtId     String
+  name           String
+  district       GeoDistrict        @relation(fields: [districtId], references: [id])
+  courts         GeoCourt[]
+  policeStations GeoPoliceStation[]
+}
+
+model GeoCourt {
+  id     String  @id @default(cuid())
+  cityId String
+  name   String
+  level  String
+  city   GeoCity @relation(fields: [cityId], references: [id])
+}
+
+model GeoPoliceStation {
+  id     String  @id @default(cuid())
+  cityId String
+  name   String
+  city   GeoCity @relation(fields: [cityId], references: [id])
+}
+
+model Case {
+  id               String       @id @default(cuid())
+  caseRef          String       @unique
+  consumerId       String
+  title            String
+  type             ServiceType
+  // Judicial context
+  courtLevel       String?
+  court            String?
+  courtCity        String?
+  caseNo           String?
+  caseYear         Int?
+  caseCategory     String?
+  courtCaseStatus  String?
+  judgeDesignation String?
+  // Non-judicial context
+  province         String?
+  district         String?
+  policeStation    String?
+  firNo            String?
+  offence          String?
+  docNo            String?
+  officeCity       String?
+  // Parties
+  petitioner       String?
+  respondent       String?
+  // Meta
+  status           CaseStatus   @default(OPEN)
+  notes            String?
+  closedAt         DateTime?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  consumer         User         @relation(fields: [consumerId], references: [id])
+  hearings         Hearing[]
+  tickets          Ticket[]
+  events           CaseEvent[]
+  documents        CaseDocument[]
+
+  @@index([consumerId])
+  @@index([status])
+}
+
+model Hearing {
+  id            String    @id @default(cuid())
+  caseId        String
+  scheduledDate DateTime
+  hearingType   String?
+  notes         String?
+  outcome       String?
+  nextDate      DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  case          Case      @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  tickets       Ticket[]
+  caseEvents    CaseEvent[]
+
+  @@index([caseId])
+}
+
+model CaseEvent {
+  id          String        @id @default(cuid())
+  caseId      String
+  type        CaseEventType
+  title       String
+  description String?
+  actorUserId String?
+  ticketId    String?
+  hearingId   String?
+  metadata    Json?
+  createdAt   DateTime      @default(now())
+  case        Case          @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  ticket      Ticket?       @relation(fields: [ticketId], references: [id])
+  hearing     Hearing?      @relation(fields: [hearingId], references: [id])
+
+  @@index([caseId])
+}
+
+model CaseDocument {
+  id               String   @id @default(cuid())
+  caseId           String
+  ticketId         String?
+  name             String
+  type             String
+  fileUrl          String
+  uploadedByUserId String?
+  createdAt        DateTime @default(now())
+  case             Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  ticket           Ticket?  @relation(fields: [ticketId], references: [id])
+
+  @@index([caseId])
 }

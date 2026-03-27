@@ -1,6 +1,7 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { CastVoteDto } from './dto/cast-vote.dto';
 import { CreateCandidateDto } from './dto/create-candidate.dto';
 import { CreateElectionDto } from './dto/create-election.dto';
 import { UpdateCandidateDto } from './dto/update-candidate.dto';
@@ -142,9 +143,16 @@ export class ElectionsService {
     actor?: { actorUserId?: string; actorEmail?: string },
   ) {
     await this.ensureElectionExists(electionId);
+    const candidate = await this.prisma.candidate.findFirst({
+      where: { id: candidateId, electionId },
+      select: { id: true },
+    });
+    if (!candidate) {
+      throw new NotFoundException('Candidate not found for election');
+    }
 
     const updated = await this.prisma.candidate.update({
-      where: { id: candidateId },
+      where: { id: candidate.id },
       data: payload,
     });
 
@@ -229,6 +237,61 @@ export class ElectionsService {
       finalized: true,
       seats: Array.from(winnersByPosition.values()).length,
     };
+  }
+
+  async castVote(electionId: string, dto: CastVoteDto, voterId: string) {
+    const election = await this.prisma.election.findUnique({
+      where: { id: electionId },
+      select: { id: true, status: true },
+    });
+
+    if (!election) {
+      throw new NotFoundException('Election not found');
+    }
+
+    if (election.status !== 'ACTIVE') {
+      throw new BadRequestException('Voting is only allowed on active elections');
+    }
+
+    const candidate = await this.prisma.candidate.findFirst({
+      where: { id: dto.candidateId, electionId, position: dto.position },
+      select: { id: true },
+    });
+
+    if (!candidate) {
+      throw new NotFoundException('Candidate not found for this election and position');
+    }
+
+    const existingVote = await this.prisma.vote.findUnique({
+      where: {
+        electionId_voterId_position: {
+          electionId,
+          voterId,
+          position: dto.position,
+        },
+      },
+    });
+
+    if (existingVote) {
+      throw new BadRequestException('Already voted for this position');
+    }
+
+    const [updatedCandidate] = await this.prisma.$transaction([
+      this.prisma.candidate.update({
+        where: { id: dto.candidateId },
+        data: { votes: { increment: 1 } },
+      }),
+      this.prisma.vote.create({
+        data: {
+          electionId,
+          candidateId: dto.candidateId,
+          voterId,
+          position: dto.position,
+        },
+      }),
+    ]);
+
+    return updatedCandidate;
   }
 
   private async ensureElectionExists(id: string) {

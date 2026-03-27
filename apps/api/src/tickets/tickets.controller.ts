@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -22,7 +23,25 @@ import { CreateTicketIntakeDto } from './dto/create-ticket-intake.dto';
 import { FilterTicketsDto } from './dto/filter-tickets.dto';
 import { SaveTicketIntakeDraftDto } from './dto/save-ticket-intake-draft.dto';
 import { UpdateTicketStatusDto } from './dto/update-ticket-status.dto';
+import { UpdateTicketDto } from './dto/update-ticket.dto';
 import { TicketsService } from './tickets.service';
+
+const MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024;
+const ALLOWED_UPLOAD_MIME_TYPES = new Set([
+  'application/pdf',
+  'image/jpeg',
+  'image/png',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+]);
+const ALLOWED_UPLOAD_EXTENSIONS = new Set([
+  '.pdf',
+  '.jpg',
+  '.jpeg',
+  '.png',
+  '.doc',
+  '.docx',
+]);
 
 @Controller('tickets')
 export class TicketsController {
@@ -41,6 +60,19 @@ export class TicketsController {
     @Query('district') district?: string,
   ) {
     return this.ticketsService.representativeCandidates({ city, district });
+  }
+
+  @RequirePermissions('tickets.write')
+  @Patch(':id')
+  update(
+    @Param('id') id: string,
+    @Body() dto: UpdateTicketDto,
+    @CurrentUser() actor: JwtUser | undefined,
+  ) {
+    return this.ticketsService.update(id, dto, {
+      actorUserId: actor?.sub,
+      actorEmail: actor?.email,
+    });
   }
 
   @RequirePermissions('tickets.write')
@@ -186,6 +218,12 @@ export class TicketsController {
   }
 
   @RequirePermissions('tickets.read')
+  @Get(':id')
+  findOne(@Param('id') id: string) {
+    return this.ticketsService.findOne(id);
+  }
+
+  @RequirePermissions('tickets.read')
   @Get(':id/timeline')
   timeline(@Param('id') id: string) {
     return this.ticketsService.timeline(id);
@@ -241,6 +279,24 @@ export class TicketsController {
           callback(null, `${unique}${extname(file.originalname)}`);
         },
       }),
+      limits: {
+        fileSize: MAX_UPLOAD_SIZE_BYTES,
+      },
+      fileFilter: (_req, file, callback) => {
+        const extension = extname(file.originalname).toLowerCase();
+        const isAllowedMime = ALLOWED_UPLOAD_MIME_TYPES.has(file.mimetype);
+        const isAllowedExtension = ALLOWED_UPLOAD_EXTENSIONS.has(extension);
+        if (!isAllowedMime || !isAllowedExtension) {
+          callback(
+            new BadRequestException(
+              'Unsupported file type. Allowed: pdf, jpg, jpeg, png, doc, docx',
+            ),
+            false,
+          );
+          return;
+        }
+        callback(null, true);
+      },
     }),
   )
   uploadDocument(
@@ -249,6 +305,9 @@ export class TicketsController {
     file: { filename: string; mimetype: string; path: string },
     @CurrentUser() actor: JwtUser | undefined,
   ) {
+    if (!file) {
+      throw new BadRequestException('File is required');
+    }
     return this.ticketsService.uploadDocument(id, file, {
       actorUserId: actor?.sub,
       actorEmail: actor?.email,

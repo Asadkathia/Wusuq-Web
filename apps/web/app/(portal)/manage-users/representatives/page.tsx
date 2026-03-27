@@ -1,3 +1,5 @@
+import { RepresentativesBoard } from '@/components/representatives-board';
+
 export default function RepresentativesPage() {
-  return <h2 className="text-2xl font-semibold">Manage Users / Representatives</h2>;
+  return <RepresentativesBoard />;
 }
