@@ -3,6 +3,7 @@ import { hash } from 'bcryptjs';
 import { USER_ROLES } from '@wusuq/shared';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { formatPakistaniPhone } from '../common/utils/phone.util';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { CreateRepresentativeDto } from './dto/create-representative.dto';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -67,7 +68,7 @@ export class UsersService {
       data: {
         name: dto.name,
         email: dto.email,
-        phone: dto.phone,
+        phone: formatPakistaniPhone(dto.phone) ?? dto.phone,
         cnic: (dto as any).cnic,
         address: (dto as any).address,
         province: (dto as any).province,
@@ -97,7 +98,7 @@ export class UsersService {
       data: {
         name: dto.name,
         email: dto.email,
-        phone: dto.phone,
+        phone: formatPakistaniPhone(dto.phone) ?? dto.phone,
         address: dto.address,
         serviceFocus: dto.serviceFocus,
         court: dto.court,
@@ -131,7 +132,7 @@ export class UsersService {
       data: {
         name: dto.name,
         email: dto.email,
-        phone: dto.phone,
+        phone: dto.phone ? formatPakistaniPhone(dto.phone) ?? dto.phone : undefined,
         passwordHash: dto.password ? await hash(dto.password, 10) : undefined,
         role: dto.role ? mapSharedRoleToPrisma(dto.role) : undefined,
         verified: dto.verified,

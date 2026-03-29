@@ -34,11 +34,15 @@ describe('TicketsService', () => {
     };
     const auditLogsService = { create: jest.fn().mockResolvedValue({}) };
     const costingService = { resolveServiceCost: jest.fn(), resolveClerkCost: jest.fn() };
+    const currencyService = { convertPkrToUsdAtDate: jest.fn() };
+    const geoService = { resolveProvinceByCity: jest.fn() };
     const notificationsService = { create: jest.fn().mockResolvedValue({}) };
     const service = new TicketsService(
       prisma as never,
       auditLogsService as never,
       costingService as never,
+      currencyService as never,
+      geoService as never,
       notificationsService as never,
     );
 
@@ -89,11 +93,15 @@ describe('TicketsService', () => {
     const costingService = {
       resolveClerkCost: jest.fn().mockResolvedValue({ amount: 10 }),
     };
+    const currencyService = { convertPkrToUsdAtDate: jest.fn() };
+    const geoService = { resolveProvinceByCity: jest.fn() };
     const notificationsService = { create: jest.fn() };
     const service = new TicketsService(
       prisma as never,
       auditLogsService as never,
       costingService as never,
+      currencyService as never,
+      geoService as never,
       notificationsService as never,
     );
 

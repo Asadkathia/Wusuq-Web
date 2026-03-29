@@ -7,6 +7,8 @@ import { UserRole, type Prisma } from '@prisma/client';
 import type { TicketStatus } from '@wusuq/shared';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { CostingService } from '../costing/costing.service';
+import { CurrencyService } from '../currency/currency.service';
+import { GeoService } from '../geo/geo.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AssignTicketDto } from './dto/assign-ticket.dto';
 import { BulkTicketActionDto } from './dto/bulk-ticket-action.dto';
@@ -146,6 +148,8 @@ export class TicketsService {
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService,
     private readonly costingService: CostingService,
+    private readonly currencyService: CurrencyService,
+    private readonly geoService: GeoService,
     private readonly notificationsService: NotificationsService,
   ) {}
 
@@ -155,6 +159,13 @@ export class TicketsService {
     const where = {
       ...(query.status ? { status: query.status } : {}),
       ...(query.consumerId ? { consumerId: query.consumerId } : {}),
+      ...(query.representativeId
+        ? {
+            assignments: {
+              some: { representativeId: query.representativeId },
+            },
+          }
+        : {}),
       ...(query.search
         ? {
             OR: [
@@ -301,20 +312,35 @@ export class TicketsService {
         'case_title',
         'title',
       ]);
-    const inferredProvince =
-      dto.province ??
-      this.firstPayloadValue(dto.payload, ['province_capital', 'province']);
+    const payloadProvince = this.firstPayloadValue(dto.payload, ['province_capital', 'province']);
     const inferredAudience =
       dto.audience ?? this.firstPayloadValue(dto.payload, ['audience']);
 
-    const service = await this.prisma.service.findUnique({
-      where: { id: dto.serviceId },
-      select: { id: true, category: true },
-    });
+    const [service, consumer] = await Promise.all([
+      this.prisma.service.findUnique({
+        where: { id: dto.serviceId },
+        select: { id: true, category: true },
+      }),
+      this.prisma.user.findUnique({
+        where: { id: dto.consumerId },
+        select: { currency: true },
+      }),
+    ]);
 
     if (!service) {
       throw new NotFoundException('Service not found');
     }
+
+    const costType: 'local' | 'overseas' =
+      consumer?.currency === 'USD' ? 'overseas' : 'local';
+
+    // Resolve province: explicit dto > payload field > geo lookup from service city
+    const inferredProvince =
+      dto.province ??
+      payloadProvince ??
+      (inferredServiceCity
+        ? await this.geoService.resolveProvinceByCity(inferredServiceCity)
+        : undefined);
 
     const resolvedServiceCost = await this.costingService.resolveServiceCost({
       serviceId: dto.serviceId,
@@ -322,9 +348,20 @@ export class TicketsService {
       caseType: inferredCaseType,
       province: inferredProvince,
       audience: inferredAudience,
+      type: costType,
     });
 
-    const serviceCost = resolvedServiceCost.amount;
+    // For overseas users: the resolved amount is in USD (from ServiceBaseCost overseas tier
+    // or a ServiceCostRule with type='overseas'). Convert it to PKR at today's rate so
+    // the ticket always stores a single PKR amount consistent with local tickets.
+    const now = new Date();
+    const serviceCost =
+      costType === 'overseas'
+        ? await this.currencyService.convertUsdToPkrAtDate(
+            resolvedServiceCost.amount,
+            now,
+          )
+        : resolvedServiceCost.amount;
 
     const ticket = await this.prisma.ticket.create({
       data: {
@@ -439,7 +476,10 @@ export class TicketsService {
 
     const updated = await this.prisma.ticket.update({
       where: { id },
-      data: { status },
+      data: {
+        status,
+        ...(status === 'COMPLETED' ? { paymentStatus: 'PAID' } : {}),
+      },
       include: {
         consumer: { select: { id: true, name: true, phone: true } },
         service: { select: { id: true, name: true } },
@@ -518,10 +558,15 @@ export class TicketsService {
       );
     }
 
-    const inferredProvince = this.firstPayloadValue(
+    const payloadProvince = this.firstPayloadValue(
       (ticket.formPayload as Record<string, unknown> | undefined) ?? undefined,
       ['province_capital', 'province'],
     );
+    const inferredProvince =
+      payloadProvince ??
+      (ticket.serviceCity
+        ? await this.geoService.resolveProvinceByCity(ticket.serviceCity)
+        : undefined);
 
     const autoClerkCost = await this.costingService.resolveClerkCost({
       serviceId: ticket.service.id,
@@ -536,13 +581,16 @@ export class TicketsService {
       Number(ticket.deliveryCharges) +
       Number(ticket.printingCharges) +
       Number(ticket.attestedCharges) +
-      clerkCost;
+      Number(ticket.nonAttestedCharges) +
+      Number(ticket.additionalCharges) +
+      Number(ticket.additionalServiceCost) +
+      clerkCost -
+      Number(ticket.discountPrice);
     await this.prisma.$transaction([
       this.prisma.ticket.update({
         where: { id },
         data: {
           clerkCost,
-          additionalServiceCost: clerkCost,
           totalAmount: nextTotalAmount,
           status: 'ASSIGNED',
         },
@@ -723,15 +771,18 @@ export class TicketsService {
         formPayload: (original.formPayload ?? undefined) as
           | Prisma.InputJsonValue
           | undefined,
+        serviceCost: original.serviceCost,
         deliveryCharges: original.deliveryCharges,
         printingCharges: original.printingCharges,
         attestedCharges: original.attestedCharges,
+        nonAttestedCharges: original.nonAttestedCharges,
+        additionalCharges: original.additionalCharges,
         additionalServiceCost: original.additionalServiceCost,
+        discountPrice: original.discountPrice,
         clerkCost: original.clerkCost,
         totalAmount: original.totalAmount,
         amountPaid: original.amountPaid,
         paymentStatus: original.paymentStatus,
-        serviceCost: original.serviceCost,
       },
     });
 
@@ -756,6 +807,57 @@ export class TicketsService {
     });
 
     return cloned;
+  }
+
+  async submitClerkReceipt(
+    ticketId: string,
+    receiptUrl: string,
+    actor?: { actorUserId?: string; actorEmail?: string },
+  ) {
+    const ticket = await this.prisma.ticket.findUnique({ where: { id: ticketId } });
+    if (!ticket) throw new NotFoundException('Ticket not found');
+
+    const updated = await this.prisma.ticket.update({
+      where: { id: ticketId },
+      data: { clerkReceiptUrl: receiptUrl, clerkApprovalStatus: 'SUBMITTED' },
+    });
+
+    await this.auditLogsService.create({
+      action: 'TICKET_CLERK_RECEIPT_SUBMITTED',
+      entity: 'TICKET',
+      entityId: ticketId,
+      actorUserId: actor?.actorUserId,
+      actorEmail: actor?.actorEmail,
+    });
+
+    return updated;
+  }
+
+  async verifyClerkReceipt(
+    ticketId: string,
+    decision: 'VERIFIED' | 'REJECTED',
+    actor?: { actorUserId?: string; actorEmail?: string },
+  ) {
+    const ticket = await this.prisma.ticket.findUnique({ where: { id: ticketId } });
+    if (!ticket) throw new NotFoundException('Ticket not found');
+    if (ticket.clerkApprovalStatus !== 'SUBMITTED') {
+      throw new BadRequestException('No submitted receipt to verify');
+    }
+
+    const updated = await this.prisma.ticket.update({
+      where: { id: ticketId },
+      data: { clerkApprovalStatus: decision },
+    });
+
+    await this.auditLogsService.create({
+      action: `TICKET_CLERK_RECEIPT_${decision}`,
+      entity: 'TICKET',
+      entityId: ticketId,
+      actorUserId: actor?.actorUserId,
+      actorEmail: actor?.actorEmail,
+    });
+
+    return updated;
   }
 
   private generateBatchNo() {

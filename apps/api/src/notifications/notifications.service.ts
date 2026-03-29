@@ -1,10 +1,16 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { EmailService } from './email.service';
+import { SseService } from './sse.service';
 
 @Injectable()
 export class NotificationsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly emailService: EmailService,
+    private readonly sseService: SseService,
+  ) {}
 
   async create(data: {
     userId: string;
@@ -13,7 +19,7 @@ export class NotificationsService {
     type?: string;
     metadata?: Record<string, unknown>;
   }) {
-    return this.prisma.notification.create({
+    const notification = await this.prisma.notification.create({
       data: {
         userId: data.userId,
         title: data.title,
@@ -22,6 +28,26 @@ export class NotificationsService {
         metadata: (data.metadata ?? {}) as Prisma.InputJsonValue,
       },
     });
+
+    // Push real-time SSE event to connected clients
+    this.sseService.push(data.userId, {
+      id: notification.id,
+      title: notification.title,
+      body: notification.body,
+      type: notification.type,
+      createdAt: notification.createdAt,
+    });
+
+    // Fire-and-forget email delivery
+    const user = await this.prisma.user.findUnique({
+      where: { id: data.userId },
+      select: { email: true },
+    });
+    if (user?.email) {
+      void this.emailService.sendNotification(user.email, data.title, data.body);
+    }
+
+    return notification;
   }
 
   async findAll(userId: string, limit = 20) {

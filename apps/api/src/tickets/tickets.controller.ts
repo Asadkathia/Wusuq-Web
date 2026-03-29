@@ -325,4 +325,54 @@ export class TicketsController {
       actorEmail: actor?.email,
     });
   }
+
+  @RequirePermissions('tickets.write')
+  @Throttle({ upload: { limit: 10, ttl: 60_000 } })
+  @Post(':id/clerk-receipt')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: diskStorage({
+        destination: './uploads/clerk-receipts',
+        filename: (_req, file, callback) => {
+          const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
+          callback(null, `${unique}${extname(file.originalname)}`);
+        },
+      }),
+      limits: { fileSize: MAX_UPLOAD_SIZE_BYTES },
+      fileFilter: (_req, file, callback) => {
+        const allowed = new Set(['.jpg', '.jpeg', '.png', '.pdf']);
+        const allowedMime = new Set(['image/jpeg', 'image/png', 'application/pdf']);
+        const ext = extname(file.originalname).toLowerCase();
+        if (!allowedMime.has(file.mimetype) || !allowed.has(ext)) {
+          callback(new BadRequestException('Allowed formats: JPG, PNG, PDF'), false);
+          return;
+        }
+        callback(null, true);
+      },
+    }),
+  )
+  submitClerkReceipt(
+    @Param('id') id: string,
+    @UploadedFile() file: { filename: string; mimetype: string; path: string } | undefined,
+    @CurrentUser() actor: JwtUser | undefined,
+  ) {
+    if (!file) throw new BadRequestException('Receipt image is required');
+    return this.ticketsService.submitClerkReceipt(id, file.path, {
+      actorUserId: actor?.sub,
+      actorEmail: actor?.email,
+    });
+  }
+
+  @RequirePermissions('tickets.write')
+  @Post(':id/clerk-receipt/verify')
+  verifyClerkReceipt(
+    @Param('id') id: string,
+    @Body('decision') decision: 'VERIFIED' | 'REJECTED',
+    @CurrentUser() actor: JwtUser | undefined,
+  ) {
+    return this.ticketsService.verifyClerkReceipt(id, decision, {
+      actorUserId: actor?.sub,
+      actorEmail: actor?.email,
+    });
+  }
 }

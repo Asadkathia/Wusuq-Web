@@ -12,7 +12,9 @@ import {
   FileText,
   FolderOpen,
   LayoutDashboard,
+  LogOut,
   Scale,
+  ShieldCheck,
   Ticket,
   Users,
   Vote,
@@ -69,7 +71,18 @@ const navItems: NavItem[] = [
     ]
   },
   { label: 'Invoices', icon: FileText, adminOnly: true },
-  { label: 'Manage Cost', href: '/manage-cost/service-cost', icon: CircleDollarSign, adminOnly: true },
+  {
+    label: 'Manage Cost',
+    icon: CircleDollarSign,
+    adminOnly: true,
+    children: [
+      { label: 'Service Cost Rules', href: '/manage-cost/service-cost' },
+      { label: 'Clerk Cost Rules', href: '/manage-cost/clerk-cost' },
+      { label: 'Ticket Charges', href: '/manage-cost/ticket-charges' },
+      { label: 'Exchange Rates', href: '/manage-cost/exchange-rates' },
+      { label: 'Geographic Data', href: '/manage-cost/geo' },
+    ]
+  },
   { label: 'Elections & Cabinet', href: '/elections-cabinet/elections', icon: Vote, adminOnly: true },
   { label: 'Profile', href: '/profile', icon: BriefcaseBusiness }
 ];
@@ -82,15 +95,38 @@ export function SidebarNav() {
   const pathname = usePathname();
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   const [user, setUser] = useState<any>(null);
+  const [impersonatorUser, setImpersonatorUser] = useState<any>(null);
 
   useEffect(() => {
     try {
       const u = JSON.parse(localStorage.getItem('wusuq_user') || 'null');
       if (u) setUser(u);
+      const imp = JSON.parse(localStorage.getItem('wusuq_impersonator_user') || 'null');
+      if (imp) setImpersonatorUser(imp);
     } catch {}
   }, []);
-  
+
   const isAdmin = user?.role?.includes('admin') ?? false;
+
+  const signOut = () => {
+    localStorage.removeItem('wusuq_access_token');
+    localStorage.removeItem('wusuq_refresh_token');
+    localStorage.removeItem('wusuq_user');
+    localStorage.removeItem('wusuq_impersonator_access_token');
+    localStorage.removeItem('wusuq_impersonator_refresh_token');
+    localStorage.removeItem('wusuq_impersonator_user');
+    window.location.href = '/login';
+  };
+
+  const exitImpersonation = () => {
+    localStorage.setItem('wusuq_access_token', localStorage.getItem('wusuq_impersonator_access_token') ?? '');
+    localStorage.setItem('wusuq_refresh_token', localStorage.getItem('wusuq_impersonator_refresh_token') ?? '');
+    localStorage.setItem('wusuq_user', localStorage.getItem('wusuq_impersonator_user') ?? '');
+    localStorage.removeItem('wusuq_impersonator_access_token');
+    localStorage.removeItem('wusuq_impersonator_refresh_token');
+    localStorage.removeItem('wusuq_impersonator_user');
+    window.location.href = '/dashboard';
+  };
 
   return (
     <aside className="w-[252px] shrink-0 border-r border-slate-200 bg-white">
@@ -100,6 +136,23 @@ export function SidebarNav() {
             W
           </div>
         </div>
+
+        {/* Impersonation banner */}
+        {impersonatorUser && (
+          <div className="mx-3 mb-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2.5">
+            <p className="text-xs font-semibold text-amber-800 flex items-center gap-1.5">
+              <ShieldCheck className="h-3.5 w-3.5 flex-shrink-0" />
+              Viewing as {user?.name ?? 'user'}
+            </p>
+            <p className="text-xs text-amber-600 mt-0.5">Signed in as {impersonatorUser.name}</p>
+            <button
+              onClick={exitImpersonation}
+              className="mt-2 w-full rounded-md bg-amber-600 px-2 py-1.5 text-xs font-semibold text-white hover:bg-amber-700 transition-colors"
+            >
+              Back to my account
+            </button>
+          </div>
+        )}
 
         <nav className="flex-1 space-y-1 px-3 pb-6">
           {navItems.filter(item => !item.adminOnly || isAdmin).map((item) => {
@@ -181,6 +234,23 @@ export function SidebarNav() {
             );
           })}
         </nav>
+
+        {/* Sign Out */}
+        <div className="border-t border-slate-200 px-3 py-4">
+          {user && (
+            <div className="mb-3 px-3">
+              <p className="text-xs font-semibold text-slate-800 truncate">{user.name}</p>
+              <p className="text-xs text-slate-500 truncate">{user.email}</p>
+            </div>
+          )}
+          <button
+            onClick={signOut}
+            className="flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium text-slate-600 hover:bg-rose-50 hover:text-rose-700 transition-colors"
+          >
+            <LogOut className="h-4 w-4" />
+            Sign Out
+          </button>
+        </div>
       </div>
     </aside>
   );

@@ -7,7 +7,7 @@ import { SectionHeader } from '@/components/ui/section-header';
 import { DataTableShell } from '@/components/ui/data-table-shell';
 import { FilterBar } from '@/components/ui/filter-bar';
 import { StatusPill } from '@/components/ui/status-pill';
-import { RefreshCw, UserPlus, Phone, MapPin, Briefcase, Pencil, X } from 'lucide-react';
+import { RefreshCw, UserPlus, Phone, MapPin, Briefcase, Pencil, X, MonitorPlay } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
 // Static catalog — mirrors seeded services/courts in the database
@@ -265,6 +265,23 @@ export function RepresentativesBoard() {
     }
   };
 
+  const impersonate = async (rep: RepData) => {
+    if (!confirm(`Impersonate ${rep.name}? You will be logged in as them.`)) return;
+    try {
+      const result = await apiClient.post<any>(`/auth/impersonate/${rep.id}`);
+      // Stash current admin session so we can restore it later
+      localStorage.setItem('wusuq_impersonator_access_token', localStorage.getItem('wusuq_access_token') ?? '');
+      localStorage.setItem('wusuq_impersonator_refresh_token', localStorage.getItem('wusuq_refresh_token') ?? '');
+      localStorage.setItem('wusuq_impersonator_user', localStorage.getItem('wusuq_user') ?? '');
+      localStorage.setItem('wusuq_access_token', result.accessToken);
+      localStorage.setItem('wusuq_refresh_token', result.refreshToken);
+      localStorage.setItem('wusuq_user', JSON.stringify(result.user));
+      window.location.href = '/dashboard';
+    } catch (error: any) {
+      setMessage(error.message || 'Impersonation failed');
+    }
+  };
+
   const toggleActive = async (rep: RepData) => {
     try {
       await apiClient.post(`/users/${rep.id}/${rep.isActive ? 'deactivate' : 'activate'}`);
@@ -383,6 +400,13 @@ export function RepresentativesBoard() {
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-right">
                   <div className="flex items-center justify-end gap-2">
+                    <button
+                      onClick={() => impersonate(rep)}
+                      className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors"
+                      title="Impersonate"
+                    >
+                      <MonitorPlay className="h-4 w-4" />
+                    </button>
                     <button
                       onClick={() => openEdit(rep)}
                       className="p-1.5 text-slate-500 hover:text-primary-600 hover:bg-primary-50 rounded-md transition-colors"

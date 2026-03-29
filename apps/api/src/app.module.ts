@@ -24,6 +24,7 @@ import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { PermissionsGuard } from './roles-permissions/guards/permissions.guard';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { CasesModule } from './cases/cases.module';
+import { CurrencyModule } from './currency/currency.module';
 
 @Module({
   imports: [
@@ -65,6 +66,7 @@ import { CasesModule } from './cases/cases.module';
     HealthModule,
     DashboardModule,
     CasesModule,
+    CurrencyModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

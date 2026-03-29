@@ -143,6 +143,10 @@ export function UsersBoard() {
     if (!confirm(`Impersonate ${targetUser.name}? You will be logged in as them.`)) return;
     try {
       const result = await apiClient.post<any>(`/auth/impersonate/${targetUser.id}`);
+      // Stash current admin session so we can restore it later
+      localStorage.setItem('wusuq_impersonator_access_token', localStorage.getItem('wusuq_access_token') ?? '');
+      localStorage.setItem('wusuq_impersonator_refresh_token', localStorage.getItem('wusuq_refresh_token') ?? '');
+      localStorage.setItem('wusuq_impersonator_user', localStorage.getItem('wusuq_user') ?? '');
       localStorage.setItem('wusuq_access_token', result.accessToken);
       localStorage.setItem('wusuq_refresh_token', result.refreshToken);
       localStorage.setItem('wusuq_user', JSON.stringify(result.user));

@@ -26,6 +26,10 @@ export class CreateServiceCostRuleDto {
   @IsString()
   audience?: string;
 
+  @IsOptional()
+  @IsString()
+  type?: string;
+
   @IsInt()
   @Min(1900)
   yearFrom!: number;

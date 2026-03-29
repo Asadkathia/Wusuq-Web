@@ -3,7 +3,7 @@ import type { Response } from 'express';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { JwtUser } from '../auth/types/jwt-user.type';
 import { RequirePermissions } from '../roles-permissions/decorators/permissions.decorator';
-import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
+import { FinanceQueryDto } from './dto/finance-query.dto';
 import { FinanceService } from './finance.service';
 import { ReconcilePaymentDto } from './dto/reconcile-payment.dto';
 import { UpdateChargeDto } from './dto/update-charge.dto';
@@ -14,7 +14,7 @@ export class FinanceController {
 
   @RequirePermissions('finance.read')
   @Get()
-  findAll(@Query() query: PaginationQueryDto) {
+  findAll(@Query() query: FinanceQueryDto) {
     return this.financeService.findAll(query);
   }
 

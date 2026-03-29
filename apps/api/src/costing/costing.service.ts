@@ -5,6 +5,7 @@ import { ResolveCostDto } from './dto/resolve-cost.dto';
 type ResolvedCost = {
   amount: number;
   ruleId?: string;
+  source: 'base' | 'rule' | 'none';
 };
 
 @Injectable()
@@ -12,6 +13,23 @@ export class CostingService {
   constructor(private readonly prisma: PrismaService) {}
 
   async resolveServiceCost(input: ResolveCostDto): Promise<ResolvedCost> {
+    const pricingTier = input.type ?? 'local';
+
+    // 1. Check ServiceBaseCost first (simple per-service base price)
+    const baseCost = await this.prisma.serviceBaseCost.findUnique({
+      where: {
+        serviceId_pricingTier: {
+          serviceId: input.serviceId,
+          pricingTier,
+        },
+      },
+    });
+
+    if (baseCost?.isActive) {
+      return { amount: Number(baseCost.amount), ruleId: baseCost.id, source: 'base' };
+    }
+
+    // 2. Fall back to ServiceCostRule (province/caseType override rules)
     const year = input.year ?? new Date().getFullYear();
 
     const rules = await this.prisma.serviceCostRule.findMany({
@@ -19,6 +37,7 @@ export class CostingService {
         isActive: true,
         serviceId: input.serviceId,
         category: input.category,
+        type: pricingTier,
         yearFrom: { lte: year },
         yearTo: { gte: year },
       },
@@ -34,6 +53,7 @@ export class CostingService {
     return {
       amount: Number(matched?.amount ?? 0),
       ruleId: matched?.id,
+      source: matched ? 'rule' : 'none',
     };
   }
 
@@ -59,6 +79,7 @@ export class CostingService {
     return {
       amount: Number(matched?.amount ?? 0),
       ruleId: matched?.id,
+      source: matched ? 'rule' : 'none',
     };
   }
 

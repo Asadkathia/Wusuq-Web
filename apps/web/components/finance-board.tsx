@@ -25,12 +25,14 @@ type FinanceItem = {
     printingCharges: number;
     attestedCharges: number;
     nonAttestedCharges: number;
+    additionalCharges: number;
     discountPrice: number;
     additionalServiceCost: number;
   };
   totalAmount: number;
   amountPaid: number;
   remaining: number;
+  clerkPayout: number;
   paymentStatus: string;
   invoice?: { invoiceNo: string; status: string } | null;
 };
@@ -43,8 +45,13 @@ export function FinanceBoard() {
   const [search, setSearch] = useState('');
 
   const [editingChargeId, setEditingChargeId] = useState<string | null>(null);
-  const [editChargeAmount, setEditChargeAmount] = useState('');
+  const [editServiceCost, setEditServiceCost] = useState('');
+  const [editDelivery, setEditDelivery] = useState('');
+  const [editPrinting, setEditPrinting] = useState('');
+  const [editAttested, setEditAttested] = useState('');
   const [editNonAttested, setEditNonAttested] = useState('');
+  const [editAdditionalCharges, setEditAdditionalCharges] = useState('');
+  const [editAdditional, setEditAdditional] = useState('');
   const [editDiscount, setEditDiscount] = useState('');
 
   const load = useCallback(async () => {
@@ -98,19 +105,33 @@ export function FinanceBoard() {
     }
   };
 
+  const resetChargeEdit = () => {
+    setEditingChargeId(null);
+    setEditServiceCost('');
+    setEditDelivery('');
+    setEditPrinting('');
+    setEditAttested('');
+    setEditNonAttested('');
+    setEditAdditionalCharges('');
+    setEditAdditional('');
+    setEditDiscount('');
+  };
+
   const updateCharge = async (ticketId: string) => {
-    const amount = Number(editChargeAmount);
-    if (amount <= 0) return setMessage('Enter valid charge amount');
     try {
-      await apiClient.patch(`/finance/${ticketId}/charge`, {
-        amount,
-        ...(editNonAttested !== '' && { nonAttestedCharges: Number(editNonAttested) }),
-        ...(editDiscount !== '' && { discountPrice: Number(editDiscount) }),
-      });
+      const body: Record<string, number> = {};
+      if (editServiceCost !== '') body.serviceCost = Number(editServiceCost);
+      if (editDelivery !== '') body.deliveryCharges = Number(editDelivery);
+      if (editPrinting !== '') body.printingCharges = Number(editPrinting);
+      if (editAttested !== '') body.attestedCharges = Number(editAttested);
+      if (editNonAttested !== '') body.nonAttestedCharges = Number(editNonAttested);
+      if (editAdditionalCharges !== '') body.additionalCharges = Number(editAdditionalCharges);
+      if (editAdditional !== '') body.additionalServiceCost = Number(editAdditional);
+      if (editDiscount !== '') body.discountPrice = Number(editDiscount);
+      if (Object.keys(body).length === 0) return setMessage('No changes to save');
+      await apiClient.patch(`/finance/${ticketId}/charge`, body);
       setMessage('Charge updated');
-      setEditingChargeId(null);
-      setEditNonAttested('');
-      setEditDiscount('');
+      resetChargeEdit();
       load();
     } catch (error: any) {
       setMessage(error.message || 'Update failed');
@@ -140,7 +161,16 @@ export function FinanceBoard() {
   const downloadInvoice = async (ticketId: string) => {
     try {
       const result = await apiClient.get<any>(`/finance/${ticketId}/invoice/download`);
-      const blob = new Blob([result.content], { type: result.contentType });
+      const isPdf = result.contentType === 'application/pdf';
+      let blob: Blob;
+      if (isPdf) {
+        const binary = atob(result.content);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        blob = new Blob([bytes], { type: 'application/pdf' });
+      } else {
+        blob = new Blob([result.content], { type: result.contentType });
+      }
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -215,24 +245,32 @@ export function FinanceBoard() {
                 <td className="px-6 py-4">
                   {editingChargeId === item.id ? (
                     <div className="flex flex-col gap-1 mb-1">
-                      <div className="flex items-center gap-1">
-                        <input type="number" className="w-20 rounded border-slate-300 py-0.5 px-1.5 text-xs text-slate-900" placeholder="Total" value={editChargeAmount} onChange={e => setEditChargeAmount(e.target.value)} autoFocus />
-                        <input type="number" className="w-20 rounded border-slate-300 py-0.5 px-1.5 text-xs text-slate-900" placeholder="Non-att." value={editNonAttested} onChange={e => setEditNonAttested(e.target.value)} />
-                        <input type="number" className="w-16 rounded border-slate-300 py-0.5 px-1.5 text-xs text-slate-900" placeholder="Discount" value={editDiscount} onChange={e => setEditDiscount(e.target.value)} />
+                      <div className="grid grid-cols-2 gap-1">
+                        <input type="number" className="rounded border-slate-300 py-0.5 px-1.5 text-xs text-slate-900" placeholder="Service cost" value={editServiceCost} onChange={e => setEditServiceCost(e.target.value)} autoFocus />
+                        <input type="number" className="rounded border-slate-300 py-0.5 px-1.5 text-xs text-slate-900" placeholder="Delivery" value={editDelivery} onChange={e => setEditDelivery(e.target.value)} />
+                        <input type="number" className="rounded border-slate-300 py-0.5 px-1.5 text-xs text-slate-900" placeholder="Printing" value={editPrinting} onChange={e => setEditPrinting(e.target.value)} />
+                        <input type="number" className="rounded border-slate-300 py-0.5 px-1.5 text-xs text-slate-900" placeholder="Attested" value={editAttested} onChange={e => setEditAttested(e.target.value)} />
+                        <input type="number" className="rounded border-slate-300 py-0.5 px-1.5 text-xs text-slate-900" placeholder="Non-att." value={editNonAttested} onChange={e => setEditNonAttested(e.target.value)} />
+                        <input type="number" className="rounded border-slate-300 py-0.5 px-1.5 text-xs text-slate-900" placeholder="Add. Charges" value={editAdditionalCharges} onChange={e => setEditAdditionalCharges(e.target.value)} />
+                        <input type="number" className="rounded border-slate-300 py-0.5 px-1.5 text-xs text-slate-900" placeholder="Add. Service" value={editAdditional} onChange={e => setEditAdditional(e.target.value)} />
+                        <input type="number" className="rounded border-slate-300 py-0.5 px-1.5 text-xs text-slate-900" placeholder="Discount" value={editDiscount} onChange={e => setEditDiscount(e.target.value)} />
+                      </div>
+                      <div className="flex gap-1 mt-0.5">
                         <button onClick={() => updateCharge(item.id)} className="text-emerald-600 hover:text-emerald-700 p-0.5"><Check className="h-3.5 w-3.5" /></button>
-                        <button onClick={() => { setEditingChargeId(null); setEditNonAttested(''); setEditDiscount(''); }} className="text-slate-400 hover:text-slate-600 p-0.5"><X className="h-3.5 w-3.5" /></button>
+                        <button onClick={resetChargeEdit} className="text-slate-400 hover:text-slate-600 p-0.5"><X className="h-3.5 w-3.5" /></button>
                       </div>
                     </div>
                   ) : (
                     <div className="text-sm text-slate-900 flex items-center gap-1.5 group/charge">
                       Total: <span className="font-medium">{item.totalAmount}</span>
-                      <button onClick={() => { setEditingChargeId(item.id); setEditChargeAmount(String(item.totalAmount)); setEditNonAttested(String(item.charges?.nonAttestedCharges ?? '')); setEditDiscount(String(item.charges?.discountPrice ?? '')); }} className="opacity-0 group-hover/charge:opacity-100 text-slate-400 hover:text-primary-600 transition-all p-0.5" title="Edit Charge">
+                      <button onClick={() => { setEditingChargeId(item.id); setEditServiceCost(String(item.charges?.serviceCost ?? '')); setEditDelivery(String(item.charges?.deliveryCharges ?? '')); setEditPrinting(String(item.charges?.printingCharges ?? '')); setEditAttested(String(item.charges?.attestedCharges ?? '')); setEditNonAttested(String(item.charges?.nonAttestedCharges ?? '')); setEditAdditionalCharges(String(item.charges?.additionalCharges ?? '')); setEditAdditional(String(item.charges?.additionalServiceCost ?? '')); setEditDiscount(String(item.charges?.discountPrice ?? '')); }} className="opacity-0 group-hover/charge:opacity-100 text-slate-400 hover:text-primary-600 transition-all p-0.5" title="Edit Charge">
                         <Pencil className="h-3 w-3" />
                       </button>
                     </div>
                   )}
                   <div className="text-sm text-emerald-600">Paid: {item.amountPaid}</div>
                   {item.remaining > 0 && <div className="text-sm text-rose-600 font-medium mt-1">Due: {item.remaining}</div>}
+                  {item.clerkPayout > 0 && <div className="text-sm text-violet-600 mt-1">Clerk: {item.clerkPayout}</div>}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
                   <StatusPill 

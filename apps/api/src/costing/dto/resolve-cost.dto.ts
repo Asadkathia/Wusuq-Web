@@ -20,6 +20,10 @@ export class ResolveCostDto {
   audience?: string;
 
   @IsOptional()
+  @IsString()
+  type?: 'local' | 'overseas';
+
+  @IsOptional()
   @IsInt()
   @Min(1900)
   year?: number;

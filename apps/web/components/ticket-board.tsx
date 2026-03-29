@@ -4,7 +4,7 @@
 /* eslint-disable @next/next/no-img-element */
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { TicketStatus } from '@wusuq/shared';
 import { apiClient } from '@/lib/api-client';
 import { DataTableShell } from '@/components/ui/data-table-shell';
@@ -12,7 +12,7 @@ import { FilterBar } from '@/components/ui/filter-bar';
 import { SectionHeader } from '@/components/ui/section-header';
 import { StatusPill } from '@/components/ui/status-pill';
 import { PanelCard } from '@/components/ui/panel-card';
-import { UserCircle, MapPin, Tag, RefreshCw, CheckSquare, Clock, History, FileOutput, Eye } from 'lucide-react';
+import { UserCircle, MapPin, Tag, RefreshCw, CheckSquare, Clock, History, FileOutput, Eye, PlayCircle, Upload, X } from 'lucide-react';
 import { TicketDetailPanel } from './ticket-detail-panel';
 
 type TicketBoardProps = {
@@ -65,6 +65,33 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
     }>;
   } | null>(null);
 
+  // Clerk (representative) role detection
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [isClerk, setIsClerk] = useState(false);
+  useEffect(() => {
+    try {
+      const u = JSON.parse(localStorage.getItem('wusuq_user') || 'null');
+      if (u?.role === 'representative') {
+        setIsClerk(true);
+        setCurrentUserId(u.id ?? null);
+      }
+    } catch {}
+  }, []);
+
+  // Clerk upload panel state
+  const [uploadTicket, setUploadTicket] = useState<TicketRow | null>(null);
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Clerk receipt submission state (ASA-7)
+  const [receiptTicket, setReceiptTicket] = useState<TicketRow | null>(null);
+  const [receiptFile, setReceiptFile] = useState<File | null>(null);
+  const [submittingReceipt, setSubmittingReceipt] = useState(false);
+  const receiptInputRef = useRef<HTMLInputElement>(null);
+  // Admin: verify clerk receipt
+  const [verifyTicket, setVerifyTicket] = useState<TicketRow | null>(null);
+
   const selectedIds = useMemo(
     () => Object.entries(selected).filter(([, checked]) => checked).map(([id]) => id),
     [selected],
@@ -76,7 +103,8 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
       const q = new URLSearchParams({ status, limit: '200' });
       if (dateRange !== 'all') q.set('dateRange', dateRange);
       if (serviceFilter !== 'all') q.set('serviceCategory', serviceFilter);
-      
+      if (isClerk && currentUserId) q.set('representativeId', currentUserId);
+
       const result = await apiClient.get<any>(`/tickets?${q.toString()}`);
       setTickets(result.items ?? []);
     } catch (error: any) {
@@ -84,7 +112,7 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
     } finally {
       setLoading(false);
     }
-  }, [status, dateRange, serviceFilter]);
+  }, [status, dateRange, serviceFilter, isClerk, currentUserId]);
 
   useEffect(() => {
     loadTickets();
@@ -173,6 +201,78 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
     }
   };
 
+  // Admin: mark a single IN_PROGRESS ticket as completed
+  const completeTicket = async (ticket: TicketRow) => {
+    if (!confirm(`Mark ticket ${ticket.batchNo} as Completed? Payment status will be set to Paid.`)) return;
+    try {
+      await apiClient.patch(`/tickets/${ticket.id}/status`, { status: 'COMPLETED' });
+      setMessage(`Ticket ${ticket.batchNo} marked as Completed.`);
+      loadTickets();
+    } catch (error: any) {
+      setMessage(error.message || 'Failed to complete ticket');
+    }
+  };
+
+  // Clerk: accept assigned ticket → IN_PROGRESS
+  const acceptTicket = async (ticket: TicketRow) => {
+    if (!confirm(`Accept ticket ${ticket.batchNo}? This will move it to In Progress.`)) return;
+    try {
+      await apiClient.patch(`/tickets/${ticket.id}/status`, { status: 'IN_PROGRESS' });
+      setMessage(`Ticket ${ticket.batchNo} accepted and moved to In Progress.`);
+      loadTickets();
+    } catch (error: any) {
+      setMessage(error.message || 'Failed to accept ticket');
+    }
+  };
+
+  const submitClerkReceipt = async () => {
+    if (!receiptTicket || !receiptFile) return setMessage('Select a receipt image to upload');
+    setSubmittingReceipt(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', receiptFile);
+      await apiClient.post(`/tickets/${receiptTicket.id}/clerk-receipt`, formData);
+      setMessage('Receipt submitted for admin review');
+      setReceiptTicket(null);
+      setReceiptFile(null);
+      loadTickets();
+    } catch (error: any) {
+      setMessage(error.message || 'Receipt submission failed');
+    } finally {
+      setSubmittingReceipt(false);
+    }
+  };
+
+  const handleVerifyClerkReceipt = async (decision: 'VERIFIED' | 'REJECTED') => {
+    if (!verifyTicket) return;
+    try {
+      await apiClient.post(`/tickets/${verifyTicket.id}/clerk-receipt/verify`, { decision });
+      setMessage(`Receipt ${decision.toLowerCase()}`);
+      setVerifyTicket(null);
+      loadTickets();
+    } catch (error: any) {
+      setMessage(error.message || 'Verify failed');
+    }
+  };
+
+  // Clerk: upload document (receipt or case file) for an IN_PROGRESS ticket
+  const submitUpload = async () => {
+    if (!uploadTicket || !uploadFile) return setMessage('Select a file to upload');
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', uploadFile);
+      await apiClient.post(`/tickets/${uploadTicket.id}/documents/upload`, formData);
+      setMessage('Document uploaded successfully');
+      setUploadTicket(null);
+      setUploadFile(null);
+    } catch (error: any) {
+      setMessage(error.message || 'Upload failed');
+    } finally {
+      setUploading(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <SectionHeader 
@@ -215,26 +315,30 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
                   <option value="JUDICIAL">Judicial</option>
                   <option value="NON_JUDICIAL">Non-Judicial</option>
                 </select>
-                <span className="h-6 w-px bg-slate-200 mx-1"></span>
-                <select
-                  className="rounded-lg border-0 py-2 pl-3 pr-8 text-slate-900 shadow-sm ring-1 ring-inset ring-border-soft focus:ring-2 focus:ring-primary-600 sm:text-sm"
-                  value={bulkAction}
-                  onChange={(e) => setBulkAction(e.target.value)}
-                >
-                  <option value="complete">Complete Tickets</option>
-                  <option value="immature">Immature Tickets</option>
-                  <option value="delete">Delete Tickets</option>
-                  <option value="download-invoice">Download Invoice</option>
-                  <option value="send-invoice">Send Invoice</option>
-                </select>
-                <button
-                  type="button"
-                  onClick={runBulkAction}
-                  disabled={selectedIds.length === 0}
-                  className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 disabled:opacity-50 transition-colors"
-                >
-                  Apply
-                </button>
+                {!isClerk && (
+                  <>
+                    <span className="h-6 w-px bg-slate-200 mx-1"></span>
+                    <select
+                      className="rounded-lg border-0 py-2 pl-3 pr-8 text-slate-900 shadow-sm ring-1 ring-inset ring-border-soft focus:ring-2 focus:ring-primary-600 sm:text-sm"
+                      value={bulkAction}
+                      onChange={(e) => setBulkAction(e.target.value)}
+                    >
+                      <option value="complete">Complete Tickets</option>
+                      <option value="immature">Immature Tickets</option>
+                      <option value="delete">Delete Tickets</option>
+                      <option value="download-invoice">Download Invoice</option>
+                      <option value="send-invoice">Send Invoice</option>
+                    </select>
+                    <button
+                      type="button"
+                      onClick={runBulkAction}
+                      disabled={selectedIds.length === 0}
+                      className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 disabled:opacity-50 transition-colors"
+                    >
+                      Apply
+                    </button>
+                  </>
+                )}
               </div>
             }
           />
@@ -295,17 +399,49 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
                     <button onClick={() => setViewTicketId(ticket.id)} className="text-slate-600 hover:text-primary-700 bg-slate-100 hover:bg-primary-50 px-3 py-1.5 rounded-md flex items-center gap-1">
                       <Eye className="h-3.5 w-3.5" /> View Details
                     </button>
-                    {status !== 'COMPLETED' && (
-                      <button onClick={() => openAssign(ticket)} className="text-primary-600 hover:text-primary-900 bg-primary-50 px-3 py-1.5 rounded-md flex items-center gap-1">
-                        <CheckSquare className="h-3.5 w-3.5" /> Assign
-                      </button>
+                    {isClerk ? (
+                      <>
+                        {status === 'ASSIGNED' && (
+                          <button onClick={() => acceptTicket(ticket)} className="text-emerald-600 hover:text-emerald-900 bg-emerald-50 hover:bg-emerald-100 px-3 py-1.5 rounded-md flex items-center gap-1">
+                            <PlayCircle className="h-3.5 w-3.5" /> Accept
+                          </button>
+                        )}
+                        {status === 'IN_PROGRESS' && (
+                          <>
+                            <button onClick={() => setUploadTicket(ticket)} className="text-indigo-600 hover:text-indigo-900 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-md flex items-center gap-1">
+                              <Upload className="h-3.5 w-3.5" /> Upload Docs
+                            </button>
+                            <button onClick={() => { setReceiptTicket(ticket); setReceiptFile(null); }} className="text-amber-600 hover:text-amber-900 bg-amber-50 hover:bg-amber-100 px-3 py-1.5 rounded-md flex items-center gap-1">
+                              <CheckSquare className="h-3.5 w-3.5" /> Submit Receipt
+                            </button>
+                          </>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        {status !== 'COMPLETED' && (
+                          <button onClick={() => openAssign(ticket)} className="text-primary-600 hover:text-primary-900 bg-primary-50 px-3 py-1.5 rounded-md flex items-center gap-1">
+                            <CheckSquare className="h-3.5 w-3.5" /> Assign
+                          </button>
+                        )}
+                        {status === 'IN_PROGRESS' && (
+                          <>
+                            <button onClick={() => completeTicket(ticket)} className="text-emerald-600 hover:text-emerald-900 bg-emerald-50 hover:bg-emerald-100 px-3 py-1.5 rounded-md flex items-center gap-1">
+                              <PlayCircle className="h-3.5 w-3.5" /> Complete
+                            </button>
+                            <button onClick={() => setVerifyTicket(ticket)} className="text-amber-600 hover:text-amber-900 bg-amber-50 hover:bg-amber-100 px-3 py-1.5 rounded-md flex items-center gap-1">
+                              <Eye className="h-3.5 w-3.5" /> Verify Receipt
+                            </button>
+                          </>
+                        )}
+                        <button onClick={() => openTimeline(ticket.id)} className="text-slate-600 hover:text-slate-900 bg-slate-100 px-3 py-1.5 rounded-md flex items-center gap-1">
+                          <History className="h-3.5 w-3.5" /> Timeline
+                        </button>
+                        <button onClick={() => regenerateTicket(ticket.id)} className="text-slate-600 hover:text-rose-600 bg-slate-100 hover:bg-rose-50 px-3 py-1.5 rounded-md flex items-center gap-1" title="Regenerate Ticket">
+                          <FileOutput className="h-3.5 w-3.5" />
+                        </button>
+                      </>
                     )}
-                    <button onClick={() => openTimeline(ticket.id)} className="text-slate-600 hover:text-slate-900 bg-slate-100 px-3 py-1.5 rounded-md flex items-center gap-1">
-                      <History className="h-3.5 w-3.5" /> Timeline
-                    </button>
-                    <button onClick={() => regenerateTicket(ticket.id)} className="text-slate-600 hover:text-rose-600 bg-slate-100 hover:bg-rose-50 px-3 py-1.5 rounded-md flex items-center gap-1" title="Regenerate Ticket">
-                      <FileOutput className="h-3.5 w-3.5" />
-                    </button>
                   </div>
                 </td>
               </tr>
@@ -383,7 +519,7 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
             <div>
               <h4 className="text-sm font-semibold flex items-center gap-2 text-slate-900 border-b border-slate-200 pb-2"><Clock className="h-4 w-4" /> Status History</h4>
               <ul className="mt-4 space-y-4">
-                {timeline.history.map((item, idx) => (
+                {timeline.history.map((item) => (
                   <li key={item.id} className="relative flex gap-4">
                     <div className="absolute top-5 left-1.5 -bottom-5 w-px bg-slate-200" />
                     <div className="relative flex h-3 w-3 mt-1.5 flex-none items-center justify-center bg-white rounded-full ring-2 ring-primary-600" />
@@ -418,6 +554,100 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
             <button onClick={() => { setTimelineTicketId(null); setTimeline(null); }} className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm ring-1 ring-inset ring-slate-300 hover:bg-slate-50 transition-colors">
               Close Timeline
             </button>
+          </div>
+        </PanelCard>
+      )}
+
+      {/* Clerk: Upload Documents Panel */}
+      {uploadTicket && (
+        <PanelCard className="mt-6">
+          <div className="flex items-start justify-between">
+            <SectionHeader
+              title={`Upload Documents — ${uploadTicket.batchNo}`}
+              description="Upload court fee receipts, case files, or any proof related to this ticket."
+            />
+            <button onClick={() => { setUploadTicket(null); setUploadFile(null); }} className="p-1.5 text-slate-400 hover:text-slate-700 rounded-md transition-colors">
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+          <div className="mt-6 space-y-4">
+            <label className="block">
+              <span className="text-sm font-medium text-slate-700">Select File</span>
+              <p className="text-xs text-slate-500 mt-0.5">Allowed: PDF, JPG, PNG, DOC, DOCX — max 10 MB</p>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                className="mt-2 block w-full text-sm text-slate-700 file:mr-4 file:rounded-lg file:border-0 file:bg-primary-50 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-primary-700 hover:file:bg-primary-100"
+                onChange={(e) => setUploadFile(e.target.files?.[0] ?? null)}
+              />
+            </label>
+            {uploadFile && (
+              <p className="text-xs text-slate-500">Selected: <span className="font-medium text-slate-800">{uploadFile.name}</span> ({(uploadFile.size / 1024).toFixed(1)} KB)</p>
+            )}
+            <div className="flex gap-3 pt-2">
+              <button
+                onClick={submitUpload}
+                disabled={!uploadFile || uploading}
+                className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-primary-500 disabled:opacity-50 transition-colors flex items-center gap-2"
+              >
+                <Upload className="h-4 w-4" />
+                {uploading ? 'Uploading...' : 'Upload'}
+              </button>
+              <button
+                onClick={() => { setUploadTicket(null); setUploadFile(null); }}
+                className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm ring-1 ring-inset ring-border-soft hover:bg-slate-50 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </PanelCard>
+      )}
+
+      {/* Clerk: Submit Receipt Image Panel */}
+      {receiptTicket && (
+        <PanelCard className="mt-6">
+          <div className="flex items-start justify-between">
+            <SectionHeader title={`Submit Receipt — ${receiptTicket.batchNo}`} description="Upload a photo or scan of the court fee receipt." />
+            <button onClick={() => { setReceiptTicket(null); setReceiptFile(null); }} className="p-1.5 text-slate-400 hover:text-slate-700 rounded-md transition-colors"><X className="h-5 w-5" /></button>
+          </div>
+          <div className="mt-4 space-y-4">
+            <label className="block">
+              <span className="text-sm font-medium text-slate-700">Receipt Image</span>
+              <p className="text-xs text-slate-500 mt-0.5">Allowed: JPG, PNG, PDF — max 10 MB</p>
+              <input
+                ref={receiptInputRef}
+                type="file"
+                accept=".jpg,.jpeg,.png,.pdf"
+                className="mt-2 block w-full text-sm text-slate-700 file:mr-4 file:rounded-lg file:border-0 file:bg-amber-50 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-amber-700 hover:file:bg-amber-100"
+                onChange={e => setReceiptFile(e.target.files?.[0] ?? null)}
+              />
+            </label>
+            {receiptFile && (
+              <p className="text-xs text-slate-500">Selected: <span className="font-medium text-slate-800">{receiptFile.name}</span> ({(receiptFile.size / 1024).toFixed(1)} KB)</p>
+            )}
+            <div className="flex gap-3">
+              <button onClick={submitClerkReceipt} disabled={!receiptFile || submittingReceipt} className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-amber-500 disabled:opacity-50 transition-colors">
+                {submittingReceipt ? 'Uploading...' : 'Submit Receipt'}
+              </button>
+              <button onClick={() => { setReceiptTicket(null); setReceiptFile(null); }} className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm ring-1 ring-inset ring-border-soft hover:bg-slate-50 transition-colors">Cancel</button>
+            </div>
+          </div>
+        </PanelCard>
+      )}
+
+      {/* Admin: Verify Clerk Receipt Panel */}
+      {verifyTicket && (
+        <PanelCard className="mt-6 border-amber-200 bg-amber-50/30">
+          <div className="flex items-start justify-between">
+            <SectionHeader title={`Verify Clerk Receipt — ${verifyTicket.batchNo}`} description="Approve or reject the clerk's submitted payment receipt." />
+            <button onClick={() => setVerifyTicket(null)} className="p-1.5 text-slate-400 hover:text-slate-700 rounded-md transition-colors"><X className="h-5 w-5" /></button>
+          </div>
+          <div className="mt-4 flex gap-3">
+            <button onClick={() => handleVerifyClerkReceipt('VERIFIED')} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-500 transition-colors">Approve</button>
+            <button onClick={() => handleVerifyClerkReceipt('REJECTED')} className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-rose-500 transition-colors">Reject</button>
+            <button onClick={() => setVerifyTicket(null)} className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm ring-1 ring-inset ring-border-soft hover:bg-slate-50 transition-colors">Cancel</button>
           </div>
         </PanelCard>
       )}

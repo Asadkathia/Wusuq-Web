@@ -48,7 +48,11 @@ export function TicketDetailPanel({ ticketId, onClose }: Props) {
       Number(ticket.deliveryCharges || 0) +
       Number(ticket.printingCharges || 0) +
       Number(ticket.attestedCharges || 0) +
-      Number(ticket.clerkCost || 0)
+      Number(ticket.nonAttestedCharges || 0) +
+      Number(ticket.additionalCharges || 0) +
+      Number(ticket.additionalServiceCost || 0) +
+      Number(ticket.clerkCost || 0) -
+      Number(ticket.discountPrice || 0)
     : 0;
 
   const renderPayload = (payload: Record<string, unknown>) =>
@@ -144,8 +148,12 @@ export function TicketDetailPanel({ ticketId, onClose }: Props) {
                     ['Delivery Charges', ticket.deliveryCharges],
                     ['Printing Charges', ticket.printingCharges],
                     ['Attested Charges', ticket.attestedCharges],
+                    ['Non-Attested Charges', ticket.nonAttestedCharges],
+                    ['Additional Charges', ticket.additionalCharges],
+                    ['Additional Service Cost', ticket.additionalServiceCost],
                     ['Clerk Cost', ticket.clerkCost],
-                  ].map(([label, val]) => (
+                    ['Discount', ticket.discountPrice ? `-${Number(ticket.discountPrice).toLocaleString()}` : null],
+                  ].filter(([, val]) => val !== null && val !== undefined && Number(val) !== 0).map(([label, val]) => (
                     <div key={label as string} className="flex justify-between border-b border-slate-50 pb-1.5">
                       <span className="text-slate-500">{label}</span>
                       <span className="font-medium text-slate-800">PKR {Number(val || 0).toLocaleString()}</span>

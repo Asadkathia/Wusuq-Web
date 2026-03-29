@@ -11,7 +11,7 @@ import { PanelCard } from '@/components/ui/panel-card';
 import { DataTableShell } from '@/components/ui/data-table-shell';
 import { FilterBar } from '@/components/ui/filter-bar';
 import { StatusPill } from '@/components/ui/status-pill';
-import { Plus, RefreshCw, Calculator, Globe2, Briefcase } from 'lucide-react';
+import { Check, Globe2, Briefcase, Calculator, Pencil, Plus, RefreshCw, X } from 'lucide-react';
 
 type CostRuleType = 'service' | 'clerk';
 
@@ -22,11 +22,48 @@ type CostRule = {
   caseType?: string | null;
   province?: string | null;
   audience?: string | null;
+  type?: string | null;
   yearFrom: number;
   yearTo: number;
   amount: number;
   isActive: boolean;
 };
+
+type RuleForm = {
+  serviceId: string;
+  category: string;
+  caseType: string;
+  province: string;
+  audience: string;
+  type: string;
+  yearFrom: string;
+  yearTo: string;
+  amount: string;
+  isActive: boolean;
+};
+
+const PROVINCES = [
+  'Punjab',
+  'Sindh',
+  'Khyber Pakhtunkhwa',
+  'Balochistan',
+  'Azad Jammu & Kashmir',
+  'Gilgit-Baltistan',
+  'Islamabad Capital Territory',
+];
+
+const emptyForm = (): RuleForm => ({
+  serviceId: '',
+  category: '',
+  caseType: '',
+  province: '',
+  audience: 'local',
+  type: 'local',
+  yearFrom: String(new Date().getFullYear()),
+  yearTo: String(new Date().getFullYear()),
+  amount: '',
+  isActive: true,
+});
 
 type CostRulesBoardProps = {
   title: string;
@@ -38,18 +75,9 @@ export function CostRulesBoard({ title, type }: CostRulesBoardProps) {
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
-
-  const [form, setForm] = useState({
-    serviceId: '',
-    category: '',
-    caseType: '',
-    province: '',
-    audience: 'local',
-    yearFrom: String(new Date().getFullYear()),
-    yearTo: String(new Date().getFullYear()),
-    amount: '',
-    isActive: true,
-  });
+  const [form, setForm] = useState<RuleForm>(emptyForm());
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState<RuleForm>(emptyForm());
 
   const endpoint = type === 'service' ? '/service-costs' : '/clerk-costs';
 
@@ -65,53 +93,156 @@ export function CostRulesBoard({ title, type }: CostRulesBoardProps) {
     }
   }, [endpoint]);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  useEffect(() => { load(); }, [load]);
 
   const filteredItems = useMemo(() => {
     if (!search) return items;
     const l = search.toLowerCase();
     return items.filter(
-      i => i.serviceId.toLowerCase().includes(l) || i.category.toLowerCase().includes(l) || (i.caseType || '').toLowerCase().includes(l)
+      i => i.serviceId.toLowerCase().includes(l) ||
+           i.category.toLowerCase().includes(l) ||
+           (i.caseType || '').toLowerCase().includes(l)
     );
   }, [items, search]);
 
+  const msg = (text: string) => setMessage(text);
+
+  const buildPayload = (f: RuleForm) => ({
+    serviceId: f.serviceId,
+    category: f.category,
+    caseType: f.caseType || undefined,
+    province: f.province || undefined,
+    audience: type === 'service' ? f.audience || undefined : undefined,
+    type: type === 'service' ? f.type : undefined,
+    yearFrom: Number(f.yearFrom),
+    yearTo: Number(f.yearTo),
+    amount: Number(f.amount),
+    isActive: f.isActive,
+  });
+
   const createRule = async (e: React.FormEvent) => {
     e.preventDefault();
-    const amount = Number(form.amount);
     const yearFrom = Number(form.yearFrom);
     const yearTo = Number(form.yearTo);
-
-    if (!form.serviceId || !form.category || amount < 0 || yearFrom > yearTo) {
-      setMessage('Provide valid service, category, amount, and year range');
+    if (!form.serviceId || !form.category || Number(form.amount) < 0 || yearFrom > yearTo) {
+      msg('Provide valid service, category, amount, and year range');
       return;
     }
-
     try {
-      await apiClient.post(endpoint, {
-        serviceId: form.serviceId,
-        category: form.category,
-        caseType: form.caseType || undefined,
-        province: form.province || undefined,
-        audience: type === 'service' ? form.audience || undefined : undefined,
-        yearFrom,
-        yearTo,
-        amount,
-        isActive: form.isActive,
-      });
-      setMessage('Rule created successfully.');
-      setForm(prev => ({ ...prev, amount: '', serviceId: '', category: '' }));
+      await apiClient.post(endpoint, buildPayload(form));
+      msg('Rule created successfully.');
+      setForm(emptyForm());
       load();
     } catch (error: any) {
-      setMessage(error.message || 'Create failed');
+      msg(error.message || 'Create failed');
     }
   };
 
+  const startEdit = (item: CostRule) => {
+    setEditingId(item.id);
+    setEditForm({
+      serviceId: item.serviceId,
+      category: item.category,
+      caseType: item.caseType ?? '',
+      province: item.province ?? '',
+      audience: item.audience ?? 'local',
+      type: item.type ?? 'local',
+      yearFrom: String(item.yearFrom),
+      yearTo: String(item.yearTo),
+      amount: String(item.amount),
+      isActive: item.isActive,
+    });
+  };
+
+  const cancelEdit = () => { setEditingId(null); };
+
+  const saveEdit = async (id: string) => {
+    const yearFrom = Number(editForm.yearFrom);
+    const yearTo = Number(editForm.yearTo);
+    if (!editForm.serviceId || !editForm.category || Number(editForm.amount) < 0 || yearFrom > yearTo) {
+      msg('Provide valid service, category, amount, and year range');
+      return;
+    }
+    try {
+      await apiClient.patch(`${endpoint}/${id}`, buildPayload(editForm));
+      msg('Rule updated.');
+      setEditingId(null);
+      load();
+    } catch (error: any) {
+      msg(error.message || 'Update failed');
+    }
+  };
+
+  const RuleFormFields = ({ f, onChange, isService }: { f: RuleForm; onChange: (patch: Partial<RuleForm>) => void; isService: boolean }) => (
+    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="space-y-2">
+        <label className="block">
+          <span className="text-xs font-semibold text-slate-500">Service ID</span>
+          <input className="mt-1 block w-full rounded border border-slate-200 py-1.5 px-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-primary-600" value={f.serviceId} onChange={e => onChange({ serviceId: e.target.value })} />
+        </label>
+        <label className="block">
+          <span className="text-xs font-semibold text-slate-500">Category</span>
+          <input className="mt-1 block w-full rounded border border-slate-200 py-1.5 px-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-primary-600" value={f.category} onChange={e => onChange({ category: e.target.value })} />
+        </label>
+        <label className="block">
+          <span className="text-xs font-semibold text-slate-500">Case Type</span>
+          <input className="mt-1 block w-full rounded border border-slate-200 py-1.5 px-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-primary-600" placeholder="Optional" value={f.caseType} onChange={e => onChange({ caseType: e.target.value })} />
+        </label>
+      </div>
+      <div className="space-y-2">
+        <label className="block">
+          <span className="text-xs font-semibold text-slate-500">Province</span>
+          <select className="mt-1 block w-full rounded border border-slate-200 py-1.5 px-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-primary-600" value={f.province} onChange={e => onChange({ province: e.target.value })}>
+            <option value="">All Provinces (Catch-all)</option>
+            {PROVINCES.map(p => <option key={p} value={p}>{p}</option>)}
+          </select>
+        </label>
+        {isService && (
+          <>
+            <label className="block">
+              <span className="text-xs font-semibold text-slate-500">Audience</span>
+              <select className="mt-1 block w-full rounded border border-slate-200 py-1.5 px-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-primary-600" value={f.audience} onChange={e => onChange({ audience: e.target.value })}>
+                <option value="local">Local Citizen</option>
+                <option value="overseas">Overseas/Expat</option>
+              </select>
+            </label>
+            <label className="block">
+              <span className="text-xs font-semibold text-slate-500">Cost Type</span>
+              <select className="mt-1 block w-full rounded border border-slate-200 py-1.5 px-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-primary-600" value={f.type} onChange={e => onChange({ type: e.target.value })}>
+                <option value="local">Local (PKR)</option>
+                <option value="overseas">Overseas (USD)</option>
+              </select>
+            </label>
+          </>
+        )}
+      </div>
+      <div className="space-y-2">
+        <label className="block">
+          <span className="text-xs font-semibold text-slate-500">Year From</span>
+          <input type="number" className="mt-1 block w-full rounded border border-slate-200 py-1.5 px-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-primary-600" value={f.yearFrom} onChange={e => onChange({ yearFrom: e.target.value })} />
+        </label>
+        <label className="block">
+          <span className="text-xs font-semibold text-slate-500">Year To</span>
+          <input type="number" className="mt-1 block w-full rounded border border-slate-200 py-1.5 px-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-primary-600" value={f.yearTo} onChange={e => onChange({ yearTo: e.target.value })} />
+        </label>
+        <label className="flex items-center gap-2 pt-1">
+          <input type="checkbox" className="h-4 w-4 rounded border-slate-300 text-primary-600 focus:ring-primary-600" checked={f.isActive} onChange={e => onChange({ isActive: e.target.checked })} />
+          <span className="text-xs font-medium text-slate-600">Active</span>
+        </label>
+      </div>
+      <div className="space-y-2 flex flex-col justify-end">
+        <label className="block">
+          <span className="text-xs font-semibold text-slate-500">Amount (PKR)</span>
+          <input type="number" min="0" step="0.01" className="mt-1 block w-full rounded border border-slate-200 py-1.5 px-2 text-sm font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-primary-600" value={f.amount} onChange={e => onChange({ amount: e.target.value })} />
+        </label>
+      </div>
+    </div>
+  );
+
   return (
     <div className="space-y-6">
-      <SectionHeader 
-        title={title} 
+      <SectionHeader
+        title={title}
         description={`Manage the baseline pricing rules applied to ${type === 'service' ? 'services' : 'clerk tasks'} across the system.`}
         action={
           <button
@@ -131,93 +262,28 @@ export function CostRulesBoard({ title, type }: CostRulesBoardProps) {
         </div>
       )}
 
-      {/* Quick Add Form Array */}
+      {/* Add New Rule */}
       <PanelCard className="p-6">
         <h3 className="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2">
           <Calculator className="h-5 w-5 text-primary-600" />
           Add New Cost Rule
         </h3>
-        <form onSubmit={createRule} className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-          
-          <div className="space-y-4 col-span-1 lg:col-span-1 border-r border-slate-100 pr-4">
-            <h4 className="text-sm font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5"><Briefcase className="h-4 w-4" /> Core Matchers</h4>
-            <label className="block">
-              <span className="text-xs font-semibold text-slate-600">Service ID</span>
-              <input required className="mt-1 block w-full rounded-md border-0 py-2 px-3 text-slate-900 ring-1 ring-inset ring-border-soft placeholder:text-slate-400 focus:ring-2 focus:ring-primary-600 sm:text-sm" placeholder="e.g. SRV-01" value={form.serviceId} onChange={e => setForm(c => ({...c, serviceId: e.target.value}))} />
-            </label>
-            <label className="block">
-              <span className="text-xs font-semibold text-slate-600">Category</span>
-              <input required className="mt-1 block w-full rounded-md border-0 py-2 px-3 text-slate-900 ring-1 ring-inset ring-border-soft placeholder:text-slate-400 focus:ring-2 focus:ring-primary-600 sm:text-sm" placeholder="e.g. Standard" value={form.category} onChange={e => setForm(c => ({...c, category: e.target.value}))} />
-            </label>
-            <label className="block">
-              <span className="text-xs font-semibold text-slate-600">Case Type (Optional)</span>
-              <input className="mt-1 block w-full rounded-md border-0 py-2 px-3 text-slate-900 ring-1 ring-inset ring-border-soft placeholder:text-slate-400 focus:ring-2 focus:ring-primary-600 sm:text-sm" placeholder="e.g. Civil" value={form.caseType} onChange={e => setForm(c => ({...c, caseType: e.target.value}))} />
-            </label>
-          </div>
-
-          <div className="space-y-4 col-span-1 lg:col-span-1 border-r border-slate-100 pr-4">
-            <h4 className="text-sm font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5"><Globe2 className="h-4 w-4" /> Geographic Context</h4>
-            <label className="block">
-              <span className="text-xs font-semibold text-slate-600">Province (Optional)</span>
-              <select className="mt-1 block w-full rounded-md border-0 py-2 pl-3 pr-8 text-slate-900 ring-1 ring-inset ring-border-soft focus:ring-2 focus:ring-primary-600 sm:text-sm" value={form.province} onChange={e => setForm(c => ({...c, province: e.target.value}))}>
-                <option value="">All Provinces (Global)</option>
-                <option value="Riyadh">Riyadh</option>
-                <option value="Makkah">Makkah</option>
-                <option value="Eastern Province">Eastern Province</option>
-              </select>
-            </label>
-            {type === 'service' && (
-              <label className="block">
-                <span className="text-xs font-semibold text-slate-600">Audience Segment</span>
-                <select className="mt-1 block w-full rounded-md border-0 py-2 pl-3 pr-8 text-slate-900 ring-1 ring-inset ring-border-soft focus:ring-2 focus:ring-primary-600 sm:text-sm" value={form.audience} onChange={e => setForm(c => ({...c, audience: e.target.value}))}>
-                  <option value="local">Local Citizen</option>
-                  <option value="overseas">Overseas/Expat</option>
-                </select>
-              </label>
-            )}
-          </div>
-
-          <div className="space-y-4 col-span-1 lg:col-span-1 border-r border-slate-100 pr-4">
-            <h4 className="text-sm font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5"><RefreshCw className="h-4 w-4" /> Temporal Validity</h4>
-            <div className="flex gap-2">
-              <label className="block flex-1">
-                <span className="text-xs font-semibold text-slate-600">Start Year</span>
-                <input type="number" required className="mt-1 block w-full rounded-md border-0 py-2 px-3 text-slate-900 ring-1 ring-inset ring-border-soft focus:ring-2 focus:ring-primary-600 sm:text-sm" value={form.yearFrom} onChange={e => setForm(c => ({...c, yearFrom: e.target.value}))} />
-              </label>
-              <label className="block flex-1">
-                <span className="text-xs font-semibold text-slate-600">End Year</span>
-                <input type="number" required className="mt-1 block w-full rounded-md border-0 py-2 px-3 text-slate-900 ring-1 ring-inset ring-border-soft focus:ring-2 focus:ring-primary-600 sm:text-sm" value={form.yearTo} onChange={e => setForm(c => ({...c, yearTo: e.target.value}))} />
-              </label>
-            </div>
-            <label className="flex items-center gap-3 pt-3">
-              <input type="checkbox" className="h-4 w-4 rounded border-slate-300 text-primary-600 focus:ring-primary-600" checked={form.isActive} onChange={e => setForm(c => ({...c, isActive: e.target.checked}))} />
-              <span className="text-sm font-medium text-slate-700">Activate rule immediately</span>
-            </label>
-          </div>
-
-          <div className="space-y-4 col-span-1 lg:col-span-1 flex flex-col justify-end">
-            <label className="block">
-              <span className="text-xs font-semibold text-slate-600">Cost Rules Base Amount</span>
-              <div className="relative mt-1">
-                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
-                  <span className="text-slate-500 sm:text-sm">SAR</span>
-                </div>
-                <input required type="number" min="0" step="0.01" className="block w-full rounded-md border-0 py-2 pl-12 pr-12 text-slate-900 ring-1 ring-inset ring-border-soft focus:ring-2 focus:ring-primary-600 sm:text-sm font-bold text-lg" placeholder="150" value={form.amount} onChange={e => setForm(c => ({...c, amount: e.target.value}))} />
-              </div>
-            </label>
-            <button type="submit" disabled={loading} className="w-full flex items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 disabled:opacity-50 transition-colors mt-2">
+        <form onSubmit={createRule} className="space-y-4">
+          <RuleFormFields f={form} onChange={patch => setForm(c => ({ ...c, ...patch }))} isService={type === 'service'} />
+          <div className="flex justify-end pt-2">
+            <button type="submit" disabled={loading} className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 disabled:opacity-50 transition-colors">
               <Plus className="h-4 w-4" /> Save Pricing Rule
             </button>
           </div>
-
         </form>
       </PanelCard>
 
+      {/* Rules Table */}
       <h3 className="text-lg font-semibold text-slate-900 px-1 pt-2">Active Configuration</h3>
       <DataTableShell
         header={
-          <FilterBar 
-            searchPlaceholder="Search active rules by service or category..."
+          <FilterBar
+            searchPlaceholder="Search rules by service, category or case type..."
             onSearch={setSearch}
           />
         }
@@ -225,50 +291,89 @@ export function CostRulesBoard({ title, type }: CostRulesBoardProps) {
         <table className="min-w-full divide-y divide-slate-200">
           <thead className="bg-slate-50">
             <tr>
-              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Parameters</th>
-              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Context</th>
-              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Validity Period</th>
-              <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-slate-500 uppercase tracking-wider">Rate</th>
-              <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-slate-500 uppercase tracking-wider">Status</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Parameters</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Context</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Validity</th>
+              <th className="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase tracking-wider">Rate</th>
+              <th className="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase tracking-wider">Status</th>
+              <th className="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase tracking-wider">Actions</th>
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-slate-100">
-            {filteredItems.map((item) => (
-              <tr key={item.id} className="hover:bg-slate-50 transition-colors">
-                <td className="px-6 py-4">
-                  <div className="text-sm font-bold text-primary-700">{item.serviceId}</div>
-                  <div className="text-xs text-slate-500 flex gap-1 items-center mt-1">
-                    <span className="font-semibold">{item.category}</span>
-                    {item.caseType && <span className="bg-slate-200 text-slate-700 rounded px-1.5 py-0.5 text-[10px] uppercase font-bold tracking-wider">{item.caseType}</span>}
-                  </div>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <div className="text-sm text-slate-700 flex flex-col gap-1">
-                    {item.province ? <span className="flex items-center gap-1.5"><Globe2 className="h-3 w-3 text-slate-400"/> {item.province}</span> : <span className="text-slate-400 italic text-xs">Global Province</span>}
-                    {type === 'service' && <span className="text-xs text-slate-500 font-medium">Audience: {item.audience || 'Any'}</span>}
-                  </div>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-700">
-                   {item.yearFrom === item.yearTo ? (
-                     <span className="font-medium bg-slate-100 rounded px-2 py-1">{item.yearFrom} Only</span>
-                   ) : (
-                     <span className="font-medium">{item.yearFrom} &rarr; {item.yearTo}</span>
-                   )}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-right">
-                  <div className="text-base font-bold text-slate-900">SAR {item.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-right">
-                  <StatusPill 
-                    label={item.isActive ? 'ACTIVE' : 'DISABLED'}
-                    variant={item.isActive ? 'success' : 'neutral'}
-                  />
-                </td>
-              </tr>
+            {filteredItems.map(item => (
+              editingId === item.id ? (
+                /* ── Inline edit row ── */
+                <tr key={item.id} className="bg-amber-50">
+                  <td colSpan={6} className="px-4 py-4">
+                    <RuleFormFields
+                      f={editForm}
+                      onChange={patch => setEditForm(c => ({ ...c, ...patch }))}
+                      isService={type === 'service'}
+                    />
+                    <div className="flex justify-end gap-2 mt-3">
+                      <button
+                        onClick={cancelEdit}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors"
+                      >
+                        <X className="h-4 w-4" /> Cancel
+                      </button>
+                      <button
+                        onClick={() => saveEdit(item.id)}
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 transition-colors"
+                      >
+                        <Check className="h-4 w-4" /> Save Changes
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ) : (
+                /* ── Read row ── */
+                <tr key={item.id} className="hover:bg-slate-50 transition-colors group">
+                  <td className="px-4 py-4">
+                    <div className="text-sm font-bold text-primary-700">{item.serviceId}</div>
+                    <div className="text-xs text-slate-500 flex gap-1 items-center mt-1">
+                      <span className="font-semibold">{item.category}</span>
+                      {item.caseType && <span className="bg-slate-200 text-slate-700 rounded px-1.5 py-0.5 text-[10px] uppercase font-bold tracking-wider">{item.caseType}</span>}
+                    </div>
+                  </td>
+                  <td className="px-4 py-4 whitespace-nowrap">
+                    <div className="text-sm text-slate-700 flex flex-col gap-1">
+                      {item.province
+                        ? <span className="flex items-center gap-1.5"><Globe2 className="h-3 w-3 text-slate-400" />{item.province}</span>
+                        : <span className="text-slate-400 italic text-xs">All Provinces</span>}
+                      {type === 'service' && <span className="text-xs text-slate-500">Audience: {item.audience || 'Any'}</span>}
+                      {type === 'service' && item.type && (
+                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded w-fit ${item.type === 'overseas' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600'}`}>
+                          {item.type === 'overseas' ? 'OVERSEAS' : 'LOCAL'}
+                        </span>
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-4 py-4 whitespace-nowrap text-sm text-slate-700">
+                    {item.yearFrom === item.yearTo
+                      ? <span className="font-medium bg-slate-100 rounded px-2 py-1">{item.yearFrom} Only</span>
+                      : <span className="font-medium">{item.yearFrom} &rarr; {item.yearTo}</span>}
+                  </td>
+                  <td className="px-4 py-4 whitespace-nowrap text-right">
+                    <div className="text-base font-bold text-slate-900">PKR {Number(item.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+                  </td>
+                  <td className="px-4 py-4 whitespace-nowrap text-right">
+                    <StatusPill label={item.isActive ? 'ACTIVE' : 'DISABLED'} variant={item.isActive ? 'success' : 'neutral'} />
+                  </td>
+                  <td className="px-4 py-4 whitespace-nowrap text-right">
+                    <button
+                      onClick={() => startEdit(item)}
+                      className="opacity-0 group-hover:opacity-100 inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:border-primary-300 hover:text-primary-700 transition-all"
+                    >
+                      <Pencil className="h-3.5 w-3.5" /> Edit
+                    </button>
+                  </td>
+                </tr>
+              )
             ))}
             {filteredItems.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-6 py-12 text-center text-sm text-slate-500">
+                <td colSpan={6} className="px-6 py-12 text-center text-sm text-slate-500">
                   No pricing rules found.
                 </td>
               </tr>
