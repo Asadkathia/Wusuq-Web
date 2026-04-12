@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 'use client';
 
-import { useMemo, useEffect, useState, useCallback } from 'react';
+import { useMemo, useEffect, useState, useCallback, useRef } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { PanelCard } from '@/components/ui/panel-card';
 import { ChevronRight, CheckCircle2 } from 'lucide-react';
@@ -277,6 +277,11 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
   const [isAdminTestingMode, setIsAdminTestingMode] = useState(false);
   const [currentUser, setCurrentUser] = useState<LocalUser | null>(null);
   const [files, setFiles] = useState<File[]>([]);
+  const stepHeadingRef = useRef<HTMLHeadingElement>(null);
+
+  useEffect(() => {
+    stepHeadingRef.current?.focus();
+  }, [draft.step]);
   const [apiError, setApiError] = useState('');
   const [infoMsg, setInfoMsg] = useState('');
   const [loading, setLoading] = useState(false);
@@ -500,9 +505,22 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
         <p className="text-sm text-slate-500 mt-1">Complete the multi-step form to file a new paralegal request.</p>
       </div>
 
-      {selectedFlow && <StepRail selectedFlow={selectedFlow} currentStep={draft.step} />}
+      {selectedFlow && (
+        <StepRail
+          selectedFlow={selectedFlow}
+          currentStep={draft.step}
+          onStepClick={(step) => setField('step', step)}
+        />
+      )}
 
       <PanelCard className="p-8">
+        <h3
+          ref={stepHeadingRef}
+          tabIndex={-1}
+          className="mb-4 text-base font-semibold text-slate-800 outline-none"
+        >
+          {activeStep?.title}
+        </h3>
         <div className="mb-6 grid gap-6 md:grid-cols-2">
 
           {draft.step === 1 && (
@@ -662,31 +680,15 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
           <FileUpload files={files} onFilesChange={setFiles} />
         )}
 
-        <div className="mt-8 flex items-center justify-between border-t border-slate-100 pt-6">
-          <button
-            type="button"
-            disabled={loading || draft.step === 1}
-            className="rounded-lg bg-surface-muted px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-inset ring-slate-300 hover:bg-slate-50 disabled:opacity-50 transition-colors"
-            onClick={() => setField('step', Math.max(1, draft.step - 1))}
-          >
-            Back
-          </button>
-
-          <div className="flex gap-3">
-            <button
-              type="button"
-              disabled={loading}
-              onClick={saveDraft}
-              className="rounded-lg bg-white px-4 py-2.5 text-sm font-semibold text-slate-900 shadow-sm ring-1 ring-inset ring-slate-300 hover:bg-slate-50 disabled:opacity-50 transition-colors"
-            >
-              Save Draft
-            </button>
+        <div className="mt-8 border-t border-slate-100 pt-6">
+          {/* Mobile: Continue full-width on top, Back + Save Draft below */}
+          <div className="flex flex-col gap-3 sm:hidden">
             {draft.step === totalSteps ? (
               <button
                 type="button"
                 disabled={loading}
                 onClick={submitTicket}
-                className="inline-flex items-center gap-2 rounded-lg bg-primary-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-primary-500 disabled:opacity-50 transition-colors"
+                className="inline-flex min-h-[44px] w-full items-center justify-center gap-2 rounded-lg bg-primary-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-primary-500 disabled:opacity-50 transition-colors focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2"
               >
                 Submit Ticket <CheckCircle2 className="h-4 w-4" />
               </button>
@@ -694,12 +696,72 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
               <button
                 type="button"
                 disabled={loading}
-                className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 disabled:opacity-50 transition-colors"
+                className="inline-flex min-h-[44px] w-full items-center justify-center gap-2 rounded-lg bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 disabled:opacity-50 transition-colors focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2"
                 onClick={() => { if (!validateCurrentStep()) return; setField('step', Math.min(totalSteps, draft.step + 1)); }}
               >
                 Continue <ChevronRight className="h-4 w-4" />
               </button>
             )}
+            <div className="flex gap-3">
+              <button
+                type="button"
+                disabled={loading || draft.step === 1}
+                className="min-h-[44px] flex-1 rounded-lg bg-surface-muted px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-inset ring-slate-300 hover:bg-slate-50 disabled:opacity-50 transition-colors focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2"
+                onClick={() => setField('step', Math.max(1, draft.step - 1))}
+              >
+                Back
+              </button>
+              <button
+                type="button"
+                disabled={loading}
+                onClick={saveDraft}
+                className="min-h-[44px] flex-1 rounded-lg bg-white px-4 py-2.5 text-sm font-semibold text-slate-900 shadow-sm ring-1 ring-inset ring-slate-300 hover:bg-slate-50 disabled:opacity-50 transition-colors focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2"
+              >
+                Save Draft
+              </button>
+            </div>
+          </div>
+
+          {/* Desktop: original layout */}
+          <div className="hidden sm:flex items-center justify-between">
+            <button
+              type="button"
+              disabled={loading || draft.step === 1}
+              className="min-h-[44px] rounded-lg bg-surface-muted px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-inset ring-slate-300 hover:bg-slate-50 disabled:opacity-50 transition-colors focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2"
+              onClick={() => setField('step', Math.max(1, draft.step - 1))}
+            >
+              Back
+            </button>
+
+            <div className="flex gap-3">
+              <button
+                type="button"
+                disabled={loading}
+                onClick={saveDraft}
+                className="min-h-[44px] rounded-lg bg-white px-4 py-2.5 text-sm font-semibold text-slate-900 shadow-sm ring-1 ring-inset ring-slate-300 hover:bg-slate-50 disabled:opacity-50 transition-colors focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2"
+              >
+                Save Draft
+              </button>
+              {draft.step === totalSteps ? (
+                <button
+                  type="button"
+                  disabled={loading}
+                  onClick={submitTicket}
+                  className="inline-flex min-h-[44px] items-center gap-2 rounded-lg bg-primary-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-primary-500 disabled:opacity-50 transition-colors focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2"
+                >
+                  Submit Ticket <CheckCircle2 className="h-4 w-4" />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  disabled={loading}
+                  className="inline-flex min-h-[44px] items-center gap-2 rounded-lg bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 disabled:opacity-50 transition-colors focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2"
+                  onClick={() => { if (!validateCurrentStep()) return; setField('step', Math.min(totalSteps, draft.step + 1)); }}
+                >
+                  Continue <ChevronRight className="h-4 w-4" />
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </PanelCard>

@@ -90,7 +90,8 @@ export function renderField(
   if (field.type === 'radio') {
     const options = field.options ?? [];
     return (
-      <>
+      <fieldset>
+        <legend className="sr-only">{field.label}</legend>
         <div className="flex flex-wrap gap-4 pt-1">
           {options.map((o) => (
             <label key={o} className="flex items-center gap-2 cursor-pointer">
@@ -107,7 +108,7 @@ export function renderField(
           ))}
         </div>
         {hasError && <p className="mt-1 text-xs text-rose-600">{errorMsg}</p>}
-      </>
+      </fieldset>
     );
   }
 

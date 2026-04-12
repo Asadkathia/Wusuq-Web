@@ -32,7 +32,7 @@ export function FileUpload({ files, onFilesChange }: FileUploadProps) {
           </div>
           <p className="text-xs text-slate-500">PNG, JPG, PDF, DOC up to 10MB each</p>
           {files.length > 0 && (
-            <ul className="mt-4 space-y-2 text-left">
+            <ul aria-live="polite" className="mt-4 space-y-2 text-left">
               {files.map((file, i) => (
                 <li
                   key={i}

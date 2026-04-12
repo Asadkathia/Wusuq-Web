@@ -194,10 +194,10 @@ export function FirBlock({
         </label>
       )}
 
-      <div>
-        <span className="text-sm font-medium text-slate-700">
+      <fieldset>
+        <legend className="text-sm font-medium text-slate-700">
           City Type<span className="text-rose-500 ml-0.5">*</span>
-        </span>
+        </legend>
         <div className="flex gap-6 mt-2">
           {['City', 'Sadar', 'Unknown'].map((o) => (
             <label key={o} className="flex items-center gap-2 cursor-pointer">
@@ -213,7 +213,7 @@ export function FirBlock({
             </label>
           ))}
         </div>
-      </div>
+      </fieldset>
     </div>
   );
 }
@@ -238,10 +238,10 @@ export function RegistryDeedBlock({
         <input className={`${inputClass} bg-slate-50`} type="text" value="Sub Registrar" readOnly />
       </label>
 
-      <div>
-        <span className="text-sm font-medium text-slate-700">
+      <fieldset>
+        <legend className="text-sm font-medium text-slate-700">
           City Type<span className="text-rose-500 ml-0.5">*</span>
-        </span>
+        </legend>
         <div className="flex gap-6 mt-2">
           {['City', 'Sadar', 'Unknown'].map((o) => (
             <label key={o} className="flex items-center gap-2 cursor-pointer">
@@ -257,7 +257,7 @@ export function RegistryDeedBlock({
             </label>
           ))}
         </div>
-      </div>
+      </fieldset>
     </div>
   );
 }
