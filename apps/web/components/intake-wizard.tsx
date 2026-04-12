@@ -277,7 +277,8 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
   const [isAdminTestingMode, setIsAdminTestingMode] = useState(false);
   const [currentUser, setCurrentUser] = useState<LocalUser | null>(null);
   const [files, setFiles] = useState<File[]>([]);
-  const [message, setMessage] = useState('');
+  const [apiError, setApiError] = useState('');
+  const [infoMsg, setInfoMsg] = useState('');
   const [loading, setLoading] = useState(false);
   const [touched, setTouched] = useState<Record<string, boolean>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -363,34 +364,70 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
     setPayloadField('other_station_id', '');
   };
 
-  const validateCurrentStep = () => {
+  const validateField = (key: string, value: string): string => {
+    const allFields = activeStep?.fields ?? [];
+    const field = allFields.find((f) => f.key === key);
+    if (!field?.required) return '';
+    if (field.showWhen && draft.payload[field.showWhen.field] !== field.showWhen.value) return '';
+    if (!hasValue(value)) return `${field.label} is required`;
+    return '';
+  };
+
+  const handleFieldBlur = (key: string) => {
+    setTouched((t) => ({ ...t, [key]: true }));
+    const err = validateField(key, draft.payload[key] ?? '');
+    setErrors((e) => ({ ...e, [key]: err }));
+  };
+
+  const validateCurrentStep = (): boolean => {
     if (!activeStep) return true;
+
+    const newErrors: Record<string, string> = {};
+    const newTouched: Record<string, boolean> = {};
+    let firstInvalidKey: string | null = null;
+
     for (const f of activeStep.fields) {
+      if (GEO_HANDLED_KEYS.has(f.key)) continue;
       if (!f.required) continue;
       if (f.showWhen && draft.payload[f.showWhen.field] !== f.showWhen.value) continue;
       if (f.key === 'select_service') continue;
+
+      newTouched[f.key] = true;
+
       if (draft.flow === 'non_judicial_copy_of_fir' && f.key === 'station_id') {
         if (!hasValue(draft.payload.station_id) && !hasValue(draft.payload.police_station)) {
-          setMessage(`Required field missing: ${f.label}`);
-          return false;
+          newErrors[f.key] = `${f.label} is required`;
+          if (!firstInvalidKey) firstInvalidKey = f.key;
         }
         continue;
       }
       if (!hasValue(draft.payload[f.key])) {
-        setMessage(`Required field missing: ${f.label}`);
-        return false;
+        newErrors[f.key] = `${f.label} is required`;
+        if (!firstInvalidKey) firstInvalidKey = f.key;
       }
     }
-    if (draft.step === 1 && !draft.consumerId) { setMessage('Please select a consumer'); return false; }
-    if (draft.step === 1 && !draft.serviceId) { setMessage('Please select a service'); return false; }
-    if (draft.step === 1 && isJudicial && !draft.payload.select_court) { setMessage('Please select a court'); return false; }
-    if (draft.step === 1 && isJudicial && !draft.payload.select_court_city) { setMessage('Please select a court city'); return false; }
+
+    setTouched((t) => ({ ...t, ...newTouched }));
+    setErrors((e) => ({ ...e, ...newErrors }));
+
+    if (Object.values(newErrors).some(Boolean)) {
+      if (firstInvalidKey) {
+        const el = document.querySelector<HTMLElement>(`[name="${firstInvalidKey}"], #field-${firstInvalidKey}`);
+        el?.focus();
+      }
+      return false;
+    }
+
+    if (draft.step === 1 && !draft.consumerId) { setApiError('Please select a consumer'); return false; }
+    if (draft.step === 1 && !draft.serviceId) { setApiError('Please select a service'); return false; }
+    if (draft.step === 1 && isJudicial && !draft.payload.select_court) { setApiError('Please select a court'); return false; }
+    if (draft.step === 1 && isJudicial && !draft.payload.select_court_city) { setApiError('Please select a court city'); return false; }
     return true;
   };
 
   const saveDraft = async () => {
     if (!selectedFlow) return;
-    setLoading(true); setMessage('Saving draft...');
+    setLoading(true); setInfoMsg('Saving draft...');
     try {
       const r = await apiClient.post<any>('/tickets/intake-drafts', {
         draftId: draft.draftId,
@@ -401,8 +438,8 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
         payload: draft.payload,
       });
       setDraft((c) => ({ ...c, draftId: r.id }));
-      setMessage('Draft saved');
-    } catch (e: any) { setMessage(e.message || 'Save failed'); }
+      setInfoMsg('Draft saved · just now');
+    } catch (e: any) { setApiError(e.message || 'Save failed'); }
     setLoading(false);
   };
 
@@ -426,7 +463,7 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
 
   const submitTicket = async () => {
     if (!selectedFlow || !validateCurrentStep()) return;
-    setLoading(true); setMessage('Submitting ticket...');
+    setLoading(true); setApiError('');
     try {
       const ticket = await apiClient.post<any>(selectedFlow.endpoint, {
         consumerId: draft.consumerId,
@@ -447,9 +484,9 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
         const fd = new FormData(); fd.append('file', file);
         await apiClient.post(`/tickets/${ticket.id}/documents/upload`, fd);
       }
-      setMessage('✅ Ticket created successfully! Batch No: ' + ticket.batchNo);
+      setInfoMsg('✅ Ticket created successfully! Batch No: ' + ticket.batchNo);
       resetForm();
-    } catch (e: any) { setMessage(e.message || 'Submission failed'); }
+    } catch (e: any) { setApiError(e.message || 'Submission failed'); }
     setLoading(false);
   };
 
@@ -586,8 +623,8 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
                 field.key === 'case_type' ? selectedServiceCaseTypes :
                 field.key === 'judge_designation' ? judgeDesignationOptions :
                 undefined;
-
-              const rendered = renderField(field, draft.payload[field.key] ?? '', draft.payload, setPayloadField, dynamicOpts);
+              const errorMsg = touched[field.key] ? (errors[field.key] ?? '') : '';
+              const rendered = renderField(field, draft.payload[field.key] ?? '', draft.payload, setPayloadField, dynamicOpts, handleFieldBlur, errorMsg);
               if (rendered === null) return null;
 
               return (
@@ -606,7 +643,8 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
           {draft.step === 1 && activeStep?.fields
             .filter((f) => !GEO_HANDLED_KEYS.has(f.key))
             .map((field) => {
-              const rendered = renderField(field, draft.payload[field.key] ?? '', draft.payload, setPayloadField);
+              const errorMsg = touched[field.key] ? (errors[field.key] ?? '') : '';
+              const rendered = renderField(field, draft.payload[field.key] ?? '', draft.payload, setPayloadField, undefined, handleFieldBlur, errorMsg);
               if (rendered === null) return null;
               return (
                 <div key={field.key} className={`space-y-1 ${colSpan(field)}`}>
@@ -666,9 +704,14 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
         </div>
       </PanelCard>
 
-      {message && (
-        <div className={`rounded-lg p-4 text-sm font-medium ${message.includes('✅') || message.includes('success') || message.includes('saved') ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-rose-50 text-rose-800 border border-rose-200'}`}>
-          {message}
+      {apiError && (
+        <div role="alert" aria-live="polite" className="rounded-lg p-4 text-sm font-medium bg-rose-50 text-rose-800 border border-rose-200">
+          {apiError}
+        </div>
+      )}
+      {!apiError && infoMsg && (
+        <div className="rounded-lg p-4 text-sm font-medium bg-emerald-50 text-emerald-800 border border-emerald-200">
+          {infoMsg}
         </div>
       )}
     </div>
