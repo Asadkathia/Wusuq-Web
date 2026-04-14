@@ -1,62 +1,35 @@
 'use client';
 
-import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import { useState, useEffect, type ComponentType } from 'react';
+import { useEffect, useState } from 'react';
 import {
   BarChart3,
   BriefcaseBusiness,
-  ChevronDown,
-  ChevronRight,
   FileText,
   FolderOpen,
   LayoutDashboard,
-  LogOut,
   Scale,
   Settings,
-  ShieldCheck,
   Ticket,
   Vote,
   Wallet,
   WalletCards,
 } from 'lucide-react';
-
-type SubItem = {
-  label: string;
-  href: string;
-};
-
-type NavItem = {
-  label: string;
-  href?: string;
-  icon: ComponentType<{ className?: string }>;
-  children?: SubItem[];
-  adminOnly?: boolean;
-  consumerOnly?: boolean;
-  clerkOnly?: boolean;
-};
+import { ShellNav, type NavItem, type NavSubItem } from './ui/shell-nav';
 
 const navItems: NavItem[] = [
   { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-  { label: 'My Tickets', href: '/tickets/pending', icon: Ticket, consumerOnly: true },
-  { label: 'My Cases', href: '/cases', icon: FolderOpen, consumerOnly: true },
-  { label: 'My Wallet', href: '/wallet', icon: Wallet, consumerOnly: true },
-  { label: 'My Assigned Tickets', href: '/tickets?assigned=me', icon: Ticket, clerkOnly: true },
-  { label: 'Submit Receipt', href: '/tickets?clerkView=true', icon: FileText, clerkOnly: true },
-  { label: 'Cases', href: '/cases', icon: FolderOpen, adminOnly: true },
+  { label: 'Cases', href: '/cases', icon: FolderOpen },
   {
     label: 'Paralegal Services',
     icon: Scale,
     children: [
       { label: 'Judicial', href: '/paralegal-services/judicial' },
-      { label: 'Non judicial', href: '/paralegal-services/non-judicial' }
-    ]
+      { label: 'Non judicial', href: '/paralegal-services/non-judicial' },
+    ],
   },
   {
     label: 'Paralegal Tickets',
     icon: Ticket,
-    adminOnly: true,
-    clerkOnly: true,
     children: [
       { label: 'Pending Tickets', href: '/tickets/pending' },
       { label: 'Assigned Tickets', href: '/tickets/assigned' },
@@ -65,16 +38,15 @@ const navItems: NavItem[] = [
       { label: 'Completed Tickets', href: '/tickets/completed' },
     ],
   },
-  { label: 'Finance', href: '/finance', icon: WalletCards, adminOnly: true },
-  { label: 'Reports', href: '/reports', icon: BarChart3, adminOnly: true },
+  { label: 'Finance', href: '/finance', icon: WalletCards },
+  { label: 'Reports', href: '/reports', icon: BarChart3 },
   { label: 'Documents', href: '/documents', icon: FolderOpen },
-  { label: 'Wallet', href: '/wallet', icon: Wallet, adminOnly: true },
-  { label: 'Invoices', icon: FileText, adminOnly: true },
-  { label: 'Elections & Cabinet', href: '/elections-cabinet/elections', icon: Vote, adminOnly: true },
+  { label: 'Wallet', href: '/wallet', icon: Wallet },
+  { label: 'Invoices', href: '#', icon: FileText },
+  { label: 'Elections & Cabinet', href: '/elections-cabinet/elections', icon: Vote },
   {
     label: 'Settings',
     icon: Settings,
-    adminOnly: true,
     children: [
       { label: 'Users', href: '/manage-users/users' },
       { label: 'Representatives', href: '/manage-users/representatives' },
@@ -83,203 +55,41 @@ const navItems: NavItem[] = [
       { label: 'Ticket Charges', href: '/manage-cost/ticket-charges' },
       { label: 'Exchange Rates', href: '/manage-cost/exchange-rates' },
       { label: 'Geographic Data', href: '/manage-cost/geo' },
-    ]
+    ],
   },
-  { label: 'Profile', href: '/profile', icon: BriefcaseBusiness }
+  { label: 'Profile', href: '/profile', icon: BriefcaseBusiness },
 ];
 
-function hasActiveChild(pathname: string, children: SubItem[]) {
-  return children.some((child) => pathname.startsWith(child.href));
-}
+const clerkNavItems: NavItem[] = [
+  { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
+  { label: 'My Assigned Tickets', href: '/tickets/assigned', icon: Ticket },
+  { label: 'Submit Receipt', href: '/tickets/waiting-approval', icon: FileText },
+  {
+    label: 'Paralegal Tickets',
+    icon: Ticket,
+    children: [
+      { label: 'Ticket Requests', href: '/tickets/assigned' },
+      { label: 'Assigned Tickets', href: '/tickets/in-progress' },
+      { label: 'Finalized Tickets', href: '/tickets/waiting-approval' },
+    ],
+  },
+  { label: 'Documents', href: '/documents', icon: FolderOpen },
+  { label: 'Profile', href: '/profile', icon: BriefcaseBusiness },
+];
 
 export function SidebarNav() {
-  const pathname = usePathname();
-  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
-  const [user, setUser] = useState<any>(null);
-  const [impersonatorUser, setImpersonatorUser] = useState<any>(null);
+  const [isClerk, setIsClerk] = useState(false);
 
   useEffect(() => {
     try {
       const u = JSON.parse(localStorage.getItem('wusuq_user') || 'null');
-      if (u) setUser(u);
-      const imp = JSON.parse(localStorage.getItem('wusuq_impersonator_user') || 'null');
-      if (imp) setImpersonatorUser(imp);
+      if (u?.role === 'representative') setIsClerk(true);
     } catch {}
   }, []);
 
-  const isAdmin = user?.role?.includes('admin') ?? false;
-  const isClerk = user?.role === 'representative';
-  const clerkTicketChildren: SubItem[] = [
-    { label: 'Ticket Requests', href: '/tickets/assigned' },
-    { label: 'Assigned Tickets', href: '/tickets/in-progress' },
-    { label: 'Finalized Tickets', href: '/tickets/waiting-approval' },
-  ];
-
-  const signOut = () => {
-    localStorage.removeItem('wusuq_access_token');
-    localStorage.removeItem('wusuq_refresh_token');
-    localStorage.removeItem('wusuq_user');
-    localStorage.removeItem('wusuq_impersonator_access_token');
-    localStorage.removeItem('wusuq_impersonator_refresh_token');
-    localStorage.removeItem('wusuq_impersonator_user');
-    window.location.href = '/login';
-  };
-
-  const exitImpersonation = () => {
-    localStorage.setItem('wusuq_access_token', localStorage.getItem('wusuq_impersonator_access_token') ?? '');
-    localStorage.setItem('wusuq_refresh_token', localStorage.getItem('wusuq_impersonator_refresh_token') ?? '');
-    localStorage.setItem('wusuq_user', localStorage.getItem('wusuq_impersonator_user') ?? '');
-    localStorage.removeItem('wusuq_impersonator_access_token');
-    localStorage.removeItem('wusuq_impersonator_refresh_token');
-    localStorage.removeItem('wusuq_impersonator_user');
-    window.location.href = '/dashboard';
-  };
-
-  return (
-    <aside className="w-[252px] shrink-0 border-r border-slate-200 bg-white">
-      <div className="flex h-full flex-col">
-        <div className="px-6 py-6">
-          <div className="flex h-[102px] w-[102px] items-center justify-center bg-[#7b248d] text-[28px] font-bold uppercase tracking-[0.16em] text-white">
-            W
-          </div>
-        </div>
-
-        {/* Impersonation banner */}
-        {impersonatorUser && (
-          <div className="mx-3 mb-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2.5">
-            <p className="text-xs font-semibold text-amber-800 flex items-center gap-1.5">
-              <ShieldCheck className="h-3.5 w-3.5 flex-shrink-0" />
-              Viewing as {user?.name ?? 'user'}
-            </p>
-            <p className="text-xs text-amber-600 mt-0.5">Signed in as {impersonatorUser.name}</p>
-            <button
-              onClick={exitImpersonation}
-              className="mt-2 w-full rounded-md bg-amber-600 px-2 py-1.5 text-xs font-semibold text-white hover:bg-amber-700 transition-colors"
-            >
-              Back to my account
-            </button>
-          </div>
-        )}
-
-        <nav className="flex-1 space-y-1 px-3 pb-6">
-          {navItems
-            .filter(
-              (item) => {
-                if (isClerk && item.adminOnly) {
-                  return false;
-                }
-
-                const visibleForAdmin = item.adminOnly && isAdmin;
-                const visibleForClerk = item.clerkOnly && isClerk;
-                const visibleWithoutRoleFlags = !item.adminOnly && !item.clerkOnly;
-
-                return (
-                  (visibleForAdmin || visibleForClerk || visibleWithoutRoleFlags) &&
-                  (!item.consumerOnly || (!isAdmin && !isClerk))
-                );
-              },
-            )
-            .map((item) => {
-            const resolvedItem =
-              item.label === 'Paralegal Tickets' && isClerk
-                ? { ...item, children: clerkTicketChildren }
-                : item;
-            const Icon = item.icon;
-            const isActive = resolvedItem.href ? pathname.startsWith(resolvedItem.href) : false;
-            const hasChildren = Boolean(resolvedItem.children?.length);
-            const childActive = resolvedItem.children ? hasActiveChild(pathname, resolvedItem.children) : false;
-            const groupOpen = hasChildren ? openGroups[resolvedItem.label] ?? childActive : false;
-
-            return (
-              <div key={resolvedItem.label}>
-                <div
-                  className={[
-                    'flex items-center justify-between rounded-md px-3 py-2.5',
-                    isActive || childActive ? 'bg-[#f1f3f7]' : 'hover:bg-[#f5f7fb]'
-                  ].join(' ')}
-                >
-                  {resolvedItem.href ? (
-                    <Link href={resolvedItem.href} className="flex min-w-0 items-center gap-3">
-                      <Icon className="h-4 w-4 text-[#8b2a97]" />
-                      <span className="truncate text-sm font-medium text-[#2f3e59]">{resolvedItem.label}</span>
-                    </Link>
-                  ) : (
-                    <div className="flex min-w-0 items-center gap-3">
-                      <Icon className="h-4 w-4 text-[#8b2a97]" />
-                      <span className="truncate text-sm font-medium text-[#2f3e59]">{resolvedItem.label}</span>
-                    </div>
-                  )}
-
-                  {hasChildren ? (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setOpenGroups((current) => ({
-                          ...current,
-                          [resolvedItem.label]: !current[resolvedItem.label]
-                        }))
-                      }
-                      className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#e8edf3] text-slate-500"
-                      aria-label={`Toggle ${resolvedItem.label}`}
-                    >
-                      {groupOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-                    </button>
-                  ) : null}
-                </div>
-
-                {hasChildren && groupOpen ? (
-                  <div className="mt-1 space-y-1 px-4">
-                    {resolvedItem.children!.map((child) => {
-                      const activeChild = pathname.startsWith(child.href);
-                      return (
-                        <Link
-                          key={child.href}
-                          href={child.href}
-                          className="flex items-center gap-3 rounded-md px-3 py-2 hover:bg-[#f5f7fb]"
-                        >
-                          <span
-                            className={[
-                              'h-2 w-2 rounded-full border',
-                              activeChild
-                                ? 'border-[#222] bg-[#222]'
-                                : 'border-[#8f9aaa] bg-transparent'
-                            ].join(' ')}
-                          />
-                          <span
-                            className={[
-                              'text-sm font-medium',
-                              activeChild ? 'text-[#121f35]' : 'text-[#3f4f69]'
-                            ].join(' ')}
-                          >
-                            {child.label}
-                          </span>
-                        </Link>
-                      );
-                    })}
-                  </div>
-                ) : null}
-              </div>
-            );
-          })}
-        </nav>
-
-        {/* Sign Out */}
-        <div className="border-t border-slate-200 px-3 py-4">
-          {user && (
-            <div className="mb-3 px-3">
-              <p className="text-xs font-semibold text-slate-800 truncate">{user.name}</p>
-              <p className="text-xs text-slate-500 truncate">{user.email}</p>
-            </div>
-          )}
-          <button
-            onClick={signOut}
-            className="flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium text-slate-600 hover:bg-rose-50 hover:text-rose-700 transition-colors"
-          >
-            <LogOut className="h-4 w-4" />
-            Sign Out
-          </button>
-        </div>
-      </div>
-    </aside>
-  );
+  const items: NavItem[] = isClerk ? clerkNavItems : navItems;
+  return <ShellNav items={items} variant="staff" />;
 }
+
+// Re-export for legacy usage
+export type { NavItem, NavSubItem };

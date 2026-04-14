@@ -1,13 +1,41 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 'use client';
 
+import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  ArrowRight,
+  ArrowUpRight,
+  Clock,
+  FileText,
+  MapPin,
+  RefreshCw,
+  Search,
+  Ticket as TicketIcon,
+} from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
-import { DataTableShell } from '@/components/ui/data-table-shell';
-import { FilterBar } from '@/components/ui/filter-bar';
-import { SectionHeader } from '@/components/ui/section-header';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { PanelCard } from '@/components/ui/panel-card';
 import { StatusPill } from '@/components/ui/status-pill';
-import { RefreshCw, UserCircle, MapPin, Tag, Eye } from 'lucide-react';
-import { TicketDetailPanel } from '@/components/ticket-detail-panel';
+import { Skeleton } from '@/components/ui/skeleton';
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from '@/components/ui/tabs';
+import {
+  Drawer,
+  DrawerBody,
+  DrawerContent,
+  DrawerDescription,
+  DrawerFooter,
+  DrawerHeader,
+  DrawerTitle,
+} from '@/components/ui/drawer';
+import { IconButton } from '@/components/ui/icon-button';
+import { useToast } from '@/components/ui/toast';
 
 type TicketStatus = 'PENDING' | 'ASSIGNED' | 'IN_PROGRESS' | 'WAITING_APPROVAL' | 'COMPLETED';
 
@@ -17,163 +45,439 @@ type TicketRow = {
   serviceCity: string | null;
   caseType: string | null;
   status: TicketStatus;
+  createdAt?: string;
+  totalAmount?: number | string | null;
+  amountPaid?: number | string | null;
+  paymentStatus?: string | null;
   consumer: { id: string; name: string };
   service: { id: string; name: string; category: string; type: string };
 };
 
+function statusVariant(status: TicketStatus) {
+  if (status === 'COMPLETED') return 'success' as const;
+  if (status === 'PENDING') return 'warning' as const;
+  if (status === 'WAITING_APPROVAL') return 'brand' as const;
+  if (status === 'ASSIGNED' || status === 'IN_PROGRESS') return 'info' as const;
+  return 'neutral' as const;
+}
+
+function statusLabel(status: TicketStatus) {
+  switch (status) {
+    case 'PENDING': return 'Pending';
+    case 'ASSIGNED': return 'Assigned';
+    case 'IN_PROGRESS': return 'In progress';
+    case 'WAITING_APPROVAL': return 'Being reviewed';
+    case 'COMPLETED': return 'Completed';
+    default: return status;
+  }
+}
+
+function formatPKR(value: number | string | null | undefined) {
+  const n = Number(value ?? 0);
+  return new Intl.NumberFormat('en-PK', { maximumFractionDigits: 0 }).format(n);
+}
+
+function relativeTime(iso?: string) {
+  if (!iso) return '';
+  const diff = Math.max(0, Date.now() - new Date(iso).getTime());
+  const m = Math.floor(diff / 60_000);
+  if (m < 1) return 'just now';
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  if (d < 7) return `${d}d ago`;
+  return new Date(iso).toLocaleDateString();
+}
+
+type FilterTab = 'all' | 'active' | 'completed';
+
 export function ConsumerTicketBoard() {
   const [tickets, setTickets] = useState<TicketRow[]>([]);
   const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState('');
   const [search, setSearch] = useState('');
-  const [dateRange, setDateRange] = useState('all');
+  const [tab, setTab] = useState<FilterTab>('all');
   const [viewTicketId, setViewTicketId] = useState<string | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const toast = useToast();
 
   useEffect(() => {
     try {
       const user = JSON.parse(localStorage.getItem('wusuq_user') || 'null') as { id?: string } | null;
       setCurrentUserId(user?.id ?? null);
-    } catch {
-      setCurrentUserId(null);
-    }
+    } catch {}
   }, []);
 
   const loadTickets = useCallback(async () => {
     if (!currentUserId) return;
-
     setLoading(true);
-    setMessage('');
     try {
       const q = new URLSearchParams({ limit: '200', consumerId: currentUserId });
-      if (dateRange !== 'all') q.set('dateRange', dateRange);
-
       const result = await apiClient.get<{ items?: TicketRow[] }>(`/tickets?${q.toString()}`);
       setTickets(result.items ?? []);
-    } catch (error: any) {
-      setMessage(error.message || 'Failed to load tickets');
+    } catch (err: any) {
+      toast.error('Unable to load tickets', err?.message);
     } finally {
       setLoading(false);
     }
-  }, [currentUserId, dateRange]);
+  }, [currentUserId, toast]);
 
-  useEffect(() => {
-    loadTickets();
-  }, [loadTickets]);
+  useEffect(() => { loadTickets(); }, [loadTickets]);
 
-  const filteredTickets = useMemo(() => {
-    if (!search) return tickets;
-    const lower = search.toLowerCase();
-    return tickets.filter((ticket) =>
-      ticket.batchNo.toLowerCase().includes(lower) ||
-      ticket.consumer.name.toLowerCase().includes(lower) ||
-      ticket.service.name.toLowerCase().includes(lower)
-    );
-  }, [tickets, search]);
+  const filtered = useMemo(() => {
+    const s = search.trim().toLowerCase();
+    return tickets.filter((t) => {
+      if (tab === 'active' && t.status === 'COMPLETED') return false;
+      if (tab === 'completed' && t.status !== 'COMPLETED') return false;
+      if (!s) return true;
+      return (
+        t.batchNo.toLowerCase().includes(s) ||
+        t.service.name.toLowerCase().includes(s) ||
+        (t.caseType ?? '').toLowerCase().includes(s) ||
+        (t.serviceCity ?? '').toLowerCase().includes(s)
+      );
+    });
+  }, [tickets, search, tab]);
 
-  const getStatusVariant = (status: TicketStatus) => {
-    if (status === 'COMPLETED') return 'success' as const;
-    if (status === 'PENDING') return 'warning' as const;
-    if (status === 'ASSIGNED' || status === 'IN_PROGRESS') return 'info' as const;
-    return 'neutral' as const;
-  };
+  const counts = useMemo(() => ({
+    all: tickets.length,
+    active: tickets.filter((t) => t.status !== 'COMPLETED').length,
+    completed: tickets.filter((t) => t.status === 'COMPLETED').length,
+  }), [tickets]);
 
   return (
     <div className="space-y-6">
-      <SectionHeader
-        title="My Tickets"
-        description="Track every ticket tied to your account across all statuses."
-        action={
-          <button
-            onClick={loadTickets}
-            disabled={loading}
-            className="inline-flex items-center gap-2 rounded-lg bg-surface px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-inset ring-border-soft transition-colors hover:bg-surface-muted disabled:opacity-50"
-          >
-            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-            Refresh
-          </button>
-        }
-      />
-
-      <DataTableShell
-        header={
-          <FilterBar
-            searchPlaceholder="Search batch, service, or your name..."
-            onSearch={setSearch}
-            actions={
-              <select
-                className="rounded-lg border-0 py-2 pl-3 pr-8 text-slate-900 shadow-sm ring-1 ring-inset ring-border-soft focus:ring-2 focus:ring-primary-600 sm:text-sm"
-                value={dateRange}
-                onChange={(e) => setDateRange(e.target.value)}
-              >
-                <option value="all">Any Date</option>
-                <option value="7d">Last 7 Days</option>
-                <option value="30d">Last 30 Days</option>
-              </select>
-            }
-          />
-        }
-      >
-        <table className="min-w-full divide-y divide-slate-200">
-          <thead className="bg-slate-50">
-            <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">Batch No</th>
-              <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">Consumer</th>
-              <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">Service Details</th>
-              <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">Status</th>
-              <th className="relative px-6 py-3"><span className="sr-only">Actions</span></th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100 bg-white">
-            {filteredTickets.map((ticket) => (
-              <tr key={ticket.id} className="group transition-colors hover:bg-slate-50">
-                <td className="px-6 py-4 text-sm font-medium text-slate-900">{ticket.batchNo}</td>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <div className="flex items-center gap-2">
-                    <UserCircle className="h-4 w-4 text-slate-400" />
-                    <span className="text-sm text-slate-700">{ticket.consumer.name}</span>
-                  </div>
-                </td>
-                <td className="px-6 py-4">
-                  <div className="text-sm font-medium text-slate-900">{ticket.service.name}</div>
-                  <div className="mt-1 flex items-center gap-3 text-xs text-slate-500">
-                    <span className="flex items-center gap-1"><MapPin className="h-3 w-3" /> {ticket.serviceCity || 'Anywhere'}</span>
-                    <span className="flex items-center gap-1"><Tag className="h-3 w-3" /> {ticket.caseType || 'Standard'}</span>
-                  </div>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <StatusPill label={ticket.status} variant={getStatusVariant(ticket.status)} />
-                </td>
-                <td className="px-6 py-4 text-right text-sm font-medium">
-                  <div className="flex items-center justify-end gap-2 opacity-0 transition-opacity group-hover:opacity-100">
-                    <button
-                      onClick={() => setViewTicketId(ticket.id)}
-                      className="flex items-center gap-1 rounded-md bg-slate-100 px-3 py-1.5 text-slate-600 hover:bg-primary-50 hover:text-primary-700"
-                    >
-                      <Eye className="h-3.5 w-3.5" /> View Details
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-            {filteredTickets.length === 0 && (
-              <tr>
-                <td colSpan={5} className="px-6 py-12 text-center text-sm text-slate-500">
-                  No tickets found matching your criteria.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </DataTableShell>
-
-      {message && (
-        <div className={`rounded-lg p-4 text-sm font-medium ${message.toLowerCase().includes('failed') ? 'border border-rose-200 bg-rose-50 text-rose-800' : 'border border-emerald-200 bg-emerald-50 text-emerald-800'}`}>
-          {message}
+      {/* Header */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">My tickets</h1>
+          <p className="mt-1 text-sm text-slate-500">Track every request you&rsquo;ve submitted.</p>
         </div>
-      )}
+        <div className="flex items-center gap-2">
+          <Link href="/consumer/paralegal-services/judicial">
+            <Button variant="brand" size="md" rightIcon={<ArrowRight className="h-4 w-4" />}>
+              Start a new request
+            </Button>
+          </Link>
+        </div>
+      </div>
 
-      {viewTicketId && <TicketDetailPanel ticketId={viewTicketId} onClose={() => setViewTicketId(null)} />}
+      {/* Filters */}
+      <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <TabsList>
+            <TabsTrigger value="all">All <span className="ml-2 text-slate-400 tabular-nums">{counts.all}</span></TabsTrigger>
+            <TabsTrigger value="active">Active <span className="ml-2 text-slate-400 tabular-nums">{counts.active}</span></TabsTrigger>
+            <TabsTrigger value="completed">Completed <span className="ml-2 text-slate-400 tabular-nums">{counts.completed}</span></TabsTrigger>
+          </TabsList>
+
+          <div className="flex items-center gap-2">
+            <div className="relative w-full sm:w-64">
+              <Input
+                placeholder="Search batch, service, city…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                leftIcon={<Search className="h-4 w-4" />}
+              />
+            </div>
+            <IconButton
+              variant="solid"
+              icon={<RefreshCw className={['h-4 w-4', loading ? 'animate-spin' : ''].join(' ')} />}
+              aria-label="Refresh"
+              onClick={loadTickets}
+              disabled={loading}
+            />
+          </div>
+        </div>
+
+        <TabsContent value={tab}>
+          <TicketList loading={loading} tickets={filtered} onOpen={setViewTicketId} />
+        </TabsContent>
+      </Tabs>
+
+      <ConsumerTicketDrawer
+        ticketId={viewTicketId}
+        onClose={() => setViewTicketId(null)}
+      />
+    </div>
+  );
+}
+
+function TicketList({
+  loading,
+  tickets,
+  onOpen,
+}: {
+  loading: boolean;
+  tickets: TicketRow[];
+  onOpen: (id: string) => void;
+}) {
+  if (loading) {
+    return (
+      <div className="grid gap-3 sm:grid-cols-2">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <Skeleton key={i} className="h-28 rounded-2xl" />
+        ))}
+      </div>
+    );
+  }
+
+  if (tickets.length === 0) {
+    return (
+      <PanelCard className="text-center py-16">
+        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-50 text-brand-500">
+          <TicketIcon className="h-6 w-6" />
+        </div>
+        <p className="text-base font-semibold text-slate-900">No tickets to show</p>
+        <p className="mt-1 text-sm text-slate-500">Start your first paralegal request from the dashboard.</p>
+        <Link href="/consumer/dashboard" className="mt-5 inline-flex">
+          <Button variant="subtle" size="sm" rightIcon={<ArrowRight className="h-3.5 w-3.5" />}>
+            Go to dashboard
+          </Button>
+        </Link>
+      </PanelCard>
+    );
+  }
+
+  return (
+    <div className="grid gap-3 sm:grid-cols-2">
+      {tickets.map((t) => (
+        <TicketCard key={t.id} ticket={t} onOpen={() => onOpen(t.id)} />
+      ))}
+    </div>
+  );
+}
+
+function TicketCard({ ticket, onOpen }: { ticket: TicketRow; onOpen: () => void }) {
+  const total = Number(ticket.totalAmount ?? 0);
+  const paid = Number(ticket.amountPaid ?? 0);
+  const remaining = Math.max(0, total - paid);
+
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="group text-left rounded-2xl bg-surface p-5 ring-1 ring-border-soft shadow-elev-1 transition-[transform,box-shadow] duration-200 ease-silk hover:-translate-y-0.5 hover:shadow-elev-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-3 min-w-0">
+          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-50 text-brand-500 shrink-0">
+            <TicketIcon className="h-4 w-4" />
+          </span>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold text-slate-900">{ticket.service.name}</p>
+            <p className="truncate text-xs text-slate-500">
+              {ticket.batchNo}
+              {ticket.createdAt ? ` · ${relativeTime(ticket.createdAt)}` : ''}
+            </p>
+          </div>
+        </div>
+        <ArrowUpRight className="h-4 w-4 shrink-0 text-slate-300 transition-[transform,color] duration-200 group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-slate-500" />
+      </div>
+
+      <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-slate-500">
+        {ticket.serviceCity ? (
+          <span className="inline-flex items-center gap-1"><MapPin className="h-3 w-3" />{ticket.serviceCity}</span>
+        ) : null}
+        {ticket.caseType ? (
+          <span className="inline-flex items-center gap-1"><FileText className="h-3 w-3" />{ticket.caseType}</span>
+        ) : null}
+      </div>
+
+      <div className="mt-4 flex items-center justify-between gap-3">
+        <StatusPill dot label={statusLabel(ticket.status)} variant={statusVariant(ticket.status)} />
+        {total > 0 ? (
+          <div className="text-right">
+            <p className="text-sm font-semibold tabular-nums text-slate-900">PKR {formatPKR(total)}</p>
+            {remaining > 0 ? (
+              <p className="text-[11px] tabular-nums text-amber-600">PKR {formatPKR(remaining)} due</p>
+            ) : total > 0 ? (
+              <p className="text-[11px] text-emerald-600">Fully paid</p>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+    </button>
+  );
+}
+
+// Consumer-scoped drawer: only shows consumer-visible info (no clerk/admin internals)
+function ConsumerTicketDrawer({
+  ticketId,
+  onClose,
+}: {
+  ticketId: string | null;
+  onClose: () => void;
+}) {
+  const [ticket, setTicket] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!ticketId) return;
+    setLoading(true);
+    apiClient
+      .get<any>(`/tickets/${ticketId}`)
+      .then((r) => setTicket(r))
+      .catch(() => setTicket(null))
+      .finally(() => setLoading(false));
+  }, [ticketId]);
+
+  const charges: Array<[string, number]> = ticket
+    ? [
+        ['Service', Number(ticket.serviceCost || 0)],
+        ['Delivery', Number(ticket.deliveryCharges || 0)],
+        ['Printing', Number(ticket.printingCharges || 0)],
+        ['Attested', Number(ticket.attestedCharges || 0)],
+        ['Non-attested', Number(ticket.nonAttestedCharges || 0)],
+        ['Additional', Number(ticket.additionalCharges || 0)],
+      ].filter((row) => Number(row[1]) !== 0) as Array<[string, number]>
+    : [];
+
+  const total = Number(ticket?.totalAmount || 0);
+  const paid = Number(ticket?.amountPaid || 0);
+  const remaining = Math.max(0, total - paid);
+  const discount = Number(ticket?.discountPrice || 0);
+
+  return (
+    <Drawer open={Boolean(ticketId)} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DrawerContent>
+        <DrawerHeader>
+          <div className="flex items-center gap-3">
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-50 text-brand-500">
+              <TicketIcon className="h-4 w-4" />
+            </span>
+            <div className="min-w-0">
+              <DrawerTitle className="truncate">{ticket?.service?.name ?? 'Loading…'}</DrawerTitle>
+              <DrawerDescription>
+                {ticket?.batchNo ?? ' '}
+                {ticket?.createdAt ? ` · ${relativeTime(ticket.createdAt)}` : ''}
+              </DrawerDescription>
+            </div>
+          </div>
+          {ticket ? (
+            <div className="mt-4">
+              <StatusPill dot label={statusLabel(ticket.status)} variant={statusVariant(ticket.status)} />
+            </div>
+          ) : null}
+        </DrawerHeader>
+
+        <DrawerBody>
+          {loading || !ticket ? (
+            <div className="space-y-3">
+              <Skeleton className="h-5 w-1/2" />
+              <Skeleton className="h-24 rounded-xl" />
+              <Skeleton className="h-24 rounded-xl" />
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {/* Summary */}
+              <section className="grid grid-cols-2 gap-3">
+                <MiniStat label="Total" value={`PKR ${formatPKR(total)}`} />
+                <MiniStat label={remaining > 0 ? 'Due' : 'Paid'} value={`PKR ${formatPKR(remaining > 0 ? remaining : paid)}`} tone={remaining > 0 ? 'amber' : 'emerald'} />
+              </section>
+
+              {/* Service details */}
+              <section>
+                <h4 className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Service details</h4>
+                <dl className="mt-3 space-y-2 text-sm">
+                  {ticket.caseType ? <Row label="Case type" value={ticket.caseType} /> : null}
+                  {ticket.serviceCity ? <Row label="Location" value={ticket.serviceCity} /> : null}
+                  {ticket.service?.category ? <Row label="Category" value={ticket.service.category} /> : null}
+                </dl>
+              </section>
+
+              {/* Charges breakdown */}
+              {charges.length > 0 || discount > 0 ? (
+                <section>
+                  <h4 className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Charges</h4>
+                  <div className="mt-3 divide-y divide-border-soft rounded-xl ring-1 ring-border-soft bg-surface">
+                    {charges.map(([label, val]) => (
+                      <div key={label} className="flex items-center justify-between px-4 py-2.5 text-sm">
+                        <span className="text-slate-600">{label}</span>
+                        <span className="tabular-nums text-slate-900">PKR {formatPKR(val)}</span>
+                      </div>
+                    ))}
+                    {discount > 0 ? (
+                      <div className="flex items-center justify-between px-4 py-2.5 text-sm">
+                        <span className="text-slate-600">Discount</span>
+                        <span className="tabular-nums text-emerald-600">− PKR {formatPKR(discount)}</span>
+                      </div>
+                    ) : null}
+                    <div className="flex items-center justify-between px-4 py-3 text-sm font-semibold">
+                      <span className="text-slate-900">Total</span>
+                      <span className="tabular-nums text-slate-900">PKR {formatPKR(total)}</span>
+                    </div>
+                  </div>
+                </section>
+              ) : null}
+
+              {/* Documents (only final uploaded docs visible to consumer) */}
+              {Array.isArray(ticket.documents) && ticket.documents.length > 0 ? (
+                <section>
+                  <h4 className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Documents</h4>
+                  <div className="mt-3 space-y-2">
+                    {ticket.documents.map((doc: any) => (
+                      <a
+                        key={doc.id}
+                        href={doc.fileUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex items-center gap-3 rounded-xl px-3 py-2.5 ring-1 ring-border-soft bg-surface transition-colors hover:bg-surface-muted"
+                      >
+                        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-50 text-brand-500">
+                          <FileText className="h-4 w-4" />
+                        </span>
+                        <span className="min-w-0 flex-1 truncate text-sm text-slate-800">{doc.name ?? 'Document'}</span>
+                        <span className="text-[10px] uppercase tracking-[0.08em] text-slate-400">{doc.type ?? ''}</span>
+                      </a>
+                    ))}
+                  </div>
+                </section>
+              ) : null}
+
+              <section className="rounded-xl bg-brand-50/60 px-4 py-3 text-xs text-brand-700 ring-1 ring-inset ring-brand-100">
+                <p className="flex items-center gap-2 font-semibold">
+                  <Clock className="h-3.5 w-3.5" /> What&rsquo;s next?
+                </p>
+                <p className="mt-1 text-brand-700/80">
+                  {ticket.status === 'PENDING' && 'We\u2019re assigning a representative. You\u2019ll get a notification shortly.'}
+                  {ticket.status === 'ASSIGNED' && 'A representative has been assigned and will start work soon.'}
+                  {ticket.status === 'IN_PROGRESS' && 'Your request is being handled. We\u2019ll notify you once it moves forward.'}
+                  {ticket.status === 'WAITING_APPROVAL' && 'Your request is under final review. You\u2019ll be notified on completion.'}
+                  {ticket.status === 'COMPLETED' && 'All done — you can download the final documents above.'}
+                </p>
+              </section>
+            </div>
+          )}
+        </DrawerBody>
+
+        <DrawerFooter>
+          <Button variant="ghost" onClick={onClose}>Close</Button>
+        </DrawerFooter>
+      </DrawerContent>
+    </Drawer>
+  );
+}
+
+function Row({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-start gap-3">
+      <dt className="w-28 shrink-0 text-xs font-medium uppercase tracking-[0.08em] text-slate-500">{label}</dt>
+      <dd className="flex-1 text-sm text-slate-800">{value}</dd>
+    </div>
+  );
+}
+
+function MiniStat({ label, value, tone = 'slate' }: { label: string; value: string; tone?: 'slate' | 'amber' | 'emerald' }) {
+  const toneClass: Record<typeof tone, string> = {
+    slate: 'text-slate-900',
+    amber: 'text-amber-700',
+    emerald: 'text-emerald-700',
+  };
+  return (
+    <div className="rounded-xl bg-surface-muted px-4 py-3">
+      <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-slate-500">{label}</p>
+      <p className={['mt-1 text-base font-semibold tabular-nums', toneClass[tone]].join(' ')}>{value}</p>
     </div>
   );
 }

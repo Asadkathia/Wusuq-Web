@@ -1,157 +1,189 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  ArrowRight,
+  ArrowUpRight,
+  CalendarClock,
+  FolderOpen,
+  RefreshCw,
+  Search,
+} from 'lucide-react';
 import { casesApi, type Case } from '@/lib/api/cases';
-import { SectionHeader } from '@/components/ui/section-header';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { PanelCard } from '@/components/ui/panel-card';
-import { DataTableShell } from '@/components/ui/data-table-shell';
-import { FilterBar } from '@/components/ui/filter-bar';
 import { StatusPill } from '@/components/ui/status-pill';
-import { FolderOpen, Eye, RefreshCw } from 'lucide-react';
+import { Skeleton } from '@/components/ui/skeleton';
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from '@/components/ui/tabs';
+import { IconButton } from '@/components/ui/icon-button';
+import { useToast } from '@/components/ui/toast';
+
+type FilterTab = 'all' | 'open' | 'closed';
+
+function statusVariant(status: string) {
+  if (status === 'OPEN') return 'success' as const;
+  if (status === 'CLOSED') return 'neutral' as const;
+  return 'warning' as const;
+}
 
 export function ConsumerCasesBoard() {
-  const [items, setItems] = useState<Case[]>([]);
+  const [cases, setCases] = useState<Case[]>([]);
   const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState('');
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
+  const [tab, setTab] = useState<FilterTab>('all');
   const [userId, setUserId] = useState('');
+  const toast = useToast();
 
   useEffect(() => {
     try {
-      const user = JSON.parse(localStorage.getItem('wusuq_user') || 'null') as { id?: string } | null;
-      setUserId(user?.id ?? '');
-    } catch {
-      setUserId('');
-    }
+      const u = JSON.parse(localStorage.getItem('wusuq_user') || 'null') as { id?: string } | null;
+      setUserId(u?.id ?? '');
+    } catch {}
   }, []);
 
   const load = useCallback(async () => {
     if (!userId) return;
-
     setLoading(true);
-    setMessage('');
     try {
       const result = await casesApi.listCases({
         search: search || undefined,
-        status: statusFilter ? (statusFilter as any) : undefined,
         consumerId: userId,
       });
-      setItems(result.items || []);
-    } catch (error: any) {
-      setMessage(error.message || 'Failed to load cases');
+      setCases(result.items || []);
+    } catch (err: any) {
+      toast.error('Unable to load cases', err?.message);
     } finally {
       setLoading(false);
     }
-  }, [search, statusFilter, userId]);
+  }, [search, userId, toast]);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  useEffect(() => { load(); }, [load]);
 
-  const getStatusVariant = (status: string) => {
-    if (status === 'OPEN') return 'success' as const;
-    if (status === 'CLOSED') return 'neutral' as const;
-    return 'warning' as const;
-  };
+  const filtered = useMemo(() => {
+    return cases.filter((c) => {
+      if (tab === 'open' && c.status !== 'OPEN') return false;
+      if (tab === 'closed' && c.status !== 'CLOSED') return false;
+      return true;
+    });
+  }, [cases, tab]);
+
+  const counts = useMemo(() => ({
+    all: cases.length,
+    open: cases.filter((c) => c.status === 'OPEN').length,
+    closed: cases.filter((c) => c.status === 'CLOSED').length,
+  }), [cases]);
 
   return (
     <div className="space-y-6">
-      <SectionHeader
-        title="My Cases"
-        description="Review your case records, linked proceedings, and hearing schedule."
-        action={
-          <button
-            onClick={load}
-            disabled={loading}
-            className="inline-flex items-center gap-2 rounded-lg bg-surface px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-inset ring-border-soft transition-colors hover:bg-surface-muted disabled:opacity-50"
-          >
-            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-            Refresh
-          </button>
-        }
-      />
-
-      {message && (
-        <div className={`rounded-xl border p-4 text-sm font-medium ${message.toLowerCase().includes('failed') ? 'border-rose-200 bg-rose-50 text-rose-800' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`}>
-          {message}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">My cases</h1>
+          <p className="mt-1 text-sm text-slate-500">Your legal cases, linked tickets, and hearings.</p>
         </div>
-      )}
+      </div>
 
-      <PanelCard className="p-0 border-slate-200">
-        <h3 className="flex items-center gap-2 border-b border-slate-100 p-6 text-lg font-semibold text-slate-900">
-          <FolderOpen className="h-5 w-5 text-primary-600" /> Active Cases
-        </h3>
+      <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <TabsList>
+            <TabsTrigger value="all">All <span className="ml-2 text-slate-400 tabular-nums">{counts.all}</span></TabsTrigger>
+            <TabsTrigger value="open">Open <span className="ml-2 text-slate-400 tabular-nums">{counts.open}</span></TabsTrigger>
+            <TabsTrigger value="closed">Closed <span className="ml-2 text-slate-400 tabular-nums">{counts.closed}</span></TabsTrigger>
+          </TabsList>
 
-        <DataTableShell
-          header={
-            <FilterBar
-              searchPlaceholder="Search case ref or title..."
-              onSearch={setSearch}
-              actions={
-                <select
-                  className="rounded-lg border-0 py-2 pl-3 pr-8 text-slate-900 shadow-sm ring-1 ring-inset ring-border-soft focus:ring-2 focus:ring-primary-600 sm:text-sm"
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value)}
-                >
-                  <option value="">All Statuses</option>
-                  <option value="OPEN">Open</option>
-                  <option value="CLOSED">Closed</option>
-                  <option value="ARCHIVED">Archived</option>
-                </select>
-              }
+          <div className="flex items-center gap-2">
+            <div className="relative w-full sm:w-64">
+              <Input
+                placeholder="Search case title or reference"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                leftIcon={<Search className="h-4 w-4" />}
+              />
+            </div>
+            <IconButton
+              variant="solid"
+              icon={<RefreshCw className={['h-4 w-4', loading ? 'animate-spin' : ''].join(' ')} />}
+              aria-label="Refresh"
+              onClick={load}
+              disabled={loading}
             />
-          }
-        >
-          <table className="min-w-full divide-y divide-slate-100">
-            <thead className="bg-slate-50">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Case Info</th>
-                <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Status</th>
-                <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Metrics</th>
-                <th className="px-6 py-3 text-right text-xs font-semibold uppercase tracking-wider text-slate-500">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 bg-white">
-              {items.map((item) => (
-                <tr key={item.id} className="transition-colors hover:bg-slate-50">
-                  <td className="px-6 py-4">
-                    <div className="text-sm font-semibold text-slate-900">{item.title}</div>
-                    <div className="mt-1 flex items-center gap-2 text-xs text-slate-500">
-                      <span className="font-mono text-primary-600">{item.caseRef}</span>
-                      <span className="h-1 w-1 rounded-full bg-slate-300" />
-                      <span>{item.type}</span>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <StatusPill label={item.status} variant={getStatusVariant(item.status)} />
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-700">
-                    <span className="font-medium">{item._count?.tickets || 0}</span> tickets <br />
-                    <span className="font-medium">{item._count?.hearings || 0}</span> hearings
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
-                    <Link
-                      href={`/consumer/my-cases/${item.id}`}
-                      className="inline-flex items-center gap-1.5 rounded-lg bg-primary-50 px-3 py-1.5 font-semibold text-primary-700 transition-colors hover:bg-primary-100"
-                    >
-                      <Eye className="h-3.5 w-3.5" /> View
-                    </Link>
-                  </td>
-                </tr>
+          </div>
+        </div>
+
+        <TabsContent value={tab}>
+          {loading ? (
+            <div className="grid gap-3 sm:grid-cols-2">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <Skeleton key={i} className="h-32 rounded-2xl" />
               ))}
-              {items.length === 0 && !loading && (
-                <tr>
-                  <td colSpan={4} className="px-6 py-8 text-center text-sm text-slate-500">
-                    No cases found.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </DataTableShell>
-      </PanelCard>
+            </div>
+          ) : filtered.length === 0 ? (
+            <PanelCard className="text-center py-16">
+              <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-50 text-brand-500">
+                <FolderOpen className="h-6 w-6" />
+              </div>
+              <p className="text-base font-semibold text-slate-900">No cases here</p>
+              <p className="mt-1 text-sm text-slate-500">Cases appear once your request becomes a legal matter.</p>
+            </PanelCard>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2">
+              {filtered.map((c) => (
+                <CaseCard key={c.id} item={c} />
+              ))}
+            </div>
+          )}
+        </TabsContent>
+      </Tabs>
     </div>
+  );
+}
+
+function CaseCard({ item }: { item: Case }) {
+  const ticketsCount = Array.isArray((item as any).tickets) ? (item as any).tickets.length : undefined;
+  const nextHearing = (item as any).nextHearing?.scheduledDate as string | undefined;
+
+  return (
+    <Link
+      href={`/consumer/my-cases/${item.id}`}
+      className="group block rounded-2xl bg-surface p-5 ring-1 ring-border-soft shadow-elev-1 transition-[transform,box-shadow] duration-200 ease-silk hover:-translate-y-0.5 hover:shadow-elev-2"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-3 min-w-0">
+          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 shrink-0">
+            <FolderOpen className="h-4 w-4" />
+          </span>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold text-slate-900">{item.title}</p>
+            <p className="truncate text-xs text-slate-500">{item.caseRef ?? '—'}</p>
+          </div>
+        </div>
+        <ArrowUpRight className="h-4 w-4 text-slate-300 transition-[transform,color] duration-200 group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-slate-500" />
+      </div>
+
+      <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-slate-500">
+        {item.type ? <span>{item.type}</span> : null}
+        {typeof ticketsCount === 'number' ? <span>{ticketsCount} ticket{ticketsCount === 1 ? '' : 's'}</span> : null}
+        {nextHearing ? (
+          <span className="inline-flex items-center gap-1 text-indigo-700">
+            <CalendarClock className="h-3 w-3" />
+            {new Date(nextHearing).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+          </span>
+        ) : null}
+      </div>
+
+      <div className="mt-4 flex items-center justify-between">
+        <StatusPill dot label={item.status === 'OPEN' ? 'Active' : item.status} variant={statusVariant(item.status)} />
+        <span className="inline-flex items-center gap-1 text-xs font-semibold text-brand-600">
+          View <ArrowRight className="h-3 w-3" />
+        </span>
+      </div>
+    </Link>
   );
 }

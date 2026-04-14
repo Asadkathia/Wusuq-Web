@@ -35,7 +35,7 @@ export function ConsumerAuthGuard({ children }: ConsumerAuthGuardProps) {
       localStorage.removeItem('wusuq_access_token');
       localStorage.removeItem('wusuq_refresh_token');
       localStorage.removeItem('wusuq_user');
-      router.replace(`/login?next=${encodeURIComponent(nextPath)}`);
+      router.replace(`/consumer/login?next=${encodeURIComponent(nextPath)}`);
       setIsAuthorized(false);
     };
 
@@ -78,8 +78,11 @@ export function ConsumerAuthGuard({ children }: ConsumerAuthGuardProps) {
 
   if (isAuthorized !== true) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-slate-50 p-6 text-slate-700">
-        <p className="text-sm">Checking session...</p>
+      <main className="flex min-h-screen items-center justify-center bg-background p-6">
+        <div className="flex items-center gap-3 text-sm text-slate-500">
+          <span className="h-2 w-2 animate-pulse rounded-full bg-brand-500" />
+          Checking your session...
+        </div>
       </main>
     );
   }

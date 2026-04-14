@@ -23,26 +23,29 @@ export default function Home() {
 
   useEffect(() => {
     const token = localStorage.getItem('wusuq_access_token');
+    let isConsumer = false;
+    try {
+      const user = JSON.parse(localStorage.getItem('wusuq_user') || 'null') as { role?: string } | null;
+      isConsumer = CONSUMER_ROLES.includes(user?.role ?? '');
+    } catch {}
+
     if (!token || hasExpiredJwt(token)) {
       localStorage.removeItem('wusuq_access_token');
       localStorage.removeItem('wusuq_refresh_token');
       localStorage.removeItem('wusuq_user');
-      router.replace('/login');
+      router.replace(isConsumer ? '/consumer/login' : '/login');
       return;
     }
 
-    try {
-      const user = JSON.parse(localStorage.getItem('wusuq_user') || 'null') as { role?: string } | null;
-      const isConsumer = CONSUMER_ROLES.includes(user?.role ?? '');
-      router.replace(isConsumer ? '/consumer/dashboard' : '/dashboard');
-    } catch {
-      router.replace('/login');
-    }
+    router.replace(isConsumer ? '/consumer/dashboard' : '/dashboard');
   }, [router]);
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-slate-50 p-6 text-slate-700">
-      <p className="text-sm">Redirecting...</p>
+    <main className="flex min-h-screen items-center justify-center bg-background p-6">
+      <div className="flex items-center gap-3 text-sm text-slate-500">
+        <span className="h-2 w-2 animate-pulse rounded-full bg-brand-500" />
+        Redirecting…
+      </div>
     </main>
   );
 }

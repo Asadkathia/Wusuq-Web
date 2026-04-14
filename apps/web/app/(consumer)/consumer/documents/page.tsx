@@ -1,5 +1,5 @@
-import { DocumentsBoard } from '@/components/documents-board';
+import { ConsumerDocumentsBoard } from '@/components/consumer-documents-board';
 
 export default function ConsumerDocumentsPage() {
-  return <DocumentsBoard />;
+  return <ConsumerDocumentsBoard />;
 }

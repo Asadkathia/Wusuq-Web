@@ -1,5 +1,5 @@
-import { WalletBoard } from '@/components/wallet-board';
+import { ConsumerWalletBoard } from '@/components/consumer-wallet-board';
 
 export default function ConsumerWalletPage() {
-  return <WalletBoard />;
+  return <ConsumerWalletBoard />;
 }

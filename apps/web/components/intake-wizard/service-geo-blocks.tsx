@@ -1,5 +1,8 @@
 'use client';
 
+import { Select, type SelectOption } from '@/components/ui/select';
+import { Building2, MapPin, ShieldAlert } from 'lucide-react';
+
 type GeoState = {
   provinces: { id: string; name: string }[];
   districts: { id: string; name: string }[];
@@ -8,13 +11,79 @@ type GeoState = {
 
 type GeoIds = { provinceId: string; districtId: string; cityId: string };
 
+function toOptions(items: { id: string; name: string }[]): SelectOption[] {
+  return items.map((item) => ({ value: item.id, label: item.name }));
+}
+
+function SectionHeader({ icon, title, description }: { icon: React.ReactNode; title: string; description?: string }) {
+  return (
+    <div className="flex items-center gap-3">
+      <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-50 text-brand-500">{icon}</span>
+      <div>
+        <p className="text-sm font-semibold text-slate-900">{title}</p>
+        {description ? <p className="text-xs text-slate-500">{description}</p> : null}
+      </div>
+    </div>
+  );
+}
+
+function FieldLabel({ children, required }: { children: React.ReactNode; required?: boolean }) {
+  return (
+    <span className="mb-1.5 block text-sm font-medium text-slate-700">
+      {children}
+      {required ? <span className="ml-0.5 text-rose-500">*</span> : null}
+    </span>
+  );
+}
+
+function ChipGroup({
+  options,
+  value,
+  onChange,
+}: {
+  options: string[];
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {options.map((o) => {
+        const active = value === o;
+        return (
+          <button
+            key={o}
+            type="button"
+            onClick={() => onChange(o)}
+            className={[
+              'inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-medium',
+              'transition-[background-color,border-color,color] duration-150',
+              active
+                ? 'border-brand-500 bg-brand-50 text-brand-700'
+                : 'border-border-soft bg-surface text-slate-700 hover:bg-surface-muted',
+            ].join(' ')}
+          >
+            <span
+              className={[
+                'h-3.5 w-3.5 rounded-full border-2 transition-colors',
+                active ? 'border-brand-500 bg-brand-500 ring-2 ring-inset ring-white' : 'border-slate-300',
+              ].join(' ')}
+            />
+            {o}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── Judicial Court Block ────────────────────────────────────────────────────
 type JudicialCourtBlockProps = {
   serviceId: string;
   selectedServiceCourts: string[];
   courtCityOptions: string[];
   selectCourt: string;
   selectCourtCity: string;
-  selectClass: string;
+  selectClass?: string;
   onCourtChange: (court: string) => void;
   onCourtCityChange: (city: string) => void;
 };
@@ -25,56 +94,52 @@ export function JudicialCourtBlock({
   courtCityOptions,
   selectCourt,
   selectCourtCity,
-  selectClass,
   onCourtChange,
   onCourtCityChange,
 }: JudicialCourtBlockProps) {
   if (!serviceId) return null;
   return (
-    <div className="md:col-span-2 grid gap-4 md:grid-cols-2 p-4 bg-slate-50 rounded-xl border border-slate-200">
-      <label className="block">
-        <span className="text-sm font-medium text-slate-700">
-          Court<span className="text-rose-500 ml-0.5">*</span>
-        </span>
-        <select
-          className={selectClass}
-          value={selectCourt}
-          onChange={(e) => onCourtChange(e.target.value)}
-        >
-          <option value="">— Select Court —</option>
-          {selectedServiceCourts.map((c) => (
-            <option key={c} value={c}>
-              {c}
-            </option>
-          ))}
-        </select>
-      </label>
-
-      <label className="block">
-        <span className="text-sm font-medium text-slate-700">
-          Court City<span className="text-rose-500 ml-0.5">*</span>
-        </span>
-        <select
-          className={selectClass}
-          value={selectCourtCity}
-          disabled={!selectCourt}
-          onChange={(e) => onCourtCityChange(e.target.value)}
-        >
-          <option value="">— Select Court City —</option>
-          {courtCityOptions.map((city) => (
-            <option key={city} value={city}>
-              {city}
-            </option>
-          ))}
-        </select>
-        {selectCourt && courtCityOptions.length === 0 && (
-          <p className="mt-1 text-xs text-slate-400">No cities configured for this court</p>
-        )}
-      </label>
+    <div className="md:col-span-2 rounded-2xl border border-border-soft bg-surface-muted/50 p-5 space-y-5">
+      <SectionHeader
+        icon={<Building2 className="h-4 w-4" />}
+        title="Court & jurisdiction"
+        description="Tell us which court this request applies to."
+      />
+      <div className="grid gap-4 md:grid-cols-2">
+        <label className="block">
+          <FieldLabel required>Court</FieldLabel>
+          <Select
+            value={selectCourt}
+            onChange={onCourtChange}
+            options={selectedServiceCourts}
+            placeholder="Select court"
+            searchPlaceholder="Search courts…"
+            allowClear
+            ariaLabel="Court"
+          />
+        </label>
+        <label className="block">
+          <FieldLabel required>Court city</FieldLabel>
+          <Select
+            value={selectCourtCity}
+            onChange={onCourtCityChange}
+            options={courtCityOptions}
+            placeholder={selectCourt ? 'Select court city' : 'Select court first'}
+            searchPlaceholder="Search cities…"
+            allowClear
+            disabled={!selectCourt || courtCityOptions.length === 0}
+            ariaLabel="Court city"
+          />
+          {selectCourt && courtCityOptions.length === 0 ? (
+            <p className="mt-1 text-xs text-slate-400">No cities configured for this court.</p>
+          ) : null}
+        </label>
+      </div>
     </div>
   );
 }
 
+// ─── FIR Block ────────────────────────────────────────────────────────────────
 type FirBlockProps = {
   geo: GeoState;
   geoIds: GeoIds;
@@ -82,7 +147,7 @@ type FirBlockProps = {
   policeStation: string;
   cityType: string;
   inputClass: string;
-  selectClass: string;
+  selectClass?: string;
   onProvinceChange: (provinceId: string, name: string) => void;
   onDistrictChange: (districtId: string, name: string) => void;
   onStationIdChange: (id: string, name: string) => void;
@@ -97,166 +162,118 @@ export function FirBlock({
   policeStation,
   cityType,
   inputClass,
-  selectClass,
   onProvinceChange,
   onDistrictChange,
   onStationIdChange,
   onPoliceStationChange,
   onCityTypeChange,
 }: FirBlockProps) {
+  const provinceOptions = toOptions(geo.provinces);
+  const districtOptions = toOptions(geo.districts);
+  const stationOptions = toOptions(geo.policeStations);
+
+  const findName = (items: { id: string; name: string }[], id: string) =>
+    items.find((x) => x.id === id)?.name ?? '';
+
   return (
-    <div className="md:col-span-2 p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-4">
+    <div className="md:col-span-2 rounded-2xl border border-border-soft bg-surface-muted/50 p-5 space-y-5">
+      <SectionHeader
+        icon={<ShieldAlert className="h-4 w-4" />}
+        title="FIR details"
+        description="Select the jurisdiction where the FIR is lodged."
+      />
+
       <div className="grid gap-4 md:grid-cols-2">
         <label className="block">
-          <span className="text-sm font-medium text-slate-700">
-            Province<span className="text-rose-500 ml-0.5">*</span>
-          </span>
-          <select
-            className={selectClass}
+          <FieldLabel required>Province</FieldLabel>
+          <Select
             value={geoIds.provinceId}
-            onChange={(e) => {
-              const opt = e.target.options[e.target.selectedIndex];
-              onProvinceChange(e.target.value, opt?.text ?? '');
-            }}
-          >
-            <option value="">— Province —</option>
-            {geo.provinces.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
+            onChange={(v) => onProvinceChange(v, findName(geo.provinces, v))}
+            options={provinceOptions}
+            placeholder="Select province"
+            searchPlaceholder="Search provinces…"
+            allowClear
+            ariaLabel="Province"
+          />
         </label>
         <label className="block">
-          <span className="text-sm font-medium text-slate-700">
-            District<span className="text-rose-500 ml-0.5">*</span>
-          </span>
-          <select
-            className={selectClass}
+          <FieldLabel required>District</FieldLabel>
+          <Select
             value={geoIds.districtId}
+            onChange={(v) => onDistrictChange(v, findName(geo.districts, v))}
+            options={districtOptions}
+            placeholder={geoIds.provinceId ? 'Select district' : 'Select province first'}
+            searchPlaceholder="Search districts…"
+            allowClear
             disabled={!geoIds.provinceId}
-            onChange={(e) => {
-              const opt = e.target.options[e.target.selectedIndex];
-              onDistrictChange(e.target.value, opt?.text ?? '');
-            }}
-          >
-            <option value="">— District —</option>
-            {geo.districts.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.name}
-              </option>
-            ))}
-          </select>
+            ariaLabel="District"
+          />
         </label>
       </div>
 
       {geoIds.districtId && geo.policeStations.length > 0 ? (
         <label className="block">
-          <span className="text-sm font-medium text-slate-700">
-            Police Station<span className="text-rose-500 ml-0.5">*</span>
-          </span>
-          <select
-            className={selectClass}
+          <FieldLabel required>Police station</FieldLabel>
+          <Select
             value={stationId}
-            onChange={(e) => {
-              const opt = e.target.options[e.target.selectedIndex];
-              onStationIdChange(e.target.value, opt?.text ?? '');
-            }}
-          >
-            <option value="">— Police Station —</option>
-            {geo.policeStations.map((ps) => (
-              <option key={ps.id} value={ps.id}>
-                {ps.name}
-              </option>
-            ))}
-          </select>
+            onChange={(v) => onStationIdChange(v, findName(geo.policeStations, v))}
+            options={stationOptions}
+            placeholder="Select police station"
+            searchPlaceholder="Search police stations…"
+            allowClear
+            ariaLabel="Police station"
+          />
         </label>
       ) : (
         <label className="block">
-          <span className="text-sm font-medium text-slate-700">
-            Police Station<span className="text-rose-500 ml-0.5">*</span>
-          </span>
+          <FieldLabel required>Police station</FieldLabel>
           <input
             className={inputClass}
             type="text"
             value={policeStation}
             disabled={!geoIds.districtId}
             onChange={(e) => onPoliceStationChange(e.target.value)}
-            placeholder={
-              !geoIds.districtId ? 'Select district first' : 'Enter police station name'
-            }
+            placeholder={!geoIds.districtId ? 'Select district first' : 'Enter police station name'}
           />
-          {geoIds.districtId && (
+          {geoIds.districtId ? (
             <p className="mt-1 text-xs text-slate-400">
-              No configured stations for this district. Enter the police station manually.
+              No configured stations for this district. Enter the name manually.
             </p>
-          )}
+          ) : null}
         </label>
       )}
 
       <fieldset>
-        <legend className="text-sm font-medium text-slate-700">
-          City Type<span className="text-rose-500 ml-0.5">*</span>
-        </legend>
-        <div className="flex gap-6 mt-2">
-          {['City', 'Sadar', 'Unknown'].map((o) => (
-            <label key={o} className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="radio"
-                name="city_type"
-                value={o}
-                checked={cityType === o}
-                onChange={() => onCityTypeChange(o)}
-                className="h-4 w-4 text-primary-600 border-slate-300 focus:ring-primary-600"
-              />
-              <span className="text-sm text-slate-700">{o}</span>
-            </label>
-          ))}
-        </div>
+        <FieldLabel required>City type</FieldLabel>
+        <ChipGroup options={['City', 'Sadar', 'Unknown']} value={cityType} onChange={onCityTypeChange} />
       </fieldset>
     </div>
   );
 }
 
+// ─── Registry / Deed Block ────────────────────────────────────────────────────
 type RegistryDeedBlockProps = {
   cityType: string;
   inputClass: string;
   onCityTypeChange: (value: string) => void;
 };
 
-export function RegistryDeedBlock({
-  cityType,
-  inputClass,
-  onCityTypeChange,
-}: RegistryDeedBlockProps) {
+export function RegistryDeedBlock({ cityType, inputClass, onCityTypeChange }: RegistryDeedBlockProps) {
   return (
-    <div className="md:col-span-2 p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-4">
+    <div className="md:col-span-2 rounded-2xl border border-border-soft bg-surface-muted/50 p-5 space-y-5">
+      <SectionHeader
+        icon={<MapPin className="h-4 w-4" />}
+        title="Registry / deed location"
+        description="This request routes to the local Sub-Registrar office."
+      />
       <label className="block">
-        <span className="text-sm font-medium text-slate-700">
-          Office Name<span className="text-rose-500 ml-0.5">*</span>
-        </span>
-        <input className={`${inputClass} bg-slate-50`} type="text" value="Sub Registrar" readOnly />
+        <FieldLabel required>Office</FieldLabel>
+        <input className={`${inputClass} bg-surface-muted`} type="text" value="Sub Registrar" readOnly />
       </label>
 
       <fieldset>
-        <legend className="text-sm font-medium text-slate-700">
-          City Type<span className="text-rose-500 ml-0.5">*</span>
-        </legend>
-        <div className="flex gap-6 mt-2">
-          {['City', 'Sadar', 'Unknown'].map((o) => (
-            <label key={o} className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="radio"
-                name="city_type"
-                value={o}
-                checked={cityType === o}
-                onChange={() => onCityTypeChange(o)}
-                className="h-4 w-4 text-primary-600 border-slate-300 focus:ring-primary-600"
-              />
-              <span className="text-sm text-slate-700">{o}</span>
-            </label>
-          ))}
-        </div>
+        <FieldLabel required>City type</FieldLabel>
+        <ChipGroup options={['City', 'Sadar', 'Unknown']} value={cityType} onChange={onCityTypeChange} />
       </fieldset>
     </div>
   );

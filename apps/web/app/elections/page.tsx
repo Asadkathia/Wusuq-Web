@@ -71,7 +71,7 @@ export default function PublicElectionsPage() {
       {/* Header */}
       <header className="bg-white border-b border-slate-200 px-6 py-4">
         <div className="max-w-5xl mx-auto flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center bg-[#7b248d] text-white text-lg font-bold">W</div>
+          <div className="flex h-10 w-10 items-center justify-center bg-brand-500 text-white text-lg font-bold">W</div>
           <div>
             <h1 className="text-lg font-bold text-slate-900">Wusuq Elections</h1>
             <p className="text-xs text-slate-500">Public results and candidate profiles</p>
@@ -88,7 +88,7 @@ export default function PublicElectionsPage() {
             placeholder="Search elections..."
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-10 pr-4 text-sm text-slate-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-[#7b248d]"
+            className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-10 pr-4 text-sm text-slate-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
           />
         </div>
 
@@ -99,7 +99,7 @@ export default function PublicElectionsPage() {
             <button
               key={election.id}
               onClick={() => loadCandidates(election)}
-              className={`text-left rounded-xl border bg-white p-5 shadow-sm transition-all hover:shadow-md hover:border-[#7b248d]/40 ${selectedElection?.id === election.id ? 'border-[#7b248d] ring-1 ring-[#7b248d]' : 'border-slate-200'}`}
+              className={`text-left rounded-xl border bg-white p-5 shadow-sm transition-all hover:shadow-md hover:border-brand-500/40 ${selectedElection?.id === election.id ? 'border-brand-500 ring-1 ring-brand-500' : 'border-slate-200'}`}
             >
               <div className="flex items-start justify-between gap-2">
                 <div>
@@ -144,7 +144,7 @@ export default function PublicElectionsPage() {
                             <p className="text-xs text-slate-500 mt-0.5">{candidate.position}</p>
                           </div>
                           <div className="text-right shrink-0">
-                            <p className="text-lg font-bold text-[#7b248d]">{candidate.votes}</p>
+                            <p className="text-lg font-bold text-brand-500">{candidate.votes}</p>
                             <p className="text-[10px] text-slate-400 uppercase tracking-wider">votes</p>
                           </div>
                         </div>

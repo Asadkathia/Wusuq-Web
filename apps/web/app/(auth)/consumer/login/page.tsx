@@ -3,7 +3,7 @@
 import { FormEvent, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ArrowRight, Gavel, Lock, ShieldCheck, Sparkles, Mail } from 'lucide-react';
+import { ArrowRight, Lock, Mail, Scale, ShieldCheck, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { FormField } from '@/components/ui/form-field';
@@ -12,18 +12,18 @@ const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:4000/
 const LOGIN_TIMEOUT_MS = 15000;
 const CONSUMER_ROLES = ['consumer', 'lawyer', 'company'];
 
-export default function StaffLoginPage() {
+export default function ConsumerLoginPage() {
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [nextPath, setNextPath] = useState('/dashboard');
+  const [nextPath, setNextPath] = useState('/consumer/dashboard');
   const router = useRouter();
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const candidate = params.get('next');
-    if (candidate && candidate.startsWith('/') && !candidate.startsWith('/consumer')) setNextPath(candidate);
+    if (candidate && candidate.startsWith('/consumer')) setNextPath(candidate);
   }, []);
 
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -34,6 +34,7 @@ export default function StaffLoginPage() {
     try {
       const controller = new AbortController();
       const timeoutId = window.setTimeout(() => controller.abort(), LOGIN_TIMEOUT_MS);
+
       let response: Response;
       try {
         response = await fetch(`${API_BASE}/auth/login`, {
@@ -47,7 +48,7 @@ export default function StaffLoginPage() {
       }
 
       if (!response.ok) {
-        throw new Error(response.status === 401 ? 'Invalid credentials' : 'Login failed');
+        throw new Error(response.status === 401 ? 'Invalid email or password' : 'Login failed');
       }
 
       const data = (await response.json()) as {
@@ -57,21 +58,18 @@ export default function StaffLoginPage() {
       };
 
       const role = data.user?.role ?? '';
-      if (CONSUMER_ROLES.includes(role)) {
-        localStorage.setItem('wusuq_access_token', data.accessToken);
-        localStorage.setItem('wusuq_refresh_token', data.refreshToken);
-        if (data.user) localStorage.setItem('wusuq_user', JSON.stringify(data.user));
-        router.replace('/consumer/dashboard');
-        return;
+      if (!CONSUMER_ROLES.includes(role)) {
+        throw new Error('This account is for staff. Please use the staff login.');
       }
 
       localStorage.setItem('wusuq_access_token', data.accessToken);
       localStorage.setItem('wusuq_refresh_token', data.refreshToken);
       if (data.user) localStorage.setItem('wusuq_user', JSON.stringify(data.user));
+
       router.replace(nextPath);
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') {
-        setError('Login request timed out. Please try again.');
+        setError('Request timed out. Please try again.');
       } else if (err instanceof TypeError) {
         setError('Cannot reach server. Please check your connection.');
       } else {
@@ -85,55 +83,57 @@ export default function StaffLoginPage() {
   return (
     <main className="min-h-screen bg-background">
       <div className="grid min-h-screen lg:grid-cols-5">
-        {/* Left: dark staff hero */}
-        <aside className="hidden lg:col-span-2 lg:flex relative flex-col justify-between overflow-hidden bg-ink-900 p-12 text-white">
-          <div className="pointer-events-none absolute -top-32 -right-32 h-96 w-96 rounded-full bg-brand-500 opacity-25 blur-[120px]" />
-          <div className="pointer-events-none absolute -bottom-40 -left-24 h-96 w-96 rounded-full bg-brand-700 opacity-30 blur-[120px]" />
+        {/* Left: brand panel */}
+        <aside className="hidden lg:col-span-2 lg:flex relative flex-col justify-between overflow-hidden bg-brand-500 p-12 text-white">
+          <div className="pointer-events-none absolute -top-32 -right-32 h-96 w-96 rounded-full bg-brand-400 opacity-40 blur-[120px]" />
+          <div className="pointer-events-none absolute -bottom-40 -left-24 h-96 w-96 rounded-full bg-brand-700 opacity-50 blur-[120px]" />
 
           <div className="relative flex items-center gap-3">
             <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/10 text-xl font-bold tracking-[0.1em] ring-1 ring-inset ring-white/20 backdrop-blur-sm">
               W
             </div>
-            <div>
-              <p className="text-lg font-semibold tracking-tight">Wusuq</p>
-              <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-white/50">Staff portal</p>
-            </div>
+            <span className="text-lg font-semibold tracking-tight">Wusuq</span>
           </div>
 
           <div className="relative space-y-6">
             <h1 className="text-4xl font-semibold leading-tight tracking-tight">
-              Operate Wusuq<br />
-              <span className="text-brand-100/80">with confidence.</span>
+              Paralegal services,<br />
+              <span className="text-brand-100">simplified.</span>
             </h1>
-            <p className="max-w-md text-sm leading-relaxed text-white/70">
-              Manage tickets, verify clerk receipts, reconcile finance, and oversee the full paralegal operations stack.
+            <p className="max-w-md text-sm leading-relaxed text-brand-100/90">
+              Access court documents, track case progress, manage hearings and payments — all from a single, secure dashboard.
             </p>
             <div className="space-y-3 pt-2">
-              <FeatureRow icon={<Gavel className="h-4 w-4" />} label="Assign tickets to representatives" />
-              <FeatureRow icon={<ShieldCheck className="h-4 w-4" />} label="Audit-ready wallet and finance trails" />
-              <FeatureRow icon={<Sparkles className="h-4 w-4" />} label="Centralized cost rules and geography" />
+              <FeatureRow icon={<Scale className="h-4 w-4" />} label="Court-grade document handling" />
+              <FeatureRow icon={<ShieldCheck className="h-4 w-4" />} label="End-to-end case privacy" />
+              <FeatureRow icon={<Sparkles className="h-4 w-4" />} label="Dedicated representative per request" />
             </div>
           </div>
 
-          <p className="relative text-xs text-white/50">
-            © {new Date().getFullYear()} Wusuq · Internal use only
+          <p className="relative text-xs text-brand-100/70">
+            © {new Date().getFullYear()} Wusuq · All rights reserved
           </p>
         </aside>
 
+        {/* Right: form panel */}
         <section className="flex items-center justify-center p-6 lg:col-span-3 lg:p-12">
           <div className="w-full max-w-md">
             <div className="mb-8 lg:hidden">
               <div className="flex items-center gap-2.5">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-ink-900 text-base font-bold text-white">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-500 text-base font-bold text-white">
                   W
                 </div>
-                <span className="text-lg font-semibold tracking-tight text-slate-900">Wusuq Staff</span>
+                <span className="text-lg font-semibold tracking-tight text-slate-900">Wusuq</span>
               </div>
             </div>
 
             <div className="space-y-1.5">
-              <h2 className="text-2xl font-semibold tracking-tight text-slate-900">Sign in to staff portal</h2>
-              <p className="text-sm text-slate-500">Admins, managers, and representatives only.</p>
+              <h2 className="text-2xl font-semibold tracking-tight text-slate-900">
+                Welcome back
+              </h2>
+              <p className="text-sm text-slate-500">
+                Sign in to manage your paralegal requests.
+              </p>
             </div>
 
             <form onSubmit={onSubmit} className="mt-8 space-y-5">
@@ -143,7 +143,7 @@ export default function StaffLoginPage() {
                   name="identifier"
                   type="text"
                   autoComplete="username"
-                  placeholder="you@wusuq.com"
+                  placeholder="you@example.com"
                   value={identifier}
                   onChange={(e) => setIdentifier(e.target.value)}
                   leftIcon={<Mail className="h-4 w-4" />}
@@ -151,7 +151,11 @@ export default function StaffLoginPage() {
                 />
               </FormField>
 
-              <FormField label="Password" required htmlFor="password">
+              <FormField
+                label="Password"
+                required
+                htmlFor="password"
+              >
                 <Input
                   id="password"
                   name="password"
@@ -165,6 +169,16 @@ export default function StaffLoginPage() {
                 />
               </FormField>
 
+              <div className="flex items-center justify-end">
+                <button
+                  type="button"
+                  className="text-xs font-medium text-brand-600 hover:text-brand-700 transition-colors"
+                  onClick={() => alert('Password reset is coming soon. Please contact support.')}
+                >
+                  Forgot password?
+                </button>
+              </div>
+
               {error ? (
                 <div className="rounded-xl border border-rose-100 bg-rose-50 px-4 py-3 text-sm text-rose-700">
                   {error}
@@ -173,7 +187,7 @@ export default function StaffLoginPage() {
 
               <Button
                 type="submit"
-                variant="primary"
+                variant="brand"
                 size="lg"
                 fullWidth
                 loading={loading}
@@ -183,12 +197,14 @@ export default function StaffLoginPage() {
               </Button>
             </form>
 
-            <p className="mt-8 text-center text-xs text-slate-500">
-              Are you a client? Use the{' '}
-              <Link href="/consumer/login" className="font-semibold text-brand-600 hover:text-brand-700 transition-colors">
-                client portal
+            <p className="mt-8 text-center text-sm text-slate-500">
+              New to Wusuq?{' '}
+              <Link
+                href="/consumer/signup"
+                className="font-semibold text-brand-600 hover:text-brand-700 transition-colors"
+              >
+                Create an account
               </Link>
-              .
             </p>
           </div>
         </section>
@@ -199,7 +215,7 @@ export default function StaffLoginPage() {
 
 function FeatureRow({ icon, label }: { icon: React.ReactNode; label: string }) {
   return (
-    <div className="flex items-center gap-3 text-sm text-white/80">
+    <div className="flex items-center gap-3 text-sm text-white/90">
       <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/10 ring-1 ring-inset ring-white/20">
         {icon}
       </span>

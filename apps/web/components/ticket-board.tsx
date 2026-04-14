@@ -12,6 +12,17 @@ import { FilterBar } from '@/components/ui/filter-bar';
 import { SectionHeader } from '@/components/ui/section-header';
 import { StatusPill } from '@/components/ui/status-pill';
 import { PanelCard } from '@/components/ui/panel-card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { FormField } from '@/components/ui/form-field';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { UserCircle, MapPin, Tag, RefreshCw, CheckSquare, Clock, History, FileOutput, Eye, PlayCircle, Upload, X, XCircle } from 'lucide-react';
 import { TicketDetailPanel } from './ticket-detail-panel';
 
@@ -780,62 +791,45 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
         </PanelCard>
       )}
 
-      {costsTicket && (
-        <PanelCard className="mt-6 border-slate-900 bg-slate-950 text-white">
-          <div className="flex items-start justify-between">
-            <SectionHeader
-              title={`Update Ticket Payments — ${costsTicket.batchNo}`}
-              description="Submit your final cost breakdown before the admin-approval upload step."
-            />
-            <button onClick={() => setCostsTicket(null)} className="p-1.5 text-slate-400 hover:text-white rounded-md transition-colors">
-              <X className="h-5 w-5" />
-            </button>
-          </div>
-          <div className="mt-6 grid gap-4 md:grid-cols-3">
+      <Dialog open={Boolean(costsTicket)} onOpenChange={(open) => { if (!open) setCostsTicket(null); }}>
+        <DialogContent size="xl">
+          <DialogHeader>
+            <DialogTitle>Update ticket payments{costsTicket ? ` — ${costsTicket.batchNo}` : ''}</DialogTitle>
+            <DialogDescription>Submit your final cost breakdown before the admin-approval upload step.</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3">
             {clerkCostFields.map(({ label, key }) => (
-              <label key={key} className="block">
-                <span className="text-sm font-medium text-slate-200">{label}</span>
-                <input
+              <FormField key={key} label={label} htmlFor={`cc-${key}`}>
+                <Input
+                  id={`cc-${key}`}
                   type="number"
                   min="0"
                   value={clerkCosts[key]}
                   onChange={(e) =>
-                    setClerkCosts((current) => ({
-                      ...current,
-                      [key]: e.target.value,
-                    }))
+                    setClerkCosts((current) => ({ ...current, [key]: e.target.value }))
                   }
-                  className="mt-2 block w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2.5 text-sm text-white placeholder:text-slate-500 focus:border-primary-500 focus:outline-none"
                   placeholder="0"
                 />
-              </label>
+              </FormField>
             ))}
-            <div className="block">
-              <span className="text-sm font-medium text-slate-200">Printing Charges</span>
-              <div className="mt-2 flex items-center rounded-xl border border-slate-600 bg-slate-800 px-3 py-2.5 text-sm text-slate-300">
-                <span className="flex-1">
+            <FormField label="Printing charges" hint="Computed automatically">
+              <div className="flex h-11 items-center rounded-xl border border-border-soft bg-surface-muted px-4 text-sm">
+                <span className="flex-1 font-semibold tabular-nums text-slate-900">
                   PKR {((Number(clerkCosts.noOfPages) || 0) * (Number(clerkCosts.costPerPage) || 0)).toLocaleString()}
                 </span>
-                <span className="text-xs text-slate-500">{clerkCosts.noOfPages || '0'} × {clerkCosts.costPerPage || '0'}</span>
+                <span className="text-xs text-slate-500">
+                  {clerkCosts.noOfPages || '0'} × {clerkCosts.costPerPage || '0'}
+                </span>
               </div>
-            </div>
+            </FormField>
           </div>
-          <div className="mt-6 flex gap-3">
-            <button
-              onClick={submitClerkCosts}
-              className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-primary-500 transition-colors"
-            >
-              Submit
-            </button>
-            <button
-              onClick={() => setCostsTicket(null)}
-              className="rounded-lg bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 shadow-sm ring-1 ring-inset ring-slate-700 hover:bg-slate-700 transition-colors"
-            >
-              Cancel
-            </button>
-          </div>
-        </PanelCard>
-      )}
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setCostsTicket(null)}>Cancel</Button>
+            <Button variant="primary" onClick={submitClerkCosts}>Submit costs</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
 
       {/* Timeline Modal */}
       {timelineTicketId && timeline && (

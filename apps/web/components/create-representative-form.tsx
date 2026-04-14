@@ -82,7 +82,7 @@ export default function CreateRepresentativeForm() {
   const labelClasses = "block text-sm font-medium text-slate-300 mb-1.5 flex items-center gap-2";
 
   return (
-    <div className="min-h-screen bg-[#070b14] flex items-center justify-center p-6 relative overflow-hidden" style={{ perspective: "1200px" }}>
+    <div className="min-h-screen bg-ink-900 flex items-center justify-center p-6 relative overflow-hidden" style={{ perspective: "1200px" }}>
       <style>{`
         @keyframes shimmer {
           100% { transform: translateX(100%); }

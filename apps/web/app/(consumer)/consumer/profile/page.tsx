@@ -1,5 +1,5 @@
-import { ProfileBoard } from '@/components/profile-board';
+import { ConsumerProfileBoard } from '@/components/consumer-profile-board';
 
 export default function ConsumerProfilePage() {
-  return <ProfileBoard />;
+  return <ConsumerProfileBoard />;
 }

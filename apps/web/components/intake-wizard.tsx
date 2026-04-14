@@ -4,6 +4,7 @@
 import { useMemo, useEffect, useState, useCallback, useRef } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { PanelCard } from '@/components/ui/panel-card';
+import { Select } from '@/components/ui/select';
 import { ChevronRight, CheckCircle2, FolderOpen, Sparkles, X } from 'lucide-react';
 import type { IntakeField, IntakeFlow, IntakeStep } from '@/lib/intake-flows';
 
@@ -187,35 +188,37 @@ const DEFAULT_JUDGE_DESIGNATIONS = [
 function ServiceSelect({
   value,
   onChange,
-  inputClass,
   services,
 }: {
   value: string;
   onChange: (id: string, name: string, courts: string[], courtCities: Record<string, string[]>, caseTypes: string[]) => void;
-  inputClass: string;
+  inputClass?: string;
   services: ServiceHit[];
 }) {
+  const options = services.map((s) => ({
+    value: s.id,
+    label: s.name,
+    description: SERVICE_DESCRIPTIONS[s.name],
+  }));
   return (
-    <select
-      className={inputClass}
+    <Select
       value={value}
-      onChange={(e) => {
-        const nextId = e.target.value;
-        const selected = services.find((s) => s.id === nextId);
+      onChange={(id) => {
+        const selected = services.find((s) => s.id === id);
         onChange(
-          nextId,
+          id,
           selected?.name ?? '',
           selected?.courts ?? [],
           selected?.courtCities ?? {},
           selected?.caseTypes ?? [],
         );
       }}
-    >
-      <option value="">— Select a service —</option>
-      {services.map((s) => (
-        <option key={s.id} value={s.id}>{s.name}</option>
-      ))}
-    </select>
+      options={options}
+      placeholder="Select a service"
+      searchPlaceholder="Search services…"
+      allowClear
+      ariaLabel="Service"
+    />
   );
 }
 
@@ -237,10 +240,10 @@ function ServiceCardGrid({
             key={service.id}
             type="button"
             onClick={() => onSelect(service)}
-            className={`rounded-2xl border bg-white p-5 text-left shadow-sm transition focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2 ${
+            className={`rounded-2xl border bg-surface p-5 text-left shadow-elev-1 transition-[transform,box-shadow,border-color] duration-200 ease-silk hover:-translate-y-0.5 hover:shadow-elev-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40 ${
               selected
-                ? 'border-primary-600 ring-2 ring-primary-600'
-                : 'border-slate-200 hover:border-primary-300 hover:bg-primary-50/40'
+                ? 'border-brand-500 ring-2 ring-brand-500/30'
+                : 'border-border-soft hover:border-brand-200'
             }`}
           >
             <div className="flex items-start justify-between gap-3">
@@ -248,7 +251,7 @@ function ServiceCardGrid({
                 <p className="text-base font-semibold text-slate-900">{service.name}</p>
                 <p className="mt-1 text-sm text-slate-500">{getServiceDescription(service)}</p>
               </div>
-              {selected ? <Sparkles className="mt-0.5 h-5 w-5 shrink-0 text-primary-600" /> : null}
+              {selected ? <Sparkles className="mt-0.5 h-5 w-5 shrink-0 text-brand-500" /> : null}
             </div>
           </button>
         );
@@ -737,15 +740,14 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
 
           {showServiceSetupStep && (
             <>
-              <label className="space-y-1 block">
+              <label className="space-y-1.5 block">
                 <span className="text-sm font-medium text-slate-700">
                   {isConsumerVariant ? 'Service type' : 'Intake Flow'}
                 </span>
-                <select
-                  className={inputClass}
+                <Select
                   value={draft.flow}
-                  onChange={(e) => {
-                    setField('flow', e.target.value);
+                  onChange={(next) => {
+                    setField('flow', next);
                     setField('step', 1);
                     setField('serviceId', '');
                     setDraft((c) => ({ ...c, payload: {} }));
@@ -754,9 +756,10 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
                     setSelectedServiceCaseTypes([]);
                     setGeoIds({ provinceId: '', districtId: '', cityId: '' });
                   }}
-                >
-                  {flows.map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
-                </select>
+                  options={flows.map((f) => ({ value: f.key, label: f.label }))}
+                  placeholder="Select a flow"
+                  ariaLabel="Intake flow"
+                />
               </label>
 
               {!isConsumerVariant ? (
@@ -794,7 +797,6 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
                 ) : (
                   <ServiceSelect
                     value={draft.serviceId}
-                    inputClass={inputClass}
                     services={services}
                     onChange={(id, name, _courts, _courtCities, caseTypes) =>
                       applySelectedService(id, name, caseTypes)
@@ -897,37 +899,42 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
           />
         )}
 
-        <div className="mt-8 border-t border-slate-100 pt-6">
+        <div className="mt-8 border-t border-border-soft pt-6">
           <div className="mb-4 flex items-center justify-between gap-3">
             <button
               type="button"
               onClick={() => setDocumentsPanelOpen(true)}
-              className="inline-flex min-h-[44px] items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2"
+              className="inline-flex items-center gap-2 rounded-xl border border-border-soft bg-surface px-4 py-2 text-sm font-semibold text-slate-700 shadow-elev-1 transition-colors hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40"
             >
-              <FolderOpen className="h-4 w-4" /> Documents ({files.length})
+              <FolderOpen className="h-4 w-4 text-brand-500" /> Documents
+              <span className="inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-brand-50 px-1.5 text-[10px] font-semibold text-brand-700 tabular-nums">
+                {files.length}
+              </span>
             </button>
             {savedLabel ? (
-              <span className="inline-flex min-h-[32px] items-center rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700 ring-1 ring-inset ring-emerald-100">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
                 {savedLabel}
               </span>
             ) : null}
           </div>
-          {/* Mobile: Continue full-width on top, Back + Save Draft below */}
+
+          {/* Mobile */}
           <div className="flex flex-col gap-3 sm:hidden">
             {draft.step === totalSteps ? (
               <button
                 type="button"
                 disabled={loading}
                 onClick={submitTicket}
-                className="inline-flex min-h-[44px] w-full items-center justify-center gap-2 rounded-lg bg-primary-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-primary-500 disabled:opacity-50 transition-colors focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2"
+                className="inline-flex min-h-[44px] w-full items-center justify-center gap-2 rounded-xl bg-brand-500 px-5 py-2.5 text-sm font-semibold text-white shadow-elev-1 transition-[background-color,box-shadow] hover:bg-brand-600 hover:shadow-elev-2 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40"
               >
-                Submit Ticket <CheckCircle2 className="h-4 w-4" />
+                Submit ticket <CheckCircle2 className="h-4 w-4" />
               </button>
             ) : (
               <button
                 type="button"
                 disabled={loading}
-                className="inline-flex min-h-[44px] w-full items-center justify-center gap-2 rounded-lg bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 disabled:opacity-50 transition-colors focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2"
+                className="inline-flex min-h-[44px] w-full items-center justify-center gap-2 rounded-xl bg-brand-500 px-5 py-2.5 text-sm font-semibold text-white shadow-elev-1 transition-[background-color,box-shadow] hover:bg-brand-600 hover:shadow-elev-2 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40"
                 onClick={() => { if (!validateCurrentStep()) return; setField('step', Math.min(totalSteps, draft.step + 1)); }}
               >
                 Continue <ChevronRight className="h-4 w-4" />
@@ -937,7 +944,7 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
               <button
                 type="button"
                 disabled={loading || draft.step === 1}
-                className="min-h-[44px] flex-1 rounded-lg bg-surface-muted px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-inset ring-slate-300 hover:bg-slate-50 disabled:opacity-50 transition-colors focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2"
+                className="min-h-[44px] flex-1 rounded-xl bg-surface px-4 py-2.5 text-sm font-semibold text-slate-700 ring-1 ring-inset ring-border-soft transition-colors hover:bg-surface-hover disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40"
                 onClick={() => setField('step', Math.max(1, draft.step - 1))}
               >
                 Back
@@ -946,19 +953,19 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
                 type="button"
                 disabled={loading}
                 onClick={() => saveDraft('manual')}
-                className="min-h-[44px] flex-1 rounded-lg bg-white px-4 py-2.5 text-sm font-semibold text-slate-900 shadow-sm ring-1 ring-inset ring-slate-300 hover:bg-slate-50 disabled:opacity-50 transition-colors focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2"
+                className="min-h-[44px] flex-1 rounded-xl bg-surface px-4 py-2.5 text-sm font-semibold text-slate-900 ring-1 ring-inset ring-border-soft transition-colors hover:bg-surface-hover disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40"
               >
-                Save Draft
+                Save draft
               </button>
             </div>
           </div>
 
-          {/* Desktop: original layout */}
+          {/* Desktop */}
           <div className="hidden sm:flex items-center justify-between">
             <button
               type="button"
               disabled={loading || draft.step === 1}
-              className="min-h-[44px] rounded-lg bg-surface-muted px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-inset ring-slate-300 hover:bg-slate-50 disabled:opacity-50 transition-colors focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2"
+              className="min-h-[44px] rounded-xl bg-surface px-4 py-2.5 text-sm font-semibold text-slate-700 ring-1 ring-inset ring-border-soft transition-colors hover:bg-surface-hover disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40"
               onClick={() => setField('step', Math.max(1, draft.step - 1))}
             >
               Back
@@ -969,24 +976,24 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
                 type="button"
                 disabled={loading}
                 onClick={() => saveDraft('manual')}
-                className="min-h-[44px] rounded-lg bg-white px-4 py-2.5 text-sm font-semibold text-slate-900 shadow-sm ring-1 ring-inset ring-slate-300 hover:bg-slate-50 disabled:opacity-50 transition-colors focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2"
+                className="min-h-[44px] rounded-xl bg-surface px-4 py-2.5 text-sm font-semibold text-slate-900 ring-1 ring-inset ring-border-soft transition-colors hover:bg-surface-hover disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40"
               >
-                Save Draft
+                Save draft
               </button>
               {draft.step === totalSteps ? (
                 <button
                   type="button"
                   disabled={loading}
                   onClick={submitTicket}
-                  className="inline-flex min-h-[44px] items-center gap-2 rounded-lg bg-primary-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-primary-500 disabled:opacity-50 transition-colors focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2"
+                  className="inline-flex min-h-[44px] items-center gap-2 rounded-xl bg-brand-500 px-5 py-2.5 text-sm font-semibold text-white shadow-elev-1 transition-[background-color,box-shadow] hover:bg-brand-600 hover:shadow-elev-2 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40"
                 >
-                  Submit Ticket <CheckCircle2 className="h-4 w-4" />
+                  Submit ticket <CheckCircle2 className="h-4 w-4" />
                 </button>
               ) : (
                 <button
                   type="button"
                   disabled={loading}
-                  className="inline-flex min-h-[44px] items-center gap-2 rounded-lg bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 disabled:opacity-50 transition-colors focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2"
+                  className="inline-flex min-h-[44px] items-center gap-2 rounded-xl bg-brand-500 px-5 py-2.5 text-sm font-semibold text-white shadow-elev-1 transition-[background-color,box-shadow] hover:bg-brand-600 hover:shadow-elev-2 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40"
                   onClick={() => { if (!validateCurrentStep()) return; setField('step', Math.min(totalSteps, draft.step + 1)); }}
                 >
                   Continue <ChevronRight className="h-4 w-4" />

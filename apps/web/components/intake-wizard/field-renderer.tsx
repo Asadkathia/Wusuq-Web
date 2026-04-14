@@ -1,6 +1,7 @@
 'use client';
 
 import type { IntakeField } from '@/lib/intake-flows';
+import { Select } from '@/components/ui/select';
 
 const YEAR_OPTIONS: string[] = (() => {
   const current = new Date().getFullYear();
@@ -48,19 +49,17 @@ export function renderField(
       dynamicOptions && dynamicOptions.length > 0 ? dynamicOptions : (field.options ?? []);
     return (
       <>
-        <select
-          className={inputClass}
+        <Select
           value={value}
-          onChange={(e) => onChange(field.key, e.target.value)}
+          onChange={(v) => onChange(field.key, v)}
           onBlur={() => onBlur?.(field.key)}
-        >
-          <option value="">— Select {field.label} —</option>
-          {options.map((o) => (
-            <option key={o} value={o}>
-              {o}
-            </option>
-          ))}
-        </select>
+          options={options}
+          placeholder={`Select ${field.label.toLowerCase()}`}
+          searchPlaceholder={`Search ${field.label.toLowerCase()}…`}
+          allowClear
+          error={hasError}
+          ariaLabel={field.label}
+        />
         {hasError && <p className="mt-1 text-xs text-rose-600">{errorMsg}</p>}
       </>
     );
@@ -69,19 +68,18 @@ export function renderField(
   if (field.type === 'year_select') {
     return (
       <>
-        <select
-          className={inputClass}
+        <Select
           value={value}
-          onChange={(e) => onChange(field.key, e.target.value)}
+          onChange={(v) => onChange(field.key, v)}
           onBlur={() => onBlur?.(field.key)}
-        >
-          <option value="">— Select Year —</option>
-          {YEAR_OPTIONS.map((y) => (
-            <option key={y} value={y}>
-              {y}
-            </option>
-          ))}
-        </select>
+          options={YEAR_OPTIONS}
+          placeholder="Select year"
+          searchPlaceholder="Search year…"
+          searchable
+          allowClear
+          error={hasError}
+          ariaLabel="Year"
+        />
         {hasError && <p className="mt-1 text-xs text-rose-600">{errorMsg}</p>}
       </>
     );
@@ -92,20 +90,32 @@ export function renderField(
     return (
       <fieldset>
         <legend className="sr-only">{field.label}</legend>
-        <div className="flex flex-wrap gap-4 pt-1">
-          {options.map((o) => (
-            <label key={o} className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="radio"
-                name={field.key}
-                value={o}
-                checked={value === o}
-                onChange={() => { onChange(field.key, o); onBlur?.(field.key); }}
-                className="h-4 w-4 text-primary-600 border-slate-300 focus:ring-primary-600"
-              />
-              <span className="text-sm text-slate-700 capitalize">{o.replace(/_/g, ' ')}</span>
-            </label>
-          ))}
+        <div className="flex flex-wrap gap-2 pt-1">
+          {options.map((o) => {
+            const active = value === o;
+            return (
+              <button
+                key={o}
+                type="button"
+                onClick={() => { onChange(field.key, o); onBlur?.(field.key); }}
+                className={[
+                  'inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-medium',
+                  'transition-[background-color,border-color,color] duration-150',
+                  active
+                    ? 'border-brand-500 bg-brand-50 text-brand-700'
+                    : 'border-border-soft bg-surface text-slate-700 hover:bg-surface-muted',
+                ].join(' ')}
+              >
+                <span
+                  className={[
+                    'h-3.5 w-3.5 rounded-full border-2 transition-colors',
+                    active ? 'border-brand-500 bg-brand-500 ring-2 ring-inset ring-white' : 'border-slate-300',
+                  ].join(' ')}
+                />
+                <span className="capitalize">{o.replace(/_/g, ' ')}</span>
+              </button>
+            );
+          })}
         </div>
         {hasError && <p className="mt-1 text-xs text-rose-600">{errorMsg}</p>}
       </fieldset>
@@ -116,21 +126,38 @@ export function renderField(
     const options = field.options ?? [];
     return (
       <>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-          {options.map((o) => (
-            <label
-              key={o}
-              className="flex items-center gap-2.5 cursor-pointer p-2.5 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors"
-            >
-              <input
-                type="checkbox"
-                checked={value === o}
-                onChange={() => { onChange(field.key, value === o ? '' : o); onBlur?.(field.key); }}
-                className="h-4 w-4 rounded text-primary-600 border-slate-300 focus:ring-primary-600"
-              />
-              <span className="text-sm text-slate-700">{o}</span>
-            </label>
-          ))}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+          {options.map((o) => {
+            const active = value === o;
+            return (
+              <button
+                key={o}
+                type="button"
+                onClick={() => { onChange(field.key, value === o ? '' : o); onBlur?.(field.key); }}
+                className={[
+                  'flex items-center gap-3 rounded-xl border px-3.5 py-3 text-left text-sm',
+                  'transition-[background-color,border-color] duration-150',
+                  active
+                    ? 'border-brand-500 bg-brand-50 text-brand-800'
+                    : 'border-border-soft bg-surface text-slate-700 hover:bg-surface-muted',
+                ].join(' ')}
+              >
+                <span
+                  className={[
+                    'flex h-4 w-4 shrink-0 items-center justify-center rounded-md border',
+                    active ? 'border-brand-500 bg-brand-500 text-white' : 'border-slate-300 bg-surface',
+                  ].join(' ')}
+                >
+                  {active ? (
+                    <svg viewBox="0 0 12 12" className="h-2.5 w-2.5" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M2.5 6.5l2.5 2.5 4.5-5.5" />
+                    </svg>
+                  ) : null}
+                </span>
+                <span className="min-w-0 flex-1">{o}</span>
+              </button>
+            );
+          })}
         </div>
         {hasError && <p className="mt-1 text-xs text-rose-600">{errorMsg}</p>}
       </>

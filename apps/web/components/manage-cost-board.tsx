@@ -32,12 +32,12 @@ export function ManageCostBoard({ defaultTab = 'base' }: ManageCostBoardProps) {
               className={[
                 'group flex flex-col px-6 py-4 text-sm font-medium border-b-2 transition-colors focus:outline-none',
                 activeTab === tab.id
-                  ? 'border-[#8b2a97] text-[#8b2a97]'
+                  ? 'border-brand-600 text-brand-600'
                   : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300',
               ].join(' ')}
             >
               <span>{tab.label}</span>
-              <span className={`text-xs font-normal mt-0.5 ${activeTab === tab.id ? 'text-[#a84db8]' : 'text-slate-400 group-hover:text-slate-500'}`}>
+              <span className={`text-xs font-normal mt-0.5 ${activeTab === tab.id ? 'text-brand-400' : 'text-slate-400 group-hover:text-slate-500'}`}>
                 {tab.description}
               </span>
             </button>
