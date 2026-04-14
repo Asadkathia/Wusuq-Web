@@ -1,5 +1,7 @@
 import { Controller, Get, Query, Res } from '@nestjs/common';
 import type { Response } from 'express';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import type { JwtUser } from '../auth/types/jwt-user.type';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { RequirePermissions } from '../roles-permissions/decorators/permissions.decorator';
 import { DocumentsService } from './documents.service';
@@ -10,7 +12,14 @@ export class DocumentsController {
 
   @RequirePermissions('documents.read')
   @Get()
-  list(@Query() query: PaginationQueryDto) {
+  list(
+    @Query() query: PaginationQueryDto,
+    @CurrentUser() user: JwtUser | undefined,
+  ) {
+    const consumerRoles = ['consumer', 'lawyer', 'company'];
+    if (user && consumerRoles.includes(user.role)) {
+      query.consumerId = user.sub;
+    }
     return this.documentsService.list(query);
   }
 

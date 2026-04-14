@@ -4,7 +4,8 @@
 import { useMemo, useEffect, useState, useCallback, useRef } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { PanelCard } from '@/components/ui/panel-card';
-import { ChevronRight, CheckCircle2 } from 'lucide-react';
+import { ChevronRight, CheckCircle2, FolderOpen, Sparkles, X } from 'lucide-react';
+import type { IntakeField, IntakeFlow, IntakeStep } from '@/lib/intake-flows';
 
 import type { IntakeWizardProps, TicketDraft, ServiceHit, LocalUser } from './intake-wizard/types';
 import { StepRail } from './intake-wizard/step-rail';
@@ -19,7 +20,7 @@ import {
 // ─── Static lookup tables ────────────────────────────────────────────────────
 
 const COURT_CITIES: Record<string, string[]> = {
-  'Supreme Court': ['Islamabad', 'Lahore', 'Karachi', 'Peshawar', 'Quetta', 'Azad Kashmir', 'Gilgit Baltistan'],
+  'Supreme Court': ['Islamabad'],
   'Islamabad Court': ['Islamabad'],
   'Lahore High Court': ['Lahore', 'Bahawalpur', 'Multan', 'Rawalpindi'],
   'Sindh High Court': ['Karachi', 'Sukkur', 'Hyderabad', 'Larkana'],
@@ -186,22 +187,14 @@ const DEFAULT_JUDGE_DESIGNATIONS = [
 function ServiceSelect({
   value,
   onChange,
-  category,
   inputClass,
+  services,
 }: {
   value: string;
   onChange: (id: string, name: string, courts: string[], courtCities: Record<string, string[]>, caseTypes: string[]) => void;
-  category: 'judicial' | 'non_judicial';
   inputClass: string;
+  services: ServiceHit[];
 }) {
-  const [services, setServices] = useState<ServiceHit[]>([]);
-
-  useEffect(() => {
-    apiClient.get<any>(`/services?type=${category}&limit=50`)
-      .then((r) => setServices(r.items ?? r ?? []))
-      .catch(() => {});
-  }, [category]);
-
   return (
     <select
       className={inputClass}
@@ -223,6 +216,44 @@ function ServiceSelect({
         <option key={s.id} value={s.id}>{s.name}</option>
       ))}
     </select>
+  );
+}
+
+function ServiceCardGrid({
+  services,
+  value,
+  onSelect,
+}: {
+  services: ServiceHit[];
+  value: string;
+  onSelect: (service: ServiceHit) => void;
+}) {
+  return (
+    <div className="grid gap-3 sm:grid-cols-2">
+      {services.map((service) => {
+        const selected = value === service.id;
+        return (
+          <button
+            key={service.id}
+            type="button"
+            onClick={() => onSelect(service)}
+            className={`rounded-2xl border bg-white p-5 text-left shadow-sm transition focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2 ${
+              selected
+                ? 'border-primary-600 ring-2 ring-primary-600'
+                : 'border-slate-200 hover:border-primary-300 hover:bg-primary-50/40'
+            }`}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-base font-semibold text-slate-900">{service.name}</p>
+                <p className="mt-1 text-sm text-slate-500">{getServiceDescription(service)}</p>
+              </div>
+              {selected ? <Sparkles className="mt-0.5 h-5 w-5 shrink-0 text-primary-600" /> : null}
+            </div>
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
@@ -262,6 +293,32 @@ const GEO_HANDLED_KEYS = new Set([
 ]);
 
 const CONSUMER_ROLES = ['consumer', 'lawyer', 'company'] as const;
+const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
+
+const SERVICE_DESCRIPTIONS: Record<string, string> = {
+  'Case Files': 'Request copies of the file, order sheets, or paperbook from court.',
+  'Case Information': 'Get up-to-date information about a matter already in court.',
+  'Case Search': 'Search for a case when you have only partial details available.',
+  'Case Filling': 'Start a new filing request and share the core case particulars.',
+  'Power of Attorney': 'Request certified power-of-attorney related court handling.',
+  'Copy of FIR': 'Request a copy of the FIR from the relevant police station.',
+  'Registry/Deed': 'Request a registry or deed copy from the sub-registrar office.',
+};
+
+function getServiceDescription(service: ServiceHit) {
+  return SERVICE_DESCRIPTIONS[service.name] ?? `Use ${service.name} for this request.`;
+}
+
+function formatRelativeTime(value: number | null) {
+  if (!value) return '';
+  const seconds = Math.max(0, Math.floor((Date.now() - value) / 1000));
+  if (seconds < 10) return 'Saved · just now';
+  if (seconds < 60) return `Saved · ${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `Saved · ${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  return `Saved · ${hours}h ago`;
+}
 
 // ─── Main Wizard ─────────────────────────────────────────────────────────────
 export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardProps) {
@@ -278,6 +335,14 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
   const [currentUser, setCurrentUser] = useState<LocalUser | null>(null);
   const [files, setFiles] = useState<File[]>([]);
   const stepHeadingRef = useRef<HTMLHeadingElement>(null);
+  const errorBannerRef = useRef<HTMLDivElement>(null);
+  const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const didHydrateRef = useRef(false);
+  const [services, setServices] = useState<ServiceHit[]>([]);
+  const [uploadError, setUploadError] = useState('');
+  const [isDraggingFiles, setIsDraggingFiles] = useState(false);
+  const [documentsPanelOpen, setDocumentsPanelOpen] = useState(false);
+  const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
 
   useEffect(() => {
     stepHeadingRef.current?.focus();
@@ -296,11 +361,48 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
   const [geoIds, setGeoIds] = useState({ provinceId: '', districtId: '', cityId: '' });
 
   const selectedFlow = useMemo(() => flows.find((f) => f.key === draft.flow) ?? flows[0], [draft.flow, flows]);
-  const totalSteps = selectedFlow?.steps.length ?? 1;
-  const activeStep = selectedFlow?.steps[draft.step - 1] ?? null;
 
   const serviceCategory: 'judicial' | 'non_judicial' = draft.flow.startsWith('non_judicial') ? 'non_judicial' : 'judicial';
   const isJudicial = serviceCategory === 'judicial';
+  const isConsumerVariant = variant === 'consumer';
+
+  useEffect(() => {
+    apiClient.get<any>(`/services?type=${serviceCategory}&limit=50`)
+      .then((r) => setServices(r.items ?? r ?? []))
+      .catch(() => setServices([]));
+  }, [serviceCategory]);
+
+  const displaySteps = useMemo<IntakeStep[]>(() => {
+    if (!selectedFlow) return [];
+    if (!isConsumerVariant) return selectedFlow.steps;
+
+    const [firstStep, ...restSteps] = selectedFlow.steps;
+    const firstStepFields = (firstStep?.fields ?? []).filter((field) => field.key !== 'select_service');
+    const consumerSteps: IntakeStep[] = [{ title: 'Choose a Service', fields: [] }];
+
+    if (firstStepFields.length > 0) {
+      consumerSteps.push({
+        ...firstStep,
+        title: firstStep?.title ?? 'Case Details',
+        fields: firstStepFields,
+      });
+    }
+
+    consumerSteps.push(...restSteps);
+    return consumerSteps;
+  }, [isConsumerVariant, selectedFlow]);
+
+  const totalSteps = displaySteps.length || 1;
+  const activeStep = displaySteps[draft.step - 1] ?? null;
+  const displayFlow = useMemo<IntakeFlow | null>(
+    () => (selectedFlow ? { ...selectedFlow, steps: displaySteps } : null),
+    [displaySteps, selectedFlow],
+  );
+  const isConsumerSelectionStep = isConsumerVariant && draft.step === 1;
+  const showAdminStepOneShell = !isConsumerVariant && draft.step === 1;
+  const showServiceSetupStep = showAdminStepOneShell || isConsumerSelectionStep;
+  const stepHasFirGeo = Boolean(activeStep?.fields.some((field) => ['province', 'district_id', 'station_id', 'city_type'].includes(field.key)));
+  const stepHasRegistryGeo = Boolean(activeStep?.fields.some((field) => ['office_name', 'city_type'].includes(field.key)));
 
   const courtCityOptions: string[] = useMemo(() => {
     const court = draft.payload.select_court;
@@ -346,6 +448,11 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
     } catch {}
   }, []);
 
+  useEffect(() => {
+    if (!apiError) return;
+    errorBannerRef.current?.focus();
+  }, [apiError]);
+
   const handleProvinceChange = (provinceId: string, name: string) => {
     setGeoIds((g) => ({ ...g, provinceId, districtId: '', cityId: '' }));
     geo.loadDistricts(provinceId);
@@ -369,6 +476,95 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
     setPayloadField('other_station_id', '');
   };
 
+  const applySelectedService = useCallback((id: string, name: string, caseTypes: string[]) => {
+    setField('serviceId', id);
+    setPayloadField('select_service', name || id);
+    setSelectedServiceCourts(SERVICE_COURTS[id] ?? []);
+    setSelectedServiceCourtCities(
+      Object.fromEntries(
+        (SERVICE_COURTS[id] ?? []).map((court) => [court, COURT_CITIES[court] ?? []]),
+      ),
+    );
+    setSelectedServiceCaseTypes(SERVICE_CASE_TYPES[id] ?? caseTypes);
+    setPayloadField('select_court', '');
+    setPayloadField('select_court_city', '');
+    setPayloadField('judge_designation', '');
+  }, []);
+
+  const addFiles = useCallback((incomingFiles: File[]) => {
+    if (incomingFiles.length === 0) return;
+    const oversized = incomingFiles.find((file) => file.size > MAX_FILE_SIZE_BYTES);
+    if (oversized) {
+      setUploadError(`${oversized.name} exceeds the 10 MB limit.`);
+      return;
+    }
+
+    setUploadError('');
+    setFiles((current) => [...current, ...incomingFiles]);
+  }, []);
+
+  const removeFileAt = useCallback((index: number) => {
+    setFiles((current) => current.filter((_, currentIndex) => currentIndex !== index));
+  }, []);
+
+  const handleFileDrop = useCallback((event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setIsDraggingFiles(false);
+    addFiles(Array.from(event.dataTransfer.files ?? []));
+  }, [addFiles]);
+
+  const handleFileDragOver = useCallback((event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setIsDraggingFiles(true);
+  }, []);
+
+  const handleFileDragLeave = useCallback((event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setIsDraggingFiles(false);
+  }, []);
+
+  const validateServiceSetup = useCallback(() => {
+    if (!draft.consumerId) {
+      setApiError(isConsumerVariant ? 'Your account information is missing.' : 'Please select a consumer');
+      return false;
+    }
+    if (!draft.serviceId) {
+      setApiError('Please select a service');
+      return false;
+    }
+    if (isJudicial && !draft.payload.select_court) {
+      setApiError('Please select a court');
+      return false;
+    }
+    if (isJudicial && !draft.payload.select_court_city) {
+      setApiError('Please select a court city');
+      return false;
+    }
+    return true;
+  }, [draft.consumerId, draft.payload.select_court, draft.payload.select_court_city, draft.serviceId, isConsumerVariant, isJudicial]);
+
+  const canAutosaveDraft = useCallback(() => {
+    if (!selectedFlow) return false;
+    return Boolean(draft.flow && draft.consumerId && draft.serviceId && (!isJudicial || (draft.payload.select_court && draft.payload.select_court_city)));
+  }, [draft.consumerId, draft.flow, draft.payload.select_court, draft.payload.select_court_city, draft.serviceId, isJudicial, selectedFlow]);
+
+  useEffect(() => {
+    if (!didHydrateRef.current) {
+      didHydrateRef.current = true;
+      return;
+    }
+    if (!canAutosaveDraft()) return;
+
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+    autosaveTimerRef.current = setTimeout(() => {
+      void saveDraft('auto');
+    }, 5000);
+
+    return () => {
+      if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+    };
+  }, [canAutosaveDraft, draft]);
+
   const validateField = (key: string, value: string): string => {
     const allFields = activeStep?.fields ?? [];
     const field = allFields.find((f) => f.key === key);
@@ -385,6 +581,11 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
   };
 
   const validateCurrentStep = (): boolean => {
+    setApiError('');
+    if (showServiceSetupStep) {
+      return validateServiceSetup();
+    }
+
     if (!activeStep) return true;
 
     const newErrors: Record<string, string> = {};
@@ -422,17 +623,14 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
       }
       return false;
     }
-
-    if (draft.step === 1 && !draft.consumerId) { setApiError('Please select a consumer'); return false; }
-    if (draft.step === 1 && !draft.serviceId) { setApiError('Please select a service'); return false; }
-    if (draft.step === 1 && isJudicial && !draft.payload.select_court) { setApiError('Please select a court'); return false; }
-    if (draft.step === 1 && isJudicial && !draft.payload.select_court_city) { setApiError('Please select a court city'); return false; }
     return true;
   };
 
-  const saveDraft = async () => {
+  const saveDraft = async (mode: 'manual' | 'auto' = 'manual') => {
     if (!selectedFlow) return;
-    setLoading(true); setInfoMsg('Saving draft...');
+    if (mode === 'manual') setLoading(true);
+    setInfoMsg(mode === 'auto' ? 'Saving…' : 'Saving draft...');
+    setApiError('');
     try {
       const r = await apiClient.post<any>('/tickets/intake-drafts', {
         draftId: draft.draftId,
@@ -442,10 +640,14 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
         step: draft.step,
         payload: draft.payload,
       });
-      setDraft((c) => ({ ...c, draftId: r.id }));
-      setInfoMsg('Draft saved · just now');
-    } catch (e: any) { setApiError(e.message || 'Save failed'); }
-    setLoading(false);
+      setDraft((c) => (c.draftId === r.id ? c : { ...c, draftId: r.id }));
+      setLastSavedAt(Date.now());
+      setInfoMsg('Saved · just now');
+      localStorage.setItem(`wusuq_intake_draft_id:${variant}:${draft.flow}`, r.id);
+    } catch (e: any) {
+      setApiError(e.message || 'Save failed');
+    }
+    if (mode === 'manual') setLoading(false);
   };
 
   const resetForm = () => {
@@ -464,6 +666,9 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
     setGeoIds({ provinceId: '', districtId: '', cityId: '' });
     setTouched({});
     setErrors({});
+    setUploadError('');
+    setDocumentsPanelOpen(false);
+    setLastSavedAt(null);
   };
 
   const submitTicket = async () => {
@@ -497,36 +702,45 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
 
   const inputClass = 'block w-full rounded-xl border-0 py-2.5 px-3.5 text-slate-900 shadow-sm ring-1 ring-inset ring-border-soft placeholder:text-slate-400 focus:ring-2 focus:ring-primary-600 sm:text-sm';
   const selectClass = 'mt-1 block w-full rounded-xl border-0 py-2.5 px-3 text-slate-900 ring-1 ring-inset ring-border-soft focus:ring-2 focus:ring-primary-600 sm:text-sm';
+  const headingTitle = isConsumerVariant ? 'Request a service' : title;
+  const headingCopy = isConsumerVariant
+    ? 'Choose the service you need and provide the details step by step.'
+    : 'Complete the multi-step form to file a new paralegal request.';
+  const savedLabel = formatRelativeTime(lastSavedAt) || infoMsg;
 
   return (
-    <div className="mx-auto max-w-4xl space-y-8">
+    <div className={`mx-auto space-y-8 ${isConsumerVariant ? 'max-w-3xl' : 'max-w-4xl'}`}>
       <div>
-        <h2 className="text-2xl font-bold tracking-tight text-slate-900">{title}</h2>
-        <p className="text-sm text-slate-500 mt-1">Complete the multi-step form to file a new paralegal request.</p>
+        <h2 className={`${isConsumerVariant ? 'text-3xl' : 'text-2xl'} font-bold tracking-tight text-slate-900`}>
+          {headingTitle}
+        </h2>
+        <p className="mt-1 text-sm text-slate-500">{headingCopy}</p>
       </div>
 
-      {selectedFlow && (
+      {displayFlow && (
         <StepRail
-          selectedFlow={selectedFlow}
+          selectedFlow={displayFlow}
           currentStep={draft.step}
           onStepClick={(step) => setField('step', step)}
         />
       )}
 
-      <PanelCard className="p-8">
+      <PanelCard className={isConsumerVariant ? 'p-10' : 'p-8'}>
         <h3
           ref={stepHeadingRef}
           tabIndex={-1}
-          className="mb-4 text-base font-semibold text-slate-800 outline-none"
+          className={`mb-4 outline-none ${isConsumerVariant ? 'text-xl font-semibold text-slate-900' : 'text-base font-semibold text-slate-800'}`}
         >
           {activeStep?.title}
         </h3>
         <div className="mb-6 grid gap-6 md:grid-cols-2">
 
-          {draft.step === 1 && (
+          {showServiceSetupStep && (
             <>
               <label className="space-y-1 block">
-                <span className="text-sm font-medium text-slate-700">Intake Flow</span>
+                <span className="text-sm font-medium text-slate-700">
+                  {isConsumerVariant ? 'Service type' : 'Intake Flow'}
+                </span>
                 <select
                   className={inputClass}
                   value={draft.flow}
@@ -545,43 +759,48 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
                 </select>
               </label>
 
-              <label className="space-y-1 block">
-                <span className="text-sm font-medium text-slate-700">Consumer<span className="text-rose-500 ml-0.5">*</span></span>
-                {isConsumer || isAdminTestingMode ? (
-                  <div className="flex items-center rounded-xl border-0 py-2.5 px-3.5 text-slate-900 shadow-sm ring-1 ring-inset ring-border-soft bg-slate-50 text-sm">
-                    <span>
-                      {consumerLabel || currentUser?.name || currentUser?.email || 'Current User'}
-                      {isAdminTestingMode ? ' (dev testing consumer)' : ''}
-                    </span>
-                  </div>
-                ) : (
-                  <div className="flex items-center rounded-xl border-0 py-2.5 px-3.5 text-slate-500 shadow-sm ring-1 ring-inset ring-border-soft bg-slate-50 text-sm">
-                    Consumer selection is disabled in this environment.
-                  </div>
-                )}
-              </label>
+              {!isConsumerVariant ? (
+                <label className="space-y-1 block">
+                  <span className="text-sm font-medium text-slate-700">Consumer<span className="text-rose-500 ml-0.5">*</span></span>
+                  {isConsumer || isAdminTestingMode ? (
+                    <div className="flex items-center rounded-xl border-0 py-2.5 px-3.5 text-slate-900 shadow-sm ring-1 ring-inset ring-border-soft bg-slate-50 text-sm">
+                      <span>
+                        {consumerLabel || currentUser?.name || currentUser?.email || 'Current User'}
+                        {isAdminTestingMode ? ' (dev testing consumer)' : ''}
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center rounded-xl border-0 py-2.5 px-3.5 text-slate-500 shadow-sm ring-1 ring-inset ring-border-soft bg-slate-50 text-sm">
+                      Consumer selection is disabled in this environment.
+                    </div>
+                  )}
+                </label>
+              ) : null}
 
               <label className="space-y-1 block md:col-span-2">
                 <span className="text-sm font-medium text-slate-700">Service<span className="text-rose-500 ml-0.5">*</span></span>
-                <ServiceSelect
-                  value={draft.serviceId}
-                  inputClass={inputClass}
-                  onChange={(id, name, _courts, _courtCities, caseTypes) => {
-                    setField('serviceId', id);
-                    setPayloadField('select_service', name || id);
-                    setSelectedServiceCourts(SERVICE_COURTS[id] ?? []);
-                    setSelectedServiceCourtCities(
-                      Object.fromEntries(
-                        (SERVICE_COURTS[id] ?? []).map((c) => [c, COURT_CITIES[c] ?? []])
+                {isConsumerVariant ? (
+                  <ServiceCardGrid
+                    services={services}
+                    value={draft.serviceId}
+                    onSelect={(service) =>
+                      applySelectedService(
+                        service.id,
+                        service.name,
+                        service.caseTypes ?? [],
                       )
-                    );
-                    setSelectedServiceCaseTypes(SERVICE_CASE_TYPES[id] ?? caseTypes);
-                    setPayloadField('select_court', '');
-                    setPayloadField('select_court_city', '');
-                    setPayloadField('judge_designation', '');
-                  }}
-                  category={serviceCategory}
-                />
+                    }
+                  />
+                ) : (
+                  <ServiceSelect
+                    value={draft.serviceId}
+                    inputClass={inputClass}
+                    services={services}
+                    onChange={(id, name, _courts, _courtCities, caseTypes) =>
+                      applySelectedService(id, name, caseTypes)
+                    }
+                  />
+                )}
               </label>
 
               {isJudicial && (
@@ -600,41 +819,41 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
                   onCourtCityChange={(city) => setPayloadField('select_court_city', city)}
                 />
               )}
-
-              {draft.flow === 'non_judicial_copy_of_fir' && (
-                <FirBlock
-                  geo={geo}
-                  geoIds={geoIds}
-                  stationId={draft.payload.station_id ?? ''}
-                  policeStation={draft.payload.police_station ?? ''}
-                  cityType={draft.payload.city_type ?? ''}
-                  inputClass={inputClass}
-                  selectClass={selectClass}
-                  onProvinceChange={handleProvinceChange}
-                  onDistrictChange={handleDistrictChange}
-                  onStationIdChange={(id, name) => {
-                    setPayloadField('station_id', id);
-                    setPayloadField('police_station', name);
-                  }}
-                  onPoliceStationChange={(value) => {
-                    setPayloadField('police_station', value);
-                    setPayloadField('station_id', value);
-                  }}
-                  onCityTypeChange={(value) => setPayloadField('city_type', value)}
-                />
-              )}
-
-              {draft.flow === 'non_judicial_registry_deed' && (
-                <RegistryDeedBlock
-                  cityType={draft.payload.city_type ?? ''}
-                  inputClass={inputClass}
-                  onCityTypeChange={(value) => setPayloadField('city_type', value)}
-                />
-              )}
             </>
           )}
 
-          {draft.step > 1 && activeStep?.fields
+          {stepHasFirGeo && (
+            <FirBlock
+              geo={geo}
+              geoIds={geoIds}
+              stationId={draft.payload.station_id ?? ''}
+              policeStation={draft.payload.police_station ?? ''}
+              cityType={draft.payload.city_type ?? ''}
+              inputClass={inputClass}
+              selectClass={selectClass}
+              onProvinceChange={handleProvinceChange}
+              onDistrictChange={handleDistrictChange}
+              onStationIdChange={(id, name) => {
+                setPayloadField('station_id', id);
+                setPayloadField('police_station', name);
+              }}
+              onPoliceStationChange={(value) => {
+                setPayloadField('police_station', value);
+                setPayloadField('station_id', value);
+              }}
+              onCityTypeChange={(value) => setPayloadField('city_type', value)}
+            />
+          )}
+
+          {stepHasRegistryGeo && (
+            <RegistryDeedBlock
+              cityType={draft.payload.city_type ?? ''}
+              inputClass={inputClass}
+              onCityTypeChange={(value) => setPayloadField('city_type', value)}
+            />
+          )}
+
+          {!showServiceSetupStep && activeStep?.fields
             .filter((f) => !GEO_HANDLED_KEYS.has(f.key))
             .map((field) => {
               const dynamicOpts =
@@ -647,29 +866,17 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
 
               return (
                 <div key={field.key} className={`space-y-1 ${colSpan(field)}`}>
-                  <label className="text-sm font-medium text-slate-700">
-                    {field.label}
-                    {field.required && (!field.showWhen || draft.payload[field.showWhen.field] === field.showWhen.value) && (
-                      <span className="text-rose-500 ml-0.5">*</span>
-                    )}
-                  </label>
-                  {rendered}
-                </div>
-              );
-            })}
-
-          {draft.step === 1 && activeStep?.fields
-            .filter((f) => !GEO_HANDLED_KEYS.has(f.key))
-            .map((field) => {
-              const errorMsg = touched[field.key] ? (errors[field.key] ?? '') : '';
-              const rendered = renderField(field, draft.payload[field.key] ?? '', draft.payload, setPayloadField, undefined, handleFieldBlur, errorMsg);
-              if (rendered === null) return null;
-              return (
-                <div key={field.key} className={`space-y-1 ${colSpan(field)}`}>
-                  <label className="text-sm font-medium text-slate-700">
-                    {field.label}
-                    {field.required && <span className="text-rose-500 ml-0.5">*</span>}
-                  </label>
+                  <div>
+                    <label className="text-sm font-medium text-slate-700">
+                      {field.label}
+                      {field.required && (!field.showWhen || draft.payload[field.showWhen.field] === field.showWhen.value) && (
+                        <span className="text-rose-500 ml-0.5">*</span>
+                      )}
+                    </label>
+                    {isConsumerVariant && field.hint ? (
+                      <p className="mt-1 text-xs text-slate-500">{field.hint}</p>
+                    ) : null}
+                  </div>
                   {rendered}
                 </div>
               );
@@ -677,10 +884,34 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
         </div>
 
         {draft.step === totalSteps && (
-          <FileUpload files={files} onFilesChange={setFiles} />
+          <FileUpload
+            files={files}
+            onFilesAdd={addFiles}
+            onRemoveFile={removeFileAt}
+            inputId="final-step-file-upload"
+            error={uploadError}
+            isDragging={isDraggingFiles}
+            onDragOver={handleFileDragOver}
+            onDragLeave={handleFileDragLeave}
+            onDrop={handleFileDrop}
+          />
         )}
 
         <div className="mt-8 border-t border-slate-100 pt-6">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <button
+              type="button"
+              onClick={() => setDocumentsPanelOpen(true)}
+              className="inline-flex min-h-[44px] items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2"
+            >
+              <FolderOpen className="h-4 w-4" /> Documents ({files.length})
+            </button>
+            {savedLabel ? (
+              <span className="inline-flex min-h-[32px] items-center rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700">
+                {savedLabel}
+              </span>
+            ) : null}
+          </div>
           {/* Mobile: Continue full-width on top, Back + Save Draft below */}
           <div className="flex flex-col gap-3 sm:hidden">
             {draft.step === totalSteps ? (
@@ -714,7 +945,7 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
               <button
                 type="button"
                 disabled={loading}
-                onClick={saveDraft}
+                onClick={() => saveDraft('manual')}
                 className="min-h-[44px] flex-1 rounded-lg bg-white px-4 py-2.5 text-sm font-semibold text-slate-900 shadow-sm ring-1 ring-inset ring-slate-300 hover:bg-slate-50 disabled:opacity-50 transition-colors focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2"
               >
                 Save Draft
@@ -737,7 +968,7 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
               <button
                 type="button"
                 disabled={loading}
-                onClick={saveDraft}
+                onClick={() => saveDraft('manual')}
                 className="min-h-[44px] rounded-lg bg-white px-4 py-2.5 text-sm font-semibold text-slate-900 shadow-sm ring-1 ring-inset ring-slate-300 hover:bg-slate-50 disabled:opacity-50 transition-colors focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2"
               >
                 Save Draft
@@ -767,15 +998,50 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
       </PanelCard>
 
       {apiError && (
-        <div role="alert" aria-live="polite" className="rounded-lg p-4 text-sm font-medium bg-rose-50 text-rose-800 border border-rose-200">
+        <div
+          ref={errorBannerRef}
+          role="alert"
+          aria-live="polite"
+          tabIndex={-1}
+          className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm font-medium text-rose-800 outline-none"
+        >
           {apiError}
         </div>
       )}
-      {!apiError && infoMsg && (
-        <div className="rounded-lg p-4 text-sm font-medium bg-emerald-50 text-emerald-800 border border-emerald-200">
-          {infoMsg}
+
+      {documentsPanelOpen ? (
+        <div className="fixed inset-0 z-50 bg-slate-950/40">
+          <div className="absolute inset-y-0 right-0 w-full max-w-lg bg-white p-6 shadow-2xl">
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <h4 className="text-base font-semibold text-slate-900">Documents</h4>
+                <p className="text-sm text-slate-500">Attach files at any point before submitting the ticket.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDocumentsPanelOpen(false)}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2"
+                aria-label="Close documents panel"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <FileUpload
+              files={files}
+              onFilesAdd={addFiles}
+              onRemoveFile={removeFileAt}
+              inputId="drawer-file-upload"
+              error={uploadError}
+              isDragging={isDraggingFiles}
+              onDragOver={handleFileDragOver}
+              onDragLeave={handleFileDragLeave}
+              onDrop={handleFileDrop}
+              title="Supporting Documents"
+              description="Upload or drag supporting files here. The list is shared with the final step."
+            />
+          </div>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

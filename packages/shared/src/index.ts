@@ -16,8 +16,8 @@ export const TICKET_STATUSES = [
   'PENDING',
   'ASSIGNED',
   'IN_PROGRESS',
+  'WAITING_APPROVAL',
   'COMPLETED',
-  'IMMATURE',
 ] as const;
 
 export type TicketStatus = (typeof TICKET_STATUSES)[number];
@@ -67,6 +67,8 @@ export const ROLE_PERMISSIONS: Record<UserRole, readonly Permission[]> = {
     'cases.write',
   ],
   'staff-admin': [
+    'users.read',
+    'users.write',
     'tickets.read',
     'tickets.write',
     'wallet.read',
@@ -91,8 +93,8 @@ export const ROLE_PERMISSIONS: Record<UserRole, readonly Permission[]> = {
     'cases.write',
   ],
   lawyer: ['tickets.read', 'tickets.write', 'documents.read', 'cases.read', 'cases.write', 'elections.read', 'elections.vote'],
-  consumer: ['tickets.read', 'wallet.read', 'documents.read', 'cases.read', 'elections.read', 'elections.vote'],
+  consumer: ['tickets.read', 'tickets.write', 'wallet.read', 'documents.read', 'cases.read', 'elections.read', 'elections.vote'],
   representative: ['tickets.read', 'tickets.write', 'documents.read', 'cases.read', 'elections.read', 'elections.vote'],
   investor: ['reports.read'],
-  company: ['tickets.read', 'wallet.read', 'documents.read', 'cases.read'],
+  company: ['tickets.read', 'tickets.write', 'wallet.read', 'documents.read', 'cases.read'],
 };

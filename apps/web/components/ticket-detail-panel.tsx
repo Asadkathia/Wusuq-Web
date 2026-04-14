@@ -20,7 +20,6 @@ const STATUS_VARIANT: Record<string, 'success' | 'warning' | 'error' | 'neutral'
   ASSIGNED: 'info',
   IN_PROGRESS: 'info',
   COMPLETED: 'success',
-  IMMATURE: 'neutral',
 };
 
 export function TicketDetailPanel({ ticketId, onClose }: Props) {

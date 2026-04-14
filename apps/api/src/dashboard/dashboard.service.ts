@@ -4,9 +4,130 @@ import { subDays, startOfDay, format } from 'date-fns';
 
 @Injectable()
 export class DashboardService {
+  private statsCache = new Map<string, { data: unknown; expiresAt: number }>();
+
   constructor(private readonly prisma: PrismaService) {}
 
+  async getConsumerSummary(userId: string) {
+    const now = new Date();
+
+    const [
+      totalTickets,
+      pendingTickets,
+      inProgressTickets,
+      completedTickets,
+      walletUser,
+      outstandingAgg,
+      myActiveCases,
+      myRecentTickets,
+      myNextHearing,
+    ] =
+      await this.prisma.$transaction([
+        this.prisma.ticket.count({
+          where: {
+            consumerId: userId,
+          },
+        }),
+        this.prisma.ticket.count({
+          where: {
+            consumerId: userId,
+            status: 'PENDING',
+          },
+        }),
+        this.prisma.ticket.count({
+          where: {
+            consumerId: userId,
+            status: { in: ['ASSIGNED', 'IN_PROGRESS'] },
+          },
+        }),
+        this.prisma.ticket.count({
+          where: {
+            consumerId: userId,
+            status: 'COMPLETED',
+          },
+        }),
+        this.prisma.user.findUnique({
+          where: { id: userId },
+          select: { walletBalance: true },
+        }),
+        this.prisma.ticket.aggregate({
+          where: {
+            consumerId: userId,
+            paymentStatus: { not: 'PAID' },
+          },
+          _sum: {
+            totalAmount: true,
+            amountPaid: true,
+          },
+        }),
+        this.prisma.case.count({
+          where: {
+            consumerId: userId,
+            status: 'OPEN',
+          },
+        }),
+        this.prisma.ticket.findMany({
+          where: { consumerId: userId },
+          orderBy: { createdAt: 'desc' },
+          take: 5,
+          select: {
+            id: true,
+            batchNo: true,
+            status: true,
+            totalAmount: true,
+            createdAt: true,
+            service: { select: { name: true } },
+          },
+        }),
+        this.prisma.hearing.findFirst({
+          where: {
+            scheduledDate: { gte: now },
+            case: { consumerId: userId },
+          },
+          orderBy: { scheduledDate: 'asc' },
+          select: {
+            scheduledDate: true,
+            hearingType: true,
+            case: { select: { title: true } },
+          },
+        }),
+      ]);
+
+    const myTickets = {
+      total: totalTickets,
+      pending: pendingTickets,
+      inProgress: inProgressTickets,
+      completed: completedTickets,
+    };
+
+    const myOutstanding =
+      Number(outstandingAgg._sum.totalAmount || 0) - Number(outstandingAgg._sum.amountPaid || 0);
+
+    return {
+      myTickets,
+      myWalletBalance: Number(walletUser?.walletBalance || 0),
+      myOutstanding: myOutstanding > 0 ? myOutstanding : 0,
+      myActiveCases,
+      myRecentTickets: myRecentTickets.map((ticket) => ({
+        ...ticket,
+        totalAmount: Number(ticket.totalAmount || 0),
+      })),
+      myNextHearing,
+    };
+  }
+
   async getSummary(range: string = '7d') {
+    const cached = this.statsCache.get(range);
+    if (cached && Date.now() < cached.expiresAt) {
+      return cached.data;
+    }
+
+    const data = await this.computeSummary(range);
+    this.statsCache.set(range, { data, expiresAt: Date.now() + 60_000 });
+    return data;
+  }
+
+  private async computeSummary(range: string) {
     const daysStr = range.replace('d', '');
     const days = parseInt(daysStr, 10);
     

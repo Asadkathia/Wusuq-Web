@@ -19,8 +19,14 @@ export class WalletController {
     return this.walletService.list(query);
   }
 
+  @RequirePermissions('wallet.read')
+  @Get('me')
+  getMyWallet(@CurrentUser() user: JwtUser) {
+    return this.walletService.getMyWallet(user.sub);
+  }
+
   @RequirePermissions('wallet.write')
-  @Throttle({ auth: { limit: 20, ttl: 60_000 } })
+  @Throttle({ upload: { limit: 30, ttl: 60_000 } })
   @Post('topup')
   topup(
     @Body() dto: TopupWalletDto,
@@ -33,7 +39,7 @@ export class WalletController {
   }
 
   @RequirePermissions('wallet.write')
-  @Throttle({ auth: { limit: 30, ttl: 60_000 } })
+  @Throttle({ upload: { limit: 30, ttl: 60_000 } })
   @Post('transactions/:id/verify')
   verify(
     @Param('id') id: string,
@@ -47,7 +53,7 @@ export class WalletController {
   }
 
   @RequirePermissions('wallet.write')
-  @Throttle({ auth: { limit: 30, ttl: 60_000 } })
+  @Throttle({ upload: { limit: 30, ttl: 60_000 } })
   @Post('transactions/:id/reject')
   reject(
     @Param('id') id: string,

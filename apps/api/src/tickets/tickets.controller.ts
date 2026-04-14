@@ -22,6 +22,7 @@ import { BulkTicketActionDto } from './dto/bulk-ticket-action.dto';
 import { CreateTicketIntakeDto } from './dto/create-ticket-intake.dto';
 import { FilterTicketsDto } from './dto/filter-tickets.dto';
 import { SaveTicketIntakeDraftDto } from './dto/save-ticket-intake-draft.dto';
+import { SubmitClerkCostsDto } from './dto/submit-clerk-costs.dto';
 import { UpdateTicketStatusDto } from './dto/update-ticket-status.dto';
 import { UpdateTicketDto } from './dto/update-ticket.dto';
 import { TicketsService } from './tickets.service';
@@ -49,7 +50,14 @@ export class TicketsController {
 
   @RequirePermissions('tickets.read')
   @Get()
-  findAll(@Query() query: FilterTicketsDto) {
+  findAll(
+    @Query() query: FilterTicketsDto,
+    @CurrentUser() user: JwtUser | undefined,
+  ) {
+    const consumerRoles = ['consumer', 'lawyer', 'company'];
+    if (user && consumerRoles.includes(user.role)) {
+      query.consumerId = user.sub;
+    }
     return this.ticketsService.findAll(query);
   }
 
@@ -236,7 +244,7 @@ export class TicketsController {
     @Body() dto: UpdateTicketStatusDto,
     @CurrentUser() actor: JwtUser | undefined,
   ) {
-    return this.ticketsService.updateStatus(id, dto.status, {
+    return this.ticketsService.updateStatus(id, dto.status, dto.note, {
       actorUserId: actor?.sub,
       actorEmail: actor?.email,
     });
@@ -250,6 +258,32 @@ export class TicketsController {
     @CurrentUser() actor: JwtUser | undefined,
   ) {
     return this.ticketsService.assign(id, dto, {
+      actorUserId: actor?.sub,
+      actorEmail: actor?.email,
+    });
+  }
+
+  @RequirePermissions('tickets.write')
+  @Post(':id/clerk-costs')
+  submitClerkCosts(
+    @Param('id') id: string,
+    @Body() dto: SubmitClerkCostsDto,
+    @CurrentUser() actor: JwtUser | undefined,
+  ) {
+    return this.ticketsService.submitClerkCosts(id, dto, {
+      actorUserId: actor?.sub,
+      actorEmail: actor?.email,
+    });
+  }
+
+  @RequirePermissions('tickets.write')
+  @Post(':id/reject-assignment')
+  rejectAssignment(
+    @Param('id') id: string,
+    @Body('reason') reason: string,
+    @CurrentUser() actor: JwtUser | undefined,
+  ) {
+    return this.ticketsService.rejectAssignment(id, reason, {
       actorUserId: actor?.sub,
       actorEmail: actor?.email,
     });
@@ -275,8 +309,12 @@ export class TicketsController {
       storage: diskStorage({
         destination: './uploads/ticket-documents',
         filename: (_req, file, callback) => {
-          const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
-          callback(null, `${unique}${extname(file.originalname)}`);
+          const sanitized = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
+          const ext = extname(sanitized);
+          callback(
+            null,
+            `${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`,
+          );
         },
       }),
       limits: {
@@ -334,8 +372,12 @@ export class TicketsController {
       storage: diskStorage({
         destination: './uploads/clerk-receipts',
         filename: (_req, file, callback) => {
-          const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
-          callback(null, `${unique}${extname(file.originalname)}`);
+          const sanitized = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
+          const ext = extname(sanitized);
+          callback(
+            null,
+            `${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`,
+          );
         },
       }),
       limits: { fileSize: MAX_UPLOAD_SIZE_BYTES },
@@ -369,8 +411,9 @@ export class TicketsController {
     @Param('id') id: string,
     @Body('decision') decision: 'VERIFIED' | 'REJECTED',
     @CurrentUser() actor: JwtUser | undefined,
+    @Body('reason') reason?: string,
   ) {
-    return this.ticketsService.verifyClerkReceipt(id, decision, {
+    return this.ticketsService.verifyClerkReceipt(id, decision, reason, {
       actorUserId: actor?.sub,
       actorEmail: actor?.email,
     });

@@ -115,6 +115,8 @@ export class WalletService {
 
     const { updatedTransaction, updatedUser } = await this.prisma.$transaction(
       async (tx) => {
+        await tx.$executeRaw`SELECT id FROM "User" WHERE id = ${transaction.userId} FOR UPDATE`;
+
         const updatedTransaction = await tx.walletTransaction.update({
           where: { id: transactionId },
           data: {
@@ -214,6 +216,36 @@ export class WalletService {
     return { userId, items };
   }
 
+  async getMyWallet(userId: string) {
+    const user = await this.prisma.user.findUniqueOrThrow({
+      where: { id: userId },
+      select: { id: true, name: true, email: true, walletBalance: true },
+    });
+
+    const transactions = await this.prisma.walletTransaction.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+      select: {
+        id: true,
+        amount: true,
+        paymentMode: true,
+        status: true,
+        createdAt: true,
+        verifiedAt: true,
+      },
+    });
+
+    return {
+      balance: Number(user.walletBalance || 0),
+      transactions: transactions.map((transaction) => ({
+        ...transaction,
+        amount: Number(transaction.amount || 0),
+        referenceNo: transaction.id,
+      })),
+    };
+  }
+
   private async clearPendingTickets(
     userId: string,
     postTopupBalance: number,
@@ -223,7 +255,6 @@ export class WalletService {
       where: {
         consumerId: userId,
         paymentStatus: { not: 'PAID' },
-        status: { not: 'IMMATURE' },
       },
       orderBy: { createdAt: 'asc' },
       select: { id: true, batchNo: true, totalAmount: true, amountPaid: true },

@@ -12,7 +12,9 @@
     "format": "echo 'No formatter configured for web yet'"
   },
   "dependencies": {
+    "@gsap/react": "^2.1.2",
     "@wusuq/shared": "workspace:*",
+    "gsap": "^3.14.2",
     "lucide-react": "^0.577.0",
     "next": "16.1.7",
     "react": "19.2.3",

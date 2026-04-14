@@ -10,6 +10,8 @@ import { FilterBar } from '@/components/ui/filter-bar';
 import { StatusPill } from '@/components/ui/status-pill';
 import { Plus, RefreshCw, FolderOpen, Eye, Trash2 } from 'lucide-react';
 
+const CONSUMER_ROLES = ['consumer', 'lawyer', 'company'] as const;
+
 export function CasesBoard() {
   const [items, setItems] = useState<Case[]>([]);
   const [loading, setLoading] = useState(false);
@@ -23,11 +25,15 @@ export function CasesBoard() {
   });
   
   const [userId, setUserId] = useState<string>('');
+  const [isConsumer, setIsConsumer] = useState(false);
 
   useEffect(() => {
     try {
       const u = JSON.parse(localStorage.getItem('wusuq_user') || 'null');
-      if (u) setUserId(u.id);
+      if (u) {
+        setUserId(u.id);
+        setIsConsumer(CONSUMER_ROLES.includes(u.role as (typeof CONSUMER_ROLES)[number]));
+      }
     } catch {}
   }, []);
 
@@ -37,6 +43,7 @@ export function CasesBoard() {
       const result = await casesApi.listCases({
         search: search || undefined,
         status: (statusFilter as any) || undefined,
+        consumerId: isConsumer && userId ? userId : undefined,
       });
       setItems(result.items || []);
     } catch (error: any) {
@@ -44,7 +51,7 @@ export function CasesBoard() {
     } finally {
       setLoading(false);
     }
-  }, [search, statusFilter]);
+  }, [search, statusFilter, isConsumer, userId]);
 
   useEffect(() => {
     load();

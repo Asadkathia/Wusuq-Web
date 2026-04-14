@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { ConflictException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { compare, hash } from 'bcryptjs';
@@ -6,6 +6,7 @@ import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { mapPrismaRoleToShared } from '../users/user-role.mapper';
 import { LoginDto } from './dto/login.dto';
+import { SignupDto } from './dto/signup.dto';
 import type { JwtUser } from './types/jwt-user.type';
 
 type AuthTokens = {
@@ -138,6 +139,28 @@ export class AuthService {
     return tokens;
   }
 
+  async signup(dto: SignupDto) {
+    const existing = await this.prisma.user.findUnique({
+      where: { email: dto.email },
+    });
+    if (existing) {
+      throw new ConflictException('Email already registered');
+    }
+
+    const passwordHash = await hash(dto.password, 10);
+    const user = await this.prisma.user.create({
+      data: {
+        name: dto.name,
+        email: dto.email,
+        passwordHash,
+        phone: dto.phone,
+        role: 'consumer',
+      },
+    });
+
+    return { id: user.id, email: user.email, role: 'consumer' as const };
+  }
+
   async impersonate(targetUserId: string, actor: JwtUser) {
     const user = await this.prisma.user.findUnique({
       where: { id: targetUserId },
@@ -162,9 +185,10 @@ export class AuthService {
     await this.auditLogsService.create({
       action: 'AUTH_IMPERSONATE',
       entity: 'AUTH',
+      entityId: targetUserId,
       actorUserId: actor.sub,
       actorEmail: actor.email,
-      metadata: { targetUserId },
+      metadata: { reason: 'admin impersonation', targetUserId },
     });
 
     return {

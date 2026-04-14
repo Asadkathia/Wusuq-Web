@@ -53,7 +53,7 @@ type ChargeEdit = {
 };
 
 const PAYMENT_STATUSES = ['UNPAID', 'PARTIALLY_PAID', 'PAID'];
-const TICKET_STATUSES = ['PENDING', 'ASSIGNED', 'IN_PROGRESS', 'COMPLETED', 'IMMATURE'];
+const TICKET_STATUSES = ['PENDING', 'ASSIGNED', 'IN_PROGRESS', 'WAITING_APPROVAL', 'COMPLETED'];
 
 function paymentVariant(s: string): 'success' | 'warning' | 'neutral' | 'info' {
   if (s === 'PAID') return 'success';

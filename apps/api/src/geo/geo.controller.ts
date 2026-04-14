@@ -43,12 +43,24 @@ export class GeoController {
     return this.geoService.policeStations(id);
   }
 
+  @Public()
+  @Get('districts/:id/police-stations')
+  districtPoliceStations(@Param('id') id: string) {
+    return this.geoService.districtPoliceStations(id);
+  }
+
   // --- Admin ---
 
   @RequirePermissions('costs.write')
   @Post('seed')
   seed() {
     return this.geoService.seed();
+  }
+
+  @RequirePermissions('costs.write')
+  @Post('reset-seed')
+  resetAndSeed() {
+    return this.geoService.resetAndSeed();
   }
 
   // --- CRUD (admin only) ---

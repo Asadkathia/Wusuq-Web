@@ -23,8 +23,8 @@ enum TicketStatus {
   PENDING
   ASSIGNED
   IN_PROGRESS
+  WAITING_APPROVAL
   COMPLETED
-  IMMATURE
 }
 
 enum PaymentMode {
@@ -87,7 +87,6 @@ enum CaseEventType {
   TICKET_ASSIGNED
   TICKET_IN_PROGRESS
   TICKET_COMPLETED
-  TICKET_IMMATURE
   DOCUMENT_UPLOADED
   NOTE_ADDED
 }
@@ -184,6 +183,10 @@ model Ticket {
   caseEvents      CaseEvent[]
   caseDocuments   CaseDocument[]
   invoice         Invoice?
+
+  @@index([consumerId])
+  @@index([status])
+  @@index([paymentStatus])
 }
 
 model Election {
@@ -302,6 +305,9 @@ model WalletTransaction {
   createdAt   DateTime    @default(now())
   user        User        @relation(fields: [userId], references: [id])
   ticket      Ticket?     @relation(fields: [ticketId], references: [id])
+
+  @@index([userId])
+  @@index([status])
 }
 
 model Invoice {
@@ -375,6 +381,8 @@ model AuditLog {
   actorEmail  String?
   metadata    Json?
   createdAt   DateTime @default(now())
+
+  @@index([createdAt])
 }
 
 model Notification {
@@ -387,6 +395,9 @@ model Notification {
   metadata  Json?
   createdAt DateTime @default(now())
   user      User     @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([isRead])
 }
 
 model GeoProvince {
@@ -488,6 +499,7 @@ model Hearing {
   notes         String?
   outcome       String?
   nextDate      DateTime?
+  deletedAt     DateTime?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   case          Case      @relation(fields: [caseId], references: [id], onDelete: Cascade)

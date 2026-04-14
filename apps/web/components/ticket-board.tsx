@@ -12,7 +12,7 @@ import { FilterBar } from '@/components/ui/filter-bar';
 import { SectionHeader } from '@/components/ui/section-header';
 import { StatusPill } from '@/components/ui/status-pill';
 import { PanelCard } from '@/components/ui/panel-card';
-import { UserCircle, MapPin, Tag, RefreshCw, CheckSquare, Clock, History, FileOutput, Eye, PlayCircle, Upload, X } from 'lucide-react';
+import { UserCircle, MapPin, Tag, RefreshCw, CheckSquare, Clock, History, FileOutput, Eye, PlayCircle, Upload, X, XCircle } from 'lucide-react';
 import { TicketDetailPanel } from './ticket-detail-panel';
 
 type TicketBoardProps = {
@@ -26,6 +26,15 @@ type TicketRow = {
   serviceCity: string | null;
   caseType: string | null;
   status: TicketStatus;
+  clerkApprovalStatus?: 'PENDING' | 'SUBMITTED' | 'VERIFIED' | 'REJECTED';
+  clerkReceiptUrl?: string | null;
+  serviceCost?: number | string | null;
+  totalAmount?: number | string | null;
+  deliveryCharges?: number | string | null;
+  printingCharges?: number | string | null;
+  attestedCharges?: number | string | null;
+  nonAttestedCharges?: number | string | null;
+  additionalCharges?: number | string | null;
   consumer: { id: string; name: string };
   service: { id: string; name: string; category: string; type: string };
 };
@@ -35,6 +44,27 @@ type Representative = {
   name: string;
   city?: string | null;
   district?: string | null;
+};
+
+type ClerkCostsForm = {
+  deliveryCharges: string;
+  printingCharges: string;
+  attestedCharges: string;
+  nonAttestedCharges: string;
+  additionalCharges: string;
+  noOfPages: string;
+  costPerPage: string;
+};
+
+const CONSUMER_ROLES = ['consumer', 'lawyer', 'company'] as const;
+const EMPTY_CLERK_COSTS: ClerkCostsForm = {
+  deliveryCharges: '',
+  printingCharges: '',
+  attestedCharges: '',
+  nonAttestedCharges: '',
+  additionalCharges: '',
+  noOfPages: '',
+  costPerPage: '',
 };
 
 export function TicketBoard({ title, status }: TicketBoardProps) {
@@ -54,6 +84,8 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
   const [representatives, setRepresentatives] = useState<Representative[]>([]);
   const [representativeId, setRepresentativeId] = useState('');
   const [clerkCost, setClerkCost] = useState('');
+  const [forceAssign, setForceAssign] = useState(false);
+  const [assignWarning, setAssignWarning] = useState('');
 
   const [timelineTicketId, setTimelineTicketId] = useState<string | null>(null);
   const [timeline, setTimeline] = useState<{
@@ -68,11 +100,18 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
   // Clerk (representative) role detection
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [isClerk, setIsClerk] = useState(false);
+  const [isConsumer, setIsConsumer] = useState(false);
   useEffect(() => {
     try {
       const u = JSON.parse(localStorage.getItem('wusuq_user') || 'null');
-      if (u?.role === 'representative') {
+      if (!u) return;
+
+      if (u.role === 'representative') {
         setIsClerk(true);
+        setCurrentUserId(u.id ?? null);
+      }
+      if (CONSUMER_ROLES.includes(u.role as (typeof CONSUMER_ROLES)[number])) {
+        setIsConsumer(true);
         setCurrentUserId(u.id ?? null);
       }
     } catch {}
@@ -91,6 +130,25 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
   const receiptInputRef = useRef<HTMLInputElement>(null);
   // Admin: verify clerk receipt
   const [verifyTicket, setVerifyTicket] = useState<TicketRow | null>(null);
+  const [verifyRejectReason, setVerifyRejectReason] = useState('');
+  const [isVerifyRejectMode, setIsVerifyRejectMode] = useState(false);
+  const [costsTicket, setCostsTicket] = useState<TicketRow | null>(null);
+  const [clerkCosts, setClerkCosts] = useState<ClerkCostsForm>(EMPTY_CLERK_COSTS);
+  const [rejectTicket, setRejectTicket] = useState<TicketRow | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
+  const [sendBackTicket, setSendBackTicket] = useState<TicketRow | null>(null);
+  const [sendBackReason, setSendBackReason] = useState('');
+  const clerkCostFields: Array<{
+    label: string;
+    key: keyof ClerkCostsForm;
+  }> = [
+    { label: 'Additional Cost', key: 'additionalCharges' },
+    { label: 'Delivery Charges', key: 'deliveryCharges' },
+    { label: 'No. of Pages', key: 'noOfPages' },
+    { label: 'Cost Per Page', key: 'costPerPage' },
+    { label: 'Non-Attested Charges', key: 'nonAttestedCharges' },
+    { label: 'Attested Charges', key: 'attestedCharges' },
+  ];
 
   const selectedIds = useMemo(
     () => Object.entries(selected).filter(([, checked]) => checked).map(([id]) => id),
@@ -104,6 +162,7 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
       if (dateRange !== 'all') q.set('dateRange', dateRange);
       if (serviceFilter !== 'all') q.set('serviceCategory', serviceFilter);
       if (isClerk && currentUserId) q.set('representativeId', currentUserId);
+      if (isConsumer && currentUserId) q.set('consumerId', currentUserId);
 
       const result = await apiClient.get<any>(`/tickets?${q.toString()}`);
       setTickets(result.items ?? []);
@@ -112,11 +171,13 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
     } finally {
       setLoading(false);
     }
-  }, [status, dateRange, serviceFilter, isClerk, currentUserId]);
+  }, [status, dateRange, serviceFilter, isClerk, isConsumer, currentUserId]);
 
   useEffect(() => {
     loadTickets();
   }, [loadTickets]);
+
+  const isAdmin = !isClerk && !isConsumer;
 
   const filteredTickets = useMemo(() => {
     if (!search) return tickets;
@@ -138,8 +199,41 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
     if (st === 'COMPLETED') return 'success';
     if (st === 'PENDING') return 'warning';
     if (st === 'ASSIGNED' || st === 'IN_PROGRESS') return 'info';
+    if (st === 'WAITING_APPROVAL') return 'warning';
     return 'neutral';
   };
+
+  const openCostsModal = (ticket: TicketRow) => {
+    setCostsTicket(ticket);
+    setClerkCosts({
+      deliveryCharges: ticket.deliveryCharges ? String(ticket.deliveryCharges) : '',
+      printingCharges: ticket.printingCharges ? String(ticket.printingCharges) : '',
+      attestedCharges: ticket.attestedCharges ? String(ticket.attestedCharges) : '',
+      nonAttestedCharges: ticket.nonAttestedCharges ? String(ticket.nonAttestedCharges) : '',
+      additionalCharges: ticket.additionalCharges ? String(ticket.additionalCharges) : '',
+      noOfPages: '',
+      costPerPage: '',
+    });
+  };
+
+  const hasSubmittedClerkCosts = (ticket: TicketRow) => {
+    const serviceCost = Number(ticket.serviceCost || 0);
+    const totalAmount = Number(ticket.totalAmount || 0);
+    return (
+      ticket.status === 'WAITING_APPROVAL' ||
+      totalAmount > serviceCost ||
+      Number(ticket.deliveryCharges || 0) > 0 ||
+      Number(ticket.printingCharges || 0) > 0 ||
+      Number(ticket.attestedCharges || 0) > 0 ||
+      Number(ticket.nonAttestedCharges || 0) > 0 ||
+      Number(ticket.additionalCharges || 0) > 0
+    );
+  };
+
+  const canUploadForAdminApproval = (ticket: TicketRow) =>
+    hasSubmittedClerkCosts(ticket) &&
+    ticket.clerkApprovalStatus !== 'SUBMITTED' &&
+    ticket.clerkApprovalStatus !== 'VERIFIED';
 
   const runBulkAction = async () => {
     if (selectedIds.length === 0) return setMessage('Select at least one ticket');
@@ -157,6 +251,8 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
     setAssignTicket(ticket);
     setRepresentativeId('');
     setClerkCost('');
+    setForceAssign(false);
+    setAssignWarning('');
     try {
       const query = ticket.serviceCity ? `?city=${encodeURIComponent(ticket.serviceCity)}` : '';
       const reps = await apiClient.get<Representative[]>(`/tickets/representatives${query}`);
@@ -169,14 +265,19 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
   const submitAssign = async () => {
     if (!assignTicket || !representativeId) return setMessage('Select representative');
     try {
+      setAssignWarning('');
       await apiClient.post(`/tickets/${assignTicket.id}/assign`, {
         representativeId,
         clerkCost: clerkCost ? Number(clerkCost) : undefined,
+        forceAssign,
       });
       setAssignTicket(null);
       setMessage('Ticket assigned');
       loadTickets();
     } catch (error: any) {
+      if (String(error.message || '').includes('Representative does not serve this city')) {
+        setAssignWarning(error.message);
+      }
       setMessage(error.message || 'Assignment failed');
     }
   };
@@ -232,7 +333,7 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
       const formData = new FormData();
       formData.append('file', receiptFile);
       await apiClient.post(`/tickets/${receiptTicket.id}/clerk-receipt`, formData);
-      setMessage('Receipt submitted for admin review');
+      setMessage('Submitted to admin for approval');
       setReceiptTicket(null);
       setReceiptFile(null);
       loadTickets();
@@ -246,12 +347,71 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
   const handleVerifyClerkReceipt = async (decision: 'VERIFIED' | 'REJECTED') => {
     if (!verifyTicket) return;
     try {
-      await apiClient.post(`/tickets/${verifyTicket.id}/clerk-receipt/verify`, { decision });
+      await apiClient.post(`/tickets/${verifyTicket.id}/clerk-receipt/verify`, {
+        decision,
+        reason: decision === 'REJECTED' ? verifyRejectReason || undefined : undefined,
+      });
       setMessage(`Receipt ${decision.toLowerCase()}`);
       setVerifyTicket(null);
+      setVerifyRejectReason('');
+      setIsVerifyRejectMode(false);
       loadTickets();
     } catch (error: any) {
       setMessage(error.message || 'Verify failed');
+    }
+  };
+
+  const submitClerkCosts = async () => {
+    if (!costsTicket) return;
+    try {
+      const noOfPages = Number(clerkCosts.noOfPages) || 0;
+      const costPerPage = Number(clerkCosts.costPerPage) || 0;
+      await apiClient.post(`/tickets/${costsTicket.id}/clerk-costs`, {
+        deliveryCharges: Number(clerkCosts.deliveryCharges) || 0,
+        printingCharges: noOfPages * costPerPage,
+        attestedCharges: Number(clerkCosts.attestedCharges) || 0,
+        nonAttestedCharges: Number(clerkCosts.nonAttestedCharges) || 0,
+        additionalCharges: Number(clerkCosts.additionalCharges) || 0,
+        noOfPages,
+        costPerPage,
+      });
+      setMessage('Costs submitted — ticket moved to Waiting Approval');
+      setCostsTicket(null);
+      setClerkCosts(EMPTY_CLERK_COSTS);
+      loadTickets();
+    } catch (error: any) {
+      setMessage(error.message || 'Failed to submit costs');
+    }
+  };
+
+  const rejectAssignment = async () => {
+    if (!rejectTicket) return;
+    try {
+      await apiClient.post(`/tickets/${rejectTicket.id}/reject-assignment`, {
+        reason: rejectReason,
+      });
+      setMessage(`Ticket ${rejectTicket.batchNo} rejected and returned to pending.`);
+      setRejectTicket(null);
+      setRejectReason('');
+      loadTickets();
+    } catch (error: any) {
+      setMessage(error.message || 'Failed to reject assignment');
+    }
+  };
+
+  const sendBackToClerk = async () => {
+    if (!sendBackTicket) return;
+    try {
+      await apiClient.patch(`/tickets/${sendBackTicket.id}/status`, {
+        status: 'IN_PROGRESS',
+        note: sendBackReason || undefined,
+      });
+      setMessage(`Ticket ${sendBackTicket.batchNo} sent back to clerk.`);
+      setSendBackTicket(null);
+      setSendBackReason('');
+      loadTickets();
+    } catch (error: any) {
+      setMessage(error.message || 'Failed to send ticket back');
     }
   };
 
@@ -260,12 +420,15 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
     if (!uploadTicket || !uploadFile) return setMessage('Select a file to upload');
     setUploading(true);
     try {
+      const currentTicket = uploadTicket;
       const formData = new FormData();
       formData.append('file', uploadFile);
-      await apiClient.post(`/tickets/${uploadTicket.id}/documents/upload`, formData);
-      setMessage('Document uploaded successfully');
+      await apiClient.post(`/tickets/${currentTicket.id}/documents/upload`, formData);
+      setMessage('Document uploaded. Add payments to continue.');
       setUploadTicket(null);
       setUploadFile(null);
+      openCostsModal(currentTicket);
+      loadTickets();
     } catch (error: any) {
       setMessage(error.message || 'Upload failed');
     } finally {
@@ -315,7 +478,7 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
                   <option value="JUDICIAL">Judicial</option>
                   <option value="NON_JUDICIAL">Non-Judicial</option>
                 </select>
-                {!isClerk && (
+                {isAdmin && (
                   <>
                     <span className="h-6 w-px bg-slate-200 mx-1"></span>
                     <select
@@ -324,7 +487,6 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
                       onChange={(e) => setBulkAction(e.target.value)}
                     >
                       <option value="complete">Complete Tickets</option>
-                      <option value="immature">Immature Tickets</option>
                       <option value="delete">Delete Tickets</option>
                       <option value="download-invoice">Download Invoice</option>
                       <option value="send-invoice">Send Invoice</option>
@@ -348,15 +510,19 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
           <thead className="bg-slate-50">
             <tr>
               <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
-                <div className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4 rounded border-slate-300 text-primary-600 focus:ring-primary-600"
-                    checked={filteredTickets.length > 0 && selectedIds.length === filteredTickets.length}
-                    onChange={(e) => toggleAll(e.target.checked)}
-                  />
+                {isAdmin ? (
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 rounded border-slate-300 text-primary-600 focus:ring-primary-600"
+                      checked={filteredTickets.length > 0 && selectedIds.length === filteredTickets.length}
+                      onChange={(e) => toggleAll(e.target.checked)}
+                    />
+                    <span>Batch No</span>
+                  </div>
+                ) : (
                   <span>Batch No</span>
-                </div>
+                )}
               </th>
               <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Consumer</th>
               <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Service Details</th>
@@ -369,12 +535,14 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
               <tr key={ticket.id} className="hover:bg-slate-50 transition-colors group">
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div className="flex items-center gap-3">
-                    <input
-                      type="checkbox"
-                      className="h-4 w-4 rounded border-slate-300 text-primary-600 focus:ring-primary-600 mt-0.5"
-                      checked={Boolean(selected[ticket.id])}
-                      onChange={(e) => setSelected(s => ({ ...s, [ticket.id]: e.target.checked }))}
-                    />
+                    {isAdmin ? (
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 rounded border-slate-300 text-primary-600 focus:ring-primary-600 mt-0.5"
+                        checked={Boolean(selected[ticket.id])}
+                        onChange={(e) => setSelected(s => ({ ...s, [ticket.id]: e.target.checked }))}
+                      />
+                    ) : null}
                     <div className="text-sm font-medium text-slate-900">{ticket.batchNo}</div>
                   </div>
                 </td>
@@ -402,35 +570,82 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
                     {isClerk ? (
                       <>
                         {status === 'ASSIGNED' && (
-                          <button onClick={() => acceptTicket(ticket)} className="text-emerald-600 hover:text-emerald-900 bg-emerald-50 hover:bg-emerald-100 px-3 py-1.5 rounded-md flex items-center gap-1">
-                            <PlayCircle className="h-3.5 w-3.5" /> Accept
-                          </button>
+                          <>
+                            <button onClick={() => acceptTicket(ticket)} className="text-emerald-600 hover:text-emerald-900 bg-emerald-50 hover:bg-emerald-100 px-3 py-1.5 rounded-md flex items-center gap-1">
+                              <PlayCircle className="h-3.5 w-3.5" /> Accept
+                            </button>
+                            <button
+                              onClick={() => {
+                                setRejectTicket(ticket);
+                                setRejectReason('');
+                              }}
+                              className="text-rose-600 hover:text-rose-900 bg-rose-50 hover:bg-rose-100 px-3 py-1.5 rounded-md flex items-center gap-1"
+                            >
+                              <XCircle className="h-3.5 w-3.5" /> Reject
+                            </button>
+                          </>
                         )}
                         {status === 'IN_PROGRESS' && (
                           <>
                             <button onClick={() => setUploadTicket(ticket)} className="text-indigo-600 hover:text-indigo-900 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-md flex items-center gap-1">
-                              <Upload className="h-3.5 w-3.5" /> Upload Docs
+                              <Upload className="h-3.5 w-3.5" /> Upload Work Documents
                             </button>
-                            <button onClick={() => { setReceiptTicket(ticket); setReceiptFile(null); }} className="text-amber-600 hover:text-amber-900 bg-amber-50 hover:bg-amber-100 px-3 py-1.5 rounded-md flex items-center gap-1">
-                              <CheckSquare className="h-3.5 w-3.5" /> Submit Receipt
-                            </button>
+                            {!hasSubmittedClerkCosts(ticket) ? (
+                              <button
+                                onClick={() => openCostsModal(ticket)}
+                                className="bg-slate-900 px-3 py-1.5 rounded-md flex items-center gap-1 text-white hover:bg-slate-800"
+                              >
+                                <CheckSquare className="h-3.5 w-3.5" /> Update Payments
+                              </button>
+                            ) : null}
+                            {canUploadForAdminApproval(ticket) ? (
+                              <button onClick={() => { setReceiptTicket(ticket); setReceiptFile(null); }} className="text-amber-600 hover:text-amber-900 bg-amber-50 hover:bg-amber-100 px-3 py-1.5 rounded-md flex items-center gap-1">
+                                <CheckSquare className="h-3.5 w-3.5" /> Submit to Admin
+                              </button>
+                            ) : null}
                           </>
+                        )}
+                        {status === 'WAITING_APPROVAL' && canUploadForAdminApproval(ticket) && (
+                          <button onClick={() => { setReceiptTicket(ticket); setReceiptFile(null); }} className="text-amber-600 hover:text-amber-900 bg-amber-50 hover:bg-amber-100 px-3 py-1.5 rounded-md flex items-center gap-1">
+                            <CheckSquare className="h-3.5 w-3.5" /> Submit to Admin
+                          </button>
                         )}
                       </>
                     ) : (
                       <>
-                        {status !== 'COMPLETED' && (
+                        {status !== 'COMPLETED' && status !== 'WAITING_APPROVAL' && (
                           <button onClick={() => openAssign(ticket)} className="text-primary-600 hover:text-primary-900 bg-primary-50 px-3 py-1.5 rounded-md flex items-center gap-1">
                             <CheckSquare className="h-3.5 w-3.5" /> Assign
                           </button>
                         )}
-                        {status === 'IN_PROGRESS' && (
+                        {status === 'IN_PROGRESS' && ticket.clerkApprovalStatus === 'SUBMITTED' && (
                           <>
-                            <button onClick={() => completeTicket(ticket)} className="text-emerald-600 hover:text-emerald-900 bg-emerald-50 hover:bg-emerald-100 px-3 py-1.5 rounded-md flex items-center gap-1">
-                              <PlayCircle className="h-3.5 w-3.5" /> Complete
-                            </button>
-                            <button onClick={() => setVerifyTicket(ticket)} className="text-amber-600 hover:text-amber-900 bg-amber-50 hover:bg-amber-100 px-3 py-1.5 rounded-md flex items-center gap-1">
+                            <button onClick={() => { setVerifyTicket(ticket); setVerifyRejectReason(''); setIsVerifyRejectMode(false); }} className="text-amber-600 hover:text-amber-900 bg-amber-50 hover:bg-amber-100 px-3 py-1.5 rounded-md flex items-center gap-1">
                               <Eye className="h-3.5 w-3.5" /> Verify Receipt
+                            </button>
+                          </>
+                        )}
+                        {status === 'WAITING_APPROVAL' && (
+                          <>
+                            {ticket.clerkApprovalStatus === 'SUBMITTED' ? (
+                              <button onClick={() => { setVerifyTicket(ticket); setVerifyRejectReason(''); setIsVerifyRejectMode(false); }} className="text-amber-600 hover:text-amber-900 bg-amber-50 hover:bg-amber-100 px-3 py-1.5 rounded-md flex items-center gap-1">
+                                <Eye className="h-3.5 w-3.5" /> Verify Receipt
+                              </button>
+                            ) : null}
+                            <button
+                              onClick={() => completeTicket(ticket)}
+                              className="text-emerald-600 hover:text-emerald-900 bg-emerald-50 hover:bg-emerald-100 px-3 py-1.5 rounded-md flex items-center gap-1"
+                            >
+                              <PlayCircle className="h-3.5 w-3.5" /> Approve & Complete
+                            </button>
+                            <button
+                              onClick={() => {
+                                setSendBackTicket(ticket);
+                                setSendBackReason('');
+                              }}
+                              className="text-amber-700 hover:text-amber-900 bg-amber-50 hover:bg-amber-100 px-3 py-1.5 rounded-md flex items-center gap-1"
+                            >
+                              <History className="h-3.5 w-3.5" /> Send Back to Clerk
                             </button>
                           </>
                         )}
@@ -494,6 +709,20 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
               />
             </label>
           </div>
+          {assignWarning && (
+            <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              {assignWarning}
+            </div>
+          )}
+          <label className="mt-4 flex items-center gap-3 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              checked={forceAssign}
+              onChange={(e) => setForceAssign(e.target.checked)}
+              className="h-4 w-4 rounded border-slate-300 text-primary-600 focus:ring-primary-600"
+            />
+            Override city restriction and assign anyway
+          </label>
           <div className="mt-6 flex gap-3">
             <button
               onClick={submitAssign}
@@ -504,6 +733,103 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
             <button
               onClick={() => setAssignTicket(null)}
               className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm ring-1 ring-inset ring-border-soft hover:bg-slate-50 transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </PanelCard>
+      )}
+
+      {rejectTicket && (
+        <PanelCard className="mt-6 border-rose-200 bg-rose-50/30">
+          <div className="flex items-start justify-between">
+            <SectionHeader
+              title={`Reject Ticket ${rejectTicket.batchNo}`}
+              description="Provide a reason so the admin can reassign this ticket."
+            />
+            <button onClick={() => setRejectTicket(null)} className="p-1.5 text-slate-400 hover:text-slate-700 rounded-md transition-colors">
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+          <div className="mt-4 space-y-4">
+            <label className="block">
+              <span className="text-sm font-medium text-slate-700">Rejection Reason</span>
+              <textarea
+                rows={4}
+                value={rejectReason}
+                onChange={(e) => setRejectReason(e.target.value)}
+                className="mt-2 block w-full rounded-xl border-0 px-3 py-2.5 text-slate-900 ring-1 ring-inset ring-border-soft placeholder:text-slate-400 focus:ring-2 focus:ring-rose-500 sm:text-sm"
+                placeholder="Explain why you cannot take this assignment."
+              />
+            </label>
+            <div className="flex gap-3">
+              <button
+                onClick={rejectAssignment}
+                className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-rose-500 transition-colors"
+              >
+                Confirm Rejection
+              </button>
+              <button
+                onClick={() => setRejectTicket(null)}
+                className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm ring-1 ring-inset ring-border-soft hover:bg-slate-50 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </PanelCard>
+      )}
+
+      {costsTicket && (
+        <PanelCard className="mt-6 border-slate-900 bg-slate-950 text-white">
+          <div className="flex items-start justify-between">
+            <SectionHeader
+              title={`Update Ticket Payments — ${costsTicket.batchNo}`}
+              description="Submit your final cost breakdown before the admin-approval upload step."
+            />
+            <button onClick={() => setCostsTicket(null)} className="p-1.5 text-slate-400 hover:text-white rounded-md transition-colors">
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+          <div className="mt-6 grid gap-4 md:grid-cols-3">
+            {clerkCostFields.map(({ label, key }) => (
+              <label key={key} className="block">
+                <span className="text-sm font-medium text-slate-200">{label}</span>
+                <input
+                  type="number"
+                  min="0"
+                  value={clerkCosts[key]}
+                  onChange={(e) =>
+                    setClerkCosts((current) => ({
+                      ...current,
+                      [key]: e.target.value,
+                    }))
+                  }
+                  className="mt-2 block w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2.5 text-sm text-white placeholder:text-slate-500 focus:border-primary-500 focus:outline-none"
+                  placeholder="0"
+                />
+              </label>
+            ))}
+            <div className="block">
+              <span className="text-sm font-medium text-slate-200">Printing Charges</span>
+              <div className="mt-2 flex items-center rounded-xl border border-slate-600 bg-slate-800 px-3 py-2.5 text-sm text-slate-300">
+                <span className="flex-1">
+                  PKR {((Number(clerkCosts.noOfPages) || 0) * (Number(clerkCosts.costPerPage) || 0)).toLocaleString()}
+                </span>
+                <span className="text-xs text-slate-500">{clerkCosts.noOfPages || '0'} × {clerkCosts.costPerPage || '0'}</span>
+              </div>
+            </div>
+          </div>
+          <div className="mt-6 flex gap-3">
+            <button
+              onClick={submitClerkCosts}
+              className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-primary-500 transition-colors"
+            >
+              Submit
+            </button>
+            <button
+              onClick={() => setCostsTicket(null)}
+              className="rounded-lg bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 shadow-sm ring-1 ring-inset ring-slate-700 hover:bg-slate-700 transition-colors"
             >
               Cancel
             </button>
@@ -558,13 +884,13 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
         </PanelCard>
       )}
 
-      {/* Clerk: Upload Documents Panel */}
+      {/* Clerk: Upload Work Documents Panel */}
       {uploadTicket && (
         <PanelCard className="mt-6">
           <div className="flex items-start justify-between">
             <SectionHeader
-              title={`Upload Documents — ${uploadTicket.batchNo}`}
-              description="Upload court fee receipts, case files, or any proof related to this ticket."
+              title={`Upload Work Documents — ${uploadTicket.batchNo}`}
+              description="Upload case files, proofs, or supporting documents before entering the payment breakdown."
             />
             <button onClick={() => { setUploadTicket(null); setUploadFile(null); }} className="p-1.5 text-slate-400 hover:text-slate-700 rounded-md transition-colors">
               <X className="h-5 w-5" />
@@ -605,16 +931,16 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
         </PanelCard>
       )}
 
-      {/* Clerk: Submit Receipt Image Panel */}
+      {/* Clerk: Submit To Admin Panel */}
       {receiptTicket && (
         <PanelCard className="mt-6">
           <div className="flex items-start justify-between">
-            <SectionHeader title={`Submit Receipt — ${receiptTicket.batchNo}`} description="Upload a photo or scan of the court fee receipt." />
+            <SectionHeader title={`Submit To Admin — ${receiptTicket.batchNo}`} description="Upload the final receipt or proof package for admin approval." />
             <button onClick={() => { setReceiptTicket(null); setReceiptFile(null); }} className="p-1.5 text-slate-400 hover:text-slate-700 rounded-md transition-colors"><X className="h-5 w-5" /></button>
           </div>
           <div className="mt-4 space-y-4">
             <label className="block">
-              <span className="text-sm font-medium text-slate-700">Receipt Image</span>
+              <span className="text-sm font-medium text-slate-700">Approval File</span>
               <p className="text-xs text-slate-500 mt-0.5">Allowed: JPG, PNG, PDF — max 10 MB</p>
               <input
                 ref={receiptInputRef}
@@ -629,7 +955,7 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
             )}
             <div className="flex gap-3">
               <button onClick={submitClerkReceipt} disabled={!receiptFile || submittingReceipt} className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-amber-500 disabled:opacity-50 transition-colors">
-                {submittingReceipt ? 'Uploading...' : 'Submit Receipt'}
+                {submittingReceipt ? 'Submitting...' : 'Submit to Admin'}
               </button>
               <button onClick={() => { setReceiptTicket(null); setReceiptFile(null); }} className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm ring-1 ring-inset ring-border-soft hover:bg-slate-50 transition-colors">Cancel</button>
             </div>
@@ -642,12 +968,83 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
         <PanelCard className="mt-6 border-amber-200 bg-amber-50/30">
           <div className="flex items-start justify-between">
             <SectionHeader title={`Verify Clerk Receipt — ${verifyTicket.batchNo}`} description="Approve or reject the clerk's submitted payment receipt." />
-            <button onClick={() => setVerifyTicket(null)} className="p-1.5 text-slate-400 hover:text-slate-700 rounded-md transition-colors"><X className="h-5 w-5" /></button>
+            <button onClick={() => { setVerifyTicket(null); setVerifyRejectReason(''); setIsVerifyRejectMode(false); }} className="p-1.5 text-slate-400 hover:text-slate-700 rounded-md transition-colors"><X className="h-5 w-5" /></button>
           </div>
+          {isVerifyRejectMode && (
+            <label className="mt-4 block">
+              <span className="text-sm font-medium text-slate-700">Rejection Reason</span>
+              <textarea
+                rows={3}
+                value={verifyRejectReason}
+                onChange={(e) => setVerifyRejectReason(e.target.value)}
+                className="mt-2 block w-full rounded-xl border-0 px-3 py-2.5 text-slate-900 ring-1 ring-inset ring-border-soft placeholder:text-slate-400 focus:ring-2 focus:ring-rose-500 sm:text-sm"
+                placeholder="Explain what the clerk needs to fix before resubmitting."
+              />
+            </label>
+          )}
           <div className="mt-4 flex gap-3">
-            <button onClick={() => handleVerifyClerkReceipt('VERIFIED')} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-500 transition-colors">Approve</button>
-            <button onClick={() => handleVerifyClerkReceipt('REJECTED')} className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-rose-500 transition-colors">Reject</button>
-            <button onClick={() => setVerifyTicket(null)} className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm ring-1 ring-inset ring-border-soft hover:bg-slate-50 transition-colors">Cancel</button>
+            <button
+              onClick={() => handleVerifyClerkReceipt('VERIFIED')}
+              className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-500 transition-colors"
+            >
+              Approve
+            </button>
+            {isVerifyRejectMode ? (
+              <button
+                onClick={() => handleVerifyClerkReceipt('REJECTED')}
+                className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-rose-500 transition-colors"
+              >
+                Confirm Reject
+              </button>
+            ) : (
+              <button
+                onClick={() => setIsVerifyRejectMode(true)}
+                className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-rose-500 transition-colors"
+              >
+                Reject
+              </button>
+            )}
+            <button onClick={() => { setVerifyTicket(null); setVerifyRejectReason(''); setIsVerifyRejectMode(false); }} className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm ring-1 ring-inset ring-border-soft hover:bg-slate-50 transition-colors">Cancel</button>
+          </div>
+        </PanelCard>
+      )}
+
+      {sendBackTicket && (
+        <PanelCard className="mt-6 border-amber-200 bg-amber-50/30">
+          <div className="flex items-start justify-between">
+            <SectionHeader
+              title={`Send Back Ticket ${sendBackTicket.batchNo}`}
+              description="Optionally include what the clerk needs to revise before resubmitting."
+            />
+            <button onClick={() => setSendBackTicket(null)} className="p-1.5 text-slate-400 hover:text-slate-700 rounded-md transition-colors">
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+          <div className="mt-4 space-y-4">
+            <label className="block">
+              <span className="text-sm font-medium text-slate-700">Reason</span>
+              <textarea
+                rows={3}
+                value={sendBackReason}
+                onChange={(e) => setSendBackReason(e.target.value)}
+                className="mt-2 block w-full rounded-xl border-0 px-3 py-2.5 text-slate-900 ring-1 ring-inset ring-border-soft placeholder:text-slate-400 focus:ring-2 focus:ring-amber-500 sm:text-sm"
+                placeholder="Describe what the clerk should correct."
+              />
+            </label>
+            <div className="flex gap-3">
+              <button
+                onClick={sendBackToClerk}
+                className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-amber-500 transition-colors"
+              >
+                Send Back
+              </button>
+              <button
+                onClick={() => setSendBackTicket(null)}
+                className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm ring-1 ring-inset ring-border-soft hover:bg-slate-50 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
           </div>
         </PanelCard>
       )}

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:4000/api';
 const LOGIN_TIMEOUT_MS = 15000;
+const CONSUMER_ROLES = ['consumer', 'lawyer', 'company'];
 
 export default function LoginPage() {
   const [identifier, setIdentifier] = useState('superadmin@wusuq.com');
@@ -54,7 +55,13 @@ export default function LoginPage() {
         localStorage.setItem('wusuq_user', JSON.stringify(data.user));
       }
 
-      router.replace(nextPath);
+      const isConsumer = CONSUMER_ROLES.includes(data.user?.role ?? '');
+      const defaultRedirect = isConsumer ? '/consumer/dashboard' : '/dashboard';
+      const canUseNextPath = isConsumer
+        ? nextPath.startsWith('/consumer')
+        : nextPath.startsWith('/') && !nextPath.startsWith('/consumer');
+
+      router.replace(canUseNextPath ? nextPath : defaultRedirect);
     } catch (submitError) {
       if (submitError instanceof DOMException && submitError.name === 'AbortError') {
         setError('Login request timed out. Verify API is reachable and try again.');

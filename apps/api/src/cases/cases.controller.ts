@@ -39,7 +39,14 @@ export class CasesController {
 
   @RequirePermissions('cases.read')
   @Get()
-  list(@Query() query: FilterCasesDto) {
+  list(
+    @Query() query: FilterCasesDto,
+    @CurrentUser() user: JwtUser | undefined,
+  ) {
+    const consumerRoles = ['consumer', 'lawyer', 'company'];
+    if (user && consumerRoles.includes(user.role)) {
+      query.consumerId = user.sub;
+    }
     return this.casesService.findAll(query);
   }
 

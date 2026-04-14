@@ -8,9 +8,15 @@ import { SectionHeader } from '@/components/ui/section-header';
 import { PanelCard } from '@/components/ui/panel-card';
 import { StatusPill } from '@/components/ui/status-pill';
 import { DataTableShell } from '@/components/ui/data-table-shell';
-import { ArrowLeft, Edit, Clock, Ticket as TicketIcon, Calendar, FileText, Plus, RefreshCw, Info } from 'lucide-react';
+import { ArrowLeft, Clock, Ticket as TicketIcon, Calendar, FileText, Plus, RefreshCw, Info } from 'lucide-react';
 
-export function CaseDetail({ caseId }: { caseId: string }) {
+type CaseDetailProps = {
+  caseId: string;
+  basePath?: string;
+  readOnly?: boolean;
+};
+
+export function CaseDetail({ caseId, basePath = '/cases', readOnly = false }: CaseDetailProps) {
   const router = useRouter();
   const [caseData, setCaseData] = useState<Case & { hearings: Hearing[], events: CaseEvent[], tickets: any[], documents: any[] } | null>(null);
   const [loading, setLoading] = useState(true);
@@ -64,9 +70,11 @@ export function CaseDetail({ caseId }: { caseId: string }) {
            <button onClick={loadCase} className="inline-flex items-center gap-2 rounded-lg bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-inset ring-slate-300 hover:bg-slate-50">
              <RefreshCw className="h-4 w-4" /> Refresh
            </button>
-           <Link href={`/cases/${caseId}/new-ticket`} className="inline-flex items-center gap-2 rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-primary-500">
-             <Plus className="h-4 w-4" /> Start Proceeding
-           </Link>
+           {!readOnly ? (
+             <Link href={`${basePath}/${caseId}/new-ticket`} className="inline-flex items-center gap-2 rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-primary-500">
+               <Plus className="h-4 w-4" /> Start Proceeding
+             </Link>
+           ) : null}
         </div>
       </div>
 
@@ -201,12 +209,16 @@ export function CaseDetail({ caseId }: { caseId: string }) {
                         <StatusPill label={t.status} variant={t.status === 'COMPLETED' ? 'success' : 'warning'} />
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
-                         {t.status === 'COMPLETED' ? (
-                            <Link href={`/cases/${caseId}/new-ticket?resume=${t.id}`} className="text-primary-600 hover:text-primary-800 font-semibold text-sm">
-                              Continue Sequence
-                            </Link>
+                         {!readOnly ? (
+                           t.status === 'COMPLETED' ? (
+                              <Link href={`${basePath}/${caseId}/new-ticket?resume=${t.id}`} className="text-primary-600 hover:text-primary-800 font-semibold text-sm">
+                                Continue Sequence
+                              </Link>
+                           ) : (
+                              <span className="text-slate-400 text-sm">In Progress</span>
+                           )
                          ) : (
-                            <span className="text-slate-400 text-sm">In Progress</span>
+                           <span className="text-slate-400 text-sm">View only</span>
                          )}
                       </td>
                     </tr>

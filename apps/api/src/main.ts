@@ -1,5 +1,6 @@
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { mkdirSync } from 'node:fs';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
@@ -8,7 +9,9 @@ import { loadRuntimeConfig } from './config/runtime-config';
 async function bootstrap() {
   const runtime = loadRuntimeConfig();
   mkdirSync('./uploads/ticket-documents', { recursive: true });
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  app.useBodyParser('json', { limit: '10mb' });
+  app.useBodyParser('urlencoded', { extended: true, limit: '10mb' });
   app.setGlobalPrefix('api');
   app.use(helmet());
   app.enableCors({

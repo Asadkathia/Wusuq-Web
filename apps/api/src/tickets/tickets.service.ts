@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -15,6 +16,7 @@ import { BulkTicketActionDto } from './dto/bulk-ticket-action.dto';
 import { CreateTicketIntakeDto } from './dto/create-ticket-intake.dto';
 import { FilterTicketsDto } from './dto/filter-tickets.dto';
 import { SaveTicketIntakeDraftDto } from './dto/save-ticket-intake-draft.dto';
+import { SubmitClerkCostsDto } from './dto/submit-clerk-costs.dto';
 import { UpdateTicketDto } from './dto/update-ticket.dto';
 import { NotificationsService } from '../notifications/notifications.service';
 
@@ -38,9 +40,9 @@ const REQUIRED_FIELDS_BY_FLOW: Record<string, string[]> = {
     'case_type',
     'case_status',
     'case_title',
-    'no_of_sets',
+    'sets',
     'set_type',
-    'mode_of_delivery',
+    'delivery_mode',
   ],
   judicial_case_information: [
     'select_service',
@@ -49,11 +51,7 @@ const REQUIRED_FIELDS_BY_FLOW: Record<string, string[]> = {
     'case_petition_no',
     'case_year',
     'case_type',
-    'case_status',
     'case_title',
-    'no_of_sets',
-    'set_type',
-    'mode_of_delivery',
   ],
   judicial_case_search: [
     'select_service',
@@ -64,9 +62,9 @@ const REQUIRED_FIELDS_BY_FLOW: Record<string, string[]> = {
     'case_type',
     'case_status',
     'case_title',
-    'no_of_sets',
+    'sets',
     'set_type',
-    'mode_of_delivery',
+    'delivery_mode',
   ],
   judicial_case_filing: [
     'select_service',
@@ -77,9 +75,6 @@ const REQUIRED_FIELDS_BY_FLOW: Record<string, string[]> = {
     'case_type',
     'case_status',
     'case_title',
-    'no_of_sets',
-    'set_type',
-    'mode_of_delivery',
   ],
   judicial_power_of_attorney: [
     'select_service',
@@ -88,19 +83,13 @@ const REQUIRED_FIELDS_BY_FLOW: Record<string, string[]> = {
     'case_petition_no',
     'case_year',
     'case_type',
-    'case_status',
     'case_title',
-    'no_of_sets',
-    'set_type',
-    'mode_of_delivery',
   ],
   non_judicial_copy_of_fir: [
     'province',
     'district_id',
-    'station_id',
     'fir_no',
     'year',
-    'case_date',
     'offence',
     'case_title',
     'city_type',
@@ -114,7 +103,6 @@ const REQUIRED_FIELDS_BY_FLOW: Record<string, string[]> = {
     'city_type',
     'doc_no',
     'year',
-    'case_date',
     'case_title',
     'delivery_mode',
     'sets',
@@ -124,22 +112,26 @@ const REQUIRED_FIELDS_BY_FLOW: Record<string, string[]> = {
 
 const PAYLOAD_FIELD_ALIASES: Record<string, readonly string[]> = {
   province: ['province_capital'],
-  district_id: ['select_district'],
-  station_id: ['police_station', 'other_station_id'],
-  city: ['select_city'],
+  district_id: ['select_district', 'district_name'],
+  station_id: ['police_station'],
+  city: ['select_city', 'select_court_city'],
   case_date: ['fir_date', 'date'],
   case_title: ['title', 'title_party_a'],
   delivery_mode: ['mode_of_delivery'],
   sets: ['no_of_sets'],
+  set_type: ['setType'],
   notes: ['note'],
+  // Frontend sends case_no / year; API required list uses the legacy names
+  case_petition_no: ['case_no'],
+  case_year: ['year'],
 };
 
 const STATUS_TRANSITIONS: Record<TicketStatus, TicketStatus[]> = {
-  PENDING: ['ASSIGNED', 'IMMATURE'],
-  ASSIGNED: ['IN_PROGRESS', 'IMMATURE'],
-  IN_PROGRESS: ['COMPLETED', 'IMMATURE'],
+  PENDING: ['ASSIGNED'],
+  ASSIGNED: ['IN_PROGRESS'],
+  IN_PROGRESS: ['WAITING_APPROVAL'],
+  WAITING_APPROVAL: ['COMPLETED', 'IN_PROGRESS'],
   COMPLETED: [],
-  IMMATURE: [],
 };
 
 @Injectable()
@@ -158,6 +150,14 @@ export class TicketsService {
 
     const where = {
       ...(query.status ? { status: query.status } : {}),
+      ...(query.serviceCity
+        ? {
+            serviceCity: {
+              contains: query.serviceCity,
+              mode: 'insensitive' as const,
+            },
+          }
+        : {}),
       ...(query.consumerId ? { consumerId: query.consumerId } : {}),
       ...(query.representativeId
         ? {
@@ -181,6 +181,26 @@ export class TicketsService {
                     contains: query.search,
                     mode: 'insensitive' as const,
                   },
+                },
+              },
+              {
+                consumer: {
+                  email: {
+                    contains: query.search,
+                    mode: 'insensitive' as const,
+                  },
+                },
+              },
+              {
+                serviceCity: {
+                  contains: query.search,
+                  mode: 'insensitive' as const,
+                },
+              },
+              {
+                caseType: {
+                  contains: query.search,
+                  mode: 'insensitive' as const,
                 },
               },
             ],
@@ -219,6 +239,15 @@ export class TicketsService {
         caseType: ticket.caseType,
         intakeFlow: ticket.intakeFlow,
         status: ticket.status,
+        clerkApprovalStatus: ticket.clerkApprovalStatus,
+        clerkReceiptUrl: ticket.clerkReceiptUrl,
+        serviceCost: ticket.serviceCost,
+        totalAmount: ticket.totalAmount,
+        deliveryCharges: ticket.deliveryCharges,
+        printingCharges: ticket.printingCharges,
+        attestedCharges: ticket.attestedCharges,
+        nonAttestedCharges: ticket.nonAttestedCharges,
+        additionalCharges: ticket.additionalCharges,
         assignedRepresentative: ticket.assignments[0]?.representative ?? null,
         createdAt: ticket.createdAt,
       })),
@@ -461,6 +490,7 @@ export class TicketsService {
   async updateStatus(
     id: string,
     status: TicketStatus,
+    note?: string,
     actor?: { actorUserId?: string; actorEmail?: string },
   ) {
     const ticket = await this.prisma.ticket.findUnique({ where: { id } });
@@ -468,7 +498,8 @@ export class TicketsService {
       throw new NotFoundException('Ticket not found');
     }
 
-    if (!STATUS_TRANSITIONS[ticket.status].includes(status)) {
+    const allowedTransitions = this.getAllowedTransitions(ticket.status);
+    if (!allowedTransitions.includes(status)) {
       throw new BadRequestException(
         `Invalid transition from ${ticket.status} to ${status}`,
       );
@@ -481,7 +512,7 @@ export class TicketsService {
         ...(status === 'COMPLETED' ? { paymentStatus: 'PAID' } : {}),
       },
       include: {
-        consumer: { select: { id: true, name: true, phone: true } },
+        consumer: { select: { id: true, name: true, phone: true, email: true } },
         service: { select: { id: true, name: true } },
       },
     });
@@ -517,6 +548,13 @@ export class TicketsService {
         title: 'Service completed',
         body: `${updated.service.name} has been completed`,
       });
+      if (updated.consumer.email) {
+        await this.notificationsService.sendEmail(
+          updated.consumer.email,
+          `Your ticket ${updated.batchNo} is complete`,
+          `<p>Your paralegal request <strong>${updated.batchNo}</strong> has been completed. Log in to download your documents.</p>`,
+        );
+      }
     }
 
     await this.prisma.ticketStatusHistory.create({
@@ -524,6 +562,7 @@ export class TicketsService {
         ticketId: id,
         from: ticket.status,
         to: status,
+        note,
       },
     });
 
@@ -533,7 +572,7 @@ export class TicketsService {
       entityId: id,
       actorUserId: actor?.actorUserId,
       actorEmail: actor?.actorEmail,
-      metadata: { from: ticket.status, to: status },
+      metadata: { from: ticket.status, to: status, note },
     });
 
     return updated;
@@ -551,8 +590,11 @@ export class TicketsService {
     if (!ticket) {
       throw new NotFoundException('Ticket not found');
     }
-    await this.ensureActiveRepresentativeExists(dto.representativeId);
-    if (!STATUS_TRANSITIONS[ticket.status].includes('ASSIGNED')) {
+    const representative = await this.ensureActiveRepresentativeExists(
+      dto.representativeId,
+    );
+    const allowedTransitions = this.getAllowedTransitions(ticket.status);
+    if (!allowedTransitions.includes('ASSIGNED')) {
       throw new BadRequestException(
         `Invalid transition from ${ticket.status} to ASSIGNED`,
       );
@@ -576,6 +618,23 @@ export class TicketsService {
     });
 
     const clerkCost = dto.clerkCost ?? autoClerkCost.amount;
+    let assignmentWarning: string | null = null;
+    if (representative.courtCity && ticket.serviceCity) {
+      const repCities = [representative.courtCity, representative.city]
+        .filter((city): city is string => Boolean(city))
+        .map((city) => city.toLowerCase());
+      const ticketCity = ticket.serviceCity.toLowerCase();
+      const cityMatches = repCities.some(
+        (city) => city.includes(ticketCity) || ticketCity.includes(city),
+      );
+      if (!cityMatches) {
+        assignmentWarning =
+          'Representative does not serve this city. Pass forceAssign: true to override.';
+        if (!dto.forceAssign) {
+          throw new ConflictException(assignmentWarning);
+        }
+      }
+    }
     const nextTotalAmount =
       Number(ticket.serviceCost) +
       Number(ticket.deliveryCharges) +
@@ -619,6 +678,8 @@ export class TicketsService {
       metadata: {
         representativeId: dto.representativeId,
         clerkCost,
+        forceAssign: Boolean(dto.forceAssign),
+        warning: assignmentWarning,
       },
     });
 
@@ -660,13 +721,6 @@ export class TicketsService {
       await this.prisma.ticket.updateMany({
         where: { id: { in: dto.ticketIds }, status: 'IN_PROGRESS' },
         data: { status: 'COMPLETED' },
-      });
-    }
-
-    if (dto.action === 'immature') {
-      await this.prisma.ticket.updateMany({
-        where: { id: { in: dto.ticketIds } },
-        data: { status: 'IMMATURE' },
       });
     }
 
@@ -782,7 +836,7 @@ export class TicketsService {
         clerkCost: original.clerkCost,
         totalAmount: original.totalAmount,
         amountPaid: original.amountPaid,
-        paymentStatus: original.paymentStatus,
+        paymentStatus: 'UNPAID',
       },
     });
 
@@ -836,6 +890,7 @@ export class TicketsService {
   async verifyClerkReceipt(
     ticketId: string,
     decision: 'VERIFIED' | 'REJECTED',
+    reason?: string,
     actor?: { actorUserId?: string; actorEmail?: string },
   ) {
     const ticket = await this.prisma.ticket.findUnique({ where: { id: ticketId } });
@@ -844,9 +899,24 @@ export class TicketsService {
       throw new BadRequestException('No submitted receipt to verify');
     }
 
+    const nextStatus: TicketStatus =
+      decision === 'VERIFIED' ? 'WAITING_APPROVAL' : 'IN_PROGRESS';
+
     const updated = await this.prisma.ticket.update({
       where: { id: ticketId },
-      data: { clerkApprovalStatus: decision },
+      data: {
+        clerkApprovalStatus: decision,
+        status: nextStatus,
+      },
+    });
+
+    await this.prisma.ticketStatusHistory.create({
+      data: {
+        ticketId,
+        from: ticket.status,
+        to: nextStatus,
+        note: reason,
+      },
     });
 
     await this.auditLogsService.create({
@@ -855,6 +925,129 @@ export class TicketsService {
       entityId: ticketId,
       actorUserId: actor?.actorUserId,
       actorEmail: actor?.actorEmail,
+      metadata: { reason, from: ticket.status, to: nextStatus },
+    });
+
+    return updated;
+  }
+
+  async submitClerkCosts(
+    ticketId: string,
+    dto: SubmitClerkCostsDto,
+    actor?: { actorUserId?: string; actorEmail?: string },
+  ) {
+    const ticket = await this.prisma.ticket.findUnique({ where: { id: ticketId } });
+    if (!ticket) {
+      throw new NotFoundException('Ticket not found');
+    }
+
+    if (ticket.status !== 'IN_PROGRESS' && ticket.status !== 'WAITING_APPROVAL') {
+      throw new BadRequestException(
+        'Ticket must be in progress or waiting approval',
+      );
+    }
+
+    const deliveryCharges = dto.deliveryCharges ?? Number(ticket.deliveryCharges);
+    const printingCharges =
+      dto.printingCharges ??
+      this.computePrintingCharges(dto.noOfPages, dto.costPerPage) ??
+      Number(ticket.printingCharges);
+    const attestedCharges = dto.attestedCharges ?? Number(ticket.attestedCharges);
+    const nonAttestedCharges =
+      dto.nonAttestedCharges ?? Number(ticket.nonAttestedCharges);
+    const additionalCharges =
+      dto.additionalCharges ?? Number(ticket.additionalCharges);
+    const totalAmount =
+      Number(ticket.serviceCost) +
+      deliveryCharges +
+      printingCharges +
+      attestedCharges +
+      nonAttestedCharges +
+      additionalCharges +
+      Number(ticket.additionalServiceCost) +
+      Number(ticket.clerkCost) -
+      Number(ticket.discountPrice);
+
+    const updated = await this.prisma.ticket.update({
+      where: { id: ticketId },
+      data: {
+        deliveryCharges,
+        printingCharges,
+        attestedCharges,
+        nonAttestedCharges,
+        additionalCharges,
+        totalAmount,
+        clerkApprovalStatus: 'SUBMITTED',
+        status: 'WAITING_APPROVAL',
+      },
+    });
+
+    await this.prisma.ticketStatusHistory.create({
+      data: {
+        ticketId,
+        from: ticket.status,
+        to: 'WAITING_APPROVAL',
+        note: dto.rejectionReason,
+      },
+    });
+
+    await this.auditLogsService.create({
+      action: 'TICKET_CLERK_COSTS_SUBMITTED',
+      entity: 'TICKET',
+      entityId: ticketId,
+      actorUserId: actor?.actorUserId,
+      actorEmail: actor?.actorEmail,
+      metadata: {
+        deliveryCharges,
+        printingCharges,
+        attestedCharges,
+        nonAttestedCharges,
+        additionalCharges,
+        noOfPages: dto.noOfPages,
+        costPerPage: dto.costPerPage,
+        rejectionReason: dto.rejectionReason,
+        from: ticket.status,
+        to: 'WAITING_APPROVAL',
+      },
+    });
+
+    return updated;
+  }
+
+  async rejectAssignment(
+    ticketId: string,
+    reason: string,
+    actor?: { actorUserId?: string; actorEmail?: string },
+  ) {
+    const ticket = await this.prisma.ticket.findUnique({ where: { id: ticketId } });
+    if (!ticket) {
+      throw new NotFoundException('Ticket not found');
+    }
+    if (ticket.status !== 'ASSIGNED') {
+      throw new BadRequestException('Only assigned tickets can be rejected');
+    }
+
+    const updated = await this.prisma.ticket.update({
+      where: { id: ticketId },
+      data: { status: 'PENDING' },
+    });
+
+    await this.prisma.ticketStatusHistory.create({
+      data: {
+        ticketId,
+        from: 'ASSIGNED',
+        to: 'PENDING',
+        note: reason,
+      },
+    });
+
+    await this.auditLogsService.create({
+      action: 'TICKET_ASSIGNMENT_REJECTED',
+      entity: 'TICKET',
+      entityId: ticketId,
+      actorUserId: actor?.actorUserId,
+      actorEmail: actor?.actorEmail,
+      metadata: { reason, from: 'ASSIGNED', to: 'PENDING' },
     });
 
     return updated;
@@ -932,7 +1125,7 @@ export class TicketsService {
   private async ensureActiveRepresentativeExists(id: string) {
     const user = await this.prisma.user.findUnique({
       where: { id },
-      select: { id: true, role: true, isActive: true },
+      select: { id: true, role: true, isActive: true, city: true, courtCity: true },
     });
 
     if (!user) {
@@ -943,6 +1136,20 @@ export class TicketsService {
         'Representative must be active and have representative role',
       );
     }
+
+    return user;
+  }
+
+  private computePrintingCharges(noOfPages?: number, costPerPage?: number) {
+    if (typeof noOfPages === 'number' && typeof costPerPage === 'number') {
+      return noOfPages * costPerPage;
+    }
+
+    return undefined;
+  }
+
+  private getAllowedTransitions(status: string): TicketStatus[] {
+    return STATUS_TRANSITIONS[status as TicketStatus];
   }
 
   private async ensureServiceExists(id: string) {

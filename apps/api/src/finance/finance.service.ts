@@ -217,6 +217,11 @@ export class FinanceService {
       serviceCost + deliveryCharges + printingCharges + attestedCharges +
       nonAttestedCharges + additionalCharges + additionalServiceCost - discountPrice;
     const totalAmount = dto.amount ?? Math.max(computedTotal, 0);
+    if (totalAmount < Number(serviceCost ?? 0)) {
+      throw new BadRequestException(
+        'Total charges cannot be less than the service cost',
+      );
+    }
 
     const amountPaid = toNumber(ticket.amountPaid);
     if (totalAmount < amountPaid) {
@@ -241,12 +246,12 @@ export class FinanceService {
     });
 
     await this.auditLogsService.create({
-      action: 'FINANCE_CHARGE_UPDATED',
+      action: 'FINANCE_CHARGE_UPDATE',
       entity: 'TICKET',
       entityId: ticketId,
       actorUserId: actor?.actorUserId,
       actorEmail: actor?.actorEmail,
-      metadata: { previousAmount: toNumber(ticket.totalAmount), newAmount: totalAmount, note: dto.note },
+      metadata: { changes: dto as Prisma.InputJsonValue },
     });
 
     return {

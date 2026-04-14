@@ -11,6 +11,7 @@ import { PanelCard } from '@/components/ui/panel-card';
 import { DataTableShell } from '@/components/ui/data-table-shell';
 import { StatusPill } from '@/components/ui/status-pill';
 import { CheckCircle2, XCircle, Plus, Wallet, RefreshCw, FileText, ExternalLink, History, X, Upload } from 'lucide-react';
+const CONSUMER_ROLES = ['consumer', 'lawyer', 'company'] as const;
 
 type WalletUser = {
   sr: number;
@@ -32,11 +33,23 @@ type PendingTopup = {
   receiptUrl?: string | null;
 };
 
+type ConsumerTransaction = {
+  id: string;
+  amount: number;
+  paymentMode: string;
+  status: string;
+  referenceNo?: string | null;
+  createdAt: string;
+  verifiedAt?: string | null;
+};
+
 export function WalletBoard() {
   const [users, setUsers] = useState<WalletUser[]>([]);
   const [pending, setPending] = useState<PendingTopup[]>([]);
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
+  const [isConsumer, setIsConsumer] = useState<boolean | null>(null);
+  const [myWallet, setMyWallet] = useState<{ balance: number; transactions: ConsumerTransaction[] } | null>(null);
 
   const [txUserId, setTxUserId] = useState<string | null>(null);
   const [txHistory, setTxHistory] = useState<any[]>([]);
@@ -54,19 +67,42 @@ export function WalletBoard() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const result = await apiClient.get<any>('/wallet?limit=200');
-      setUsers(result.items ?? []);
-      setPending(result.pendingTopups ?? []);
+      if (isConsumer) {
+        const result = await apiClient.get<{ balance: number; transactions: ConsumerTransaction[] }>('/wallet/me');
+        setMyWallet(result);
+      } else {
+        const result = await apiClient.get<any>('/wallet?limit=200');
+        setUsers(result.items ?? []);
+        setPending(result.pendingTopups ?? []);
+      }
     } catch (error: any) {
       setMessage(error.message || 'Failed to load wallet data');
     } finally {
       setLoading(false);
     }
+  }, [isConsumer]);
+
+  useEffect(() => {
+    try {
+      const user = JSON.parse(localStorage.getItem('wusuq_user') || 'null');
+      const role = user?.role ?? '';
+      setIsConsumer(CONSUMER_ROLES.includes(role as (typeof CONSUMER_ROLES)[number]));
+    } catch {
+      setIsConsumer(false);
+    }
   }, []);
 
   useEffect(() => {
+    if (isConsumer === null) return;
     load();
-  }, [load]);
+  }, [load, isConsumer]);
+
+  const getConsumerTxVariant = (status: string) => {
+    if (status === 'VERIFIED') return 'success' as const;
+    if (status === 'PENDING_VERIFICATION') return 'warning' as const;
+    if (status === 'REJECTED') return 'error' as const;
+    return 'neutral' as const;
+  };
 
   const submitTopup = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -150,6 +186,84 @@ export function WalletBoard() {
       setUploadingReceipt(false);
     }
   };
+
+  if (isConsumer === null) {
+    return (
+      <div className="py-20 text-center text-slate-500 animate-pulse">Loading wallet...</div>
+    );
+  }
+
+  if (isConsumer) {
+    return (
+      <div className="space-y-6">
+        <SectionHeader
+          title="My Wallet"
+          description="View your balance and latest top-up transactions."
+          action={
+            <button
+              onClick={load}
+              disabled={loading}
+              className="inline-flex items-center gap-2 rounded-lg bg-surface px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-inset ring-border-soft hover:bg-surface-muted disabled:opacity-50 transition-colors"
+            >
+              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+              Refresh
+            </button>
+          }
+        />
+
+        {message && (
+          <div className={`p-4 rounded-xl text-sm font-medium ${message.toLowerCase().includes('failed') ? 'bg-rose-50 text-rose-800 border border-rose-200' : 'bg-emerald-50 text-emerald-800 border border-emerald-200'}`}>
+            {message}
+          </div>
+        )}
+
+        <PanelCard>
+          <h3 className="text-sm font-semibold text-slate-700">My Wallet Balance</h3>
+          <p className="mt-2 text-3xl font-bold text-slate-900">PKR {Number(myWallet?.balance || 0).toLocaleString()}</p>
+        </PanelCard>
+
+        <PanelCard>
+          <h3 className="mb-4 text-sm font-semibold text-slate-900">Transaction History</h3>
+          <table className="min-w-full divide-y divide-slate-200">
+            <thead className="bg-slate-50">
+              <tr>
+                <th className="px-4 py-2 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Amount</th>
+                <th className="px-4 py-2 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Payment Mode</th>
+                <th className="px-4 py-2 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Status</th>
+                <th className="px-4 py-2 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Reference No</th>
+                <th className="px-4 py-2 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Date</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {(myWallet?.transactions ?? []).map((transaction) => (
+                <tr key={transaction.id}>
+                  <td className="px-4 py-3 text-sm text-slate-900">{Number(transaction.amount || 0).toLocaleString()}</td>
+                  <td className="px-4 py-3 text-sm text-slate-700">{transaction.paymentMode.replaceAll('_', ' ')}</td>
+                  <td className="px-4 py-3">
+                    <StatusPill label={transaction.status} variant={getConsumerTxVariant(transaction.status)} />
+                  </td>
+                  <td className="px-4 py-3 text-sm text-slate-700">{transaction.referenceNo || '-'}</td>
+                  <td className="px-4 py-3 text-sm text-slate-700">{new Date(transaction.createdAt).toLocaleString()}</td>
+                </tr>
+              ))}
+              {(myWallet?.transactions?.length ?? 0) === 0 && (
+                <tr>
+                  <td colSpan={5} className="px-4 py-8 text-center text-sm text-slate-500">No transactions found.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </PanelCard>
+
+        <PanelCard className="bg-slate-50 border-slate-200">
+          <h4 className="text-sm font-semibold text-slate-900 mb-2">Top Up Request</h4>
+          <p className="text-sm text-slate-600">
+            To top up your wallet, make a bank transfer to [instructions] and contact your representative.
+          </p>
+        </PanelCard>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

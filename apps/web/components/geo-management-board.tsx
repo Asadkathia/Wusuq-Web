@@ -45,6 +45,26 @@ export function GeoManagementBoard() {
     } catch (e: any) { msg(e.message || 'Seed failed'); }
   };
 
+  const resetAndSeed = async () => {
+    const confirmed = window.confirm(
+      'This will delete all current provinces, districts, cities, courts, and police stations, then reseed from the bundled Pakistan dataset. Continue?',
+    );
+    if (!confirmed) return;
+
+    try {
+      const res = await apiClient.post<{ message: string; created: Record<string, number> }>(
+        '/geo/reset-seed',
+        {},
+      );
+      msg(
+        `${res.message} — provinces: ${res.created.provinces}, districts: ${res.created.districts}, cities: ${res.created.cities}`,
+      );
+      load();
+    } catch (e: any) {
+      msg(e.message || 'Reset and reseed failed');
+    }
+  };
+
   const addProvince = async () => {
     if (!newProvince.trim()) return;
     try {
@@ -110,6 +130,13 @@ export function GeoManagementBoard() {
         description="Manage provinces, districts, and cities used for cost rule resolution at ticket intake."
         action={
           <div className="flex gap-2">
+            <button
+              onClick={resetAndSeed}
+              className="inline-flex items-center gap-2 rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-rose-700 transition-colors"
+            >
+              <Trash2 className="h-4 w-4" />
+              Reset & Reseed
+            </button>
             <button
               onClick={seed}
               className="inline-flex items-center gap-2 rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-700 transition-colors"

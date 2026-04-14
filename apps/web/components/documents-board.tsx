@@ -23,6 +23,7 @@ type DocumentItem = {
     consumer: { id: string; name: string };
   };
 };
+const CONSUMER_ROLES = ['consumer', 'lawyer', 'company'] as const;
 
 export function DocumentsBoard() {
   const [items, setItems] = useState<DocumentItem[]>([]);
@@ -34,19 +35,32 @@ export function DocumentsBoard() {
   const [uploadTicketId, setUploadTicketId] = useState('');
   const [uploadFiles, setUploadFiles] = useState<File[]>([]);
   const [uploadLoading, setUploadLoading] = useState(false);
+  const [isConsumer, setIsConsumer] = useState(false);
+  const [userId, setUserId] = useState('');
+
+  useEffect(() => {
+    try {
+      const u = JSON.parse(localStorage.getItem('wusuq_user') || 'null');
+      if (!u) return;
+      setIsConsumer(CONSUMER_ROLES.includes(u.role as (typeof CONSUMER_ROLES)[number]));
+      setUserId(u.id ?? '');
+    } catch {}
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const query = search ? `&search=${encodeURIComponent(search)}` : '';
-      const result = await apiClient.get<any>(`/documents?limit=200${query}`);
+      const query = new URLSearchParams({ limit: '200' });
+      if (search) query.set('search', search);
+      if (isConsumer && userId) query.set('consumerId', userId);
+      const result = await apiClient.get<any>(`/documents?${query.toString()}`);
       setItems(result.items ?? []);
     } catch (error: any) {
       setMessage(error.message || 'Failed to load documents');
     } finally {
       setLoading(false);
     }
-  }, [search]);
+  }, [search, isConsumer, userId]);
 
   useEffect(() => {
     load();

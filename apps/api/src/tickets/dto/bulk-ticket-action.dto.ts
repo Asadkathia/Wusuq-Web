@@ -2,7 +2,6 @@ import { IsArray, IsIn, IsString } from 'class-validator';
 
 const ACTIONS = [
   'complete',
-  'immature',
   'delete',
 ] as const;
 

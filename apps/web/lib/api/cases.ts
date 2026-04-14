@@ -80,12 +80,13 @@ export interface CreateCaseDto {
 export const casesApi = {
   createCase: (data: CreateCaseDto) => apiClient.post<Case>('/cases', data),
   
-  listCases: (params?: { page?: number; limit?: number; search?: string; status?: CaseStatus }) => {
+  listCases: (params?: { page?: number; limit?: number; search?: string; status?: CaseStatus; consumerId?: string }) => {
     const qs = new URLSearchParams();
     if (params?.page) qs.append('page', params.page.toString());
     if (params?.limit) qs.append('limit', params.limit.toString());
     if (params?.search) qs.append('search', params.search);
     if (params?.status) qs.append('status', params.status);
+    if (params?.consumerId) qs.append('consumerId', params.consumerId);
     return apiClient.get<{ items: Case[]; total: number; page: number; limit: number }>(`/cases?${qs.toString()}`);
   },
 

@@ -1,6 +1,7 @@
 import { ServiceType } from '@prisma/client';
 import { Type } from 'class-transformer';
 import {
+  IsIn,
   IsEnum,
   IsInt,
   IsNotEmpty,
@@ -19,6 +20,7 @@ export class CreateCaseDto {
   title!: string;
 
   @IsEnum(ServiceType)
+  @IsIn(['JUDICIAL', 'NON_JUDICIAL'])
   @IsNotEmpty()
   type!: ServiceType;
 

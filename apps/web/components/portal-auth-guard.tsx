@@ -42,6 +42,19 @@ export function PortalAuthGuard({ children }: PortalAuthGuardProps) {
       return;
     }
 
+    try {
+      const user = JSON.parse(localStorage.getItem('wusuq_user') || 'null') as { role?: string } | null;
+      const CONSUMER_ROLES = ['consumer', 'lawyer', 'company'];
+      if (CONSUMER_ROLES.includes(user?.role ?? '')) {
+        router.replace('/consumer/dashboard');
+        setIsAuthorized(false);
+        return;
+      }
+    } catch {
+      redirectToLogin();
+      return;
+    }
+
     const onUnauthorized = () => {
       redirectToLogin();
     };

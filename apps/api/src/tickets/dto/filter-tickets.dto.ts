@@ -9,10 +9,9 @@ export class FilterTicketsDto extends PaginationQueryDto {
 
   @IsOptional()
   @IsString()
-  consumerId?: string;
+  serviceCity?: string;
 
   @IsOptional()
   @IsString()
   representativeId?: string;
-
 }

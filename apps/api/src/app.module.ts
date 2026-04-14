@@ -31,19 +31,22 @@ import { CurrencyModule } from './currency/currency.module';
     ConfigModule.forRoot({ isGlobal: true }),
     ThrottlerModule.forRoot([
       {
+        // General API — 600 req/min covers heavy dashboard + SPA navigation
         name: 'default',
         ttl: 60_000,
-        limit: 120,
+        limit: 600,
       },
       {
+        // Auth endpoints only (login, refresh, register)
         name: 'auth',
         ttl: 60_000,
-        limit: 10,
+        limit: 15,
       },
       {
+        // File upload endpoints
         name: 'upload',
         ttl: 60_000,
-        limit: 20,
+        limit: 30,
       },
     ]),
     AuthModule,

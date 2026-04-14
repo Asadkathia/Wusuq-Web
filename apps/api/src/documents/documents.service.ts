@@ -26,9 +26,21 @@ export class DocumentsService {
         }
       : {};
 
+    const scopedWhere = {
+      ...where,
+      ...(query.consumerId
+        ? {
+            ticket: {
+              ...(where as any).ticket,
+              consumerId: query.consumerId,
+            },
+          }
+        : {}),
+    };
+
     const [items, total] = await this.prisma.$transaction([
       this.prisma.ticketDocument.findMany({
-        where,
+        where: scopedWhere,
         skip,
         take: query.limit,
         orderBy: { createdAt: 'desc' },
@@ -42,7 +54,7 @@ export class DocumentsService {
           },
         },
       }),
-      this.prisma.ticketDocument.count({ where }),
+      this.prisma.ticketDocument.count({ where: scopedWhere }),
     ]);
 
     return {

@@ -124,7 +124,10 @@ export class CasesService {
       where: { id },
       include: {
         consumer: { select: { id: true, name: true, phone: true, email: true } },
-        hearings: { orderBy: { scheduledDate: 'asc' } },
+        hearings: {
+          where: { deletedAt: null },
+          orderBy: { scheduledDate: 'asc' },
+        },
         tickets: {
           orderBy: { createdAt: 'desc' },
           include: { service: { select: { name: true } } },
@@ -265,7 +268,14 @@ export class CasesService {
   async getCaseSummary(id: string) {
     const caseRec = await this.prisma.case.findUnique({
       where: { id },
-      include: { tickets: true, hearings: { where: { scheduledDate: { gte: new Date() } }, orderBy: { scheduledDate: 'asc' }, take: 1 } },
+      include: {
+        tickets: true,
+        hearings: {
+          where: { deletedAt: null, scheduledDate: { gte: new Date() } },
+          orderBy: { scheduledDate: 'asc' },
+          take: 1,
+        },
+      },
     });
 
     if (!caseRec) throw new NotFoundException('Case not found');
@@ -274,9 +284,7 @@ export class CasesService {
     const pending = caseRec.tickets.filter((t) => t.status === 'PENDING').length;
     const inProgress = caseRec.tickets.filter((t) => t.status === 'IN_PROGRESS' || t.status === 'ASSIGNED').length;
     const completed = caseRec.tickets.filter((t) => t.status === 'COMPLETED').length;
-    const immature = caseRec.tickets.filter((t) => t.status === 'IMMATURE').length;
-
-    const validTickets = caseRec.tickets.filter((t) => t.status !== 'IMMATURE');
+    const validTickets = caseRec.tickets;
     const totalCost = validTickets.reduce((sum, t) => sum + Number(t.totalAmount || 0), 0);
     const amountPaid = validTickets.reduce((sum, t) => sum + Number(t.amountPaid || 0), 0);
 
@@ -292,7 +300,7 @@ export class CasesService {
       title: caseRec.title,
       status: caseRec.status,
       openedAt: caseRec.createdAt,
-      ticketStats: { total: totalTickets, pending, inProgress, completed, immature },
+      ticketStats: { total: totalTickets, pending, inProgress, completed },
       financials: { totalCost, amountPaid, outstanding: totalCost - amountPaid },
       lastActivity: lastEvent?.createdAt,
       nextHearing: caseRec.hearings[0] || null,
@@ -340,7 +348,7 @@ export class CasesService {
 
   async listHearings(caseId: string) {
     return this.prisma.hearing.findMany({
-      where: { caseId },
+      where: { caseId, deletedAt: null },
       orderBy: { scheduledDate: 'desc' },
       include: {
         _count: { select: { tickets: true } },
@@ -354,7 +362,9 @@ export class CasesService {
     dto: UpdateHearingDto,
     actor?: { actorUserId?: string; actorEmail?: string },
   ) {
-    const hearing = await this.prisma.hearing.findUnique({ where: { id: hearingId, caseId } });
+    const hearing = await this.prisma.hearing.findFirst({
+      where: { id: hearingId, caseId, deletedAt: null },
+    });
     if (!hearing) throw new NotFoundException('Hearing not found');
 
     const updated = await this.prisma.hearing.update({
@@ -380,10 +390,15 @@ export class CasesService {
     hearingId: string,
     actor?: { actorUserId?: string; actorEmail?: string },
   ) {
-    const hearing = await this.prisma.hearing.findUnique({ where: { id: hearingId, caseId } });
+    const hearing = await this.prisma.hearing.findFirst({
+      where: { id: hearingId, caseId, deletedAt: null },
+    });
     if (!hearing) throw new NotFoundException('Hearing not found');
 
-    await this.prisma.hearing.delete({ where: { id: hearingId } });
+    await this.prisma.hearing.update({
+      where: { id: hearingId },
+      data: { deletedAt: new Date() },
+    });
 
     await this.auditLogsService.create({
       action: 'HEARING_DELETED',

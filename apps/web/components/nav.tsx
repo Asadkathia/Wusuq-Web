@@ -8,18 +8,17 @@ import {
   BriefcaseBusiness,
   ChevronDown,
   ChevronRight,
-  CircleDollarSign,
   FileText,
   FolderOpen,
   LayoutDashboard,
   LogOut,
   Scale,
+  Settings,
   ShieldCheck,
   Ticket,
-  Users,
   Vote,
   Wallet,
-  WalletCards
+  WalletCards,
 } from 'lucide-react';
 
 type SubItem = {
@@ -33,11 +32,18 @@ type NavItem = {
   icon: ComponentType<{ className?: string }>;
   children?: SubItem[];
   adminOnly?: boolean;
+  consumerOnly?: boolean;
+  clerkOnly?: boolean;
 };
 
 const navItems: NavItem[] = [
   { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-  { label: 'Cases', href: '/cases', icon: FolderOpen },
+  { label: 'My Tickets', href: '/tickets/pending', icon: Ticket, consumerOnly: true },
+  { label: 'My Cases', href: '/cases', icon: FolderOpen, consumerOnly: true },
+  { label: 'My Wallet', href: '/wallet', icon: Wallet, consumerOnly: true },
+  { label: 'My Assigned Tickets', href: '/tickets?assigned=me', icon: Ticket, clerkOnly: true },
+  { label: 'Submit Receipt', href: '/tickets?clerkView=true', icon: FileText, clerkOnly: true },
+  { label: 'Cases', href: '/cases', icon: FolderOpen, adminOnly: true },
   {
     label: 'Paralegal Services',
     icon: Scale,
@@ -49,33 +55,29 @@ const navItems: NavItem[] = [
   {
     label: 'Paralegal Tickets',
     icon: Ticket,
+    adminOnly: true,
+    clerkOnly: true,
     children: [
       { label: 'Pending Tickets', href: '/tickets/pending' },
-      { label: 'Completed Tickets', href: '/tickets/completed' },
-      { label: 'Immature Tickets', href: '/tickets/immature' },
       { label: 'Assigned Tickets', href: '/tickets/assigned' },
-      { label: 'In Progress Tickets', href: '/tickets/in-progress' }
-    ]
+      { label: 'In Progress Tickets', href: '/tickets/in-progress' },
+      { label: 'Waiting Approval', href: '/tickets/waiting-approval' },
+      { label: 'Completed Tickets', href: '/tickets/completed' },
+    ],
   },
   { label: 'Finance', href: '/finance', icon: WalletCards, adminOnly: true },
   { label: 'Reports', href: '/reports', icon: BarChart3, adminOnly: true },
   { label: 'Documents', href: '/documents', icon: FolderOpen },
-  { label: 'Wallet', href: '/wallet', icon: Wallet },
+  { label: 'Wallet', href: '/wallet', icon: Wallet, adminOnly: true },
+  { label: 'Invoices', icon: FileText, adminOnly: true },
+  { label: 'Elections & Cabinet', href: '/elections-cabinet/elections', icon: Vote, adminOnly: true },
   {
-    label: 'Manage Users',
-    icon: Users,
+    label: 'Settings',
+    icon: Settings,
     adminOnly: true,
     children: [
       { label: 'Users', href: '/manage-users/users' },
-      { label: 'Representatives', href: '/manage-users/representatives' }
-    ]
-  },
-  { label: 'Invoices', icon: FileText, adminOnly: true },
-  {
-    label: 'Manage Cost',
-    icon: CircleDollarSign,
-    adminOnly: true,
-    children: [
+      { label: 'Representatives', href: '/manage-users/representatives' },
       { label: 'Service Cost Rules', href: '/manage-cost/service-cost' },
       { label: 'Clerk Cost Rules', href: '/manage-cost/clerk-cost' },
       { label: 'Ticket Charges', href: '/manage-cost/ticket-charges' },
@@ -83,7 +85,6 @@ const navItems: NavItem[] = [
       { label: 'Geographic Data', href: '/manage-cost/geo' },
     ]
   },
-  { label: 'Elections & Cabinet', href: '/elections-cabinet/elections', icon: Vote, adminOnly: true },
   { label: 'Profile', href: '/profile', icon: BriefcaseBusiness }
 ];
 
@@ -107,6 +108,12 @@ export function SidebarNav() {
   }, []);
 
   const isAdmin = user?.role?.includes('admin') ?? false;
+  const isClerk = user?.role === 'representative';
+  const clerkTicketChildren: SubItem[] = [
+    { label: 'Ticket Requests', href: '/tickets/assigned' },
+    { label: 'Assigned Tickets', href: '/tickets/in-progress' },
+    { label: 'Finalized Tickets', href: '/tickets/waiting-approval' },
+  ];
 
   const signOut = () => {
     localStorage.removeItem('wusuq_access_token');
@@ -155,30 +162,51 @@ export function SidebarNav() {
         )}
 
         <nav className="flex-1 space-y-1 px-3 pb-6">
-          {navItems.filter(item => !item.adminOnly || isAdmin).map((item) => {
+          {navItems
+            .filter(
+              (item) => {
+                if (isClerk && item.adminOnly) {
+                  return false;
+                }
+
+                const visibleForAdmin = item.adminOnly && isAdmin;
+                const visibleForClerk = item.clerkOnly && isClerk;
+                const visibleWithoutRoleFlags = !item.adminOnly && !item.clerkOnly;
+
+                return (
+                  (visibleForAdmin || visibleForClerk || visibleWithoutRoleFlags) &&
+                  (!item.consumerOnly || (!isAdmin && !isClerk))
+                );
+              },
+            )
+            .map((item) => {
+            const resolvedItem =
+              item.label === 'Paralegal Tickets' && isClerk
+                ? { ...item, children: clerkTicketChildren }
+                : item;
             const Icon = item.icon;
-            const isActive = item.href ? pathname.startsWith(item.href) : false;
-            const hasChildren = Boolean(item.children?.length);
-            const childActive = item.children ? hasActiveChild(pathname, item.children) : false;
-            const groupOpen = hasChildren ? openGroups[item.label] ?? childActive : false;
+            const isActive = resolvedItem.href ? pathname.startsWith(resolvedItem.href) : false;
+            const hasChildren = Boolean(resolvedItem.children?.length);
+            const childActive = resolvedItem.children ? hasActiveChild(pathname, resolvedItem.children) : false;
+            const groupOpen = hasChildren ? openGroups[resolvedItem.label] ?? childActive : false;
 
             return (
-              <div key={item.label}>
+              <div key={resolvedItem.label}>
                 <div
                   className={[
                     'flex items-center justify-between rounded-md px-3 py-2.5',
                     isActive || childActive ? 'bg-[#f1f3f7]' : 'hover:bg-[#f5f7fb]'
                   ].join(' ')}
                 >
-                  {item.href ? (
-                    <Link href={item.href} className="flex min-w-0 items-center gap-3">
+                  {resolvedItem.href ? (
+                    <Link href={resolvedItem.href} className="flex min-w-0 items-center gap-3">
                       <Icon className="h-4 w-4 text-[#8b2a97]" />
-                      <span className="truncate text-sm font-medium text-[#2f3e59]">{item.label}</span>
+                      <span className="truncate text-sm font-medium text-[#2f3e59]">{resolvedItem.label}</span>
                     </Link>
                   ) : (
                     <div className="flex min-w-0 items-center gap-3">
                       <Icon className="h-4 w-4 text-[#8b2a97]" />
-                      <span className="truncate text-sm font-medium text-[#2f3e59]">{item.label}</span>
+                      <span className="truncate text-sm font-medium text-[#2f3e59]">{resolvedItem.label}</span>
                     </div>
                   )}
 
@@ -188,11 +216,11 @@ export function SidebarNav() {
                       onClick={() =>
                         setOpenGroups((current) => ({
                           ...current,
-                          [item.label]: !current[item.label]
+                          [resolvedItem.label]: !current[resolvedItem.label]
                         }))
                       }
                       className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#e8edf3] text-slate-500"
-                      aria-label={`Toggle ${item.label}`}
+                      aria-label={`Toggle ${resolvedItem.label}`}
                     >
                       {groupOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
                     </button>
@@ -201,7 +229,7 @@ export function SidebarNav() {
 
                 {hasChildren && groupOpen ? (
                   <div className="mt-1 space-y-1 px-4">
-                    {item.children!.map((child) => {
+                    {resolvedItem.children!.map((child) => {
                       const activeChild = pathname.startsWith(child.href);
                       return (
                         <Link

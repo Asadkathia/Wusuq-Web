@@ -38,16 +38,23 @@ export class NotificationsService {
       createdAt: notification.createdAt,
     });
 
-    // Fire-and-forget email delivery
     const user = await this.prisma.user.findUnique({
       where: { id: data.userId },
       select: { email: true },
     });
     if (user?.email) {
-      void this.emailService.sendNotification(user.email, data.title, data.body);
+      await this.emailService.send(
+        user.email,
+        data.title,
+        `<p>${data.body ?? data.title}</p>`,
+      );
     }
 
     return notification;
+  }
+
+  async sendEmail(to: string, subject: string, html: string) {
+    await this.emailService.send(to, subject, html);
   }
 
   async findAll(userId: string, limit = 20) {

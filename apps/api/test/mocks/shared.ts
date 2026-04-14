@@ -15,7 +15,6 @@ export const TICKET_STATUSES = [
   'ASSIGNED',
   'IN_PROGRESS',
   'COMPLETED',
-  'IMMATURE',
 ] as const;
 
 export const PAYMENT_MODES = [

@@ -1,5 +1,5 @@
 import { Transform } from 'class-transformer';
-import { IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import { IsBoolean, IsNumber, IsOptional, IsString, Min } from 'class-validator';
 
 export class AssignTicketDto {
   @IsString()
@@ -10,4 +10,9 @@ export class AssignTicketDto {
   @IsNumber()
   @Min(0)
   clerkCost?: number;
+
+  @IsOptional()
+  @Transform(({ value }) => value === true || value === 'true')
+  @IsBoolean()
+  forceAssign?: boolean;
 }
