@@ -1,11 +1,12 @@
 'use client';
 
 import { Select, type SelectOption } from '@/components/ui/select';
-import { Building2, MapPin, ShieldAlert } from 'lucide-react';
+import { Building2, MapPin, MapPinned, ShieldAlert } from 'lucide-react';
 
 type GeoState = {
   provinces: { id: string; name: string }[];
   districts: { id: string; name: string }[];
+  cities: { id: string; name: string }[];
   policeStations: { id: string; name: string }[];
 };
 
@@ -76,114 +77,36 @@ function ChipGroup({
   );
 }
 
-// ─── Judicial Court Block ────────────────────────────────────────────────────
-type JudicialCourtBlockProps = {
-  serviceId: string;
-  selectedServiceCourts: string[];
-  courtCityOptions: string[];
-  selectCourt: string;
-  selectCourtCity: string;
-  selectClass?: string;
-  onCourtChange: (court: string) => void;
-  onCourtCityChange: (city: string) => void;
-};
-
-export function JudicialCourtBlock({
-  serviceId,
-  selectedServiceCourts,
-  courtCityOptions,
-  selectCourt,
-  selectCourtCity,
-  onCourtChange,
-  onCourtCityChange,
-}: JudicialCourtBlockProps) {
-  if (!serviceId) return null;
-  return (
-    <div className="md:col-span-2 rounded-2xl border border-border-soft bg-surface-muted/50 p-5 space-y-5">
-      <SectionHeader
-        icon={<Building2 className="h-4 w-4" />}
-        title="Court & jurisdiction"
-        description="Tell us which court this request applies to."
-      />
-      <div className="grid gap-4 md:grid-cols-2">
-        <label className="block">
-          <FieldLabel required>Court</FieldLabel>
-          <Select
-            value={selectCourt}
-            onChange={onCourtChange}
-            options={selectedServiceCourts}
-            placeholder="Select court"
-            searchPlaceholder="Search courts…"
-            allowClear
-            ariaLabel="Court"
-          />
-        </label>
-        <label className="block">
-          <FieldLabel required>Court city</FieldLabel>
-          <Select
-            value={selectCourtCity}
-            onChange={onCourtCityChange}
-            options={courtCityOptions}
-            placeholder={selectCourt ? 'Select court city' : 'Select court first'}
-            searchPlaceholder="Search cities…"
-            allowClear
-            disabled={!selectCourt || courtCityOptions.length === 0}
-            ariaLabel="Court city"
-          />
-          {selectCourt && courtCityOptions.length === 0 ? (
-            <p className="mt-1 text-xs text-slate-400">No cities configured for this court.</p>
-          ) : null}
-        </label>
-      </div>
-    </div>
-  );
-}
-
-// ─── FIR Block ────────────────────────────────────────────────────────────────
-type FirBlockProps = {
+// ─── Location Block (Province → District → City) ────────────────────────────
+type LocationBlockProps = {
   geo: GeoState;
   geoIds: GeoIds;
-  stationId: string;
-  policeStation: string;
-  cityType: string;
-  inputClass: string;
-  selectClass?: string;
   onProvinceChange: (provinceId: string, name: string) => void;
   onDistrictChange: (districtId: string, name: string) => void;
-  onStationIdChange: (id: string, name: string) => void;
-  onPoliceStationChange: (value: string) => void;
-  onCityTypeChange: (value: string) => void;
+  onCityChange: (cityId: string, name: string) => void;
 };
 
-export function FirBlock({
+export function LocationBlock({
   geo,
   geoIds,
-  stationId,
-  policeStation,
-  cityType,
-  inputClass,
   onProvinceChange,
   onDistrictChange,
-  onStationIdChange,
-  onPoliceStationChange,
-  onCityTypeChange,
-}: FirBlockProps) {
+  onCityChange,
+}: LocationBlockProps) {
   const provinceOptions = toOptions(geo.provinces);
   const districtOptions = toOptions(geo.districts);
-  const stationOptions = toOptions(geo.policeStations);
-
+  const cityOptions = toOptions(geo.cities);
   const findName = (items: { id: string; name: string }[], id: string) =>
     items.find((x) => x.id === id)?.name ?? '';
 
   return (
     <div className="md:col-span-2 rounded-2xl border border-border-soft bg-surface-muted/50 p-5 space-y-5">
       <SectionHeader
-        icon={<ShieldAlert className="h-4 w-4" />}
-        title="FIR details"
-        description="Select the jurisdiction where the FIR is lodged."
+        icon={<MapPinned className="h-4 w-4" />}
+        title="Service location"
+        description="Tell us where this service is required — province, district, then city."
       />
-
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-4 md:grid-cols-3">
         <label className="block">
           <FieldLabel required>Province</FieldLabel>
           <Select
@@ -209,7 +132,108 @@ export function FirBlock({
             ariaLabel="District"
           />
         </label>
+        <label className="block">
+          <FieldLabel required>City</FieldLabel>
+          <Select
+            value={geoIds.cityId}
+            onChange={(v) => onCityChange(v, findName(geo.cities, v))}
+            options={cityOptions}
+            placeholder={geoIds.districtId ? 'Select city' : 'Select district first'}
+            searchPlaceholder="Search cities…"
+            allowClear
+            disabled={!geoIds.districtId}
+            ariaLabel="City"
+          />
+        </label>
       </div>
+    </div>
+  );
+}
+
+// ─── Judicial Court Block ────────────────────────────────────────────────────
+type JudicialCourtBlockProps = {
+  serviceId: string;
+  courtOptions: string[];
+  selectCourt: string;
+  cityName: string;
+  hasCity: boolean;
+  onCourtChange: (court: string) => void;
+};
+
+export function JudicialCourtBlock({
+  serviceId,
+  courtOptions,
+  selectCourt,
+  cityName,
+  hasCity,
+  onCourtChange,
+}: JudicialCourtBlockProps) {
+  if (!serviceId) return null;
+  return (
+    <div className="md:col-span-2 rounded-2xl border border-border-soft bg-surface-muted/50 p-5 space-y-5">
+      <SectionHeader
+        icon={<Building2 className="h-4 w-4" />}
+        title="Court & jurisdiction"
+        description={cityName ? `Pick the court in ${cityName} handling this matter.` : 'Tell us which court this request applies to.'}
+      />
+      <label className="block">
+        <FieldLabel required>Court</FieldLabel>
+        <Select
+          value={selectCourt}
+          onChange={onCourtChange}
+          options={courtOptions}
+          placeholder={hasCity ? (courtOptions.length ? 'Select court' : 'No matching courts in this city') : 'Select a city first'}
+          searchPlaceholder="Search courts…"
+          allowClear
+          disabled={!hasCity || courtOptions.length === 0}
+          ariaLabel="Court"
+        />
+        {hasCity && courtOptions.length === 0 ? (
+          <p className="mt-1 text-xs text-slate-400">
+            No courts for this service are available in {cityName}. Pick a different city in Step 1.
+          </p>
+        ) : null}
+      </label>
+    </div>
+  );
+}
+
+// ─── FIR Block ────────────────────────────────────────────────────────────────
+type FirBlockProps = {
+  geo: GeoState;
+  geoIds: GeoIds;
+  stationId: string;
+  policeStation: string;
+  cityType: string;
+  inputClass: string;
+  selectClass?: string;
+  onStationIdChange: (id: string, name: string) => void;
+  onPoliceStationChange: (value: string) => void;
+  onCityTypeChange: (value: string) => void;
+};
+
+export function FirBlock({
+  geo,
+  geoIds,
+  stationId,
+  policeStation,
+  cityType,
+  inputClass,
+  onStationIdChange,
+  onPoliceStationChange,
+  onCityTypeChange,
+}: FirBlockProps) {
+  const stationOptions = toOptions(geo.policeStations);
+  const findName = (items: { id: string; name: string }[], id: string) =>
+    items.find((x) => x.id === id)?.name ?? '';
+
+  return (
+    <div className="md:col-span-2 rounded-2xl border border-border-soft bg-surface-muted/50 p-5 space-y-5">
+      <SectionHeader
+        icon={<ShieldAlert className="h-4 w-4" />}
+        title="FIR details"
+        description="Select the police station handling the FIR."
+      />
 
       {geoIds.districtId && geo.policeStations.length > 0 ? (
         <label className="block">
@@ -233,7 +257,7 @@ export function FirBlock({
             value={policeStation}
             disabled={!geoIds.districtId}
             onChange={(e) => onPoliceStationChange(e.target.value)}
-            placeholder={!geoIds.districtId ? 'Select district first' : 'Enter police station name'}
+            placeholder={!geoIds.districtId ? 'Choose a district in Step 1 first' : 'Enter police station name'}
           />
           {geoIds.districtId ? (
             <p className="mt-1 text-xs text-slate-400">
