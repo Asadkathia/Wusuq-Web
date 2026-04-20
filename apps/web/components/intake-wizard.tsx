@@ -21,6 +21,78 @@ import {
 
 // ─── Static lookup tables ────────────────────────────────────────────────────
 
+const COURT_CITIES: Record<string, string[]> = {
+  'Supreme Court': ['Islamabad'],
+  'Islamabad Court': ['Islamabad'],
+  'Lahore High Court': ['Lahore', 'Bahawalpur', 'Multan', 'Rawalpindi'],
+  'Sindh High Court': ['Karachi', 'Sukkur', 'Hyderabad', 'Larkana'],
+  'Peshawar High Court': ['Peshawar', 'Abbottabad', 'Mingora', 'Dera Ismail Khan', 'Bannu'],
+  'Balochistan High Court': ['Quetta', 'Sibi', 'Turbat'],
+  'Gilgit High Court': ['Gilgit', 'Skardu', 'Diamir'],
+  'Azad Kashmir High Court': ['Muzaffarabad', 'Mirpur', 'Rawla', 'Kotli'],
+  'Islamabad High Court': ['Islamabad'],
+  'Sessions Court': [
+    'Lahore', 'Karachi', 'Rawalpindi', 'Faisalabad', 'Multan', 'Gujranwala', 'Sialkot',
+    'Bahawalpur', 'Sargodha', 'Sheikhupura', 'Jhang', 'Okara', 'Kasur', 'Gujrat', 'Sahiwal',
+    'Dera Ghazi Khan', 'Vehari', 'Muzaffargarh', 'Mianwali', 'Attock', 'Chakwal', 'Jhelum',
+    'Khushab', 'Narowal', 'Toba Tek Singh', 'Peshawar', 'Mardan', 'Abbottabad', 'Kohat',
+    'Bannu', 'Dera Ismail Khan', 'Nowshera', 'Charsadda', 'Haripur', 'Swabi', 'Swat',
+    'Hyderabad', 'Sukkur', 'Larkana', 'Nawabshah', 'Mirpur Khas', 'Quetta', 'Turbat',
+    'Khuzdar', 'Hub', 'Gwadar', 'Islamabad', 'Muzaffarabad', 'Mirpur',
+  ],
+  'Magisterial Court': [
+    'Lahore', 'Karachi', 'Rawalpindi', 'Faisalabad', 'Multan', 'Gujranwala', 'Sialkot',
+    'Bahawalpur', 'Sargodha', 'Peshawar', 'Mardan', 'Abbottabad', 'Hyderabad', 'Sukkur',
+    'Quetta', 'Islamabad', 'Muzaffarabad', 'Mirpur',
+  ],
+  'Civil Court': [
+    'Lahore', 'Karachi', 'Rawalpindi', 'Faisalabad', 'Multan', 'Gujranwala', 'Sialkot',
+    'Bahawalpur', 'Sargodha', 'Peshawar', 'Hyderabad', 'Sukkur', 'Quetta', 'Islamabad',
+    'Muzaffarabad', 'Mirpur',
+  ],
+  'Family Court': [
+    'Lahore', 'Karachi', 'Rawalpindi', 'Faisalabad', 'Multan', 'Gujranwala', 'Sialkot',
+    'Bahawalpur', 'Sargodha', 'Peshawar', 'Hyderabad', 'Sukkur', 'Quetta', 'Islamabad',
+    'Muzaffarabad', 'Mirpur',
+  ],
+  'Accountability Courts': ['Lahore', 'Karachi', 'Islamabad', 'Peshawar', 'Quetta', 'Rawalpindi'],
+  'Anti-Corruption Courts (Provincial)': ['Lahore', 'Karachi', 'Peshawar', 'Quetta', 'Rawalpindi'],
+  'Anti-Terrorism Courts': ['Lahore', 'Karachi', 'Islamabad', 'Peshawar', 'Quetta', 'Rawalpindi', 'Faisalabad'],
+  'Anti-Dumping Appellate Tribunal no bail': ['Islamabad', 'Karachi', 'Lahore'],
+  'Appellate Tribunals Inland Revenue': ['Lahore', 'Karachi', 'Islamabad', 'Peshawar', 'Quetta'],
+  'Banking Courts': ['Lahore', 'Karachi', 'Islamabad', 'Rawalpindi', 'Faisalabad', 'Multan'],
+  'Banking Muhtasib': ['Karachi', 'Lahore', 'Islamabad'],
+  'Board of Revenue': ['Lahore', 'Karachi', 'Peshawar', 'Quetta'],
+  'Child Protection Court': ['Lahore', 'Karachi', 'Islamabad', 'Rawalpindi'],
+  'Commercial Courts': ['Lahore', 'Karachi', 'Islamabad', 'Rawalpindi', 'Faisalabad'],
+  'Competition Appellate Tribunal': ['Islamabad', 'Karachi', 'Lahore'],
+  'Consumer Courts': ['Lahore', 'Karachi', 'Islamabad', 'Peshawar', 'Quetta', 'Rawalpindi', 'Faisalabad'],
+  'Customs Appellate Tribunals': ['Karachi', 'Lahore', 'Islamabad', 'Peshawar', 'Quetta'],
+  'Drug Courts': ['Lahore', 'Karachi', 'Islamabad', 'Rawalpindi', 'Peshawar'],
+  'Environmental Protection Tribunals': ['Lahore', 'Karachi', 'Islamabad', 'Peshawar', 'Quetta'],
+  'Election Tribunal': ['Lahore', 'Karachi', 'Islamabad', 'Peshawar', 'Quetta'],
+  'Federal Insurance Tribunal': ['Islamabad', 'Karachi', 'Lahore'],
+  'Federal Ombudsman': ['Islamabad', 'Lahore', 'Karachi', 'Peshawar', 'Quetta'],
+  'Federal Service Tribunal': ['Islamabad'],
+  'Federal tax ombudsman': ['Islamabad', 'Lahore', 'Karachi'],
+  'Foreign Exchange Regulation Appellate Boards': ['Islamabad', 'Karachi', 'Lahore'],
+  'Income Tax Appellate Tribunal': ['Lahore', 'Karachi', 'Islamabad', 'Rawalpindi', 'Faisalabad', 'Multan', 'Peshawar'],
+  'Insurance Appellate Tribunal': ['Islamabad', 'Karachi', 'Lahore'],
+  'Intellectual Property Tribunal': ['Islamabad', 'Karachi', 'Lahore'],
+  'Labor Appellate Tribunals': ['Lahore', 'Karachi', 'Islamabad', 'Rawalpindi', 'Faisalabad', 'Peshawar'],
+  'Labor Courts': ['Lahore', 'Karachi', 'Islamabad', 'Rawalpindi', 'Faisalabad', 'Multan', 'Peshawar', 'Quetta'],
+  'Lahore Development Authority Tribunal': ['Lahore'],
+  'National industrial relations commission (NIRC)': ['Islamabad', 'Karachi', 'Lahore'],
+  'Pakistan Maritime Carriage Appellate Tribunal': ['Karachi'],
+  'Provincial Ombudsman': ['Lahore', 'Karachi', 'Peshawar', 'Quetta'],
+  'Provincial Service Tribunals': ['Lahore', 'Karachi', 'Peshawar', 'Quetta'],
+  'Special Courts (Central)': ['Islamabad', 'Karachi', 'Lahore'],
+  'Special Courts (Control of Narcotic Substances)': ['Lahore', 'Karachi', 'Islamabad', 'Peshawar', 'Quetta', 'Rawalpindi'],
+  'Special Courts (Customs, Taxation Anti-Smuggling)': ['Karachi', 'Lahore', 'Islamabad'],
+  'Special Courts (Offences in Banks)': ['Karachi', 'Lahore', 'Islamabad', 'Rawalpindi'],
+  'Special Courts of Public Property (Removal of Encroachment)': ['Lahore', 'Karachi', 'Islamabad'],
+};
+
 const SERVICE_CASE_TYPES: Record<string, string[]> = {
   svc_judicial_lower_court: [
     'Bail Application (S)', 'Criminal Appeal', 'Criminal Misc.', 'Criminal Revision',
@@ -194,7 +266,6 @@ function useGeo() {
   const [provinces, setProvinces] = useState<{ id: string; name: string }[]>([]);
   const [districts, setDistricts] = useState<{ id: string; name: string }[]>([]);
   const [cities, setCities] = useState<{ id: string; name: string }[]>([]);
-  const [cityCourts, setCityCourts] = useState<{ id: string; name: string }[]>([]);
   const [policeStations, setPoliceStations] = useState<{ id: string; name: string }[]>([]);
 
   useEffect(() => {
@@ -202,18 +273,13 @@ function useGeo() {
   }, []);
 
   const loadDistricts = useCallback((provinceId: string) => {
-    if (!provinceId) { setDistricts([]); setCities([]); setCityCourts([]); setPoliceStations([]); return; }
+    if (!provinceId) { setDistricts([]); setCities([]); setPoliceStations([]); return; }
     apiClient.get<any>(`/geo/provinces/${provinceId}/districts`).then(setDistricts).catch(() => {});
   }, []);
 
   const loadCities = useCallback((districtId: string) => {
-    if (!districtId) { setCities([]); setCityCourts([]); return; }
+    if (!districtId) { setCities([]); return; }
     apiClient.get<any>(`/geo/districts/${districtId}/cities`).then(setCities).catch(() => {});
-  }, []);
-
-  const loadCityCourts = useCallback((cityId: string) => {
-    if (!cityId) { setCityCourts([]); return; }
-    apiClient.get<any>(`/geo/cities/${cityId}/courts`).then(setCityCourts).catch(() => {});
   }, []);
 
   const loadDistrictPoliceStations = useCallback((districtId: string) => {
@@ -221,7 +287,7 @@ function useGeo() {
     apiClient.get<any>(`/geo/districts/${districtId}/police-stations`).then(setPoliceStations).catch(() => {});
   }, []);
 
-  return { provinces, districts, cities, cityCourts, policeStations, loadDistricts, loadCities, loadCityCourts, loadDistrictPoliceStations };
+  return { provinces, districts, cities, policeStations, loadDistricts, loadCities, loadDistrictPoliceStations };
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -349,15 +415,15 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
   const stepHasFirGeo = Boolean(activeStep?.fields.some((field) => ['province', 'district_id', 'station_id', 'city_type'].includes(field.key)));
   const stepHasRegistryGeo = Boolean(activeStep?.fields.some((field) => ['office_name', 'city_type'].includes(field.key)));
 
-  // Courts available for the current service in the user's chosen city.
-  // Intersect: courts configured for the service × courts seeded in that city.
-  const courtOptions: string[] = useMemo(() => {
-    if (!geoIds.cityId) return [];
-    const cityCourtNames = new Set(geo.cityCourts.map((c) => c.name));
-    const serviceCourts = selectedServiceCourts;
-    if (serviceCourts.length === 0) return Array.from(cityCourtNames).sort();
-    return serviceCourts.filter((name) => cityCourtNames.has(name));
-  }, [geo.cityCourts, geoIds.cityId, selectedServiceCourts]);
+  // All courts configured for the selected service — unfiltered by city.
+  const courtOptions: string[] = selectedServiceCourts;
+
+  // Cities that host the selected court — from the static map.
+  const courtCityOptions: string[] = useMemo(() => {
+    const court = draft.payload.select_court;
+    if (!court) return [];
+    return COURT_CITIES[court] ?? [];
+  }, [draft.payload.select_court]);
 
   const judgeDesignationOptions: string[] = useMemo(() => {
     const court = draft.payload.select_court;
@@ -434,11 +500,8 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
 
   const handleCityChange = (cityId: string, name: string) => {
     setGeoIds((g) => ({ ...g, cityId }));
-    geo.loadCityCourts(cityId);
     setPayloadField('city_id', cityId);
     setPayloadField('city', name);
-    setPayloadField('select_court_city', name);
-    setPayloadField('select_court', '');
   };
 
   const applySelectedService = useCallback((id: string, name: string, caseTypes: string[]) => {
@@ -512,8 +575,12 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
       setApiError('Please select a court');
       return false;
     }
+    if (isJudicial && !draft.payload.select_court_city) {
+      setApiError('Please select a court city');
+      return false;
+    }
     return true;
-  }, [draft.payload.select_court, draft.serviceId, isJudicial]);
+  }, [draft.payload.select_court, draft.payload.select_court_city, draft.serviceId, isJudicial]);
 
   const canAutosaveDraft = useCallback(() => {
     if (!selectedFlow) return false;
@@ -522,9 +589,9 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
       draft.consumerId &&
       geoIds.cityId &&
       draft.serviceId &&
-      (!isJudicial || draft.payload.select_court),
+      (!isJudicial || (draft.payload.select_court && draft.payload.select_court_city)),
     );
-  }, [draft.consumerId, draft.flow, draft.payload.select_court, draft.serviceId, geoIds.cityId, isJudicial, selectedFlow]);
+  }, [draft.consumerId, draft.flow, draft.payload.select_court, draft.payload.select_court_city, draft.serviceId, geoIds.cityId, isJudicial, selectedFlow]);
 
   useEffect(() => {
     if (!didHydrateRef.current) {
@@ -793,13 +860,20 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
                 <JudicialCourtBlock
                   serviceId={draft.serviceId}
                   courtOptions={courtOptions}
+                  courtCityOptions={courtCityOptions}
                   selectCourt={draft.payload.select_court ?? ''}
-                  cityName={draft.payload.city ?? ''}
-                  hasCity={Boolean(geoIds.cityId)}
+                  selectCourtCity={draft.payload.select_court_city ?? ''}
                   onCourtChange={(court) => {
                     setPayloadField('select_court', court);
                     setPayloadField('judge_designation', '');
+                    const cities = COURT_CITIES[court] ?? [];
+                    const stepOneCity = draft.payload.city ?? '';
+                    setPayloadField(
+                      'select_court_city',
+                      stepOneCity && cities.includes(stepOneCity) ? stepOneCity : '',
+                    );
                   }}
+                  onCourtCityChange={(city) => setPayloadField('select_court_city', city)}
                 />
               )}
             </>

@@ -154,19 +154,21 @@ export function LocationBlock({
 type JudicialCourtBlockProps = {
   serviceId: string;
   courtOptions: string[];
+  courtCityOptions: string[];
   selectCourt: string;
-  cityName: string;
-  hasCity: boolean;
+  selectCourtCity: string;
   onCourtChange: (court: string) => void;
+  onCourtCityChange: (city: string) => void;
 };
 
 export function JudicialCourtBlock({
   serviceId,
   courtOptions,
+  courtCityOptions,
   selectCourt,
-  cityName,
-  hasCity,
+  selectCourtCity,
   onCourtChange,
+  onCourtCityChange,
 }: JudicialCourtBlockProps) {
   if (!serviceId) return null;
   return (
@@ -174,26 +176,38 @@ export function JudicialCourtBlock({
       <SectionHeader
         icon={<Building2 className="h-4 w-4" />}
         title="Court & jurisdiction"
-        description={cityName ? `Pick the court in ${cityName} handling this matter.` : 'Tell us which court this request applies to.'}
+        description="Tell us which court and city this request applies to."
       />
-      <label className="block">
-        <FieldLabel required>Court</FieldLabel>
-        <Select
-          value={selectCourt}
-          onChange={onCourtChange}
-          options={courtOptions}
-          placeholder={hasCity ? (courtOptions.length ? 'Select court' : 'No matching courts in this city') : 'Select a city first'}
-          searchPlaceholder="Search courts…"
-          allowClear
-          disabled={!hasCity || courtOptions.length === 0}
-          ariaLabel="Court"
-        />
-        {hasCity && courtOptions.length === 0 ? (
-          <p className="mt-1 text-xs text-slate-400">
-            No courts for this service are available in {cityName}. Pick a different city in Step 1.
-          </p>
-        ) : null}
-      </label>
+      <div className="grid gap-4 md:grid-cols-2">
+        <label className="block">
+          <FieldLabel required>Court</FieldLabel>
+          <Select
+            value={selectCourt}
+            onChange={onCourtChange}
+            options={courtOptions}
+            placeholder="Select court"
+            searchPlaceholder="Search courts…"
+            allowClear
+            ariaLabel="Court"
+          />
+        </label>
+        <label className="block">
+          <FieldLabel required>Court city</FieldLabel>
+          <Select
+            value={selectCourtCity}
+            onChange={onCourtCityChange}
+            options={courtCityOptions}
+            placeholder={selectCourt ? 'Select court city' : 'Select court first'}
+            searchPlaceholder="Search cities…"
+            allowClear
+            disabled={!selectCourt || courtCityOptions.length === 0}
+            ariaLabel="Court city"
+          />
+          {selectCourt && courtCityOptions.length === 0 ? (
+            <p className="mt-1 text-xs text-slate-400">No cities configured for this court.</p>
+          ) : null}
+        </label>
+      </div>
     </div>
   );
 }
