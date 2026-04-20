@@ -206,6 +206,18 @@ export default function ConsumerLoginPage() {
                 Create an account
               </Link>
             </p>
+
+            <div className="mt-6 border-t border-border-soft pt-5 text-center">
+              <p className="text-xs text-slate-500">
+                Staff member?{' '}
+                <Link
+                  href="/login"
+                  className="font-semibold text-slate-700 hover:text-brand-600 transition-colors"
+                >
+                  Go to staff login
+                </Link>
+              </p>
+            </div>
           </div>
         </section>
       </div>
