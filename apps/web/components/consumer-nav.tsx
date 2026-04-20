@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import { ShellNav, type NavItem } from './ui/shell-nav';
 
-const navItems: NavItem[] = [
+export const consumerNavItems: NavItem[] = [
   { label: 'Dashboard', href: '/consumer/dashboard', icon: LayoutDashboard },
   { label: 'My Tickets', href: '/consumer/my-tickets', icon: Ticket },
   { label: 'My Cases', href: '/consumer/my-cases', icon: FolderOpen },
@@ -29,5 +29,5 @@ const navItems: NavItem[] = [
 ];
 
 export function ConsumerSidebarNav() {
-  return <ShellNav items={navItems} variant="consumer" />;
+  return <ShellNav items={consumerNavItems} variant="consumer" />;
 }

@@ -363,7 +363,7 @@ export function CostRulesBoard({ title, type }: CostRulesBoardProps) {
                   <td className="px-4 py-4 whitespace-nowrap text-right">
                     <button
                       onClick={() => startEdit(item)}
-                      className="opacity-0 group-hover:opacity-100 inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:border-primary-300 hover:text-primary-700 transition-all"
+                      className="sm:opacity-0 sm:group-hover:opacity-100 inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:border-primary-300 hover:text-primary-700 transition-all"
                     >
                       <Pencil className="h-3.5 w-3.5" /> Edit
                     </button>

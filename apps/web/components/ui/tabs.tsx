@@ -13,7 +13,7 @@ export const TabsList = forwardRef<
     <TabsPrimitive.List
       ref={ref}
       className={[
-        'inline-flex items-center gap-1 rounded-xl bg-surface-muted p-1',
+        'inline-flex max-w-full items-center gap-1 overflow-x-auto rounded-xl bg-surface-muted p-1',
         className,
       ].join(' ')}
       {...rest}
@@ -63,7 +63,7 @@ export const TabsListUnderline = forwardRef<
     <TabsPrimitive.List
       ref={ref}
       className={[
-        'flex items-center gap-6 border-b border-border-soft',
+        'flex items-center gap-4 overflow-x-auto border-b border-border-soft sm:gap-6',
         className,
       ].join(' ')}
       {...rest}

@@ -271,8 +271,8 @@ export function UsersBoard() {
           searchPlaceholder="Search users by name, email, or role..." 
           onSearch={setSearch} 
           actions={
-            <div className="flex items-center gap-2">
-              <select className="rounded-lg border-0 py-2 pl-3 pr-8 text-slate-900 shadow-sm ring-1 ring-inset ring-border-soft focus:ring-2 focus:ring-primary-600 sm:text-sm" value={roleFilter} onChange={e => setRoleFilter(e.target.value)}>
+            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+              <select className="w-full sm:w-auto rounded-lg border-0 py-2 pl-3 pr-8 text-slate-900 shadow-sm ring-1 ring-inset ring-border-soft focus:ring-2 focus:ring-primary-600 sm:text-sm" value={roleFilter} onChange={e => setRoleFilter(e.target.value)}>
                 <option value="all">All Roles</option>
                 <option value="consumer">Consumer</option>
                 <option value="lawyer">Lawyer</option>

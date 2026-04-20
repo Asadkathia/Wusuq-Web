@@ -470,19 +470,19 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
             searchPlaceholder="Search batch, consumer, or service..."
             onSearch={setSearch}
             actions={
-              <div className="flex items-center gap-2">
-                <select 
-                  className="rounded-lg border-0 py-2 pl-3 pr-8 text-slate-900 shadow-sm ring-1 ring-inset ring-border-soft focus:ring-2 focus:ring-primary-600 sm:text-sm"
-                  value={dateRange} 
+              <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+                <select
+                  className="w-full sm:w-auto rounded-lg border-0 py-2 pl-3 pr-8 text-slate-900 shadow-sm ring-1 ring-inset ring-border-soft focus:ring-2 focus:ring-primary-600 sm:text-sm"
+                  value={dateRange}
                   onChange={e => setDateRange(e.target.value)}
                 >
                   <option value="all">Any Date</option>
                   <option value="7d">Last 7 Days</option>
                   <option value="30d">Last 30 Days</option>
                 </select>
-                <select 
-                  className="rounded-lg border-0 py-2 pl-3 pr-8 text-slate-900 shadow-sm ring-1 ring-inset ring-border-soft focus:ring-2 focus:ring-primary-600 sm:text-sm"
-                  value={serviceFilter} 
+                <select
+                  className="w-full sm:w-auto rounded-lg border-0 py-2 pl-3 pr-8 text-slate-900 shadow-sm ring-1 ring-inset ring-border-soft focus:ring-2 focus:ring-primary-600 sm:text-sm"
+                  value={serviceFilter}
                   onChange={e => setServiceFilter(e.target.value)}
                 >
                   <option value="all">Any Service</option>
@@ -491,9 +491,9 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
                 </select>
                 {isAdmin && (
                   <>
-                    <span className="h-6 w-px bg-slate-200 mx-1"></span>
+                    <span className="hidden sm:block h-6 w-px bg-slate-200 mx-1" aria-hidden="true"></span>
                     <select
-                      className="rounded-lg border-0 py-2 pl-3 pr-8 text-slate-900 shadow-sm ring-1 ring-inset ring-border-soft focus:ring-2 focus:ring-primary-600 sm:text-sm"
+                      className="w-full sm:w-auto rounded-lg border-0 py-2 pl-3 pr-8 text-slate-900 shadow-sm ring-1 ring-inset ring-border-soft focus:ring-2 focus:ring-primary-600 sm:text-sm"
                       value={bulkAction}
                       onChange={(e) => setBulkAction(e.target.value)}
                     >
@@ -506,7 +506,7 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
                       type="button"
                       onClick={runBulkAction}
                       disabled={selectedIds.length === 0}
-                      className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 disabled:opacity-50 transition-colors"
+                      className="w-full sm:w-auto rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 disabled:opacity-50 transition-colors"
                     >
                       Apply
                     </button>
@@ -574,7 +574,7 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
                   <StatusPill label={ticket.status} variant={getStatusVariant(ticket.status)} />
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                  <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div className="flex flex-wrap items-center justify-end gap-2 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                     <button onClick={() => setViewTicketId(ticket.id)} className="text-slate-600 hover:text-primary-700 bg-slate-100 hover:bg-primary-50 px-3 py-1.5 rounded-md flex items-center gap-1">
                       <Eye className="h-3.5 w-3.5" /> View Details
                     </button>

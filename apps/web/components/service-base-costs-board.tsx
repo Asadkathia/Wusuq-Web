@@ -315,7 +315,7 @@ export function ServiceBaseCostsBoard() {
                           </div>
                           {local.note && <div className="text-[10px] text-slate-400">{local.note}</div>}
                         </div>
-                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="flex items-center gap-1 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                           <button onClick={() => startEdit(local)} className="rounded border border-slate-200 bg-white p-1.5 text-slate-500 hover:text-primary-700 hover:border-primary-300 transition-colors">
                             <Pencil className="h-3 w-3" />
                           </button>
@@ -329,7 +329,7 @@ export function ServiceBaseCostsBoard() {
                     ) : (
                       <button
                         onClick={() => startNew(service.id, 'local')}
-                        className="opacity-0 group-hover:opacity-100 inline-flex items-center gap-1 text-xs font-medium text-slate-400 hover:text-primary-700 transition-all"
+                        className="sm:opacity-0 sm:group-hover:opacity-100 inline-flex items-center gap-1 text-xs font-medium text-slate-400 hover:text-primary-700 transition-all"
                       >
                         <Plus className="h-3 w-3" /> Set PKR
                       </button>
@@ -359,7 +359,7 @@ export function ServiceBaseCostsBoard() {
                           <div className="text-[10px] text-slate-400">converted to PKR at creation</div>
                           {overseas.note && <div className="text-[10px] text-slate-400">{overseas.note}</div>}
                         </div>
-                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="flex items-center gap-1 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                           <button onClick={() => startEdit(overseas)} className="rounded border border-slate-200 bg-white p-1.5 text-slate-500 hover:text-primary-700 hover:border-primary-300 transition-colors">
                             <Pencil className="h-3 w-3" />
                           </button>
@@ -373,7 +373,7 @@ export function ServiceBaseCostsBoard() {
                     ) : (
                       <button
                         onClick={() => startNew(service.id, 'overseas')}
-                        className="opacity-0 group-hover:opacity-100 inline-flex items-center gap-1 text-xs font-medium text-slate-400 hover:text-blue-700 transition-all"
+                        className="sm:opacity-0 sm:group-hover:opacity-100 inline-flex items-center gap-1 text-xs font-medium text-slate-400 hover:text-blue-700 transition-all"
                       >
                         <Plus className="h-3 w-3" /> Set USD
                       </button>

@@ -52,7 +52,7 @@ export const DialogContent = forwardRef<HTMLDivElement, DialogContentProps>(func
         ref={ref}
         className={[
           'fixed left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2',
-          'w-[calc(100vw-2rem)] rounded-2xl bg-surface p-6 shadow-elev-3 ring-1 ring-border-soft',
+          'w-[calc(100vw-1.5rem)] rounded-2xl bg-surface p-5 shadow-elev-3 ring-1 ring-border-soft sm:w-[calc(100vw-2rem)] sm:p-6',
           'max-h-[calc(100vh-2rem)] overflow-y-auto',
           'data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95',
           'data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95',

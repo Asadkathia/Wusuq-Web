@@ -309,7 +309,7 @@ export function TicketChargesBoard() {
                   <td className="px-4 py-3 text-right" onClick={e => e.stopPropagation()}>
                     <button
                       onClick={() => isEditing ? cancelEdit() : openEdit(item)}
-                      className="opacity-0 group-hover:opacity-100 inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:border-primary-300 hover:text-primary-700 transition-all"
+                      className="sm:opacity-0 sm:group-hover:opacity-100 inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:border-primary-300 hover:text-primary-700 transition-all"
                     >
                       {isEditing ? <><X className="h-3.5 w-3.5" /> Cancel</> : 'Edit Charges'}
                     </button>

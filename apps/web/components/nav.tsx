@@ -77,7 +77,7 @@ const clerkNavItems: NavItem[] = [
   { label: 'Profile', href: '/profile', icon: BriefcaseBusiness },
 ];
 
-export function SidebarNav() {
+export function useStaffNavItems(): NavItem[] {
   const [isClerk, setIsClerk] = useState(false);
 
   useEffect(() => {
@@ -87,7 +87,11 @@ export function SidebarNav() {
     } catch {}
   }, []);
 
-  const items: NavItem[] = isClerk ? clerkNavItems : navItems;
+  return isClerk ? clerkNavItems : navItems;
+}
+
+export function SidebarNav() {
+  const items = useStaffNavItems();
   return <ShellNav items={items} variant="staff" />;
 }
 

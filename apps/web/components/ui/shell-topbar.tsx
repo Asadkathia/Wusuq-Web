@@ -1,11 +1,13 @@
 'use client';
 
 import Link from 'next/link';
-import { Bell, LogOut, User, Wallet } from 'lucide-react';
+import * as DialogPrimitive from '@radix-ui/react-dialog';
+import { Bell, LogOut, Menu as MenuIcon, User, Wallet, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { IconButton } from './icon-button';
 import { Menu, MenuContent, MenuItem, MenuLabel, MenuSeparator, MenuTrigger } from './menu';
+import { ShellNavBody, type NavItem } from './shell-nav';
 
 type Notification = {
   id: string;
@@ -23,9 +25,12 @@ type ShellTopbarProps = {
   walletHref?: string;
   profileHref?: string;
   onSignOut: () => void;
+  /** Nav items rendered inside the mobile drawer (< lg). */
+  mobileNavItems?: NavItem[];
 };
 
-export function ShellTopbar({ variant, walletHref, profileHref = '/profile', onSignOut }: ShellTopbarProps) {
+export function ShellTopbar({ variant, walletHref, profileHref = '/profile', onSignOut, mobileNavItems }: ShellTopbarProps) {
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unread, setUnread] = useState(0);
   const [walletBalance, setWalletBalance] = useState<number | null>(null);
@@ -75,10 +80,52 @@ export function ShellTopbar({ variant, walletHref, profileHref = '/profile', onS
     .toUpperCase();
 
   return (
-    <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-border-soft bg-surface/85 px-6 backdrop-blur-md">
-      <div className="text-sm font-medium text-slate-400" />
-
+    <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-border-soft bg-surface/85 px-4 backdrop-blur-md sm:px-6">
       <div className="flex items-center gap-2">
+        {mobileNavItems ? (
+          <DialogPrimitive.Root open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
+            <DialogPrimitive.Trigger asChild>
+              <IconButton
+                icon={<MenuIcon className="h-5 w-5" />}
+                aria-label="Open navigation"
+                className="lg:hidden"
+              />
+            </DialogPrimitive.Trigger>
+            <DialogPrimitive.Portal>
+              <DialogPrimitive.Overlay
+                className={[
+                  'fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm',
+                  'data-[state=open]:animate-in data-[state=open]:fade-in-0',
+                  'data-[state=closed]:animate-out data-[state=closed]:fade-out-0',
+                ].join(' ')}
+              />
+              <DialogPrimitive.Content
+                className={[
+                  'fixed inset-y-0 left-0 z-50 flex w-[88vw] max-w-[300px] flex-col bg-surface shadow-elev-3 ring-1 ring-border-soft lg:hidden',
+                  'data-[state=open]:animate-in data-[state=open]:slide-in-from-left',
+                  'data-[state=closed]:animate-out data-[state=closed]:slide-out-to-left',
+                  'duration-300 ease-silk',
+                ].join(' ')}
+              >
+                <DialogPrimitive.Title className="sr-only">Navigation</DialogPrimitive.Title>
+                <ShellNavBody
+                  items={mobileNavItems}
+                  variant={variant}
+                  onNavigate={() => setMobileNavOpen(false)}
+                />
+                <DialogPrimitive.Close
+                  aria-label="Close navigation"
+                  className="absolute right-3 top-4 inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-surface-muted hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40"
+                >
+                  <X className="h-4 w-4" />
+                </DialogPrimitive.Close>
+              </DialogPrimitive.Content>
+            </DialogPrimitive.Portal>
+          </DialogPrimitive.Root>
+        ) : null}
+      </div>
+
+      <div className="flex items-center gap-1.5 sm:gap-2">
         {variant === 'consumer' && walletBalance !== null ? (
           <Link
             href={walletHref ?? '/consumer/my-wallet'}

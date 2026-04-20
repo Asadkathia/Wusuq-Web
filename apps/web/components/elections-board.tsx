@@ -203,9 +203,9 @@ export function ElectionsBoard() {
                 searchPlaceholder="Search elections..." 
                 onSearch={setSearch} 
                 actions={
-                  <div className="flex items-center gap-2">
-                    <input className="rounded-lg border-0 py-2 px-3 text-slate-900 shadow-sm ring-1 ring-inset ring-border-soft focus:ring-2 focus:ring-primary-600 sm:text-sm w-32" placeholder="Province..." value={provinceFilter} onChange={e => setProvinceFilter(e.target.value)} />
-                    <input className="rounded-lg border-0 py-2 px-3 text-slate-900 shadow-sm ring-1 ring-inset ring-border-soft focus:ring-2 focus:ring-primary-600 sm:text-sm w-32" placeholder="City..." value={cityFilter} onChange={e => setCityFilter(e.target.value)} />
+                  <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+                    <input className="w-full sm:w-32 rounded-lg border-0 py-2 px-3 text-slate-900 shadow-sm ring-1 ring-inset ring-border-soft focus:ring-2 focus:ring-primary-600 sm:text-sm" placeholder="Province..." value={provinceFilter} onChange={e => setProvinceFilter(e.target.value)} />
+                    <input className="w-full sm:w-32 rounded-lg border-0 py-2 px-3 text-slate-900 shadow-sm ring-1 ring-inset ring-border-soft focus:ring-2 focus:ring-primary-600 sm:text-sm" placeholder="City..." value={cityFilter} onChange={e => setCityFilter(e.target.value)} />
                   </div>
                 }
               />

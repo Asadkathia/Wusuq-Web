@@ -1,6 +1,7 @@
 'use client';
 
 import { ShellTopbar } from './ui/shell-topbar';
+import { consumerNavItems } from './consumer-nav';
 
 export function ConsumerTopbar() {
   const signOut = () => {
@@ -19,6 +20,7 @@ export function ConsumerTopbar() {
       walletHref="/consumer/my-wallet"
       profileHref="/consumer/profile"
       onSignOut={signOut}
+      mobileNavItems={consumerNavItems}
     />
   );
 }

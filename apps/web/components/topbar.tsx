@@ -1,8 +1,11 @@
 'use client';
 
 import { ShellTopbar } from './ui/shell-topbar';
+import { useStaffNavItems } from './nav';
 
 export function Topbar() {
+  const mobileNavItems = useStaffNavItems();
+
   const signOut = () => {
     localStorage.removeItem('wusuq_access_token');
     localStorage.removeItem('wusuq_refresh_token');
@@ -13,5 +16,5 @@ export function Topbar() {
     window.location.href = '/login';
   };
 
-  return <ShellTopbar variant="staff" profileHref="/profile" onSignOut={signOut} />;
+  return <ShellTopbar variant="staff" profileHref="/profile" onSignOut={signOut} mobileNavItems={mobileNavItems} />;
 }

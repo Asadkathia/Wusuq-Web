@@ -278,7 +278,7 @@ export function GeoManagementBoard() {
                               {city.name}
                               <button
                                 onClick={() => deleteCity(city.id)}
-                                className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-rose-600 transition-all"
+                                className="sm:opacity-0 sm:group-hover:opacity-100 text-slate-400 hover:text-rose-600 transition-all"
                               >
                                 <Trash2 className="h-2.5 w-2.5" />
                               </button>
