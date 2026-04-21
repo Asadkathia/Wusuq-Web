@@ -26,6 +26,12 @@ export class GeoController {
   }
 
   @Public()
+  @Get('cities')
+  allCities() {
+    return this.geoService.allCities();
+  }
+
+  @Public()
   @Get('districts/:id/cities')
   cities(@Param('id') id: string) {
     return this.geoService.cities(id);

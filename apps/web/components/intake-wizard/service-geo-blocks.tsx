@@ -7,6 +7,7 @@ type GeoState = {
   provinces: { id: string; name: string }[];
   districts: { id: string; name: string }[];
   cities: { id: string; name: string }[];
+  allCities: { id: string; name: string }[];
   policeStations: { id: string; name: string }[];
 };
 
@@ -77,7 +78,42 @@ function ChipGroup({
   );
 }
 
-// ─── Location Block (Province → District → City) ────────────────────────────
+// ─── City Block (flat, single dropdown of all cities) ───────────────────────
+type CityBlockProps = {
+  cities: { id: string; name: string }[];
+  cityId: string;
+  onCityChange: (cityId: string, name: string) => void;
+};
+
+export function CityBlock({ cities, cityId, onCityChange }: CityBlockProps) {
+  const cityOptions = toOptions(cities);
+  const findName = (items: { id: string; name: string }[], id: string) =>
+    items.find((x) => x.id === id)?.name ?? '';
+
+  return (
+    <div className="md:col-span-2 rounded-2xl border border-border-soft bg-surface-muted/50 p-5 space-y-5">
+      <SectionHeader
+        icon={<MapPinned className="h-4 w-4" />}
+        title="Service location"
+        description="Which city is this request for?"
+      />
+      <label className="block">
+        <FieldLabel required>City</FieldLabel>
+        <Select
+          value={cityId}
+          onChange={(v) => onCityChange(v, findName(cities, v))}
+          options={cityOptions}
+          placeholder="Select a city"
+          searchPlaceholder="Search cities…"
+          allowClear
+          ariaLabel="City"
+        />
+      </label>
+    </div>
+  );
+}
+
+// ─── Location Block (Province → District → City) — used by FIR flow ─────────
 type LocationBlockProps = {
   geo: GeoState;
   geoIds: GeoIds;

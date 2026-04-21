@@ -17,6 +17,7 @@ import {
   FirBlock,
   RegistryDeedBlock,
   LocationBlock,
+  CityBlock,
 } from './intake-wizard/service-geo-blocks';
 
 // ─── Static lookup tables ────────────────────────────────────────────────────
@@ -266,10 +267,12 @@ function useGeo() {
   const [provinces, setProvinces] = useState<{ id: string; name: string }[]>([]);
   const [districts, setDistricts] = useState<{ id: string; name: string }[]>([]);
   const [cities, setCities] = useState<{ id: string; name: string }[]>([]);
+  const [allCities, setAllCities] = useState<{ id: string; name: string }[]>([]);
   const [policeStations, setPoliceStations] = useState<{ id: string; name: string }[]>([]);
 
   useEffect(() => {
     apiClient.get<any>('/geo/provinces').then((r) => setProvinces(r)).catch(() => {});
+    apiClient.get<any>('/geo/cities').then((r) => setAllCities(r)).catch(() => {});
   }, []);
 
   const loadDistricts = useCallback((provinceId: string) => {
@@ -287,7 +290,7 @@ function useGeo() {
     apiClient.get<any>(`/geo/districts/${districtId}/police-stations`).then(setPoliceStations).catch(() => {});
   }, []);
 
-  return { provinces, districts, cities, policeStations, loadDistricts, loadCities, loadDistrictPoliceStations };
+  return { provinces, districts, cities, allCities, policeStations, loadDistricts, loadCities, loadDistrictPoliceStations };
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -384,20 +387,24 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
   const displaySteps = useMemo<IntakeStep[]>(() => {
     if (!selectedFlow) return [];
 
-    // Prepend a universal "Location" step, then keep the flow's own steps but
-    // rename the first step from "Service Selection" → "Service" since the
-    // location fields that used to live there are now in Step 1.
+    // Step 1 is a combined "City & Court" step that holds city, service, and
+    // (for judicial flows) court pickers. For non-judicial flows the flow's
+    // firstStep holds follow-up fields (police-station, office_name, city_type)
+    // and is kept as Step 2; for judicial flows firstStep only carried
+    // select_service, so we drop it since it's rendered inline on Step 1.
     const [firstStep, ...restSteps] = selectedFlow.steps;
-    const serviceStep: IntakeStep = {
-      title: isConsumerVariant ? 'Choose a Service' : 'Service',
-      fields: isConsumerVariant
-        ? (firstStep?.fields ?? []).filter((f) => f.key !== 'select_service')
-        : (firstStep?.fields ?? []),
+    const isNonJudicial = selectedFlow.key.startsWith('non_judicial');
+
+    const cityCourtStep: IntakeStep = {
+      title: isNonJudicial ? 'Location & Service' : 'City & Court',
+      fields: [],
     };
 
-    const locationStep: IntakeStep = { title: 'Location', fields: [] };
-    return [locationStep, serviceStep, ...restSteps];
-  }, [isConsumerVariant, selectedFlow]);
+    if (isNonJudicial && firstStep) {
+      return [cityCourtStep, firstStep, ...restSteps];
+    }
+    return [cityCourtStep, ...restSteps];
+  }, [selectedFlow]);
 
   const totalSteps = displaySteps.length || 1;
   const activeStep = displaySteps[draft.step - 1] ?? null;
@@ -405,8 +412,7 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
     () => (selectedFlow ? { ...selectedFlow, steps: displaySteps } : null),
     [displaySteps, selectedFlow],
   );
-  const isLocationStep = draft.step === 1;
-  const isServiceStep = draft.step === 2;
+  const isCityCourtStep = draft.step === 1;
   // FIR/Registry geo blocks only render when the flow's own step exposes those fields.
   // After injecting Location at index 0, the former FIR "Service Selection" step (with
   // province/district/station/city_type fields) now lives at step 2. We keep the
@@ -546,25 +552,29 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
     setIsDraggingFiles(false);
   }, []);
 
+  const isFirFlow = draft.flow === 'non_judicial_copy_of_fir';
+
   const validateLocationStep = useCallback(() => {
     if (!draft.consumerId) {
       setApiError(isConsumerVariant ? 'Your account information is missing.' : 'Please select a consumer');
       return false;
     }
-    if (!geoIds.provinceId) {
-      setApiError('Please select a province');
-      return false;
-    }
-    if (!geoIds.districtId) {
-      setApiError('Please select a district');
-      return false;
+    if (isFirFlow) {
+      if (!geoIds.provinceId) {
+        setApiError('Please select a province');
+        return false;
+      }
+      if (!geoIds.districtId) {
+        setApiError('Please select a district');
+        return false;
+      }
     }
     if (!geoIds.cityId) {
       setApiError('Please select a city');
       return false;
     }
     return true;
-  }, [draft.consumerId, geoIds.cityId, geoIds.districtId, geoIds.provinceId, isConsumerVariant]);
+  }, [draft.consumerId, geoIds.cityId, geoIds.districtId, geoIds.provinceId, isConsumerVariant, isFirFlow]);
 
   const validateServiceStep = useCallback(() => {
     if (!draft.serviceId) {
@@ -627,8 +637,7 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
 
   const validateCurrentStep = (): boolean => {
     setApiError('');
-    if (isLocationStep) return validateLocationStep();
-    if (isServiceStep) return validateServiceStep();
+    if (isCityCourtStep) return validateLocationStep() && validateServiceStep();
 
     if (!activeStep) return true;
 
@@ -778,7 +787,7 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
         </h3>
         <div className="mb-6 grid gap-6 md:grid-cols-2">
 
-          {isLocationStep && (
+          {isCityCourtStep && (
             <>
               <label className="space-y-1.5 block">
                 <span className="text-sm font-medium text-slate-700">
@@ -792,7 +801,7 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
                     setField('serviceId', '');
                     setDraft((c) => ({ ...c, payload: {} }));
                     setSelectedServiceCourts([]);
-                                    setSelectedServiceCaseTypes([]);
+                    setSelectedServiceCaseTypes([]);
                     setGeoIds({ provinceId: '', districtId: '', cityId: '' });
                   }}
                   options={flows.map((f) => ({ value: f.key, label: f.label }))}
@@ -819,18 +828,22 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
                 </label>
               ) : null}
 
-              <LocationBlock
-                geo={geo}
-                geoIds={geoIds}
-                onProvinceChange={handleProvinceChange}
-                onDistrictChange={handleDistrictChange}
-                onCityChange={handleCityChange}
-              />
-            </>
-          )}
+              {isFirFlow ? (
+                <LocationBlock
+                  geo={geo}
+                  geoIds={geoIds}
+                  onProvinceChange={handleProvinceChange}
+                  onDistrictChange={handleDistrictChange}
+                  onCityChange={handleCityChange}
+                />
+              ) : (
+                <CityBlock
+                  cities={geo.allCities}
+                  cityId={geoIds.cityId}
+                  onCityChange={handleCityChange}
+                />
+              )}
 
-          {isServiceStep && (
-            <>
               <label className="space-y-1 block md:col-span-2">
                 <span className="text-sm font-medium text-slate-700">Service<span className="text-rose-500 ml-0.5">*</span></span>
                 {isConsumerVariant ? (
@@ -908,7 +921,7 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
             />
           )}
 
-          {!isLocationStep && !isServiceStep && activeStep?.fields
+          {!isCityCourtStep && activeStep?.fields
             .filter((f) => !GEO_HANDLED_KEYS.has(f.key))
             .map((field) => {
               const dynamicOpts =

@@ -27,6 +27,13 @@ export class GeoService {
     });
   }
 
+  allCities() {
+    return this.prisma.geoCity.findMany({
+      orderBy: { name: 'asc' },
+      select: { id: true, name: true },
+    });
+  }
+
   courts(cityId: string) {
     return this.prisma.geoCourt.findMany({
       where: { cityId },
