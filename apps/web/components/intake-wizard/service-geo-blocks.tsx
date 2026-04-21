@@ -1,7 +1,7 @@
 'use client';
 
 import { Select, type SelectOption } from '@/components/ui/select';
-import { Building2, MapPin, MapPinned, ShieldAlert } from 'lucide-react';
+import { Building2, CalendarDays, HelpCircle, MapPin, MapPinned, ShieldAlert } from 'lucide-react';
 
 type GeoState = {
   provinces: { id: string; name: string }[];
@@ -189,61 +189,45 @@ export function LocationBlock({
 // ─── Judicial Court Block ────────────────────────────────────────────────────
 type JudicialCourtBlockProps = {
   serviceId: string;
+  cityName: string;
   courtOptions: string[];
-  courtCityOptions: string[];
   selectCourt: string;
-  selectCourtCity: string;
   onCourtChange: (court: string) => void;
-  onCourtCityChange: (city: string) => void;
 };
 
 export function JudicialCourtBlock({
   serviceId,
+  cityName,
   courtOptions,
-  courtCityOptions,
   selectCourt,
-  selectCourtCity,
   onCourtChange,
-  onCourtCityChange,
 }: JudicialCourtBlockProps) {
   if (!serviceId) return null;
   return (
     <div className="md:col-span-2 rounded-2xl border border-border-soft bg-surface-muted/50 p-5 space-y-5">
       <SectionHeader
         icon={<Building2 className="h-4 w-4" />}
-        title="Court & jurisdiction"
-        description="Tell us which court and city this request applies to."
+        title="Court"
+        description={cityName ? `Which court handles this case in ${cityName}?` : 'Select the court handling this case.'}
       />
-      <div className="grid gap-4 md:grid-cols-2">
-        <label className="block">
-          <FieldLabel required>Court</FieldLabel>
-          <Select
-            value={selectCourt}
-            onChange={onCourtChange}
-            options={courtOptions}
-            placeholder="Select court"
-            searchPlaceholder="Search courts…"
-            allowClear
-            ariaLabel="Court"
-          />
-        </label>
-        <label className="block">
-          <FieldLabel required>Court city</FieldLabel>
-          <Select
-            value={selectCourtCity}
-            onChange={onCourtCityChange}
-            options={courtCityOptions}
-            placeholder={selectCourt ? 'Select court city' : 'Select court first'}
-            searchPlaceholder="Search cities…"
-            allowClear
-            disabled={!selectCourt || courtCityOptions.length === 0}
-            ariaLabel="Court city"
-          />
-          {selectCourt && courtCityOptions.length === 0 ? (
-            <p className="mt-1 text-xs text-slate-400">No cities configured for this court.</p>
-          ) : null}
-        </label>
-      </div>
+      <label className="block">
+        <FieldLabel required>Court</FieldLabel>
+        <Select
+          value={selectCourt}
+          onChange={onCourtChange}
+          options={courtOptions}
+          placeholder={courtOptions.length === 0 ? 'No courts for this service in this city' : 'Select court'}
+          searchPlaceholder="Search courts…"
+          allowClear
+          disabled={courtOptions.length === 0}
+          ariaLabel="Court"
+        />
+        {courtOptions.length === 0 ? (
+          <p className="mt-1 text-xs text-amber-600">
+            This service has no matching court in {cityName || 'the selected city'}.
+          </p>
+        ) : null}
+      </label>
     </div>
   );
 }
@@ -349,6 +333,120 @@ export function RegistryDeedBlock({ cityType, inputClass, onCityTypeChange }: Re
         <FieldLabel required>City type</FieldLabel>
         <ChipGroup options={['City', 'Sadar', 'Unknown']} value={cityType} onChange={onCityTypeChange} />
       </fieldset>
+    </div>
+  );
+}
+
+// ─── Case Date Block (smart date section for Case Files / Case Search) ──────
+type CaseDateBlockProps = {
+  caseStatus: string;
+  isUnknown: boolean;
+  caseDate: string;
+  futureDate: string;
+  decidedDate: string;
+  inputClass: string;
+  onCaseDateChange: (value: string) => void;
+  onFutureDateChange: (value: string) => void;
+  onDecidedDateChange: (value: string) => void;
+  onUnknownToggle: (unknown: boolean) => void;
+};
+
+export function CaseDateBlock({
+  caseStatus,
+  isUnknown,
+  caseDate,
+  futureDate,
+  decidedDate,
+  inputClass,
+  onCaseDateChange,
+  onFutureDateChange,
+  onDecidedDateChange,
+  onUnknownToggle,
+}: CaseDateBlockProps) {
+  return (
+    <div className="md:col-span-2 rounded-2xl border border-border-soft bg-surface-muted/50 p-5 space-y-5">
+      <div className="flex items-start justify-between gap-3">
+        <SectionHeader
+          icon={<CalendarDays className="h-4 w-4" />}
+          title="Case date"
+          description={
+            isUnknown
+              ? 'Enter any date you remember for this case.'
+              : caseStatus === 'Pending Case'
+                ? 'Enter the last known hearing date and the next upcoming hearing date.'
+                : caseStatus === 'Decided Case'
+                  ? 'Enter the date the case was decided.'
+                  : 'Enter the case date if you know it, or mark it as unknown.'
+          }
+        />
+        <button
+          type="button"
+          onClick={() => onUnknownToggle(!isUnknown)}
+          aria-pressed={isUnknown}
+          className={[
+            'inline-flex shrink-0 items-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold transition-colors',
+            isUnknown
+              ? 'border-brand-500 bg-brand-500 text-white hover:bg-brand-600'
+              : 'border-border-soft bg-surface text-slate-700 hover:bg-surface-muted',
+          ].join(' ')}
+        >
+          <HelpCircle className="h-3.5 w-3.5" />
+          {isUnknown ? 'Date unknown · ON' : 'Mark date as unknown'}
+        </button>
+      </div>
+
+      {isUnknown ? (
+        <label className="block">
+          <FieldLabel>Any date for the case</FieldLabel>
+          <input
+            className={inputClass}
+            type="date"
+            value={caseDate}
+            onChange={(e) => onCaseDateChange(e.target.value)}
+          />
+        </label>
+      ) : caseStatus === 'Pending Case' ? (
+        <div className="grid gap-4 md:grid-cols-2">
+          <label className="block">
+            <FieldLabel>Previous case date</FieldLabel>
+            <input
+              className={inputClass}
+              type="date"
+              value={caseDate}
+              onChange={(e) => onCaseDateChange(e.target.value)}
+            />
+          </label>
+          <label className="block">
+            <FieldLabel>Next hearing date</FieldLabel>
+            <input
+              className={inputClass}
+              type="date"
+              value={futureDate}
+              onChange={(e) => onFutureDateChange(e.target.value)}
+            />
+          </label>
+        </div>
+      ) : caseStatus === 'Decided Case' ? (
+        <label className="block">
+          <FieldLabel>Decided date</FieldLabel>
+          <input
+            className={inputClass}
+            type="date"
+            value={decidedDate}
+            onChange={(e) => onDecidedDateChange(e.target.value)}
+          />
+        </label>
+      ) : (
+        <label className="block">
+          <FieldLabel>Case date</FieldLabel>
+          <input
+            className={inputClass}
+            type="date"
+            value={caseDate}
+            onChange={(e) => onCaseDateChange(e.target.value)}
+          />
+        </label>
+      )}
     </div>
   );
 }

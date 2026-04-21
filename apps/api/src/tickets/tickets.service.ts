@@ -8,7 +8,6 @@ import { UserRole, type Prisma } from '@prisma/client';
 import type { TicketStatus } from '@wusuq/shared';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { CostingService } from '../costing/costing.service';
-import { CurrencyService } from '../currency/currency.service';
 import { GeoService } from '../geo/geo.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AssignTicketDto } from './dto/assign-ticket.dto';
@@ -140,7 +139,6 @@ export class TicketsService {
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService,
     private readonly costingService: CostingService,
-    private readonly currencyService: CurrencyService,
     private readonly geoService: GeoService,
     private readonly notificationsService: NotificationsService,
   ) {}
@@ -341,56 +339,20 @@ export class TicketsService {
         'case_title',
         'title',
       ]);
-    const payloadProvince = this.firstPayloadValue(dto.payload, ['province_capital', 'province']);
-    const inferredAudience =
-      dto.audience ?? this.firstPayloadValue(dto.payload, ['audience']);
 
-    const [service, consumer] = await Promise.all([
-      this.prisma.service.findUnique({
-        where: { id: dto.serviceId },
-        select: { id: true, category: true },
-      }),
-      this.prisma.user.findUnique({
-        where: { id: dto.consumerId },
-        select: { currency: true },
-      }),
-    ]);
+    const service = await this.prisma.service.findUnique({
+      where: { id: dto.serviceId },
+      select: { id: true, category: true },
+    });
 
     if (!service) {
       throw new NotFoundException('Service not found');
     }
 
-    const costType: 'local' | 'overseas' =
-      consumer?.currency === 'USD' ? 'overseas' : 'local';
-
-    // Resolve province: explicit dto > payload field > geo lookup from service city
-    const inferredProvince =
-      dto.province ??
-      payloadProvince ??
-      (inferredServiceCity
-        ? await this.geoService.resolveProvinceByCity(inferredServiceCity)
-        : undefined);
-
-    const resolvedServiceCost = await this.costingService.resolveServiceCost({
-      serviceId: dto.serviceId,
-      category: service.category,
-      caseType: inferredCaseType,
-      province: inferredProvince,
-      audience: inferredAudience,
-      type: costType,
-    });
-
-    // For overseas users: the resolved amount is in USD (from ServiceBaseCost overseas tier
-    // or a ServiceCostRule with type='overseas'). Convert it to PKR at today's rate so
-    // the ticket always stores a single PKR amount consistent with local tickets.
-    const now = new Date();
-    const serviceCost =
-      costType === 'overseas'
-        ? await this.currencyService.convertUsdToPkrAtDate(
-            resolvedServiceCost.amount,
-            now,
-          )
-        : resolvedServiceCost.amount;
+    // Service pricing model is being redesigned. Until the new calculator
+    // lands, intake tickets persist with serviceCost = 0; charges are set via
+    // TicketChargesBoard or will be auto-populated by the new calculator.
+    const serviceCost = 0;
 
     const ticket = await this.prisma.ticket.create({
       data: {

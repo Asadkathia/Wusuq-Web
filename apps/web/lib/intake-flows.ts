@@ -52,6 +52,46 @@ const REQUIRED_DOCS_CASE_FILES: IntakeField = {
   ],
 };
 
+// Set type picker plus conditional quantity fields. Reused across flows that
+// need the attested/non-attested/both set selector.
+const SET_TYPE_WITH_QUANTITIES: IntakeField[] = [
+  {
+    key: 'set_type',
+    label: 'Set Type',
+    type: 'radio',
+    required: true,
+    options: ['attested', 'non_attested', 'both'],
+  },
+  {
+    key: 'attested_qty',
+    label: 'How many attested copies?',
+    type: 'number',
+    required: true,
+    showWhen: { field: 'set_type', value: 'attested' },
+  },
+  {
+    key: 'non_attested_qty',
+    label: 'How many non-attested copies?',
+    type: 'number',
+    required: true,
+    showWhen: { field: 'set_type', value: 'non_attested' },
+  },
+  {
+    key: 'both_attested_qty',
+    label: 'How many attested copies?',
+    type: 'number',
+    required: true,
+    showWhen: { field: 'set_type', value: 'both' },
+  },
+  {
+    key: 'both_non_attested_qty',
+    label: 'How many non-attested copies?',
+    type: 'number',
+    required: true,
+    showWhen: { field: 'set_type', value: 'both' },
+  },
+];
+
 const REQUIRED_DOCS_CASE_INFO: IntakeField = {
   key: 'required_documentations',
   label: 'Required Documents',
@@ -125,42 +165,8 @@ const caseFilesSteps: IntakeStep[] = [
   {
     title: 'Documents Required',
     fields: [
-      {
-        key: 'set_type',
-        label: 'Set Type',
-        type: 'radio',
-        required: true,
-        options: ['attested', 'non_attested', 'both'],
-      },
+      ...SET_TYPE_WITH_QUANTITIES,
       REQUIRED_DOCS_CASE_FILES,
-      {
-        key: 'attested_qty',
-        label: 'How many attested copies?',
-        type: 'number',
-        required: true,
-        showWhen: { field: 'set_type', value: 'attested' },
-      },
-      {
-        key: 'non_attested_qty',
-        label: 'How many non-attested copies?',
-        type: 'number',
-        required: true,
-        showWhen: { field: 'set_type', value: 'non_attested' },
-      },
-      {
-        key: 'both_attested_qty',
-        label: 'How many attested copies?',
-        type: 'number',
-        required: true,
-        showWhen: { field: 'set_type', value: 'both' },
-      },
-      {
-        key: 'both_non_attested_qty',
-        label: 'How many non-attested copies?',
-        type: 'number',
-        required: true,
-        showWhen: { field: 'set_type', value: 'both' },
-      },
       {
         key: 'want_pdf_before_dispatch',
         label: 'Want PDF before dispatch?',
@@ -310,14 +316,7 @@ const caseSearchSteps: IntakeStep[] = [
         type: 'textarea',
         showWhen: { field: 'delivery_mode', value: 'courier' },
       },
-      { key: 'sets', label: 'No. of Sets', type: 'number', required: true },
-      {
-        key: 'set_type',
-        label: 'Set Type',
-        type: 'radio',
-        required: true,
-        options: ['attested', 'non_attested', 'both'],
-      },
+      ...SET_TYPE_WITH_QUANTITIES,
       { key: 'notes', label: 'Notes', type: 'textarea' },
     ],
   },
@@ -502,14 +501,7 @@ const copyOfFirSteps: IntakeStep[] = [
         type: 'textarea',
         showWhen: { field: 'delivery_mode', value: 'courier' },
       },
-      { key: 'sets', label: 'No. of Sets', type: 'number', required: true },
-      {
-        key: 'set_type',
-        label: 'Set Type',
-        type: 'radio',
-        required: true,
-        options: ['attested', 'non_attested', 'both'],
-      },
+      ...SET_TYPE_WITH_QUANTITIES,
       { key: 'notes', label: 'Notes', type: 'textarea' },
     ],
   },
@@ -567,14 +559,7 @@ const registryDeedSteps: IntakeStep[] = [
         type: 'textarea',
         showWhen: { field: 'delivery_mode', value: 'courier' },
       },
-      { key: 'sets', label: 'No. of Sets', type: 'number', required: true },
-      {
-        key: 'set_type',
-        label: 'Set Type',
-        type: 'radio',
-        required: true,
-        options: ['attested', 'non_attested', 'both'],
-      },
+      ...SET_TYPE_WITH_QUANTITIES,
       { key: 'notes', label: 'Notes', type: 'textarea' },
     ],
   },

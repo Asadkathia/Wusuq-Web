@@ -50,7 +50,6 @@ const navItems: NavItem[] = [
     children: [
       { label: 'Users', href: '/manage-users/users' },
       { label: 'Representatives', href: '/manage-users/representatives' },
-      { label: 'Service Cost Rules', href: '/manage-cost/service-cost' },
       { label: 'Clerk Cost Rules', href: '/manage-cost/clerk-cost' },
       { label: 'Ticket Charges', href: '/manage-cost/ticket-charges' },
       { label: 'Exchange Rates', href: '/manage-cost/exchange-rates' },

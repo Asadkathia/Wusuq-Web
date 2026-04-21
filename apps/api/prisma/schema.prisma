@@ -138,10 +138,8 @@ model Service {
   isActive    Boolean     @default(true)
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
-  tickets          Ticket[]
-  serviceCostRules ServiceCostRule[]
-  clerkCostRules   ClerkCostRule[]
-  serviceBaseCosts ServiceBaseCost[]
+  tickets        Ticket[]
+  clerkCostRules ClerkCostRule[]
 }
 
 model Ticket {
@@ -324,37 +322,6 @@ model Invoice {
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
   ticket      Ticket      @relation(fields: [ticketId], references: [id])
-}
-
-model ServiceBaseCost {
-  id          String   @id @default(cuid())
-  serviceId   String
-  pricingTier String   @default("local")
-  amount      Decimal
-  isActive    Boolean  @default(true)
-  note        String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  service     Service  @relation(fields: [serviceId], references: [id])
-
-  @@unique([serviceId, pricingTier])
-}
-
-model ServiceCostRule {
-  id          String   @id @default(cuid())
-  serviceId   String
-  category    String
-  caseType    String?
-  province    String?
-  audience    String?
-  type        String   @default("local")
-  yearFrom    Int
-  yearTo      Int
-  amount      Decimal
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  service     Service  @relation(fields: [serviceId], references: [id])
 }
 
 model ClerkCostRule {

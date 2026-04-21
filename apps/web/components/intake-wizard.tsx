@@ -18,7 +18,9 @@ import {
   RegistryDeedBlock,
   LocationBlock,
   CityBlock,
+  CaseDateBlock,
 } from './intake-wizard/service-geo-blocks';
+import { CheckoutPanel, type CheckoutItem, type CheckoutSummary } from './intake-wizard/checkout-panel';
 
 // ─── Static lookup tables ────────────────────────────────────────────────────
 
@@ -305,6 +307,12 @@ const GEO_HANDLED_KEYS = new Set([
   'city', 'city_id',
 ]);
 
+// Case date fields are rendered by CaseDateBlock on the Case Details step for
+// flows that include case_status. They are skipped by the default field loop.
+const DATE_HANDLED_KEYS = new Set([
+  'case_date_status', 'case_date', 'future_date', 'decided_date',
+]);
+
 const CONSUMER_ROLES = ['consumer', 'lawyer', 'company'] as const;
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 
@@ -420,16 +428,44 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
   // hidden because the user already picked them in step 1.
   const stepHasFirGeo = Boolean(activeStep?.fields.some((field) => ['province', 'district_id', 'station_id', 'city_type'].includes(field.key)));
   const stepHasRegistryGeo = Boolean(activeStep?.fields.some((field) => ['office_name', 'city_type'].includes(field.key)));
+  // Render smart CaseDateBlock only when the step exposes the full date triad
+  // (case_status + case_date + future_date). Case Information / Case Filing /
+  // Power of Attorney use different date shapes and keep their flat renderer.
+  const stepHasCaseDate = Boolean(
+    activeStep?.fields.some((f) => f.key === 'case_status') &&
+    activeStep?.fields.some((f) => f.key === 'future_date'),
+  );
 
-  // All courts configured for the selected service — unfiltered by city.
-  const courtOptions: string[] = selectedServiceCourts;
+  // Courts that exist in the currently selected Step-1 city (derived by
+  // reversing COURT_CITIES). When no city is picked, falls back to all courts
+  // so the filter is inert.
+  const cityCourts: string[] = useMemo(() => {
+    const city = draft.payload.city;
+    if (!city) return [];
+    return Object.entries(COURT_CITIES)
+      .filter(([, cities]) => cities.includes(city))
+      .map(([court]) => court);
+  }, [draft.payload.city]);
 
-  // Cities that host the selected court — from the static map.
-  const courtCityOptions: string[] = useMemo(() => {
-    const court = draft.payload.select_court;
-    if (!court) return [];
-    return COURT_CITIES[court] ?? [];
-  }, [draft.payload.select_court]);
+  // Services are filtered to those whose court list intersects the selected
+  // city's courts. If no city is picked yet, show the full list (disabled in
+  // UI until city is set).
+  const availableServices: ServiceHit[] = useMemo(() => {
+    if (!draft.payload.city) return services;
+    const citySet = new Set(cityCourts);
+    return services.filter((svc) => {
+      const courts = SERVICE_COURTS[svc.id];
+      if (!courts) return true; // non-judicial services have no court list
+      return courts.some((c) => citySet.has(c));
+    });
+  }, [services, cityCourts, draft.payload.city]);
+
+  // Court options = service courts ∩ city courts.
+  const courtOptions: string[] = useMemo(() => {
+    if (!draft.payload.city) return selectedServiceCourts;
+    const citySet = new Set(cityCourts);
+    return selectedServiceCourts.filter((c) => citySet.has(c));
+  }, [selectedServiceCourts, cityCourts, draft.payload.city]);
 
   const judgeDesignationOptions: string[] = useMemo(() => {
     const court = draft.payload.select_court;
@@ -506,8 +542,24 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
 
   const handleCityChange = (cityId: string, name: string) => {
     setGeoIds((g) => ({ ...g, cityId }));
-    setPayloadField('city_id', cityId);
-    setPayloadField('city', name);
+    // Reset everything that depends on city: service, court, case type, judge designation.
+    // select_court_city is auto-set to city since the jurisdiction block is gone.
+    setDraft((c) => ({
+      ...c,
+      serviceId: '',
+      payload: {
+        ...c.payload,
+        city_id: cityId,
+        city: name,
+        select_court_city: name,
+        select_service: '',
+        select_court: '',
+        case_type: '',
+        judge_designation: '',
+      },
+    }));
+    setSelectedServiceCourts([]);
+    setSelectedServiceCaseTypes([]);
   };
 
   const applySelectedService = useCallback((id: string, name: string, caseTypes: string[]) => {
@@ -585,12 +637,8 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
       setApiError('Please select a court');
       return false;
     }
-    if (isJudicial && !draft.payload.select_court_city) {
-      setApiError('Please select a court city');
-      return false;
-    }
     return true;
-  }, [draft.payload.select_court, draft.payload.select_court_city, draft.serviceId, isJudicial]);
+  }, [draft.payload.select_court, draft.serviceId, isJudicial]);
 
   const canAutosaveDraft = useCallback(() => {
     if (!selectedFlow) return false;
@@ -599,9 +647,9 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
       draft.consumerId &&
       geoIds.cityId &&
       draft.serviceId &&
-      (!isJudicial || (draft.payload.select_court && draft.payload.select_court_city)),
+      (!isJudicial || draft.payload.select_court),
     );
-  }, [draft.consumerId, draft.flow, draft.payload.select_court, draft.payload.select_court_city, draft.serviceId, geoIds.cityId, isJudicial, selectedFlow]);
+  }, [draft.consumerId, draft.flow, draft.payload.select_court, draft.serviceId, geoIds.cityId, isJudicial, selectedFlow]);
 
   useEffect(() => {
     if (!didHydrateRef.current) {
@@ -723,6 +771,50 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
     setLastSavedAt(null);
   };
 
+  // Checkout summary — derives display items from draft payload. Pricing is
+  // deliberately unresolved (`null`) until the rate rules are wired in; the
+  // panel shows "—" in that case.
+  const checkoutSummary: CheckoutSummary = useMemo(() => {
+    const p = draft.payload;
+    const items: CheckoutItem[] = [];
+
+    const serviceName = p.select_service;
+    if (serviceName) {
+      items.push({ label: 'Service', detail: serviceName, amount: null });
+    }
+    if (p.city) {
+      items.push({ label: 'City', detail: p.city, amount: null });
+    }
+    if (p.select_court) {
+      items.push({ label: 'Court', detail: p.select_court, amount: null });
+    }
+
+    if (p.set_type === 'attested' && p.attested_qty) {
+      items.push({ label: 'Attested copies', detail: `× ${p.attested_qty}`, amount: null });
+    } else if (p.set_type === 'non_attested' && p.non_attested_qty) {
+      items.push({ label: 'Non-attested copies', detail: `× ${p.non_attested_qty}`, amount: null });
+    } else if (p.set_type === 'both') {
+      if (p.both_attested_qty) {
+        items.push({ label: 'Attested copies', detail: `× ${p.both_attested_qty}`, amount: null });
+      }
+      if (p.both_non_attested_qty) {
+        items.push({ label: 'Non-attested copies', detail: `× ${p.both_non_attested_qty}`, amount: null });
+      }
+    }
+
+    if (p.delivery_mode) {
+      items.push({ label: 'Delivery', detail: p.delivery_mode, amount: null });
+    }
+
+    return {
+      items,
+      subtotal: null,
+      fees: null,
+      total: null,
+      currency: 'PKR',
+    };
+  }, [draft.payload]);
+
   const submitTicket = async () => {
     if (!selectedFlow || !validateCurrentStep()) return;
     setLoading(true); setApiError('');
@@ -761,13 +853,16 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
   const savedLabel = formatRelativeTime(lastSavedAt) || infoMsg;
 
   return (
-    <div className={`mx-auto space-y-8 ${isConsumerVariant ? 'max-w-3xl' : 'max-w-4xl'}`}>
-      <div>
+    <div className={`mx-auto ${isConsumerVariant ? 'max-w-5xl' : 'max-w-6xl'}`}>
+      <div className="mb-8">
         <h2 className={`${isConsumerVariant ? 'text-3xl' : 'text-2xl'} font-bold tracking-tight text-slate-900`}>
           {headingTitle}
         </h2>
         <p className="mt-1 text-sm text-slate-500">{headingCopy}</p>
       </div>
+
+      <div className="flex flex-col gap-8 lg:flex-row lg:items-start">
+        <div className="min-w-0 flex-1 space-y-8">
 
       {displayFlow && (
         <StepRail
@@ -846,9 +941,17 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
 
               <label className="space-y-1 block md:col-span-2">
                 <span className="text-sm font-medium text-slate-700">Service<span className="text-rose-500 ml-0.5">*</span></span>
-                {isConsumerVariant ? (
+                {!draft.payload.city ? (
+                  <p className="mt-1 rounded-xl bg-surface-muted/50 p-3 text-sm text-slate-500 ring-1 ring-inset ring-border-soft">
+                    Select a city above to see available services.
+                  </p>
+                ) : availableServices.length === 0 ? (
+                  <p className="mt-1 rounded-xl bg-amber-50 p-3 text-sm text-amber-700 ring-1 ring-inset ring-amber-100">
+                    No services are available in {draft.payload.city}. Pick a different city.
+                  </p>
+                ) : isConsumerVariant ? (
                   <ServiceCardGrid
-                    services={services}
+                    services={availableServices}
                     value={draft.serviceId}
                     onSelect={(service) =>
                       applySelectedService(
@@ -861,7 +964,7 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
                 ) : (
                   <ServiceSelect
                     value={draft.serviceId}
-                    services={services}
+                    services={availableServices}
                     onChange={(id, name, _courts, _courtCities, caseTypes) =>
                       applySelectedService(id, name, caseTypes)
                     }
@@ -869,24 +972,16 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
                 )}
               </label>
 
-              {isJudicial && (
+              {isJudicial && draft.serviceId && (
                 <JudicialCourtBlock
                   serviceId={draft.serviceId}
+                  cityName={draft.payload.city ?? ''}
                   courtOptions={courtOptions}
-                  courtCityOptions={courtCityOptions}
                   selectCourt={draft.payload.select_court ?? ''}
-                  selectCourtCity={draft.payload.select_court_city ?? ''}
                   onCourtChange={(court) => {
                     setPayloadField('select_court', court);
                     setPayloadField('judge_designation', '');
-                    const cities = COURT_CITIES[court] ?? [];
-                    const stepOneCity = draft.payload.city ?? '';
-                    setPayloadField(
-                      'select_court_city',
-                      stepOneCity && cities.includes(stepOneCity) ? stepOneCity : '',
-                    );
                   }}
-                  onCourtCityChange={(city) => setPayloadField('select_court_city', city)}
                 />
               )}
             </>
@@ -921,8 +1016,32 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
             />
           )}
 
+          {stepHasCaseDate && (
+            <CaseDateBlock
+              caseStatus={draft.payload.case_status ?? ''}
+              isUnknown={draft.payload.case_date_status === 'Unknown'}
+              caseDate={draft.payload.case_date ?? ''}
+              futureDate={draft.payload.future_date ?? ''}
+              decidedDate={draft.payload.decided_date ?? ''}
+              inputClass={inputClass}
+              onCaseDateChange={(v) => setPayloadField('case_date', v)}
+              onFutureDateChange={(v) => setPayloadField('future_date', v)}
+              onDecidedDateChange={(v) => setPayloadField('decided_date', v)}
+              onUnknownToggle={(unknown) => {
+                setDraft((c) => ({
+                  ...c,
+                  payload: {
+                    ...c.payload,
+                    case_date_status: unknown ? 'Unknown' : 'Known',
+                    ...(unknown ? { future_date: '', decided_date: '' } : {}),
+                  },
+                }));
+              }}
+            />
+          )}
+
           {!isCityCourtStep && activeStep?.fields
-            .filter((f) => !GEO_HANDLED_KEYS.has(f.key))
+            .filter((f) => !GEO_HANDLED_KEYS.has(f.key) && !DATE_HANDLED_KEYS.has(f.key))
             .map((field) => {
               const dynamicOpts =
                 field.key === 'case_type' ? selectedServiceCaseTypes :
@@ -1115,6 +1234,10 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
           </div>
         </div>
       ) : null}
+
+        </div>
+        <CheckoutPanel summary={checkoutSummary} />
+      </div>
     </div>
   );
 }

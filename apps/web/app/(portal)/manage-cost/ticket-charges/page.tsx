@@ -1,5 +1,5 @@
-import { ManageCostBoard } from '@/components/manage-cost-board';
+import { TicketChargesBoard } from '@/components/ticket-charges-board';
 
 export default function TicketChargesPage() {
-  return <ManageCostBoard defaultTab="tickets" />;
+  return <TicketChargesBoard />;
 }
