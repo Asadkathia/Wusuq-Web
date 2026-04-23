@@ -22,6 +22,8 @@ export type CheckoutSummary = {
 
 type CheckoutPanelProps = {
   summary: CheckoutSummary;
+  /** When true and total is null, show a "no rule matched" notice instead of the generic placeholder note. */
+  hasFlow?: boolean;
 };
 
 function formatAmount(amount: number | null, currency: string): string {
@@ -37,7 +39,7 @@ function formatAmount(amount: number | null, currency: string): string {
   }
 }
 
-export function CheckoutPanel({ summary }: CheckoutPanelProps) {
+export function CheckoutPanel({ summary, hasFlow }: CheckoutPanelProps) {
   const { items, subtotal, fees, total, currency } = summary;
 
   return (
@@ -89,13 +91,15 @@ export function CheckoutPanel({ summary }: CheckoutPanelProps) {
             <span>Fees &amp; taxes</span>
             <span className="tabular-nums">{formatAmount(fees, currency)}</span>
           </div>
-          <div className="flex items-center justify-between border-t border-border-soft pt-2 text-base font-semibold text-slate-900">
+          <div className={`flex items-center justify-between border-t border-border-soft pt-2 text-base font-semibold ${total !== null ? 'text-emerald-600' : 'text-slate-900'}`}>
             <span>Total</span>
             <span className="tabular-nums">{formatAmount(total, currency)}</span>
           </div>
-          <p className="pt-1 text-[11px] text-slate-400">
-            Pricing will finalise once the rate rules are wired in.
-          </p>
+          {total === null && hasFlow ? (
+            <p className="pt-1 text-[11px] text-amber-500">
+              No pricing rule matched for this combination.
+            </p>
+          ) : null}
         </footer>
       </div>
     </aside>

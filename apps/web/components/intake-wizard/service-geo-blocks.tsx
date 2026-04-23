@@ -186,51 +186,96 @@ export function LocationBlock({
   );
 }
 
-// ─── Judicial Court Block ────────────────────────────────────────────────────
-type JudicialCourtBlockProps = {
-  serviceId: string;
+// ─── Judicial Service Block ──────────────────────────────────────────────────
+// After the user picks a Court tier (Supreme / High / Federal Shariat / Lower
+// / Special), this block picks the specific Service within that court:
+//   • If the court tier offers exactly one service in the selected city, it's
+//     rendered as a read-only confirmation row (no trivial dropdown for
+//     Supreme Court → Supreme Court of Pakistan, etc.).
+//   • If multiple services exist (e.g. Lower Court → Sessions/Civil/Family/
+//     Magisterial, or High Court benches), renders a dropdown.
+type CourtOption = { id: string; name: string; isPrincipalSeat: boolean };
+
+type JudicialServiceBlockProps = {
+  courtTierId: string;
   cityName: string;
-  courtOptions: string[];
-  selectCourt: string;
-  onCourtChange: (court: string) => void;
+  courtTierName: string;
+  services: CourtOption[];
+  selectServiceId: string;
+  onServiceChange: (service: CourtOption) => void;
 };
 
-export function JudicialCourtBlock({
-  serviceId,
+export function JudicialServiceBlock({
+  courtTierId,
   cityName,
-  courtOptions,
-  selectCourt,
-  onCourtChange,
-}: JudicialCourtBlockProps) {
-  if (!serviceId) return null;
+  courtTierName,
+  services,
+  selectServiceId,
+  onServiceChange,
+}: JudicialServiceBlockProps) {
+  if (!courtTierId) return null;
+
+  const single = services.length === 1 ? services[0] : null;
+  const cityQualifier = cityName ? ` in ${cityName}` : '';
+  const tierLabel = (courtTierName || 'court').toLowerCase();
+
   return (
     <div className="md:col-span-2 rounded-2xl border border-border-soft bg-surface-muted/50 p-5 space-y-5">
       <SectionHeader
         icon={<Building2 className="h-4 w-4" />}
-        title="Court"
-        description={cityName ? `Which court handles this case in ${cityName}?` : 'Select the court handling this case.'}
+        title="Service"
+        description={
+          services.length === 0
+            ? `No ${tierLabel} services available${cityQualifier}.`
+            : services.length === 1
+              ? `Only one service is offered by the ${tierLabel}${cityQualifier} — auto-selected.`
+              : `Select the ${tierLabel} service you need${cityQualifier}.`
+        }
       />
-      <label className="block">
-        <FieldLabel required>Court</FieldLabel>
-        <Select
-          value={selectCourt}
-          onChange={onCourtChange}
-          options={courtOptions}
-          placeholder={courtOptions.length === 0 ? 'No courts for this service in this city' : 'Select court'}
-          searchPlaceholder="Search courts…"
-          allowClear
-          disabled={courtOptions.length === 0}
-          ariaLabel="Court"
-        />
-        {courtOptions.length === 0 ? (
-          <p className="mt-1 text-xs text-amber-600">
-            This service has no matching court in {cityName || 'the selected city'}.
-          </p>
-        ) : null}
-      </label>
+
+      {services.length === 0 ? (
+        <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-700 ring-1 ring-inset ring-amber-100">
+          This court has no service available{cityQualifier}. Try a different city.
+        </p>
+      ) : single ? (
+        <div className="flex items-center justify-between rounded-xl bg-surface px-4 py-3 ring-1 ring-inset ring-border-soft">
+          <div>
+            <p className="text-sm font-semibold text-slate-900">{single.name}</p>
+            {single.isPrincipalSeat ? (
+              <p className="text-xs text-brand-600">Principal seat</p>
+            ) : null}
+          </div>
+          <span className="inline-flex items-center rounded-full bg-brand-50 px-2.5 py-1 text-xs font-medium text-brand-700">
+            Selected
+          </span>
+        </div>
+      ) : (
+        <label className="block">
+          <FieldLabel required>Service</FieldLabel>
+          <Select
+            value={selectServiceId}
+            onChange={(id) => {
+              const picked = services.find((s) => s.id === id);
+              if (picked) onServiceChange(picked);
+            }}
+            options={services.map((s) => ({
+              value: s.id,
+              label: s.isPrincipalSeat ? `${s.name} · Principal seat` : s.name,
+            }))}
+            placeholder="Select service"
+            searchPlaceholder="Search services…"
+            allowClear
+            ariaLabel="Service"
+          />
+        </label>
+      )}
     </div>
   );
 }
+
+// Back-compat alias so existing imports keep working while the rename
+// propagates. Remove once all call sites are updated.
+export const JudicialCourtBlock = JudicialServiceBlock;
 
 // ─── FIR Block ────────────────────────────────────────────────────────────────
 type FirBlockProps = {

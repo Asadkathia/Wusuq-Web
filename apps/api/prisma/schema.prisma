@@ -139,7 +139,6 @@ model Service {
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
   tickets        Ticket[]
-  clerkCostRules ClerkCostRule[]
 }
 
 model Ticket {
@@ -324,19 +323,33 @@ model Invoice {
   ticket      Ticket      @relation(fields: [ticketId], references: [id])
 }
 
-model ClerkCostRule {
-  id          String   @id @default(cuid())
-  serviceId   String
-  category    String
-  caseType    String?
-  province    String?
-  yearFrom    Int
-  yearTo      Int
-  amount      Decimal
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  service     Service  @relation(fields: [serviceId], references: [id])
+model PricingRule {
+  id                     String   @id @default(cuid())
+  name                   String
+  flow                   String
+  courtLevel             String?
+  caseStatus             String?
+  yearFrom               Int?
+  yearTo                 Int?
+  setType                String?
+  region                 String?
+  isLegacy               Boolean  @default(false)
+  basePrice              Decimal  @default(0)
+  attestedPricePerSet    Decimal  @default(0)
+  nonAttestedPricePerSet Decimal  @default(0)
+  deliveryCharge         Decimal  @default(0)
+  priority               Int      @default(0)
+  isActive               Boolean  @default(true)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+}
+
+model PricingSettings {
+  id                     String   @id @default("singleton")
+  pricingMode            String   @default("legacy")
+  attestedPricePerSet    Decimal  @default(0)
+  nonAttestedPricePerSet Decimal  @default(0)
+  updatedAt              DateTime @updatedAt
 }
 
 model AuditLog {
@@ -386,16 +399,33 @@ model GeoCity {
   districtId     String
   name           String
   district       GeoDistrict        @relation(fields: [districtId], references: [id])
-  courts         GeoCourt[]
+  courtSeats     CourtSeat[]
   policeStations GeoPoliceStation[]
 }
 
-model GeoCourt {
-  id     String  @id @default(cuid())
-  cityId String
-  name   String
-  level  String
-  city   GeoCity @relation(fields: [cityId], references: [id])
+// A court has a type (Supreme Court, High Court, Lower Court, Special Court,
+// Federal Shariat Court) and a specific name (e.g. "Lahore High Court",
+// "District & Sessions Court"). Each court is seated in one or more cities via
+// CourtSeat.
+model Court {
+  id    String      @id @default(cuid())
+  type  String
+  name  String
+  seats CourtSeat[]
+
+  @@unique([type, name])
+}
+
+model CourtSeat {
+  id              String  @id @default(cuid())
+  courtId         String
+  cityId          String
+  isPrincipalSeat Boolean @default(false)
+  court           Court   @relation(fields: [courtId], references: [id], onDelete: Cascade)
+  city            GeoCity @relation(fields: [cityId], references: [id], onDelete: Cascade)
+
+  @@unique([courtId, cityId])
+  @@index([cityId])
 }
 
 model GeoPoliceStation {

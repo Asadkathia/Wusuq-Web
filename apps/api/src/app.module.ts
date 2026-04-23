@@ -10,7 +10,7 @@ import { TicketsModule } from './tickets/tickets.module';
 import { AssignmentsModule } from './assignments/assignments.module';
 import { FinanceModule } from './finance/finance.module';
 import { WalletModule } from './wallet/wallet.module';
-import { CostingModule } from './costing/costing.module';
+import { PricingModule } from './pricing/pricing.module';
 import { ElectionsModule } from './elections/elections.module';
 import { CabinetModule } from './cabinet/cabinet.module';
 import { ReportsModule } from './reports/reports.module';
@@ -57,7 +57,7 @@ import { CurrencyModule } from './currency/currency.module';
     AssignmentsModule,
     FinanceModule,
     WalletModule,
-    CostingModule,
+    PricingModule,
     ElectionsModule,
     CabinetModule,
     ReportsModule,

@@ -8,12 +8,12 @@ import { Select } from '@/components/ui/select';
 import { ChevronRight, CheckCircle2, FolderOpen, Sparkles, X } from 'lucide-react';
 import type { IntakeFlow, IntakeStep } from '@/lib/intake-flows';
 
-import type { IntakeWizardProps, TicketDraft, ServiceHit, LocalUser } from './intake-wizard/types';
+import type { IntakeWizardProps, TicketDraft, ServiceHit, LocalUser, CityCourtGroup } from './intake-wizard/types';
 import { StepRail } from './intake-wizard/step-rail';
 import { renderField, colSpan } from './intake-wizard/field-renderer';
 import { FileUpload } from './intake-wizard/file-upload';
 import {
-  JudicialCourtBlock,
+  JudicialServiceBlock,
   FirBlock,
   RegistryDeedBlock,
   LocationBlock,
@@ -23,78 +23,9 @@ import {
 import { CheckoutPanel, type CheckoutItem, type CheckoutSummary } from './intake-wizard/checkout-panel';
 
 // ─── Static lookup tables ────────────────────────────────────────────────────
-
-const COURT_CITIES: Record<string, string[]> = {
-  'Supreme Court': ['Islamabad'],
-  'Islamabad Court': ['Islamabad'],
-  'Lahore High Court': ['Lahore', 'Bahawalpur', 'Multan', 'Rawalpindi'],
-  'Sindh High Court': ['Karachi', 'Sukkur', 'Hyderabad', 'Larkana'],
-  'Peshawar High Court': ['Peshawar', 'Abbottabad', 'Mingora', 'Dera Ismail Khan', 'Bannu'],
-  'Balochistan High Court': ['Quetta', 'Sibi', 'Turbat'],
-  'Gilgit High Court': ['Gilgit', 'Skardu', 'Diamir'],
-  'Azad Kashmir High Court': ['Muzaffarabad', 'Mirpur', 'Rawla', 'Kotli'],
-  'Islamabad High Court': ['Islamabad'],
-  'Sessions Court': [
-    'Lahore', 'Karachi', 'Rawalpindi', 'Faisalabad', 'Multan', 'Gujranwala', 'Sialkot',
-    'Bahawalpur', 'Sargodha', 'Sheikhupura', 'Jhang', 'Okara', 'Kasur', 'Gujrat', 'Sahiwal',
-    'Dera Ghazi Khan', 'Vehari', 'Muzaffargarh', 'Mianwali', 'Attock', 'Chakwal', 'Jhelum',
-    'Khushab', 'Narowal', 'Toba Tek Singh', 'Peshawar', 'Mardan', 'Abbottabad', 'Kohat',
-    'Bannu', 'Dera Ismail Khan', 'Nowshera', 'Charsadda', 'Haripur', 'Swabi', 'Swat',
-    'Hyderabad', 'Sukkur', 'Larkana', 'Nawabshah', 'Mirpur Khas', 'Quetta', 'Turbat',
-    'Khuzdar', 'Hub', 'Gwadar', 'Islamabad', 'Muzaffarabad', 'Mirpur',
-  ],
-  'Magisterial Court': [
-    'Lahore', 'Karachi', 'Rawalpindi', 'Faisalabad', 'Multan', 'Gujranwala', 'Sialkot',
-    'Bahawalpur', 'Sargodha', 'Peshawar', 'Mardan', 'Abbottabad', 'Hyderabad', 'Sukkur',
-    'Quetta', 'Islamabad', 'Muzaffarabad', 'Mirpur',
-  ],
-  'Civil Court': [
-    'Lahore', 'Karachi', 'Rawalpindi', 'Faisalabad', 'Multan', 'Gujranwala', 'Sialkot',
-    'Bahawalpur', 'Sargodha', 'Peshawar', 'Hyderabad', 'Sukkur', 'Quetta', 'Islamabad',
-    'Muzaffarabad', 'Mirpur',
-  ],
-  'Family Court': [
-    'Lahore', 'Karachi', 'Rawalpindi', 'Faisalabad', 'Multan', 'Gujranwala', 'Sialkot',
-    'Bahawalpur', 'Sargodha', 'Peshawar', 'Hyderabad', 'Sukkur', 'Quetta', 'Islamabad',
-    'Muzaffarabad', 'Mirpur',
-  ],
-  'Accountability Courts': ['Lahore', 'Karachi', 'Islamabad', 'Peshawar', 'Quetta', 'Rawalpindi'],
-  'Anti-Corruption Courts (Provincial)': ['Lahore', 'Karachi', 'Peshawar', 'Quetta', 'Rawalpindi'],
-  'Anti-Terrorism Courts': ['Lahore', 'Karachi', 'Islamabad', 'Peshawar', 'Quetta', 'Rawalpindi', 'Faisalabad'],
-  'Anti-Dumping Appellate Tribunal no bail': ['Islamabad', 'Karachi', 'Lahore'],
-  'Appellate Tribunals Inland Revenue': ['Lahore', 'Karachi', 'Islamabad', 'Peshawar', 'Quetta'],
-  'Banking Courts': ['Lahore', 'Karachi', 'Islamabad', 'Rawalpindi', 'Faisalabad', 'Multan'],
-  'Banking Muhtasib': ['Karachi', 'Lahore', 'Islamabad'],
-  'Board of Revenue': ['Lahore', 'Karachi', 'Peshawar', 'Quetta'],
-  'Child Protection Court': ['Lahore', 'Karachi', 'Islamabad', 'Rawalpindi'],
-  'Commercial Courts': ['Lahore', 'Karachi', 'Islamabad', 'Rawalpindi', 'Faisalabad'],
-  'Competition Appellate Tribunal': ['Islamabad', 'Karachi', 'Lahore'],
-  'Consumer Courts': ['Lahore', 'Karachi', 'Islamabad', 'Peshawar', 'Quetta', 'Rawalpindi', 'Faisalabad'],
-  'Customs Appellate Tribunals': ['Karachi', 'Lahore', 'Islamabad', 'Peshawar', 'Quetta'],
-  'Drug Courts': ['Lahore', 'Karachi', 'Islamabad', 'Rawalpindi', 'Peshawar'],
-  'Environmental Protection Tribunals': ['Lahore', 'Karachi', 'Islamabad', 'Peshawar', 'Quetta'],
-  'Election Tribunal': ['Lahore', 'Karachi', 'Islamabad', 'Peshawar', 'Quetta'],
-  'Federal Insurance Tribunal': ['Islamabad', 'Karachi', 'Lahore'],
-  'Federal Ombudsman': ['Islamabad', 'Lahore', 'Karachi', 'Peshawar', 'Quetta'],
-  'Federal Service Tribunal': ['Islamabad'],
-  'Federal tax ombudsman': ['Islamabad', 'Lahore', 'Karachi'],
-  'Foreign Exchange Regulation Appellate Boards': ['Islamabad', 'Karachi', 'Lahore'],
-  'Income Tax Appellate Tribunal': ['Lahore', 'Karachi', 'Islamabad', 'Rawalpindi', 'Faisalabad', 'Multan', 'Peshawar'],
-  'Insurance Appellate Tribunal': ['Islamabad', 'Karachi', 'Lahore'],
-  'Intellectual Property Tribunal': ['Islamabad', 'Karachi', 'Lahore'],
-  'Labor Appellate Tribunals': ['Lahore', 'Karachi', 'Islamabad', 'Rawalpindi', 'Faisalabad', 'Peshawar'],
-  'Labor Courts': ['Lahore', 'Karachi', 'Islamabad', 'Rawalpindi', 'Faisalabad', 'Multan', 'Peshawar', 'Quetta'],
-  'Lahore Development Authority Tribunal': ['Lahore'],
-  'National industrial relations commission (NIRC)': ['Islamabad', 'Karachi', 'Lahore'],
-  'Pakistan Maritime Carriage Appellate Tribunal': ['Karachi'],
-  'Provincial Ombudsman': ['Lahore', 'Karachi', 'Peshawar', 'Quetta'],
-  'Provincial Service Tribunals': ['Lahore', 'Karachi', 'Peshawar', 'Quetta'],
-  'Special Courts (Central)': ['Islamabad', 'Karachi', 'Lahore'],
-  'Special Courts (Control of Narcotic Substances)': ['Lahore', 'Karachi', 'Islamabad', 'Peshawar', 'Quetta', 'Rawalpindi'],
-  'Special Courts (Customs, Taxation Anti-Smuggling)': ['Karachi', 'Lahore', 'Islamabad'],
-  'Special Courts (Offences in Banks)': ['Karachi', 'Lahore', 'Islamabad', 'Rawalpindi'],
-  'Special Courts of Public Property (Removal of Encroachment)': ['Lahore', 'Karachi', 'Islamabad'],
-};
+// Case-type options remain service-scoped (they describe what petitions exist
+// inside a given court tier). Courts and court→city relationships now come
+// from the /geo/cities/:id/courts endpoint, backed by pakistan-courts.json.
 
 const SERVICE_CASE_TYPES: Record<string, string[]> = {
   svc_judicial_lower_court: [
@@ -143,50 +74,23 @@ const SERVICE_CASE_TYPES: Record<string, string[]> = {
   ],
 };
 
-const SERVICE_COURTS: Record<string, string[]> = {
-  svc_judicial_lower_court: ['Sessions Court', 'Magisterial Court', 'Civil Court', 'Family Court'],
-  svc_judicial_special_court: [
-    'Accountability Courts', 'Anti-Corruption Courts (Provincial)', 'Anti-Terrorism Courts',
-    'Anti-Dumping Appellate Tribunal no bail', 'Appellate Tribunals Inland Revenue', 'Banking Courts',
-    'Banking Muhtasib', 'Board of Revenue', 'Child Protection Court', 'Commercial Courts',
-    'Competition Appellate Tribunal', 'Consumer Courts', 'Customs Appellate Tribunals', 'Drug Courts',
-    'Environmental Protection Tribunals', 'Election Tribunal', 'Federal Insurance Tribunal',
-    'Federal Ombudsman', 'Federal Service Tribunal', 'Federal tax ombudsman',
-    'Foreign Exchange Regulation Appellate Boards', 'Income Tax Appellate Tribunal',
-    'Insurance Appellate Tribunal', 'Intellectual Property Tribunal', 'Labor Appellate Tribunals',
-    'Labor Courts', 'Lahore Development Authority Tribunal',
-    'National industrial relations commission (NIRC)', 'Pakistan Maritime Carriage Appellate Tribunal',
-    'Provincial Ombudsman', 'Provincial Service Tribunals', 'Special Courts (Central)',
-    'Special Courts (Control of Narcotic Substances)', 'Special Courts (Customs, Taxation Anti-Smuggling)',
-    'Special Courts (Offences in Banks)', 'Special Courts of Public Property (Removal of Encroachment)',
-  ],
-  svc_judicial_high_court: [
-    'Lahore High Court', 'Sindh High Court', 'Peshawar High Court', 'Balochistan High Court',
-    'Gilgit High Court', 'Azad Kashmir High Court', 'Islamabad High Court',
-  ],
-  svc_judicial_federal_shariat: ['Islamabad Court'],
-  svc_judicial_supreme_court: ['Supreme Court'],
-};
-
-const JUDGE_DESIGNATIONS: Record<string, string[]> = {
-  'Sessions Court': ['Sessions Judge', 'Additional Sessions Judge', 'Civil Judge', 'Judicial Magistrate'],
-  'Magisterial Court': ['Executive Magistrate', 'Judicial Magistrate', '1st Class Magistrate', '2nd Class Magistrate', '3rd Class Magistrate'],
-  'Civil Court': ['Civil Judge', 'Senior Civil Judge', 'Additional Civil Judge'],
-  'Family Court': ['Family Judge', 'Additional Family Judge'],
-  'Lahore High Court': ['Chief Justice', 'Justice', 'Additional Judge'],
-  'Sindh High Court': ['Chief Justice', 'Justice', 'Additional Judge'],
-  'Peshawar High Court': ['Chief Justice', 'Justice', 'Additional Judge'],
-  'Balochistan High Court': ['Chief Justice', 'Justice', 'Additional Judge'],
-  'Gilgit High Court': ['Chief Justice', 'Justice', 'Additional Judge'],
-  'Azad Kashmir High Court': ['Chief Justice', 'Justice', 'Additional Judge'],
-  'Islamabad High Court': ['Chief Justice', 'Justice', 'Additional Judge'],
+// Judge designations are now keyed by court *type* (from pakistan-courts.json).
+const JUDGE_DESIGNATIONS_BY_TYPE: Record<string, string[]> = {
   'Supreme Court': ['Chief Justice of Pakistan', 'Justice', 'Additional Judge'],
-  'Islamabad Court': ['Judge Federal Shariat Court', 'Additional Judge Federal Shariat Court'],
+  'High Court': ['Chief Justice', 'Justice', 'Additional Judge'],
+  'Federal Shariat Court': ['Judge Federal Shariat Court', 'Additional Judge Federal Shariat Court'],
+  'Lower Court': [
+    'Sessions Judge', 'Additional Sessions Judge', 'Civil Judge', 'Senior Civil Judge',
+    'Additional Civil Judge', 'Judicial Magistrate', 'Executive Magistrate',
+    'Family Judge', 'Additional Family Judge',
+  ],
+  'Special Court': ['Judge', 'Additional Judge', 'Presiding Officer', 'Chairman'],
 };
 
 const DEFAULT_JUDGE_DESIGNATIONS = [
   'Judge', 'Additional Judge', 'Senior Judge', 'Presiding Officer', 'Chairman',
 ];
+
 
 // ─── Service Dropdown ────────────────────────────────────────────────────────
 function ServiceSelect({
@@ -218,10 +122,10 @@ function ServiceSelect({
         );
       }}
       options={options}
-      placeholder="Select a service"
-      searchPlaceholder="Search services…"
+      placeholder="Select a court"
+      searchPlaceholder="Search courts…"
       allowClear
-      ariaLabel="Service"
+      ariaLabel="Court"
     />
   );
 }
@@ -374,8 +278,20 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
   const [touched, setTouched] = useState<Record<string, boolean>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  const [selectedServiceCourts, setSelectedServiceCourts] = useState<string[]>([]);
   const [selectedServiceCaseTypes, setSelectedServiceCaseTypes] = useState<string[]>([]);
+  const [pricingResult, setPricingResult] = useState<{
+    matched: boolean;
+    basePrice: number;
+    attestedCharge: number;
+    nonAttestedCharge: number;
+    deliveryCharge: number;
+    serviceCost: number;
+    total: number;
+  } | null>(null);
+  // Courts available in the currently selected Step-1 city, grouped by court
+  // type. Populated from GET /geo/cities/:cityId/courts whenever the user
+  // picks (or clears) a city.
+  const [cityCourtGroups, setCityCourtGroups] = useState<CityCourtGroup[]>([]);
 
   const geo = useGeo();
   const [geoIds, setGeoIds] = useState({ provinceId: '', districtId: '', cityId: '' });
@@ -404,7 +320,7 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
     const isNonJudicial = selectedFlow.key.startsWith('non_judicial');
 
     const cityCourtStep: IntakeStep = {
-      title: isNonJudicial ? 'Location & Service' : 'City & Court',
+      title: isNonJudicial ? 'Location & Service' : 'City, Court & Service',
       fields: [],
     };
 
@@ -436,42 +352,70 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
     activeStep?.fields.some((f) => f.key === 'future_date'),
   );
 
-  // Courts that exist in the currently selected Step-1 city (derived by
-  // reversing COURT_CITIES). When no city is picked, falls back to all courts
-  // so the filter is inert.
-  const cityCourts: string[] = useMemo(() => {
-    const city = draft.payload.city;
-    if (!city) return [];
-    return Object.entries(COURT_CITIES)
-      .filter(([, cities]) => cities.includes(city))
-      .map(([court]) => court);
-  }, [draft.payload.city]);
+  // The court types the selected city supports — used to filter judicial
+  // services to those whose tier actually has a court in this city.
+  const cityCourtTypes: Set<string> = useMemo(
+    () => new Set(cityCourtGroups.map((g) => g.type)),
+    [cityCourtGroups],
+  );
 
-  // Services are filtered to those whose court list intersects the selected
-  // city's courts. If no city is picked yet, show the full list (disabled in
-  // UI until city is set).
+  // Filter services: non-judicial services are always listed; judicial
+  // services show only if the city has at least one court of their tier.
   const availableServices: ServiceHit[] = useMemo(() => {
     if (!draft.payload.city) return services;
-    const citySet = new Set(cityCourts);
     return services.filter((svc) => {
-      const courts = SERVICE_COURTS[svc.id];
-      if (!courts) return true; // non-judicial services have no court list
-      return courts.some((c) => citySet.has(c));
+      if (!svc.courtLevel) return true;
+      return cityCourtTypes.has(svc.courtLevel);
     });
-  }, [services, cityCourts, draft.payload.city]);
+  }, [services, cityCourtTypes, draft.payload.city]);
 
-  // Court options = service courts ∩ city courts.
-  const courtOptions: string[] = useMemo(() => {
-    if (!draft.payload.city) return selectedServiceCourts;
-    const citySet = new Set(cityCourts);
-    return selectedServiceCourts.filter((c) => citySet.has(c));
-  }, [selectedServiceCourts, cityCourts, draft.payload.city]);
+  // For the selected service, find the matching court group (by the service's
+  // courtLevel). This is what drives the court picker in Step 1.
+  const selectedService = useMemo(
+    () => services.find((s) => s.id === draft.serviceId) ?? null,
+    [services, draft.serviceId],
+  );
+  const selectedCourtGroup = useMemo(() => {
+    if (!selectedService?.courtLevel) return null;
+    return cityCourtGroups.find((g) => g.type === selectedService.courtLevel) ?? null;
+  }, [selectedService, cityCourtGroups]);
+  const selectedCourtType: string = selectedService?.courtLevel ?? '';
+  const selectedCourtList = selectedCourtGroup?.courts ?? [];
 
   const judgeDesignationOptions: string[] = useMemo(() => {
-    const court = draft.payload.select_court;
-    if (!court) return DEFAULT_JUDGE_DESIGNATIONS;
-    return JUDGE_DESIGNATIONS[court] ?? DEFAULT_JUDGE_DESIGNATIONS;
-  }, [draft.payload.select_court]);
+    if (!selectedCourtType) return DEFAULT_JUDGE_DESIGNATIONS;
+    return JUDGE_DESIGNATIONS_BY_TYPE[selectedCourtType] ?? DEFAULT_JUDGE_DESIGNATIONS;
+  }, [selectedCourtType]);
+
+  // When the chosen service + city yields exactly one sub-court for the tier
+  // (e.g. Supreme Court → "Supreme Court of Pakistan"), auto-select it so the
+  // user isn't forced through a trivial "Supreme Court → Supreme Court"
+  // dropdown. Clear the selection if the group becomes empty.
+  useEffect(() => {
+    if (!selectedService?.courtLevel) return;
+    const only = selectedCourtList.length === 1 ? selectedCourtList[0] : null;
+    if (only) {
+      if (draft.payload.select_court_id === only.id) return;
+      setDraft((c) => ({
+        ...c,
+        payload: {
+          ...c.payload,
+          select_court: only.name,
+          select_court_id: only.id,
+          select_court_type: selectedCourtType,
+        },
+      }));
+    } else if (
+      selectedCourtList.length === 0 &&
+      (draft.payload.select_court_id || draft.payload.select_court)
+    ) {
+      setDraft((c) => ({
+        ...c,
+        payload: { ...c.payload, select_court: '', select_court_id: '', select_court_type: '' },
+      }));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedService?.id, selectedCourtList]);
 
   const setField = (field: keyof TicketDraft, value: string | number) =>
     setDraft((c) => ({ ...c, [field]: value }));
@@ -484,6 +428,47 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
       setPayloadField('office_name', 'Sub Registrar');
     }
   }, [draft.flow, draft.payload.office_name]);
+
+  useEffect(() => {
+    const flow = draft.flow;
+    const p = draft.payload;
+    if (!flow || !p.select_court_type) { setPricingResult(null); return; }
+    const setType = p.set_type;
+    const attestedQty =
+      setType === 'attested' ? parseInt(p.attested_qty ?? '0') || 0 :
+      setType === 'both' ? parseInt(p.both_attested_qty ?? '0') || 0 : 0;
+    const nonAttestedQty =
+      setType === 'non_attested' ? parseInt(p.non_attested_qty ?? '0') || 0 :
+      setType === 'both' ? parseInt(p.both_non_attested_qty ?? '0') || 0 : 0;
+    const caseYear = parseInt(p.case_year ?? p.year ?? '0') || undefined;
+
+    apiClient.post<any>('/pricing-rules/resolve', {
+      flow,
+      courtLevel: p.select_court_type || undefined,
+      caseStatus: p.case_status || undefined,
+      caseYear,
+      setType: setType || undefined,
+      attestedQty,
+      nonAttestedQty,
+      province: p.province ?? p.province_capital ?? undefined,
+      city: p.select_court_city ?? p.city ?? undefined,
+    })
+      .then((r) => setPricingResult(r))
+      .catch(() => setPricingResult(null));
+  }, [
+    draft.flow,
+    draft.payload.select_court_type,
+    draft.payload.select_court_city,
+    draft.payload.city,
+    draft.payload.case_status,
+    draft.payload.case_year,
+    draft.payload.year,
+    draft.payload.set_type,
+    draft.payload.attested_qty,
+    draft.payload.non_attested_qty,
+    draft.payload.both_attested_qty,
+    draft.payload.both_non_attested_qty,
+  ]);
 
   useEffect(() => {
     try {
@@ -542,8 +527,6 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
 
   const handleCityChange = (cityId: string, name: string) => {
     setGeoIds((g) => ({ ...g, cityId }));
-    // Reset everything that depends on city: service, court, case type, judge designation.
-    // select_court_city is auto-set to city since the jurisdiction block is gone.
     setDraft((c) => ({
       ...c,
       serviceId: '',
@@ -554,23 +537,33 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
         select_court_city: name,
         select_service: '',
         select_court: '',
+        select_court_id: '',
+        select_court_type: '',
         case_type: '',
         judge_designation: '',
       },
     }));
-    setSelectedServiceCourts([]);
     setSelectedServiceCaseTypes([]);
+    if (!cityId) {
+      setCityCourtGroups([]);
+      return;
+    }
+    apiClient
+      .get<CityCourtGroup[]>(`/geo/cities/${cityId}/courts`)
+      .then((r) => setCityCourtGroups(r ?? []))
+      .catch(() => setCityCourtGroups([]));
   };
 
   const applySelectedService = useCallback((id: string, name: string, caseTypes: string[]) => {
+    const courtLevel = availableServices.find((s) => s.id === id)?.courtLevel ?? '';
     setField('serviceId', id);
     setPayloadField('select_service', name || id);
-    setSelectedServiceCourts(SERVICE_COURTS[id] ?? []);
     setSelectedServiceCaseTypes(SERVICE_CASE_TYPES[id] ?? caseTypes);
     setPayloadField('select_court', '');
-    setPayloadField('select_court_city', '');
+    setPayloadField('select_court_id', '');
+    setPayloadField('select_court_type', courtLevel);
     setPayloadField('judge_designation', '');
-  }, []);
+  }, [availableServices]);
 
   const addFiles = useCallback((incomingFiles: File[]) => {
     if (incomingFiles.length === 0) return;
@@ -630,11 +623,11 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
 
   const validateServiceStep = useCallback(() => {
     if (!draft.serviceId) {
-      setApiError('Please select a service');
+      setApiError('Please select a court');
       return false;
     }
     if (isJudicial && !draft.payload.select_court) {
-      setApiError('Please select a court');
+      setApiError('Please select a service');
       return false;
     }
     return true;
@@ -761,8 +754,8 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
     });
     if (!(isConsumer || isAdminTestingMode)) setConsumerLabel('');
     setFiles([]);
-    setSelectedServiceCourts([]);
     setSelectedServiceCaseTypes([]);
+    setCityCourtGroups([]);
     setGeoIds({ provinceId: '', districtId: '', cityId: '' });
     setTouched({});
     setErrors({});
@@ -771,68 +764,77 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
     setLastSavedAt(null);
   };
 
-  // Checkout summary — derives display items from draft payload. Pricing is
-  // deliberately unresolved (`null`) until the rate rules are wired in; the
-  // panel shows "—" in that case.
+  // Checkout summary — derives display items from draft payload. When a pricing
+  // rule is matched, real amounts are shown; otherwise amounts remain null ("—").
   const checkoutSummary: CheckoutSummary = useMemo(() => {
     const p = draft.payload;
     const items: CheckoutItem[] = [];
+    const pr = pricingResult;
 
-    const serviceName = p.select_service;
-    if (serviceName) {
-      items.push({ label: 'Service', detail: serviceName, amount: null });
+    if (p.select_service) {
+      items.push({ label: 'Court', detail: p.select_service, amount: null });
     }
     if (p.city) {
       items.push({ label: 'City', detail: p.city, amount: null });
     }
     if (p.select_court) {
-      items.push({ label: 'Court', detail: p.select_court, amount: null });
+      items.push({ label: 'Service', detail: p.select_court, amount: null });
     }
 
-    if (p.set_type === 'attested' && p.attested_qty) {
-      items.push({ label: 'Attested copies', detail: `× ${p.attested_qty}`, amount: null });
-    } else if (p.set_type === 'non_attested' && p.non_attested_qty) {
-      items.push({ label: 'Non-attested copies', detail: `× ${p.non_attested_qty}`, amount: null });
-    } else if (p.set_type === 'both') {
-      if (p.both_attested_qty) {
-        items.push({ label: 'Attested copies', detail: `× ${p.both_attested_qty}`, amount: null });
+    // Pricing breakdown — only show when matched
+    if (pr?.matched) {
+      if (pr.basePrice > 0) {
+        items.push({ label: 'Base fee', amount: pr.basePrice });
       }
-      if (p.both_non_attested_qty) {
-        items.push({ label: 'Non-attested copies', detail: `× ${p.both_non_attested_qty}`, amount: null });
+      if (pr.attestedCharge > 0) {
+        items.push({ label: 'Attested copies', amount: pr.attestedCharge });
       }
-    }
-
-    if (p.delivery_mode) {
-      items.push({ label: 'Delivery', detail: p.delivery_mode, amount: null });
+      if (pr.nonAttestedCharge > 0) {
+        items.push({ label: 'Non-attested copies', amount: pr.nonAttestedCharge });
+      }
+      if (pr.deliveryCharge > 0) {
+        items.push({ label: 'Delivery', amount: pr.deliveryCharge });
+      }
+    } else {
+      // Keep existing delivery_mode display when no pricing match
+      if (p.delivery_mode) {
+        items.push({ label: 'Delivery', detail: p.delivery_mode, amount: null });
+      }
     }
 
     return {
       items,
-      subtotal: null,
+      subtotal: pr?.matched ? pr.serviceCost : null,
       fees: null,
-      total: null,
+      total: pr?.matched ? pr.total : null,
       currency: 'PKR',
     };
-  }, [draft.payload]);
+  }, [draft.payload, pricingResult]);
 
   const submitTicket = async () => {
     if (!selectedFlow || !validateCurrentStep()) return;
     setLoading(true); setApiError('');
     try {
+      const p = draft.payload;
+      const sets =
+        p.set_type === 'attested' ? (p.attested_qty ?? '') :
+        p.set_type === 'non_attested' ? (p.non_attested_qty ?? '') :
+        p.set_type === 'both' ? (p.both_attested_qty ?? '') :
+        '';
       const ticket = await apiClient.post<any>(selectedFlow.endpoint, {
         consumerId: draft.consumerId,
         serviceId: draft.serviceId,
         serviceCity:
-          draft.payload.city ??
-          draft.payload.select_court_city ??
-          draft.payload.district_name ??
+          p.city ??
+          p.select_court_city ??
+          p.district_name ??
           '',
         caseType:
-          draft.payload.case_type ??
-          draft.payload.offence ??
-          draft.payload.case_title ??
+          p.case_type ??
+          p.offence ??
+          p.case_title ??
           '',
-        payload: { ...draft.payload, source: 'next-web-intake' },
+        payload: { ...p, sets, source: 'next-web-intake' },
       });
       for (const file of files) {
         const fd = new FormData(); fd.append('file', file);
@@ -895,8 +897,8 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
                     setField('step', 1);
                     setField('serviceId', '');
                     setDraft((c) => ({ ...c, payload: {} }));
-                    setSelectedServiceCourts([]);
                     setSelectedServiceCaseTypes([]);
+                    setCityCourtGroups([]);
                     setGeoIds({ provinceId: '', districtId: '', cityId: '' });
                   }}
                   options={flows.map((f) => ({ value: f.key, label: f.label }))}
@@ -940,14 +942,14 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
               )}
 
               <label className="space-y-1 block md:col-span-2">
-                <span className="text-sm font-medium text-slate-700">Service<span className="text-rose-500 ml-0.5">*</span></span>
+                <span className="text-sm font-medium text-slate-700">Court<span className="text-rose-500 ml-0.5">*</span></span>
                 {!draft.payload.city ? (
                   <p className="mt-1 rounded-xl bg-surface-muted/50 p-3 text-sm text-slate-500 ring-1 ring-inset ring-border-soft">
-                    Select a city above to see available services.
+                    Select a city above to see available courts.
                   </p>
                 ) : availableServices.length === 0 ? (
                   <p className="mt-1 rounded-xl bg-amber-50 p-3 text-sm text-amber-700 ring-1 ring-inset ring-amber-100">
-                    No services are available in {draft.payload.city}. Pick a different city.
+                    No courts are available in {draft.payload.city}. Pick a different city.
                   </p>
                 ) : isConsumerVariant ? (
                   <ServiceCardGrid
@@ -973,14 +975,23 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
               </label>
 
               {isJudicial && draft.serviceId && (
-                <JudicialCourtBlock
-                  serviceId={draft.serviceId}
+                <JudicialServiceBlock
+                  courtTierId={draft.serviceId}
                   cityName={draft.payload.city ?? ''}
-                  courtOptions={courtOptions}
-                  selectCourt={draft.payload.select_court ?? ''}
-                  onCourtChange={(court) => {
-                    setPayloadField('select_court', court);
-                    setPayloadField('judge_designation', '');
+                  courtTierName={selectedCourtType}
+                  services={selectedCourtList}
+                  selectServiceId={draft.payload.select_court_id ?? ''}
+                  onServiceChange={(court) => {
+                    setDraft((c) => ({
+                      ...c,
+                      payload: {
+                        ...c.payload,
+                        select_court: court.name,
+                        select_court_id: court.id,
+                        select_court_type: selectedCourtType,
+                        judge_designation: '',
+                      },
+                    }));
                   }}
                 />
               )}
@@ -1236,7 +1247,7 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
       ) : null}
 
         </div>
-        <CheckoutPanel summary={checkoutSummary} />
+        <CheckoutPanel summary={checkoutSummary} hasFlow={Boolean(draft.flow)} />
       </div>
     </div>
   );

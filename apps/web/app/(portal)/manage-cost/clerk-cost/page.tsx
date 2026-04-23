@@ -1,5 +1,2 @@
-import { CostRulesBoard } from '@/components/cost-rules-board';
-
-export default function ClerkCostPage() {
-  return <CostRulesBoard title="Manage Cost / Clerk Cost" />;
-}
+import { redirect } from 'next/navigation';
+export default function Page() { redirect('/settings/pricing'); }

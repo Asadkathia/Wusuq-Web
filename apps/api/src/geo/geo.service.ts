@@ -1,6 +1,59 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PAKISTAN_GEO, RAW_POLICE_STATIONS_BY_PROVINCE } from './pakistan-seed';
+import courtsJson from './pakistan-courts.json';
+import { LOWER_COURT_SUBCOURTS, SPECIAL_COURT_SUBCOURTS } from './court-expansion';
+
+type CourtCityEntry = { city: string; is_principal_seat: boolean };
+type CourtsByProvince = Record<string, CourtCityEntry[]>;
+type CourtsNested = Record<string, Record<string, CourtsByProvince>>;
+
+const COURTS_NESTED = (courtsJson as { nested: CourtsNested }).nested;
+
+// The courts JSON uses short province labels; map them to the canonical names
+// used by the pakistan-seed geo tree so we can disambiguate cities that exist
+// in multiple provinces (e.g. "Hyderabad").
+// JSON city names that don't match the pakistan-seed geo tree verbatim.
+const CITY_ALIAS: Record<string, string> = {
+  Karachi: 'Karachi',
+  'Karachi Centeral': 'Karachi',
+  'Karachi South': 'Karachi',
+  'Karachi East': 'Karachi',
+  'Karachi West': 'Karachi',
+  'Lahore Cantt': 'Lahore',
+  'Lahore Model Town': 'Lahore',
+  'Shaheed Benazir Abad': 'Shaheed Benazirabad',
+  'Tando Muhammad Khan': 'Tando Mohammad Khan',
+  'Qambar-Shahdadkot': 'Kambar',
+  Swat: 'Mingora',
+  'Babuzai (Swat)': 'Mingora',
+  Buner: 'Daggar',
+  Malakand: 'Batkhela',
+  'Lower Dir': 'Timergara',
+  'Upper Dir': 'Dir',
+  'Daulatpur (Qazi Ahmed)': 'Daulatpur',
+  'garhi dopatta (Garhi Dopatta)': 'Garhi Dupatta',
+  Tharparkar: 'Mithi',
+  Lasbela: 'Uthal',
+  Jafarabad: 'Dera Allah Yar',
+  Kachi: 'Dhadar',
+  Kech: 'Turbat',
+  Diamir: 'Chilas',
+  Ghanche: 'Khaplu',
+  Ghizer: 'Gahkuch',
+  Hunza: 'Karimabad',
+  Khushab: 'Jauharabad',
+};
+
+const PROVINCE_ALIAS: Record<string, string> = {
+  AJK: 'Azad Jammu & Kashmir',
+  Balochistan: 'Balochistan',
+  Federal: 'Islamabad Capital Territory',
+  'Gilgit-Baltistan': 'Gilgit-Baltistan',
+  KPK: 'Khyber Pakhtunkhwa',
+  Punjab: 'Punjab',
+  Sindh: 'Sindh',
+};
 
 @Injectable()
 export class GeoService {
@@ -34,11 +87,33 @@ export class GeoService {
     });
   }
 
-  courts(cityId: string) {
-    return this.prisma.geoCourt.findMany({
+  /**
+   * Courts available in a city, grouped by court type. Each group lists the
+   * individual sub-courts (e.g. High Court → [Lahore High Court, Islamabad
+   * High Court]) so the UI can render a second dropdown only when a type has
+   * more than one sub-court.
+   */
+  async courts(cityId: string) {
+    const seats = await this.prisma.courtSeat.findMany({
       where: { cityId },
-      orderBy: { name: 'asc' },
+      include: { court: true },
+      orderBy: [{ court: { type: 'asc' } }, { court: { name: 'asc' } }],
     });
+
+    const groups = new Map<
+      string,
+      { type: string; courts: { id: string; name: string; isPrincipalSeat: boolean }[] }
+    >();
+    for (const seat of seats) {
+      const group = groups.get(seat.court.type) ?? { type: seat.court.type, courts: [] };
+      group.courts.push({
+        id: seat.court.id,
+        name: seat.court.name,
+        isPrincipalSeat: seat.isPrincipalSeat,
+      });
+      groups.set(seat.court.type, group);
+    }
+    return Array.from(groups.values());
   }
 
   policeStations(cityId: string) {
@@ -106,8 +181,6 @@ export class GeoService {
 
   /**
    * Given a city name (from intake payload), resolve the province name.
-   * Used by createIntakeTicket to pass province to cost rule lookup.
-   * Returns undefined if the city is not in the geo table.
    */
   async resolveProvinceByCity(cityName: string): Promise<string | undefined> {
     if (!cityName) return undefined;
@@ -118,181 +191,47 @@ export class GeoService {
     return city?.district.province.name;
   }
 
-  /**
-   * Idempotent seed: inserts Pakistan provinces/districts/cities/courts/police-stations,
-   * skipping existing ones.
-   */
   private async runGeoSeedJob<T>(job: () => Promise<T>): Promise<T> {
     const run = this.geoSeedQueue.then(job, job);
     this.geoSeedQueue = run.then(() => undefined, () => undefined);
     return run;
   }
 
+  /**
+   * Major cities and the police stations they have (fallback list — the legacy
+   * source only provides stations district-wise, seeded district-wide below).
+   */
+  private static readonly POLICE_STATION_SEED: Record<string, string[]> = {
+    Lahore: ['Cantt Police Station', 'Civil Lines Police Station', 'Defence Police Station', 'Garden Town Police Station', 'Gulberg Police Station', 'Model Town Police Station', 'Raiwind Police Station', 'Sadar Police Station', 'Shadman Police Station'],
+    Karachi: ['Clifton Police Station', 'Defence Police Station', 'Gulshan-e-Iqbal Police Station', 'Korangi Police Station', 'Landhi Police Station', 'Malir Police Station', 'North Nazimabad Police Station', 'Sadar Police Station', 'SITE Police Station'],
+    Rawalpindi: ['Cantt Police Station', 'Chaklala Police Station', 'Civil Lines Police Station', 'Saddar Police Station', 'Wah Cantt Police Station'],
+    Faisalabad: ['Civil Lines Police Station', 'Gulberg Police Station', 'Madina Town Police Station', 'Sadar Police Station'],
+    Multan: ['City Police Station', 'Civil Lines Police Station', 'Gulgasht Police Station', 'Sadar Police Station'],
+    Peshawar: ['Cantt Police Station', 'City Police Station', 'Hayatabad Police Station', 'Kohat Road Police Station', 'Saddar Police Station'],
+    Quetta: ['Airport Police Station', 'City Police Station', 'Civil Lines Police Station', 'Saddar Police Station', 'Sariab Police Station'],
+    Islamabad: ['Aabpara Police Station', 'Bhara Kahu Police Station', 'Golra Police Station', 'Karachi Company Police Station', 'Margalla Police Station', 'Noon Police Station', 'Ramna Police Station', 'Secretariat Police Station', 'Tarnol Police Station'],
+    Gujranwala: ['City Police Station', 'Gondlanwala Police Station', 'Qila Didar Singh Police Station', 'Saddar Police Station'],
+    Sialkot: ['Civil Lines Police Station', 'Daska Police Station', 'Pasrur Police Station', 'Saddar Police Station'],
+    Hyderabad: ['City Police Station', 'Latifabad Police Station', 'Qasimabad Police Station', 'Saddar Police Station'],
+    Sukkur: ['City Police Station', 'Rohri Police Station', 'Saddar Police Station'],
+    Abbottabad: ['City Police Station', 'Havelian Police Station', 'Mirpur Police Station', 'Saddar Police Station'],
+    Mardan: ['City Police Station', 'Gulberg Police Station', 'Saddar Police Station'],
+    Muzaffarabad: ['City Police Station', 'Garhi Dupatta Police Station', 'Saddar Police Station'],
+    Mirpur: ['City Police Station', 'Dadyal Police Station', 'Saddar Police Station'],
+  };
+
   private async seedUnsafe() {
-    let created = { provinces: 0, districts: 0, cities: 0, courts: 0, policeStations: 0 };
-
-    // court name → array of cities it serves (mirrors COURT_CITIES in services.service.ts)
-    const COURT_SEED: Record<string, { name: string; level: string }[]> = {
-      // Supreme Court cities
-      'Islamabad':        [{ name: 'Supreme Court', level: 'Supreme Court' }],
-      'Lahore':           [
-        { name: 'Supreme Court', level: 'Supreme Court' },
-        { name: 'Lahore High Court', level: 'High Court' },
-        { name: 'Sessions Court', level: 'Lower Court' },
-        { name: 'Civil Court', level: 'Lower Court' },
-        { name: 'Family Court', level: 'Lower Court' },
-        { name: 'Magisterial Court', level: 'Lower Court' },
-      ],
-      'Karachi':          [
-        { name: 'Supreme Court', level: 'Supreme Court' },
-        { name: 'Sindh High Court', level: 'High Court' },
-        { name: 'Sessions Court', level: 'Lower Court' },
-        { name: 'Civil Court', level: 'Lower Court' },
-        { name: 'Family Court', level: 'Lower Court' },
-        { name: 'Magisterial Court', level: 'Lower Court' },
-      ],
-      'Peshawar':         [
-        { name: 'Supreme Court', level: 'Supreme Court' },
-        { name: 'Peshawar High Court', level: 'High Court' },
-        { name: 'Sessions Court', level: 'Lower Court' },
-        { name: 'Civil Court', level: 'Lower Court' },
-        { name: 'Family Court', level: 'Lower Court' },
-        { name: 'Magisterial Court', level: 'Lower Court' },
-      ],
-      'Quetta':           [
-        { name: 'Supreme Court', level: 'Supreme Court' },
-        { name: 'Balochistan High Court', level: 'High Court' },
-        { name: 'Sessions Court', level: 'Lower Court' },
-        { name: 'Civil Court', level: 'Lower Court' },
-        { name: 'Family Court', level: 'Lower Court' },
-        { name: 'Magisterial Court', level: 'Lower Court' },
-      ],
-      'Muzaffarabad':     [
-        { name: 'Azad Kashmir High Court', level: 'High Court' },
-        { name: 'Sessions Court', level: 'Lower Court' },
-        { name: 'Civil Court', level: 'Lower Court' },
-        { name: 'Family Court', level: 'Lower Court' },
-      ],
-      'Mirpur':           [
-        { name: 'Azad Kashmir High Court', level: 'High Court' },
-        { name: 'Sessions Court', level: 'Lower Court' },
-        { name: 'Civil Court', level: 'Lower Court' },
-        { name: 'Family Court', level: 'Lower Court' },
-      ],
-      'Rawalpindi':       [
-        { name: 'Lahore High Court', level: 'High Court' },
-        { name: 'Sessions Court', level: 'Lower Court' },
-        { name: 'Civil Court', level: 'Lower Court' },
-        { name: 'Family Court', level: 'Lower Court' },
-        { name: 'Magisterial Court', level: 'Lower Court' },
-      ],
-      'Multan':           [
-        { name: 'Lahore High Court', level: 'High Court' },
-        { name: 'Sessions Court', level: 'Lower Court' },
-        { name: 'Civil Court', level: 'Lower Court' },
-        { name: 'Family Court', level: 'Lower Court' },
-      ],
-      'Bahawalpur':       [
-        { name: 'Lahore High Court', level: 'High Court' },
-        { name: 'Sessions Court', level: 'Lower Court' },
-        { name: 'Civil Court', level: 'Lower Court' },
-        { name: 'Family Court', level: 'Lower Court' },
-      ],
-      'Sukkur':           [
-        { name: 'Sindh High Court', level: 'High Court' },
-        { name: 'Sessions Court', level: 'Lower Court' },
-        { name: 'Civil Court', level: 'Lower Court' },
-        { name: 'Family Court', level: 'Lower Court' },
-      ],
-      'Hyderabad':        [
-        { name: 'Sindh High Court', level: 'High Court' },
-        { name: 'Sessions Court', level: 'Lower Court' },
-        { name: 'Civil Court', level: 'Lower Court' },
-        { name: 'Family Court', level: 'Lower Court' },
-      ],
-      'Larkana':          [
-        { name: 'Sindh High Court', level: 'High Court' },
-        { name: 'Sessions Court', level: 'Lower Court' },
-        { name: 'Civil Court', level: 'Lower Court' },
-        { name: 'Family Court', level: 'Lower Court' },
-      ],
-      'Abbottabad':       [
-        { name: 'Peshawar High Court', level: 'High Court' },
-        { name: 'Sessions Court', level: 'Lower Court' },
-        { name: 'Civil Court', level: 'Lower Court' },
-        { name: 'Family Court', level: 'Lower Court' },
-      ],
-      'Mingora':          [
-        { name: 'Peshawar High Court', level: 'High Court' },
-        { name: 'Sessions Court', level: 'Lower Court' },
-        { name: 'Civil Court', level: 'Lower Court' },
-      ],
-      'Dera Ismail Khan': [
-        { name: 'Peshawar High Court', level: 'High Court' },
-        { name: 'Sessions Court', level: 'Lower Court' },
-        { name: 'Civil Court', level: 'Lower Court' },
-        { name: 'Family Court', level: 'Lower Court' },
-      ],
-      'Bannu':            [
-        { name: 'Peshawar High Court', level: 'High Court' },
-        { name: 'Sessions Court', level: 'Lower Court' },
-      ],
-      'Sibi':             [
-        { name: 'Balochistan High Court', level: 'High Court' },
-        { name: 'Sessions Court', level: 'Lower Court' },
-      ],
-      'Turbat':           [
-        { name: 'Balochistan High Court', level: 'High Court' },
-        { name: 'Sessions Court', level: 'Lower Court' },
-      ],
-      'Faisalabad':       [
-        { name: 'Sessions Court', level: 'Lower Court' },
-        { name: 'Civil Court', level: 'Lower Court' },
-        { name: 'Family Court', level: 'Lower Court' },
-        { name: 'Magisterial Court', level: 'Lower Court' },
-      ],
-      'Gujranwala':       [
-        { name: 'Sessions Court', level: 'Lower Court' },
-        { name: 'Civil Court', level: 'Lower Court' },
-        { name: 'Family Court', level: 'Lower Court' },
-      ],
-      'Sialkot':          [
-        { name: 'Sessions Court', level: 'Lower Court' },
-        { name: 'Civil Court', level: 'Lower Court' },
-        { name: 'Family Court', level: 'Lower Court' },
-      ],
-      'Sargodha':         [
-        { name: 'Sessions Court', level: 'Lower Court' },
-        { name: 'Civil Court', level: 'Lower Court' },
-        { name: 'Family Court', level: 'Lower Court' },
-      ],
-      'Mardan':           [
-        { name: 'Sessions Court', level: 'Lower Court' },
-        { name: 'Civil Court', level: 'Lower Court' },
-        { name: 'Family Court', level: 'Lower Court' },
-      ],
+    const created = {
+      provinces: 0,
+      districts: 0,
+      cities: 0,
+      courts: 0,
+      courtSeats: 0,
+      policeStations: 0,
     };
+    const warnings: string[] = [];
 
-    // Major cities and the police stations they have (representative list)
-    const POLICE_STATION_SEED: Record<string, string[]> = {
-      'Lahore':       ['Cantt Police Station', 'Civil Lines Police Station', 'Defence Police Station', 'Garden Town Police Station', 'Gulberg Police Station', 'Model Town Police Station', 'Raiwind Police Station', 'Sadar Police Station', 'Shadman Police Station'],
-      'Karachi':      ['Clifton Police Station', 'Defence Police Station', 'Gulshan-e-Iqbal Police Station', 'Korangi Police Station', 'Landhi Police Station', 'Malir Police Station', 'North Nazimabad Police Station', 'Sadar Police Station', 'SITE Police Station'],
-      'Rawalpindi':   ['Cantt Police Station', 'Chaklala Police Station', 'Civil Lines Police Station', 'Saddar Police Station', 'Wah Cantt Police Station'],
-      'Faisalabad':   ['Civil Lines Police Station', 'Gulberg Police Station', 'Madina Town Police Station', 'Sadar Police Station'],
-      'Multan':       ['City Police Station', 'Civil Lines Police Station', 'Gulgasht Police Station', 'Sadar Police Station'],
-      'Peshawar':     ['Cantt Police Station', 'City Police Station', 'Hayatabad Police Station', 'Kohat Road Police Station', 'Saddar Police Station'],
-      'Quetta':       ['Airport Police Station', 'City Police Station', 'Civil Lines Police Station', 'Saddar Police Station', 'Sariab Police Station'],
-      'Islamabad':    ['Aabpara Police Station', 'Bhara Kahu Police Station', 'Golra Police Station', 'Karachi Company Police Station', 'Margalla Police Station', 'Noon Police Station', 'Ramna Police Station', 'Secretariat Police Station', 'Tarnol Police Station'],
-      'Gujranwala':   ['City Police Station', 'Gondlanwala Police Station', 'Qila Didar Singh Police Station', 'Saddar Police Station'],
-      'Sialkot':      ['Civil Lines Police Station', 'Daska Police Station', 'Pasrur Police Station', 'Saddar Police Station'],
-      'Hyderabad':    ['City Police Station', 'Latifabad Police Station', 'Qasimabad Police Station', 'Saddar Police Station'],
-      'Sukkur':       ['City Police Station', 'Rohri Police Station', 'Saddar Police Station'],
-      'Abbottabad':   ['City Police Station', 'Havelian Police Station', 'Mirpur Police Station', 'Saddar Police Station'],
-      'Mardan':       ['City Police Station', 'Gulberg Police Station', 'Saddar Police Station'],
-      'Muzaffarabad': ['City Police Station', 'Garhi Dupatta Police Station', 'Saddar Police Station'],
-      'Mirpur':       ['City Police Station', 'Dadyal Police Station', 'Saddar Police Station'],
-    };
-
+    // 1. Provinces / districts / cities / police-stations (existing pakistan-seed tree).
     for (const prov of PAKISTAN_GEO) {
       let province = await this.prisma.geoProvince.findFirst({ where: { name: prov.name } });
       if (!province) {
@@ -315,30 +254,14 @@ export class GeoService {
             where: { districtId: district.id, name: cityName },
           });
           if (!city) {
-            city = await this.prisma.geoCity.create({ data: { districtId: district.id, name: cityName } });
+            city = await this.prisma.geoCity.create({
+              data: { districtId: district.id, name: cityName },
+            });
             created.cities++;
           }
           districtCities.push(city);
-
-          // Seed courts for this city
-          const courtsForCity = COURT_SEED[cityName] ?? [];
-          for (const courtData of courtsForCity) {
-            const exists = await this.prisma.geoCourt.findFirst({
-              where: { cityId: city.id, name: courtData.name },
-            });
-            if (!exists) {
-              await this.prisma.geoCourt.create({
-                data: { cityId: city.id, name: courtData.name, level: courtData.level },
-              });
-              created.courts++;
-            }
-          }
-
         }
 
-        // The legacy source only provides police stations district-wise.
-        // Seed the district's station list into every city in that district so the city-based API
-        // can still serve the full dropdown for the selected district.
         const districtStations =
           (
             RAW_POLICE_STATIONS_BY_PROVINCE[
@@ -348,7 +271,7 @@ export class GeoService {
         for (const city of districtCities) {
           const stationsForCity = districtStations.length
             ? districtStations
-            : (POLICE_STATION_SEED[city.name] ?? []);
+            : (GeoService.POLICE_STATION_SEED[city.name] ?? []);
           for (const stationName of stationsForCity) {
             const exists = await this.prisma.geoPoliceStation.findFirst({
               where: { cityId: city.id, name: stationName },
@@ -363,7 +286,129 @@ export class GeoService {
         }
       }
     }
-    return { message: 'Seed complete', created };
+
+    // 2. Courts + seats from pakistan-courts.json.
+    const courtSeatResult = await this.seedCourtsFromJson();
+    created.courts += courtSeatResult.courts;
+    created.courtSeats += courtSeatResult.courtSeats;
+    warnings.push(...courtSeatResult.warnings);
+
+    return { message: 'Seed complete', created, warnings };
+  }
+
+  /**
+   * Idempotently seeds the Court + CourtSeat tables from pakistan-courts.json.
+   * Matches JSON cities to existing GeoCity rows by (province alias, city name)
+   * with a fallback to a global name lookup. Cities that cannot be resolved
+   * are returned in `warnings` so the operator can extend the geo seed.
+   */
+  private async seedCourtsFromJson() {
+    const result = { courts: 0, courtSeats: 0, warnings: [] as string[] };
+    const unresolved = new Map<string, Set<string>>(); // province → city set
+
+    // Build a lookup: provinceName → Map<cityName_lowercase, cityId>
+    const cityByProvince = new Map<string, Map<string, string>>();
+    const provinces = await this.prisma.geoProvince.findMany({
+      include: {
+        districts: { include: { cities: { select: { id: true, name: true } } } },
+      },
+    });
+    for (const prov of provinces) {
+      const map = new Map<string, string>();
+      for (const dist of prov.districts) {
+        for (const city of dist.cities) {
+          map.set(city.name.toLowerCase(), city.id);
+        }
+      }
+      cityByProvince.set(prov.name, map);
+    }
+    const globalCityByName = new Map<string, string>();
+    for (const map of cityByProvince.values()) {
+      for (const [k, v] of map.entries()) {
+        if (!globalCityByName.has(k)) globalCityByName.set(k, v);
+      }
+    }
+
+    // Cache Court rows by (type, name) so we reuse them across cities.
+    const courtCache = new Map<string, { id: string }>();
+    const getOrCreateCourt = async (type: string, name: string) => {
+      const key = `${type}||${name}`;
+      const cached = courtCache.get(key);
+      if (cached) return cached;
+      let court = await this.prisma.court.findFirst({ where: { type, name } });
+      if (!court) {
+        court = await this.prisma.court.create({ data: { type, name } });
+        result.courts++;
+      }
+      courtCache.set(key, { id: court.id });
+      return court;
+    };
+
+    const upsertSeat = async (courtId: string, cityId: string, isPrincipal: boolean) => {
+      const existing = await this.prisma.courtSeat.findUnique({
+        where: { courtId_cityId: { courtId, cityId } },
+      });
+      if (!existing) {
+        await this.prisma.courtSeat.create({
+          data: { courtId, cityId, isPrincipalSeat: isPrincipal },
+        });
+        result.courtSeats++;
+      } else if (existing.isPrincipalSeat !== isPrincipal) {
+        await this.prisma.courtSeat.update({
+          where: { id: existing.id },
+          data: { isPrincipalSeat: isPrincipal },
+        });
+      }
+    };
+
+    for (const [courtType, subCourts] of Object.entries(COURTS_NESTED)) {
+      for (const [jsonSubCourtName, provinceMap] of Object.entries(subCourts)) {
+        for (const [jsonProvince, cityEntries] of Object.entries(provinceMap)) {
+          const canonicalProvince = PROVINCE_ALIAS[jsonProvince] ?? jsonProvince;
+          const provinceCities = cityByProvince.get(canonicalProvince);
+
+          for (const entry of cityEntries) {
+            const aliased = CITY_ALIAS[entry.city] ?? entry.city;
+            const key = aliased.toLowerCase();
+            const cityId = provinceCities?.get(key) ?? globalCityByName.get(key);
+            if (!cityId) {
+              const set = unresolved.get(canonicalProvince) ?? new Set<string>();
+              set.add(entry.city);
+              unresolved.set(canonicalProvince, set);
+              continue;
+            }
+
+            // Expansion rules:
+            //   • Lower Court  → 4 standard sub-courts per city.
+            //   • Special Court → legacy specialized list, but only those
+            //     whose legacy city-presence table matches this city.
+            //   • All other types → use the JSON sub-court name as-is.
+            if (courtType === 'Lower Court') {
+              for (const sc of LOWER_COURT_SUBCOURTS) {
+                const court = await getOrCreateCourt(courtType, sc.name);
+                await upsertSeat(court.id, cityId, false);
+              }
+            } else if (courtType === 'Special Court') {
+              for (const [subName, cities] of Object.entries(SPECIAL_COURT_SUBCOURTS)) {
+                if (!cities.some((c) => c.toLowerCase() === entry.city.toLowerCase())) continue;
+                const court = await getOrCreateCourt(courtType, subName);
+                await upsertSeat(court.id, cityId, false);
+              }
+            } else {
+              const court = await getOrCreateCourt(courtType, jsonSubCourtName);
+              await upsertSeat(court.id, cityId, entry.is_principal_seat);
+            }
+          }
+        }
+      }
+    }
+
+    for (const [province, cities] of unresolved.entries()) {
+      result.warnings.push(
+        `Unresolved cities in ${province}: ${Array.from(cities).sort().join(', ')}`,
+      );
+    }
+    return result;
   }
 
   async seed() {
@@ -376,8 +421,9 @@ export class GeoService {
     return this.runGeoSeedJob(async () => {
       await this.prisma.$executeRawUnsafe(`
         TRUNCATE TABLE
+          "CourtSeat",
+          "Court",
           "GeoPoliceStation",
-          "GeoCourt",
           "GeoCity",
           "GeoDistrict",
           "GeoProvince"
@@ -388,13 +434,11 @@ export class GeoService {
       return {
         message: 'Geo data reset and reseeded',
         created: result.created,
+        warnings: result.warnings,
       };
     });
   }
 
-  /**
-   * Full tree: provinces with their districts and cities — used by the admin UI.
-   */
   async fullTree() {
     if (this.geoTreeCache && Date.now() < this.geoTreeCache.expiresAt) {
       return this.geoTreeCache.data;

@@ -7,7 +7,7 @@ import {
 import { UserRole, type Prisma } from '@prisma/client';
 import type { TicketStatus } from '@wusuq/shared';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
-import { CostingService } from '../costing/costing.service';
+import { PricingService } from '../pricing/pricing.service';
 import { GeoService } from '../geo/geo.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AssignTicketDto } from './dto/assign-ticket.dto';
@@ -138,7 +138,7 @@ export class TicketsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService,
-    private readonly costingService: CostingService,
+    private readonly pricingService: PricingService,
     private readonly geoService: GeoService,
     private readonly notificationsService: NotificationsService,
   ) {}
@@ -349,11 +349,6 @@ export class TicketsService {
       throw new NotFoundException('Service not found');
     }
 
-    // Service pricing model is being redesigned. Until the new calculator
-    // lands, intake tickets persist with serviceCost = 0; charges are set via
-    // TicketChargesBoard or will be auto-populated by the new calculator.
-    const serviceCost = 0;
-
     const ticket = await this.prisma.ticket.create({
       data: {
         batchNo: this.generateBatchNo(),
@@ -362,8 +357,8 @@ export class TicketsService {
         status: 'PENDING',
         serviceCity: inferredServiceCity,
         caseType: inferredCaseType,
-        serviceCost,
-        totalAmount: serviceCost,
+        serviceCost: 0,
+        totalAmount: 0,
         intakeFlow: dto.flow,
         formPayload: dto.payload as Prisma.InputJsonValue | undefined,
       },
@@ -376,6 +371,49 @@ export class TicketsService {
         note: 'Ticket created via intake flow',
       },
     });
+
+    // Resolve pricing and update ticket charges
+    const payload = (dto.payload ?? {}) as Record<string, string | undefined>;
+    const courtLevel = payload['select_court_type'];
+    const caseStatus = payload['case_status'];
+    const rawYear = payload['case_year'] ?? payload['year'];
+    const caseYear = rawYear ? (parseInt(rawYear, 10) || undefined) : undefined;
+    const setType = payload['set_type'];
+    let attestedQty = 0;
+    let nonAttestedQty = 0;
+    if (setType === 'attested') {
+      attestedQty = parseInt(payload['attested_qty'] ?? '0', 10) || 0;
+    } else if (setType === 'non_attested') {
+      nonAttestedQty = parseInt(payload['non_attested_qty'] ?? '0', 10) || 0;
+    } else if (setType === 'both') {
+      attestedQty = parseInt(payload['both_attested_qty'] ?? '0', 10) || 0;
+      nonAttestedQty = parseInt(payload['both_non_attested_qty'] ?? '0', 10) || 0;
+    }
+
+    const province = payload['province'] ?? payload['province_capital'] ?? '';
+    const city = payload['select_court_city'] ?? payload['city'] ?? payload['select_city'] ?? '';
+    const pricing = await this.pricingService.resolve({
+      flow: dto.flow,
+      courtLevel,
+      caseStatus,
+      caseYear,
+      setType,
+      attestedQty,
+      nonAttestedQty,
+      province,
+      city,
+    });
+
+    if (pricing.matched) {
+      await this.prisma.ticket.update({
+        where: { id: ticket.id },
+        data: {
+          serviceCost: pricing.serviceCost,
+          deliveryCharges: pricing.deliveryCharge,
+          totalAmount: pricing.total,
+        },
+      });
+    }
 
     await this.auditLogsService.create({
       action: 'TICKET_CREATED',
@@ -562,24 +600,7 @@ export class TicketsService {
       );
     }
 
-    const payloadProvince = this.firstPayloadValue(
-      (ticket.formPayload as Record<string, unknown> | undefined) ?? undefined,
-      ['province_capital', 'province'],
-    );
-    const inferredProvince =
-      payloadProvince ??
-      (ticket.serviceCity
-        ? await this.geoService.resolveProvinceByCity(ticket.serviceCity)
-        : undefined);
-
-    const autoClerkCost = await this.costingService.resolveClerkCost({
-      serviceId: ticket.service.id,
-      category: ticket.service.category,
-      caseType: ticket.caseType ?? undefined,
-      province: inferredProvince,
-    });
-
-    const clerkCost = dto.clerkCost ?? autoClerkCost.amount;
+    const clerkCost = dto.clerkCost ?? 0;
     let assignmentWarning: string | null = null;
     if (representative.courtCity && ticket.serviceCity) {
       const repCities = [representative.courtCity, representative.city]

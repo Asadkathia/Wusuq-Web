@@ -10,3 +10,6 @@ coverage
 .vercel
 playwright-report
 test-results
+apps/api/uploads/
+.envrc
+.claude/scheduled_tasks.lock
