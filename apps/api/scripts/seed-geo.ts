@@ -12,6 +12,7 @@ import {
 } from '../src/geo/pakistan-seed';
 import courtsJson from '../src/geo/pakistan-courts.json';
 import { LOWER_COURT_SUBCOURTS, SPECIAL_COURT_SUBCOURTS } from '../src/geo/court-expansion';
+import { CITY_ALIAS, PROVINCE_ALIAS } from '../src/geo/court-alias';
 
 const prisma = new PrismaClient();
 
@@ -21,49 +22,8 @@ type CourtsNested = Record<string, Record<string, CourtsByProvince>>;
 
 const COURTS_NESTED = (courtsJson as { nested: CourtsNested }).nested;
 
-// Some city names in pakistan-courts.json don't match pakistan-seed.ts verbatim
-// (district vs. city split, spelling variants). Map the JSON name → the
-// existing city it should be attached to.
-const CITY_ALIAS: Record<string, string> = {
-  Karachi: 'Karachi',
-  'Karachi Centeral': 'Karachi',
-  'Karachi South': 'Karachi',
-  'Karachi East': 'Karachi',
-  'Karachi West': 'Karachi',
-  'Lahore Cantt': 'Lahore',
-  'Lahore Model Town': 'Lahore',
-  'Shaheed Benazir Abad': 'Shaheed Benazirabad',
-  'Tando Muhammad Khan': 'Tando Mohammad Khan',
-  'Qambar-Shahdadkot': 'Kambar',
-  Swat: 'Mingora',
-  'Babuzai (Swat)': 'Mingora',
-  Buner: 'Daggar',
-  Malakand: 'Batkhela',
-  'Lower Dir': 'Timergara',
-  'Upper Dir': 'Dir',
-  'Daulatpur (Qazi Ahmed)': 'Daulatpur',
-  'garhi dopatta (Garhi Dopatta)': 'Garhi Dupatta',
-  Tharparkar: 'Mithi',
-  Lasbela: 'Uthal',
-  Jafarabad: 'Dera Allah Yar',
-  Kachi: 'Dhadar',
-  Kech: 'Turbat',
-  Diamir: 'Chilas',
-  Ghanche: 'Khaplu',
-  Ghizer: 'Gahkuch',
-  Hunza: 'Karimabad',
-  Khushab: 'Jauharabad',
-};
-
-const PROVINCE_ALIAS: Record<string, string> = {
-  AJK: 'Azad Jammu & Kashmir',
-  Balochistan: 'Balochistan',
-  Federal: 'Islamabad Capital Territory',
-  'Gilgit-Baltistan': 'Gilgit-Baltistan',
-  KPK: 'Khyber Pakhtunkhwa',
-  Punjab: 'Punjab',
-  Sindh: 'Sindh',
-};
+// Alias maps are imported from src/geo/court-alias.ts so this script and
+// GeoService.seedCourtsFromJson stay in lock-step.
 
 const POLICE_STATION_SEED: Record<string, string[]> = {
   Islamabad: ['Aabpara Police Station', 'Golra Police Station', 'Margalla Police Station', 'Noon Police Station', 'Ramna Police Station', 'Saddar Police Station', 'Secretariat Police Station'],
@@ -215,9 +175,15 @@ async function main() {
               seatRows.push({ courtId, cityId, isPrincipalSeat: false });
             }
           } else if (courtType === 'Special Court') {
+            let matched = false;
             for (const [subName, cities] of Object.entries(SPECIAL_COURT_SUBCOURTS)) {
               if (!cities.some((c) => c.toLowerCase() === entry.city.toLowerCase())) continue;
               const courtId = await getOrCreateCourt(courtType, subName);
+              seatRows.push({ courtId, cityId, isPrincipalSeat: false });
+              matched = true;
+            }
+            if (!matched) {
+              const courtId = await getOrCreateCourt(courtType, 'Special Court');
               seatRows.push({ courtId, cityId, isPrincipalSeat: false });
             }
           } else {

@@ -171,13 +171,7 @@ export function WalletBoard() {
     const formData = new FormData();
     formData.append('file', file);
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000'}/documents/upload`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
-        body: formData,
-      });
-      if (!res.ok) throw new Error('Upload failed');
-      const data = await res.json();
+      const data = await apiClient.post<{ url: string }>('/wallet/receipt', formData);
       setTopup(c => ({ ...c, receiptUrl: data.url }));
       setMessage('Receipt uploaded');
     } catch (err: any) {
@@ -272,13 +266,27 @@ export function WalletBoard() {
         description="Verify pending topups and manage consumer balances."
         action={
           <div className="flex gap-2">
-            <a
-              href={`${process.env.NEXT_PUBLIC_API_URL ?? ''}/wallet/export?format=csv`}
-              download="wallet-export.csv"
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  const blob = await apiClient.getBlob('/wallet/export?format=csv');
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = 'wallet-export.csv';
+                  document.body.appendChild(a);
+                  a.click();
+                  document.body.removeChild(a);
+                  URL.revokeObjectURL(url);
+                } catch (err: any) {
+                  setMessage(err?.message || 'Export failed');
+                }
+              }}
               className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-500 transition-colors"
             >
               ↓ Export CSV
-            </a>
+            </button>
             <button
               onClick={load}
               disabled={loading}
@@ -339,10 +347,34 @@ export function WalletBoard() {
                       </td>
                       <td className="px-6 py-4">
                         {tx.receiptUrl ? (
-                          <a href={tx.receiptUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-sm text-primary-600 hover:text-primary-800 font-medium">
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              try {
+                                // Translate legacy /uploads/wallet-receipts/<f>
+                                // and the canonical /wallet/receipt/<f> to the
+                                // authenticated download endpoint.
+                                const m = String(tx.receiptUrl).match(
+                                  /(?:^|\/)(?:uploads\/wallet-receipts|wallet\/receipt)\/([^/?#]+)$/,
+                                );
+                                if (!m) {
+                                  setMessage('Invalid receipt URL');
+                                  return;
+                                }
+                                const blob = await apiClient.getBlob(`/wallet/receipt/${m[1]}`);
+                                const objectUrl = URL.createObjectURL(blob);
+                                window.open(objectUrl, '_blank', 'noopener');
+                                // Revoke shortly after open so the new tab can render it.
+                                setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+                              } catch (err: any) {
+                                setMessage(err?.message || 'Receipt download failed');
+                              }
+                            }}
+                            className="inline-flex items-center gap-1.5 text-sm text-primary-600 hover:text-primary-800 font-medium"
+                          >
                             <FileText className="h-4 w-4" /> View
                             <ExternalLink className="h-3 w-3" />
-                          </a>
+                          </button>
                         ) : (
                           <span className="text-sm text-slate-400 italic">None attached</span>
                         )}

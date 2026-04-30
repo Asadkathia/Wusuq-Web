@@ -79,15 +79,20 @@ function ChipGroup({
 }
 
 // ─── City Block (flat, single dropdown of all cities) ───────────────────────
+type CityWithRegion = { id: string; name: string; province?: string };
 type CityBlockProps = {
-  cities: { id: string; name: string }[];
+  cities: CityWithRegion[];
   cityId: string;
   onCityChange: (cityId: string, name: string) => void;
 };
 
 export function CityBlock({ cities, cityId, onCityChange }: CityBlockProps) {
-  const cityOptions = toOptions(cities);
-  const findName = (items: { id: string; name: string }[], id: string) =>
+  const cityOptions: SelectOption[] = cities.map((c) => ({
+    value: c.id,
+    label: c.province ? `${c.name} · ${c.province}` : c.name,
+    hint: c.province,
+  }));
+  const findName = (items: CityWithRegion[], id: string) =>
     items.find((x) => x.id === id)?.name ?? '';
 
   return (
@@ -104,9 +109,29 @@ export function CityBlock({ cities, cityId, onCityChange }: CityBlockProps) {
           onChange={(v) => onCityChange(v, findName(cities, v))}
           options={cityOptions}
           placeholder="Select a city"
-          searchPlaceholder="Search cities…"
+          searchPlaceholder="Search cities or province…"
           allowClear
           ariaLabel="City"
+          renderOption={(opt, selected) => {
+            const [cityName, region] = opt.label.includes(' · ')
+              ? opt.label.split(' · ')
+              : [opt.label, ''];
+            return (
+              <span className="flex items-baseline justify-between gap-3">
+                <span
+                  className={[
+                    'truncate text-sm',
+                    selected ? 'font-semibold text-slate-900' : 'text-slate-800',
+                  ].join(' ')}
+                >
+                  {cityName}
+                </span>
+                {region ? (
+                  <span className="shrink-0 text-xs text-slate-500">{region}</span>
+                ) : null}
+              </span>
+            );
+          }}
         />
       </label>
     </div>
@@ -483,7 +508,7 @@ export function CaseDateBlock({
         </label>
       ) : (
         <label className="block">
-          <FieldLabel>Case date</FieldLabel>
+          <FieldLabel>{caseStatus === 'Unknown Case' ? 'Institution Date' : 'Case date'}</FieldLabel>
           <input
             className={inputClass}
             type="date"

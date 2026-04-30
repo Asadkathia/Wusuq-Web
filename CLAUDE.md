@@ -2,6 +2,25 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Graphify-first exploration (mandatory)
+
+Before using `find`, `grep`, Glob, the Explore subagent, or reading multiple files to understand system architecture, structure, or how components connect, you **must** first consult `graphify-out/` at the repo root:
+
+1. `graphify-out/GRAPH_REPORT.md` — community labels, god nodes, surprising cross-module edges, suggested questions
+2. `graphify-out/graph.json` — full node/edge graph (load it to find which file/community owns a concern)
+3. `graphify-out/graph.html` — interactive viz (mention if the user wants to browse)
+
+The graph is the routing index. Use it to locate the right file, community, or bridge node, then read only those specific files. Do not re-discover structure that the graph already encodes.
+
+Filesystem search is the **fallback**, used only when:
+- The graph is silent on the topic
+- The file is newer than the last graph build
+- The question is about specific code lines (not architecture)
+
+After large structural changes (file moves, new modules, refactors), suggest re-running `/graphify . --update` to refresh the map.
+
+This rule exists to save tokens and time — a precomputed AST graph is far cheaper to read than re-discovering structure on every task.
+
 ## Project Overview
 
 Wusuq is a paralegal operations platform built as a pnpm monorepo with three packages:

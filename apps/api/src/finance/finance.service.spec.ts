@@ -3,7 +3,8 @@ import { FinanceService } from './finance.service';
 
 describe('FinanceService', () => {
   it('rejects overpayment reconcile attempts', async () => {
-    const prisma = {
+    const tx = {
+      $queryRaw: jest.fn().mockResolvedValue([{ id: 'ticket-1' }]),
       ticket: {
         findUnique: jest.fn().mockResolvedValue({
           id: 'ticket-1',
@@ -13,7 +14,9 @@ describe('FinanceService', () => {
           invoice: null,
         }),
       },
-      $transaction: jest.fn(),
+    };
+    const prisma = {
+      $transaction: jest.fn(async (cb) => cb(tx)),
     };
     const auditLogsService = { create: jest.fn() };
     const service = new FinanceService(prisma as never, auditLogsService as never);
@@ -26,8 +29,6 @@ describe('FinanceService', () => {
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
 
-    expect(prisma.$transaction).not.toHaveBeenCalled();
     expect(auditLogsService.create).not.toHaveBeenCalled();
   });
 });
-

@@ -151,8 +151,8 @@ export default function ConsumerDashboardPage() {
       setError(null);
       try {
         const [summaryResult, walletResult] = await Promise.all([
-          apiClient.get<ConsumerSummary>('/dashboard/consumer-summary'),
-          apiClient.get<WalletResponse>('/wallet').catch(() => ({} as WalletResponse)),
+          apiClient.get<ConsumerSummary>('/dashboard/my-summary'),
+          apiClient.get<WalletResponse>('/wallet/me').catch(() => ({} as WalletResponse)),
         ]);
         setSummary(summaryResult);
         setWalletBalance(Number(walletResult.balance ?? summaryResult.myWalletBalance ?? 0));

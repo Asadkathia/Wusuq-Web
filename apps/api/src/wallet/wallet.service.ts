@@ -1,5 +1,5 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
-import type { Prisma } from '@prisma/client';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import type { PaymentMode, Prisma } from '@prisma/client';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
@@ -64,7 +64,10 @@ export class WalletService {
     dto: TopupWalletDto,
     actor?: { actorUserId?: string; actorEmail?: string },
   ) {
-    await this.ensureUserExists(dto.userId);
+    if (!dto.userId) {
+      throw new BadRequestException('userId is required');
+    }
+    await this.ensureUserExistsAndActive(dto.userId);
 
     const transaction = await this.prisma.walletTransaction.create({
       data: {
@@ -101,70 +104,86 @@ export class WalletService {
     payload: { note?: string },
     actor?: { actorUserId?: string; actorEmail?: string },
   ) {
-    const transaction = await this.prisma.walletTransaction.findUnique({
-      where: { id: transactionId },
-    });
+    const result = await this.prisma.$transaction(async (tx) => {
+      // Lock the transaction row first so two concurrent verify calls
+      // serialize. Re-read the locked state and decide on action atomically.
+      await tx.$executeRaw`SELECT id FROM "WalletTransaction" WHERE id = ${transactionId} FOR UPDATE`;
 
-    if (!transaction) {
-      throw new NotFoundException('Transaction not found');
-    }
+      const locked = await tx.walletTransaction.findUnique({
+        where: { id: transactionId },
+      });
 
-    if (transaction.status !== 'PENDING_VERIFICATION') {
-      return { success: true, alreadyProcessed: true, transaction };
-    }
+      if (!locked) {
+        throw new NotFoundException('Transaction not found');
+      }
+      if (locked.status !== 'PENDING_VERIFICATION') {
+        return { alreadyProcessed: true, transaction: locked, userId: locked.userId };
+      }
 
-    const { updatedTransaction, updatedUser } = await this.prisma.$transaction(
-      async (tx) => {
-        await tx.$executeRaw`SELECT id FROM "User" WHERE id = ${transaction.userId} FOR UPDATE`;
-
-        const updatedTransaction = await tx.walletTransaction.update({
+      // Conditional update: only flip PENDING → VERIFIED, never re-verify.
+      const updateResult = await tx.walletTransaction.updateMany({
+        where: { id: transactionId, status: 'PENDING_VERIFICATION' },
+        data: {
+          status: 'VERIFIED',
+          verifiedAt: new Date(),
+          reviewedByUserId: actor?.actorUserId,
+          note: payload.note,
+        },
+      });
+      if (updateResult.count !== 1) {
+        // Lost the race despite the row lock — be safe.
+        const fresh = await tx.walletTransaction.findUniqueOrThrow({
           where: { id: transactionId },
-          data: {
-            status: 'VERIFIED',
-            verifiedAt: new Date(),
-            reviewedByUserId: actor?.actorUserId,
-            note: payload.note,
-          },
         });
+        return { alreadyProcessed: true, transaction: fresh, userId: fresh.userId };
+      }
 
-        const creditedUser = await tx.user.update({
-          where: { id: transaction.userId },
-          data: { walletBalance: { increment: transaction.amount } },
-          select: { id: true, walletBalance: true },
-        });
+      // Lock the user row before crediting.
+      await tx.$executeRaw`SELECT id FROM "User" WHERE id = ${locked.userId} FOR UPDATE`;
 
-        await this.clearPendingTickets(
-          creditedUser.id,
-          Number(creditedUser.walletBalance),
-          tx,
-        );
+      const creditedUser = await tx.user.update({
+        where: { id: locked.userId },
+        data: { walletBalance: { increment: locked.amount } },
+        select: { id: true, walletBalance: true },
+      });
 
-        // Re-read the final balance after deductions
-        const updatedUser = await tx.user.findUniqueOrThrow({
-          where: { id: creditedUser.id },
-          select: { id: true, walletBalance: true },
-        });
+      await this.clearPendingTickets(
+        creditedUser.id,
+        Number(creditedUser.walletBalance),
+        locked.paymentMode,
+        tx,
+      );
 
-        return { updatedTransaction, updatedUser };
-      },
-    );
+      const updatedTransaction = await tx.walletTransaction.findUniqueOrThrow({
+        where: { id: transactionId },
+      });
 
-    await this.auditLogsService.create({
-      action: 'WALLET_TOPUP_VERIFIED',
-      entity: 'WALLET_TRANSACTION',
-      entityId: updatedTransaction.id,
-      actorUserId: actor?.actorUserId,
-      actorEmail: actor?.actorEmail,
-      metadata: {
-        userId: transaction.userId,
-        amount: Number(transaction.amount),
-      },
+      return {
+        alreadyProcessed: false,
+        transaction: updatedTransaction,
+        userId: locked.userId,
+      };
     });
+
+    if (!result.alreadyProcessed) {
+      await this.auditLogsService.create({
+        action: 'WALLET_TOPUP_VERIFIED',
+        entity: 'WALLET_TRANSACTION',
+        entityId: result.transaction.id,
+        actorUserId: actor?.actorUserId,
+        actorEmail: actor?.actorEmail,
+        metadata: {
+          userId: result.userId,
+          amount: Number(result.transaction.amount),
+        },
+      });
+    }
 
     return {
       success: true,
-      transaction: updatedTransaction,
-      userId: updatedUser.id,
+      alreadyProcessed: result.alreadyProcessed,
+      transaction: result.transaction,
+      userId: result.userId,
     };
   }
 
@@ -246,53 +265,106 @@ export class WalletService {
     };
   }
 
+  async isReceiptOwnedBy(filename: string, userId: string): Promise<boolean> {
+    // Match either the new authenticated path (/wallet/receipt/<file>) or
+    // the legacy /uploads/wallet-receipts/<file> for backwards compatibility
+    // with rows persisted before this change.
+    const newUrl = `/wallet/receipt/${filename}`;
+    const legacyUrl = `/uploads/wallet-receipts/${filename}`;
+    const hit = await this.prisma.walletTransaction.findFirst({
+      where: { userId, receiptUrl: { in: [newUrl, legacyUrl] } },
+      select: { id: true },
+    });
+    return Boolean(hit);
+  }
+
+  async recordReceiptUpload(
+    file: { filename: string; path: string; mimetype: string },
+    actor: { actorUserId: string; actorEmail?: string },
+  ) {
+    // Persist the *authenticated* download URL so the admin UI can hand it
+    // to apiClient.getBlob() unchanged. Bare /uploads/... is never served.
+    const url = `/wallet/receipt/${file.filename}`;
+    await this.auditLogsService.create({
+      action: 'WALLET_RECEIPT_UPLOADED',
+      entity: 'WALLET_TRANSACTION',
+      entityId: file.filename,
+      actorUserId: actor.actorUserId,
+      actorEmail: actor.actorEmail,
+      metadata: { path: file.path, mimetype: file.mimetype },
+    });
+    return { url, path: url, filename: file.filename };
+  }
+
+  // Auto-applies wallet balance to the consumer's oldest unpaid tickets in
+  // FIFO order. Skips tickets with totalAmount <= 0 so a free-priced or
+  // unresolved-pricing ticket never gets silently marked PAID. Records the
+  // top-up's original payment mode on each settlement transaction so finance
+  // history can still show how the money came in.
   private async clearPendingTickets(
     userId: string,
     postTopupBalance: number,
+    paymentMode: PaymentMode,
     tx: Prisma.TransactionClient,
   ): Promise<void> {
-    const tickets = await tx.ticket.findMany({
+    const candidateIds = await tx.ticket.findMany({
       where: {
         consumerId: userId,
         paymentStatus: { not: 'PAID' },
       },
       orderBy: { createdAt: 'asc' },
-      select: { id: true, batchNo: true, totalAmount: true, amountPaid: true },
+      select: { id: true },
     });
 
     let remainingBalance = postTopupBalance;
 
-    for (const ticket of tickets) {
+    for (const { id } of candidateIds) {
       if (remainingBalance <= 0) break;
 
-      const ticketRemaining =
-        Number(ticket.totalAmount) - Number(ticket.amountPaid);
+      // Lock the ticket row, then re-read its money columns under the lock.
+      // This serialises wallet auto-deduction against finance.reconcilePayment
+      // (which also takes a row-level lock on the same ticket) so two
+      // concurrent payment paths can't race on the same ticket and
+      // overpay / leave a stale paymentStatus.
+      await tx.$executeRaw`SELECT id FROM "Ticket" WHERE id = ${id} FOR UPDATE`;
+
+      const fresh = await tx.ticket.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          batchNo: true,
+          totalAmount: true,
+          amountPaid: true,
+          paymentStatus: true,
+        },
+      });
+      if (!fresh) continue;
+      // Status may have flipped to PAID between findMany and the lock.
+      if (fresh.paymentStatus === 'PAID') continue;
+
+      const totalAmount = Number(fresh.totalAmount);
+      const amountPaid = Number(fresh.amountPaid);
+
+      // Tickets without a resolved positive price never auto-settle.
+      if (totalAmount <= 0) continue;
+
+      const ticketRemaining = totalAmount - amountPaid;
       if (ticketRemaining <= 0) continue;
 
       const deducted = Math.min(remainingBalance, ticketRemaining);
-      const newPaymentStatus =
-        deducted >= ticketRemaining ? 'PAID' : 'PARTIALLY_PAID';
 
-      await tx.ticket.update({
-        where: { id: ticket.id },
-        data: {
-          amountPaid: { increment: deducted },
-          paymentStatus: newPaymentStatus,
+      await this.applyPaymentToTicket(
+        tx,
+        {
+          ticketId: fresh.id,
+          batchNo: fresh.batchNo,
+          totalAmount,
+          amountPaid,
         },
-      });
-
-      await tx.walletTransaction.create({
-        data: {
-          userId,
-          ticketId: ticket.id,
-          amount: deducted,
-          paymentMode: 'BANK_TRANSFER',
-          currency: 'PKR',
-          status: 'VERIFIED',
-          verifiedAt: new Date(),
-          note: `Auto-deducted for ticket ${ticket.batchNo}`,
-        },
-      });
+        deducted,
+        paymentMode,
+        userId,
+      );
 
       remainingBalance -= deducted;
     }
@@ -304,14 +376,68 @@ export class WalletService {
     });
   }
 
+  // Single point of payment-application logic so wallet auto-deduction and
+  // any future ticket-targeted payment path stay consistent. NOTE: callers
+  // must already have a row-level lock on the user / ticket where needed.
+  private async applyPaymentToTicket(
+    tx: Prisma.TransactionClient,
+    ticket: {
+      ticketId: string;
+      batchNo: string;
+      totalAmount: number;
+      amountPaid: number;
+    },
+    deducted: number,
+    paymentMode: PaymentMode,
+    userId: string,
+  ) {
+    const ticketRemaining = ticket.totalAmount - ticket.amountPaid;
+    const newPaymentStatus =
+      deducted >= ticketRemaining ? 'PAID' : 'PARTIALLY_PAID';
+
+    await tx.ticket.update({
+      where: { id: ticket.ticketId },
+      data: {
+        amountPaid: { increment: deducted },
+        paymentStatus: newPaymentStatus,
+      },
+    });
+
+    await tx.walletTransaction.create({
+      data: {
+        userId,
+        ticketId: ticket.ticketId,
+        amount: deducted,
+        paymentMode,
+        currency: 'PKR',
+        status: 'VERIFIED',
+        verifiedAt: new Date(),
+        note: `Auto-deducted for ticket ${ticket.batchNo}`,
+      },
+    });
+  }
+
   private async ensureUserExists(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: { id: true },
     });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+  }
+
+  private async ensureUserExistsAndActive(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, isActive: true },
+    });
 
     if (!user) {
       throw new NotFoundException('User not found');
+    }
+    if (!user.isActive) {
+      throw new BadRequestException('User is not active');
     }
   }
 }

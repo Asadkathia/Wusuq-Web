@@ -1,6 +1,7 @@
 'use client';
 
-import { FileText, Image as ImageIcon, UploadCloud, X } from 'lucide-react';
+import { Eye, FileText, Image as ImageIcon, UploadCloud, X } from 'lucide-react';
+import { useEffect, useMemo } from 'react';
 
 type FileUploadProps = {
   files: File[];
@@ -35,6 +36,13 @@ export function FileUpload({
   onDragLeave,
   onDrop,
 }: FileUploadProps) {
+  const previews = useMemo(() => files.map((f) => URL.createObjectURL(f)), [files]);
+  useEffect(() => {
+    return () => {
+      previews.forEach((url) => URL.revokeObjectURL(url));
+    };
+  }, [previews]);
+
   return (
     <div className="mt-4">
       <h4 className="mb-4 text-sm font-semibold text-slate-900">{title}</h4>
@@ -86,14 +94,26 @@ export function FileUpload({
                       </p>
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => onRemoveFile(i)}
-                    className="inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-500 hover:bg-white hover:text-rose-600 focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2"
-                    aria-label={`Remove ${file.name}`}
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <a
+                      href={previews[i]}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-500 hover:bg-white hover:text-primary-600 focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2"
+                      aria-label={`View ${file.name}`}
+                      title="View file"
+                    >
+                      <Eye className="h-4 w-4" />
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => onRemoveFile(i)}
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-500 hover:bg-white hover:text-rose-600 focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2"
+                      aria-label={`Remove ${file.name}`}
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
                 </li>
               ))}
             </ul>

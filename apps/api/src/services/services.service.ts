@@ -366,7 +366,7 @@ const DEFAULT_SERVICE_CATALOG = [
   },
   {
     id: 'svc_judicial_supreme_court',
-    name: 'Superme Court Paralegal Service',
+    name: 'Supreme Court Paralegal Service',
     type: ServiceType.JUDICIAL,
     category: 'Judicial',
     courtLevel: 'Supreme Court',
@@ -375,7 +375,7 @@ const DEFAULT_SERVICE_CATALOG = [
   },
   {
     id: 'svc_non_judicial_registry_deed',
-    name: 'Regitry/Deed Paralegal Service',
+    name: 'Registry/Deed Paralegal Service',
     type: ServiceType.NON_JUDICIAL,
     category: 'Non Judicial',
     courtLevel: null,

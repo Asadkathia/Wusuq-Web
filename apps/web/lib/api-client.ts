@@ -165,4 +165,30 @@ export const apiClient = {
   delete<T>(endpoint: string, options?: RequestOptions) {
     return this.fetch<T>(endpoint, { ...options, method: 'DELETE' });
   },
+
+  // Authenticated GET that returns the raw Blob (e.g. CSV / file download).
+  // Mirrors the 401 → refresh → retry flow of `fetch()` so a click after
+  // access-token expiry still succeeds when the refresh token is valid.
+  async getBlob(endpoint: string, retryOnAuthFailure = true): Promise<Blob> {
+    const headers = new Headers();
+    if (typeof window !== 'undefined') {
+      const token = localStorage.getItem('wusuq_access_token');
+      if (token) headers.set('Authorization', `Bearer ${token}`);
+    }
+    const url = `${API_BASE_URL}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
+    const response = await fetch(url, { method: 'GET', headers });
+    if (!response.ok) {
+      if (response.status === 401 && retryOnAuthFailure) {
+        const nextAccessToken = await refreshAccessToken();
+        if (nextAccessToken) {
+          return this.getBlob(endpoint, false);
+        }
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('auth:unauthorized'));
+        }
+      }
+      throw new ApiError(response.status, response.statusText, null);
+    }
+    return response.blob();
+  },
 };

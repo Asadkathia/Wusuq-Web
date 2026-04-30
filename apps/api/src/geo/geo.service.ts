@@ -3,57 +3,13 @@ import { PrismaService } from '../prisma/prisma.service';
 import { PAKISTAN_GEO, RAW_POLICE_STATIONS_BY_PROVINCE } from './pakistan-seed';
 import courtsJson from './pakistan-courts.json';
 import { LOWER_COURT_SUBCOURTS, SPECIAL_COURT_SUBCOURTS } from './court-expansion';
+import { CITY_ALIAS, PROVINCE_ALIAS } from './court-alias';
 
 type CourtCityEntry = { city: string; is_principal_seat: boolean };
 type CourtsByProvince = Record<string, CourtCityEntry[]>;
 type CourtsNested = Record<string, Record<string, CourtsByProvince>>;
 
 const COURTS_NESTED = (courtsJson as { nested: CourtsNested }).nested;
-
-// The courts JSON uses short province labels; map them to the canonical names
-// used by the pakistan-seed geo tree so we can disambiguate cities that exist
-// in multiple provinces (e.g. "Hyderabad").
-// JSON city names that don't match the pakistan-seed geo tree verbatim.
-const CITY_ALIAS: Record<string, string> = {
-  Karachi: 'Karachi',
-  'Karachi Centeral': 'Karachi',
-  'Karachi South': 'Karachi',
-  'Karachi East': 'Karachi',
-  'Karachi West': 'Karachi',
-  'Lahore Cantt': 'Lahore',
-  'Lahore Model Town': 'Lahore',
-  'Shaheed Benazir Abad': 'Shaheed Benazirabad',
-  'Tando Muhammad Khan': 'Tando Mohammad Khan',
-  'Qambar-Shahdadkot': 'Kambar',
-  Swat: 'Mingora',
-  'Babuzai (Swat)': 'Mingora',
-  Buner: 'Daggar',
-  Malakand: 'Batkhela',
-  'Lower Dir': 'Timergara',
-  'Upper Dir': 'Dir',
-  'Daulatpur (Qazi Ahmed)': 'Daulatpur',
-  'garhi dopatta (Garhi Dopatta)': 'Garhi Dupatta',
-  Tharparkar: 'Mithi',
-  Lasbela: 'Uthal',
-  Jafarabad: 'Dera Allah Yar',
-  Kachi: 'Dhadar',
-  Kech: 'Turbat',
-  Diamir: 'Chilas',
-  Ghanche: 'Khaplu',
-  Ghizer: 'Gahkuch',
-  Hunza: 'Karimabad',
-  Khushab: 'Jauharabad',
-};
-
-const PROVINCE_ALIAS: Record<string, string> = {
-  AJK: 'Azad Jammu & Kashmir',
-  Balochistan: 'Balochistan',
-  Federal: 'Islamabad Capital Territory',
-  'Gilgit-Baltistan': 'Gilgit-Baltistan',
-  KPK: 'Khyber Pakhtunkhwa',
-  Punjab: 'Punjab',
-  Sindh: 'Sindh',
-};
 
 @Injectable()
 export class GeoService {
@@ -80,11 +36,26 @@ export class GeoService {
     });
   }
 
-  allCities() {
-    return this.prisma.geoCity.findMany({
+  async allCities() {
+    const rows = await this.prisma.geoCity.findMany({
       orderBy: { name: 'asc' },
-      select: { id: true, name: true },
+      select: {
+        id: true,
+        name: true,
+        district: {
+          select: {
+            name: true,
+            province: { select: { name: true } },
+          },
+        },
+      },
     });
+    return rows.map((c) => ({
+      id: c.id,
+      name: c.name,
+      district: c.district.name,
+      province: c.district.province.name,
+    }));
   }
 
   /**

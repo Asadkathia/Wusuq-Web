@@ -1,8 +1,8 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import {
   InvoiceStatus,
+  Prisma,
   TicketPaymentStatus,
-  type Prisma,
 } from '@prisma/client';
 import PDFDocument from 'pdfkit';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
@@ -120,57 +120,61 @@ export class FinanceService {
     dto: ReconcilePaymentDto,
     actor?: { actorUserId?: string; actorEmail?: string },
   ) {
-    const ticket = await this.prisma.ticket.findUnique({
-      where: { id: ticketId },
-      include: { invoice: true },
-    });
+    const { updatedTicket, dueAfter, paymentStatus } =
+      await this.prisma.$transaction(async (tx) => {
+        // Acquire row-level lock to serialize concurrent reconciliations.
+        await tx.$queryRaw`SELECT id FROM "Ticket" WHERE id = ${ticketId} FOR UPDATE`;
 
-    if (!ticket) {
-      throw new NotFoundException('Ticket not found');
-    }
+        const ticket = await tx.ticket.findUnique({
+          where: { id: ticketId },
+          include: { invoice: true },
+        });
 
-    const total = toNumber(ticket.totalAmount);
-    const paidBefore = toNumber(ticket.amountPaid);
-    const remainingBefore = Math.max(total - paidBefore, 0);
-    if (dto.amount > remainingBefore) {
-      throw new BadRequestException(
-        `Payment exceeds remaining balance (${remainingBefore}).`,
-      );
-    }
-    const paidAfter = paidBefore + dto.amount;
-    const dueAfter = Math.max(total - paidAfter, 0);
+        if (!ticket) {
+          throw new NotFoundException('Ticket not found');
+        }
 
-    const paymentStatus: TicketPaymentStatus =
-      dueAfter <= 0
-        ? TicketPaymentStatus.PAID
-        : TicketPaymentStatus.PARTIALLY_PAID;
+        const total = toNumber(ticket.totalAmount);
+        const paidBefore = toNumber(ticket.amountPaid);
+        const remainingBefore = Math.max(total - paidBefore, 0);
+        if (dto.amount > remainingBefore) {
+          throw new BadRequestException(
+            `Payment exceeds remaining balance (${remainingBefore}).`,
+          );
+        }
+        const paidAfter = paidBefore + dto.amount;
+        const dueAfter = Math.max(total - paidAfter, 0);
 
-    const updatedTicket = await this.prisma.$transaction(async (tx) => {
-      const nextTicket = await tx.ticket.update({
-        where: { id: ticketId },
-        data: {
-          amountPaid: paidAfter,
-          paymentStatus,
-        },
+        const paymentStatus: TicketPaymentStatus =
+          dueAfter <= 0
+            ? TicketPaymentStatus.PAID
+            : TicketPaymentStatus.PARTIALLY_PAID;
+
+        const nextTicket = await tx.ticket.update({
+          where: { id: ticketId },
+          data: {
+            amountPaid: paidAfter,
+            paymentStatus,
+          },
+        });
+
+        await tx.walletTransaction.create({
+          data: {
+            userId: ticket.consumerId,
+            ticketId,
+            amount: dto.amount,
+            paymentMode: dto.paymentMode,
+            currency: dto.currency ?? 'PKR',
+            status: 'VERIFIED',
+            verifiedAt: new Date(),
+            reviewedByUserId: actor?.actorUserId,
+            note: dto.note,
+          },
+        });
+
+        await this.upsertInvoice(ticketId, total, paidAfter, tx);
+        return { updatedTicket: nextTicket, dueAfter, paymentStatus };
       });
-
-      await tx.walletTransaction.create({
-        data: {
-          userId: ticket.consumerId,
-          ticketId,
-          amount: dto.amount,
-          paymentMode: dto.paymentMode,
-          currency: dto.currency ?? 'PKR',
-          status: 'VERIFIED',
-          verifiedAt: new Date(),
-          reviewedByUserId: actor?.actorUserId,
-          note: dto.note,
-        },
-      });
-
-      await this.upsertInvoice(ticketId, total, paidAfter, tx);
-      return nextTicket;
-    });
 
     await this.auditLogsService.create({
       action: 'FINANCE_PAYMENT_RECONCILED',

@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { UserRole, type Prisma } from '@prisma/client';
@@ -135,6 +136,8 @@ const STATUS_TRANSITIONS: Record<TicketStatus, TicketStatus[]> = {
 
 @Injectable()
 export class TicketsService {
+  private readonly logger = new Logger(TicketsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService,
@@ -349,30 +352,9 @@ export class TicketsService {
       throw new NotFoundException('Service not found');
     }
 
-    const ticket = await this.prisma.ticket.create({
-      data: {
-        batchNo: this.generateBatchNo(),
-        consumerId: dto.consumerId,
-        serviceId: dto.serviceId,
-        status: 'PENDING',
-        serviceCity: inferredServiceCity,
-        caseType: inferredCaseType,
-        serviceCost: 0,
-        totalAmount: 0,
-        intakeFlow: dto.flow,
-        formPayload: dto.payload as Prisma.InputJsonValue | undefined,
-      },
-    });
-
-    await this.prisma.ticketStatusHistory.create({
-      data: {
-        ticketId: ticket.id,
-        to: 'PENDING',
-        note: 'Ticket created via intake flow',
-      },
-    });
-
-    // Resolve pricing and update ticket charges
+    // Resolve pricing BEFORE creating the ticket so a misconfigured flow
+    // fails fast instead of orphaning a zero-priced row that wallet
+    // auto-deduction would silently skip.
     const payload = (dto.payload ?? {}) as Record<string, string | undefined>;
     const courtLevel = payload['select_court_type'];
     const caseStatus = payload['case_status'];
@@ -404,15 +386,46 @@ export class TicketsService {
       city,
     });
 
-    if (pricing.matched) {
-      await this.prisma.ticket.update({
-        where: { id: ticket.id },
-        data: {
-          serviceCost: pricing.serviceCost,
-          deliveryCharges: pricing.deliveryCharge,
-          totalAmount: pricing.total,
-        },
-      });
+    if (!pricing.matched && pricing.rulesExistForFlow) {
+      // Active rules exist for this flow but none matched the supplied
+      // criteria. This is a misconfiguration / payload mismatch — refuse
+      // to create a zero-priced ticket that would slip past wallet
+      // auto-settlement.
+      throw new BadRequestException(
+        `No pricing rule matched the supplied criteria for flow "${dto.flow}". ` +
+          `Check court level, region, year and set type, or update pricing rules.`,
+      );
+    }
+
+    const ticket = await this.prisma.ticket.create({
+      data: {
+        batchNo: this.generateBatchNo(),
+        consumerId: dto.consumerId,
+        serviceId: dto.serviceId,
+        status: 'PENDING',
+        serviceCity: inferredServiceCity,
+        caseType: inferredCaseType,
+        serviceCost: pricing.matched ? pricing.serviceCost : 0,
+        deliveryCharges: pricing.matched ? pricing.deliveryCharge : 0,
+        totalAmount: pricing.matched ? pricing.total : 0,
+        intakeFlow: dto.flow,
+        formPayload: dto.payload as Prisma.InputJsonValue | undefined,
+      },
+    });
+
+    await this.prisma.ticketStatusHistory.create({
+      data: {
+        ticketId: ticket.id,
+        to: 'PENDING',
+        note: 'Ticket created via intake flow',
+      },
+    });
+
+    if (!pricing.matched) {
+      // Free flow (no rules configured). Surface for ops awareness.
+      this.logger.warn(
+        `Ticket ${ticket.id} created free-of-charge: flow "${dto.flow}" has no active pricing rules.`,
+      );
     }
 
     await this.auditLogsService.create({
@@ -700,11 +713,21 @@ export class TicketsService {
     dto: BulkTicketActionDto,
     actor?: { actorUserId?: string; actorEmail?: string },
   ) {
+    const succeeded: string[] = [];
+    const failed: { ticketId: string; error: string }[] = [];
+
     if (dto.action === 'complete') {
-      await this.prisma.ticket.updateMany({
-        where: { id: { in: dto.ticketIds }, status: 'IN_PROGRESS' },
-        data: { status: 'COMPLETED' },
-      });
+      for (const ticketId of dto.ticketIds) {
+        try {
+          await this.updateStatus(ticketId, 'COMPLETED', 'Bulk completion', actor);
+          succeeded.push(ticketId);
+        } catch (err) {
+          failed.push({
+            ticketId,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
     }
 
     if (dto.action === 'delete') {
@@ -720,10 +743,16 @@ export class TicketsService {
       metadata: {
         action: dto.action,
         ticketIds: dto.ticketIds,
+        ...(dto.action === 'complete' ? { succeeded, failed } : {}),
       },
     });
 
-    return { accepted: true, action: dto.action, ticketIds: dto.ticketIds };
+    return {
+      accepted: true,
+      action: dto.action,
+      ticketIds: dto.ticketIds,
+      ...(dto.action === 'complete' ? { succeeded, failed } : {}),
+    };
   }
 
   async uploadDocument(
@@ -819,7 +848,7 @@ export class TicketsService {
         clerkCost: original.clerkCost,
         totalAmount: original.totalAmount,
         amountPaid: original.amountPaid,
-        paymentStatus: 'UNPAID',
+        paymentStatus: original.paymentStatus,
       },
     });
 

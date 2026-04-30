@@ -46,7 +46,7 @@ export function ShellTopbar({ variant, walletHref, profileHref = '/profile', onS
 
     if (variant === 'consumer') {
       apiClient
-        .get<{ balance?: number }>('/wallet')
+        .get<{ balance?: number }>('/wallet/me')
         .then((r) => setWalletBalance(Number(r.balance ?? 0)))
         .catch(() => {});
     }

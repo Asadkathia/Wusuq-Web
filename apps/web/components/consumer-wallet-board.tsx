@@ -74,7 +74,7 @@ export function ConsumerWalletBoard() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const r = await apiClient.get<MyWallet>('/wallet');
+      const r = await apiClient.get<MyWallet>('/wallet/me');
       setData(r);
     } catch (err: any) {
       toast.error('Unable to load wallet', err?.message);
@@ -234,9 +234,11 @@ function TopupDialog({
       if (receiptFile) {
         const form = new FormData();
         form.append('file', receiptFile);
-        const upload = await apiClient.post<{ url: string }>('/upload', form);
+        const upload = await apiClient.post<{ url: string }>('/wallet/receipt', form);
         receiptUrl = upload.url;
       }
+      // Consumer top-up: backend derives target user from JWT — do NOT
+      // send a userId here.
       await apiClient.post('/wallet/topup', {
         amount: amountNum,
         paymentMode,

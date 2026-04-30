@@ -2338,6 +2338,12 @@
             "city": "Warah",
             "is_principal_seat": false
           }
+        ],
+        "Federal": [
+          {
+            "city": "Islamabad",
+            "is_principal_seat": false
+          }
         ]
       }
     },
@@ -2948,6 +2954,12 @@
           },
           {
             "city": "Umerkot",
+            "is_principal_seat": false
+          }
+        ],
+        "Federal": [
+          {
+            "city": "Islamabad",
             "is_principal_seat": false
           }
         ]

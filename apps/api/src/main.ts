@@ -5,10 +5,13 @@ import { mkdirSync } from 'node:fs';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { loadRuntimeConfig } from './config/runtime-config';
+import { UPLOADS_BUCKETS, getUploadsBucketDir } from './config/uploads';
 
 async function bootstrap() {
   const runtime = loadRuntimeConfig();
-  mkdirSync('./uploads/ticket-documents', { recursive: true });
+  for (const bucket of Object.values(UPLOADS_BUCKETS)) {
+    mkdirSync(getUploadsBucketDir(bucket), { recursive: true });
+  }
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   app.useBodyParser('json', { limit: '10mb' });
   app.useBodyParser('urlencoded', { extended: true, limit: '10mb' });

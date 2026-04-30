@@ -3,16 +3,26 @@ services:
     name: wusuq-api
     runtime: node
     rootDir: .
-    plan: free
+    # Persistent disks require a paid plan on Render. Bump from `free` to
+    # `starter` so wallet receipts / ticket documents / clerk receipts
+    # survive deploys and instance replacement. If the project must stay
+    # on free, switch UPLOADS_DIR to object storage (S3/R2) instead.
+    plan: starter
     autoDeploy: true
-    buildCommand: pnpm install --frozen-lockfile && pnpm --filter @wusuq/api build
+    buildCommand: pnpm install --frozen-lockfile && pnpm --filter @wusuq/api build && pnpm --filter @wusuq/api prisma:migrate:deploy
     startCommand: pnpm --filter @wusuq/api start:prod
     healthCheckPath: /api/health
+    disk:
+      name: wusuq-uploads
+      mountPath: /var/data/uploads
+      sizeGB: 5
     envVars:
       - key: NODE_VERSION
         value: 22
       - key: PORT
         value: 4000
+      - key: UPLOADS_DIR
+        value: /var/data/uploads
       - key: DATABASE_URL
         sync: false
       - key: JWT_ACCESS_SECRET

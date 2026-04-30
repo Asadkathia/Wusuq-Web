@@ -15,6 +15,7 @@ import { Throttle } from '@nestjs/throttler';
 import { diskStorage } from 'multer';
 import { extname } from 'node:path';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { UPLOADS_BUCKETS, getUploadsBucketDir } from '../config/uploads';
 import type { JwtUser } from '../auth/types/jwt-user.type';
 import { RequirePermissions } from '../roles-permissions/decorators/permissions.decorator';
 import { AssignTicketDto } from './dto/assign-ticket.dto';
@@ -307,7 +308,7 @@ export class TicketsController {
   @UseInterceptors(
     FileInterceptor('file', {
       storage: diskStorage({
-        destination: './uploads/ticket-documents',
+        destination: (_req, _file, cb) => cb(null, getUploadsBucketDir(UPLOADS_BUCKETS.ticketDocuments)),
         filename: (_req, file, callback) => {
           const sanitized = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
           const ext = extname(sanitized);
@@ -370,7 +371,7 @@ export class TicketsController {
   @UseInterceptors(
     FileInterceptor('file', {
       storage: diskStorage({
-        destination: './uploads/clerk-receipts',
+        destination: (_req, _file, cb) => cb(null, getUploadsBucketDir(UPLOADS_BUCKETS.clerkReceipts)),
         filename: (_req, file, callback) => {
           const sanitized = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
           const ext = extname(sanitized);

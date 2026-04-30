@@ -91,6 +91,10 @@ export class PricingService {
 
   async resolve(dto: ResolvePricingDto): Promise<{
     matched: boolean;
+    // `true` when active rules exist for this flow but none matched the
+    // supplied criteria — i.e. a misconfiguration, not a free flow. Callers
+    // should fail intake when this is set.
+    rulesExistForFlow: boolean;
     ruleId?: string;
     basePrice: number;
     attestedCharge: number;
@@ -125,8 +129,9 @@ export class PricingService {
       settings.pricingMode === 'legacy' ? r.isLegacy === true : r.isLegacy === false,
     );
 
-    const candidates = modeRules.filter((r) => {
-      if (r.flow !== dto.flow) return false;
+    const flowRules = modeRules.filter((r) => r.flow === dto.flow);
+
+    const candidates = flowRules.filter((r) => {
       if (r.courtLevel && r.courtLevel !== effectiveCourtLevel) return false;
       if (r.caseStatus && r.caseStatus !== dto.caseStatus) return false;
       if (r.region && r.region !== region) return false;
@@ -137,7 +142,16 @@ export class PricingService {
     });
 
     if (!candidates.length) {
-      return { matched: false, basePrice: 0, attestedCharge: 0, nonAttestedCharge: 0, deliveryCharge: 0, serviceCost: 0, total: 0 };
+      return {
+        matched: false,
+        rulesExistForFlow: flowRules.length > 0,
+        basePrice: 0,
+        attestedCharge: 0,
+        nonAttestedCharge: 0,
+        deliveryCharge: 0,
+        serviceCost: 0,
+        total: 0,
+      };
     }
 
     const best = candidates.reduce((a, b) => (a.priority >= b.priority ? a : b));
@@ -152,6 +166,16 @@ export class PricingService {
     const serviceCost = basePrice + attestedCharge + nonAttestedCharge;
     const total = serviceCost + deliveryCharge;
 
-    return { matched: true, ruleId: best.id, basePrice, attestedCharge, nonAttestedCharge, deliveryCharge, serviceCost, total };
+    return {
+      matched: true,
+      rulesExistForFlow: true,
+      ruleId: best.id,
+      basePrice,
+      attestedCharge,
+      nonAttestedCharge,
+      deliveryCharge,
+      serviceCost,
+      total,
+    };
   }
 }

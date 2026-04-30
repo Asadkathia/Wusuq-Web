@@ -74,17 +74,29 @@ const SERVICE_CASE_TYPES: Record<string, string[]> = {
   ],
 };
 
-// Judge designations are now keyed by court *type* (from pakistan-courts.json).
+// Judge designations — first looked up by sub-court / service name (e.g.
+// "Sessions Court"), then by court type (e.g. "Lower Court").
+const JUDGE_DESIGNATIONS_BY_SERVICE: Record<string, string[]> = {
+  'Sessions Court': ['Additional Session Judge', 'District and Session Judge'],
+  'Civil Court': ['Civil Judge I', 'Civil Judge II', 'Civil Judge III', 'Civil Judge Rent Controller'],
+  'Magisterial Court': ['Civil Judge 1 / Judicial Magistrate Section 30', 'Judicial Magistrate'],
+  'Family Court': ['Family Judge', 'Guardian Judge'],
+  'Guardian Court': ['Family Judge', 'Guardian Judge'],
+  'Federal Constitutional Court': ['Chief Justice Bench', 'Divisional Bench'],
+};
+
 const JUDGE_DESIGNATIONS_BY_TYPE: Record<string, string[]> = {
-  'Supreme Court': ['Chief Justice of Pakistan', 'Justice', 'Additional Judge'],
-  'High Court': ['Chief Justice', 'Justice', 'Additional Judge'],
-  'Federal Shariat Court': ['Judge Federal Shariat Court', 'Additional Judge Federal Shariat Court'],
+  'Supreme Court': ['Chief Justice Bench', 'Divisional Bench'],
+  'High Court': ['Chief Justice', 'Divisional Bench', 'Justice'],
+  'Federal Shariat Court': ['Chief Justice', 'Justice'],
+  'Federal Constitutional Court': ['Chief Justice Bench', 'Divisional Bench'],
   'Lower Court': [
-    'Sessions Judge', 'Additional Sessions Judge', 'Civil Judge', 'Senior Civil Judge',
-    'Additional Civil Judge', 'Judicial Magistrate', 'Executive Magistrate',
-    'Family Judge', 'Additional Family Judge',
+    'Additional Session Judge', 'District and Session Judge',
+    'Civil Judge I', 'Civil Judge II', 'Civil Judge III', 'Civil Judge Rent Controller',
+    'Civil Judge 1 / Judicial Magistrate Section 30', 'Judicial Magistrate',
+    'Family Judge', 'Guardian Judge',
   ],
-  'Special Court': ['Judge', 'Additional Judge', 'Presiding Officer', 'Chairman'],
+  'Special Court': ['Judge Special Court'],
 };
 
 const DEFAULT_JUDGE_DESIGNATIONS = [
@@ -173,7 +185,7 @@ function useGeo() {
   const [provinces, setProvinces] = useState<{ id: string; name: string }[]>([]);
   const [districts, setDistricts] = useState<{ id: string; name: string }[]>([]);
   const [cities, setCities] = useState<{ id: string; name: string }[]>([]);
-  const [allCities, setAllCities] = useState<{ id: string; name: string }[]>([]);
+  const [allCities, setAllCities] = useState<{ id: string; name: string; province?: string; district?: string }[]>([]);
   const [policeStations, setPoliceStations] = useState<{ id: string; name: string }[]>([]);
 
   useEffect(() => {
@@ -213,8 +225,9 @@ const GEO_HANDLED_KEYS = new Set([
 
 // Case date fields are rendered by CaseDateBlock on the Case Details step for
 // flows that include case_status. They are skipped by the default field loop.
+// `case_status` itself is also handled there so it renders ABOVE the date block.
 const DATE_HANDLED_KEYS = new Set([
-  'case_date_status', 'case_date', 'future_date', 'decided_date',
+  'case_status', 'case_date_status', 'case_date', 'future_date', 'decided_date',
 ]);
 
 const CONSUMER_ROLES = ['consumer', 'lawyer', 'company'] as const;
@@ -383,9 +396,15 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
   const selectedCourtList = selectedCourtGroup?.courts ?? [];
 
   const judgeDesignationOptions: string[] = useMemo(() => {
-    if (!selectedCourtType) return DEFAULT_JUDGE_DESIGNATIONS;
-    return JUDGE_DESIGNATIONS_BY_TYPE[selectedCourtType] ?? DEFAULT_JUDGE_DESIGNATIONS;
-  }, [selectedCourtType]);
+    const subCourt = draft.payload.select_court ?? '';
+    if (subCourt && JUDGE_DESIGNATIONS_BY_SERVICE[subCourt]) {
+      return JUDGE_DESIGNATIONS_BY_SERVICE[subCourt];
+    }
+    if (selectedCourtType && JUDGE_DESIGNATIONS_BY_TYPE[selectedCourtType]) {
+      return JUDGE_DESIGNATIONS_BY_TYPE[selectedCourtType];
+    }
+    return DEFAULT_JUDGE_DESIGNATIONS;
+  }, [draft.payload.select_court, selectedCourtType]);
 
   // When the chosen service + city yields exactly one sub-court for the tier
   // (e.g. Supreme Court → "Supreme Court of Pakistan"), auto-select it so the
@@ -771,6 +790,9 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
     const items: CheckoutItem[] = [];
     const pr = pricingResult;
 
+    if (selectedFlow?.label) {
+      items.push({ label: 'Intake type', detail: selectedFlow.label, amount: null });
+    }
     if (p.select_service) {
       items.push({ label: 'Court', detail: p.select_service, amount: null });
     }
@@ -809,7 +831,7 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
       total: pr?.matched ? pr.total : null,
       currency: 'PKR',
     };
-  }, [draft.payload, pricingResult]);
+  }, [draft.payload, pricingResult, selectedFlow]);
 
   const submitTicket = async () => {
     if (!selectedFlow || !validateCurrentStep()) return;
@@ -1026,6 +1048,35 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
               onCityTypeChange={(value) => setPayloadField('city_type', value)}
             />
           )}
+
+          {stepHasCaseDate && (() => {
+            const caseStatusField = activeStep?.fields.find((f) => f.key === 'case_status');
+            if (!caseStatusField) return null;
+            const errorMsg = touched['case_status'] ? (errors['case_status'] ?? '') : '';
+            const rendered = renderField(
+              caseStatusField,
+              draft.payload.case_status ?? '',
+              draft.payload,
+              setPayloadField,
+              undefined,
+              handleFieldBlur,
+              errorMsg,
+            );
+            return (
+              <div className={`space-y-1 ${colSpan(caseStatusField)}`}>
+                <div>
+                  <label className="text-sm font-medium text-slate-700">
+                    {caseStatusField.label}
+                    {caseStatusField.required ? <span className="text-rose-500 ml-0.5">*</span> : null}
+                  </label>
+                  {isConsumerVariant && caseStatusField.hint ? (
+                    <p className="mt-1 text-xs text-slate-500">{caseStatusField.hint}</p>
+                  ) : null}
+                </div>
+                {rendered}
+              </div>
+            );
+          })()}
 
           {stepHasCaseDate && (
             <CaseDateBlock
