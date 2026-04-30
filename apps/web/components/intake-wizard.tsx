@@ -64,7 +64,10 @@ const SERVICE_CASE_TYPES: Record<string, string[]> = {
     'Criminal Original Case', 'Civil Miscellaneous Appeals', 'Miscellaneous Petitions',
     'Enforcement Petition', 'Complaint', 'Pre-Arrest Bail Petition', 'Post-Arrest Bail Petition',
   ],
-  svc_judicial_federal_shariat: [],
+  svc_judicial_federal_shariat: [
+    'C.Sh.A.', 'C.Sh.P.', 'C.Sh.R.P.', 'Crl.Sh.A.', 'Crl.Sh.P.', 'Crl.Sh.R.P.',
+    'Crl.S.M.Sh.R.P.', 'J.Sh.P.', 'Sh.M.A.', 'Reference.',
+  ],
   svc_judicial_supreme_court: [
     'C.A.', 'C.M.A.', 'C.M.Appeal.', 'C.P.', 'C.R.P.', 'C.Sh.A.', 'C.Sh.P.',
     'C.Sh.R.P.', 'Const.P.', 'Crl.A.', 'Crl.M.A.', 'Crl.M.Appeal.', 'Crl.O.P.',

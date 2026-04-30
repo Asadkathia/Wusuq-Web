@@ -268,13 +268,21 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
       const query = ticket.serviceCity ? `?city=${encodeURIComponent(ticket.serviceCity)}` : '';
       const reps = await apiClient.get<Representative[]>(`/tickets/representatives${query}`);
       setRepresentatives(reps);
-    } catch {
+      if (!reps.length) {
+        setAssignWarning('No active representatives found. Add a representative user first.');
+      }
+    } catch (error: any) {
       setRepresentatives([]);
+      setAssignWarning(error?.message || 'Failed to load representatives.');
     }
   };
 
   const submitAssign = async () => {
-    if (!assignTicket || !representativeId) return setMessage('Select representative');
+    if (!assignTicket) return;
+    if (!representativeId) {
+      setAssignWarning('Select a representative before confirming.');
+      return;
+    }
     try {
       setAssignWarning('');
       await apiClient.post(`/tickets/${assignTicket.id}/assign`, {
@@ -286,10 +294,9 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
       setMessage('Ticket assigned');
       loadTickets();
     } catch (error: any) {
-      if (String(error.message || '').includes('Representative does not serve this city')) {
-        setAssignWarning(error.message);
-      }
-      setMessage(error.message || 'Assignment failed');
+      const msg = error?.message || 'Assignment failed';
+      setAssignWarning(msg);
+      setMessage(msg);
     }
   };
 
@@ -624,7 +631,7 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
                       </>
                     ) : (
                       <>
-                        {status !== 'COMPLETED' && status !== 'WAITING_APPROVAL' && (
+                        {status === 'PENDING' && (
                           <button onClick={() => openAssign(ticket)} className="text-primary-600 hover:text-primary-900 bg-primary-50 px-3 py-1.5 rounded-md flex items-center gap-1">
                             <CheckSquare className="h-3.5 w-3.5" /> Assign
                           </button>
@@ -688,9 +695,16 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
         </table>
       </DataTableShell>
 
-      {/* Assignment Modal (Inline for now) */}
+      {/* Assignment Modal */}
       {assignTicket && (
-        <PanelCard className="mt-6">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4"
+          onClick={() => setAssignTicket(null)}
+        >
+        <PanelCard
+          className="w-full max-w-2xl max-h-[90vh] overflow-y-auto"
+          onClick={(e: React.MouseEvent) => e.stopPropagation()}
+        >
           <SectionHeader title={`Assign Ticket ${assignTicket.batchNo}`} description="Select a representative to forward this ticket to." />
           <div className="mt-6 grid gap-6 md:grid-cols-2">
             <label className="block">
@@ -737,7 +751,8 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
           <div className="mt-6 flex gap-3">
             <button
               onClick={submitAssign}
-              className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-primary-500 transition-colors"
+              disabled={!representativeId}
+              className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-primary-500 transition-colors disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-primary-600"
             >
               Confirm Assignment
             </button>
@@ -749,6 +764,7 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
             </button>
           </div>
         </PanelCard>
+        </div>
       )}
 
       {rejectTicket && (
