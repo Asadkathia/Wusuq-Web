@@ -180,7 +180,30 @@ final step: review screen → POST to flow.endpoint → success page → router.
 
 This is a straight cut-over, not a parallel rollout. The old wizard is deleted in the same PR. The intake URL changes from a portal path to `/intake/[service]`; any existing in-product links are updated. Saved drafts (if any exist server-side) are not migrated — the current wizard does not persist drafts.
 
-## 13. Open questions for plan-time
+## 13. Pricing estimate wiring
 
-- Final pricing-rules signature: does the existing engine accept partial answers, or do we need a new endpoint that accepts a partial intake payload? (To be confirmed when writing the plan.)
+The existing `POST /api/pricing-rules/resolve` endpoint already accepts partial input — only `flow` is required, every other field is optional, and the resolver returns a real `total` (₨ 0 when no rule matches yet). No backend work is required.
+
+`use-price-estimate` calls `resolve` after every answered step, debounced ~250ms, with whatever subset of fields the user has provided so far. Mapping from `IntakeField` keys to DTO keys:
+
+| Wizard answer key | DTO field |
+|---|---|
+| `service` (flow key) | `flow` |
+| `court_level` | `courtLevel` |
+| `case_status` | `caseStatus` |
+| `year_filed` (or equivalent) | `caseYear` |
+| `set_type` | `setType` |
+| `attested_qty` (and `both_attested_qty`) | `attestedQty` |
+| `non_attested_qty` (and `both_non_attested_qty`) | `nonAttestedQty` |
+| `province` | `province` |
+| `city` | `city` |
+
+Rail behavior driven by the response:
+
+- `matched: true` → show `total` formatted as ₨.
+- `matched: false && rulesExistForFlow: true` → show "Estimate updates as you add details" in muted text (current answers don't yet match any rule).
+- `matched: false && rulesExistForFlow: false` → show "Pricing not configured" warning (this is a misconfiguration; the wizard's final submit will fail and the user should be told upfront).
+
+## 14. Open questions for plan-time
+
 - Mobile bottom-sheet implementation: use an existing component (Headless UI dialog, Radix sheet, etc.) already in the project, or build a minimal one? Resolve at plan time after surveying current dependencies.
