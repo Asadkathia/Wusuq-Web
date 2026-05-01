@@ -14,3 +14,5 @@ apps/api/uploads/
 .envrc
 .claude/scheduled_tasks.lock
 graphify-out/
+
+.superpowers/
