@@ -1,6 +1,14 @@
-import { IntakeWizard } from '@/components/intake-wizard';
+import { ServicePicker } from '@/components/service-picker';
 import { nonJudicialFlows } from '@/lib/intake-flows';
 
 export default function ConsumerNonJudicialServicesPage() {
-  return <IntakeWizard title="Paralegal Services / Non-Judicial" flows={nonJudicialFlows} variant="consumer" />;
+  return (
+    <ServicePicker
+      flows={nonJudicialFlows}
+      variant="consumer"
+      basePath="/consumer/paralegal-services/non-judicial"
+      title="Non-Judicial Services"
+      subtitle="Choose the document or registry service you need."
+    />
+  );
 }

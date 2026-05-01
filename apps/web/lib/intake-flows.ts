@@ -26,11 +26,24 @@ export type IntakeStep = {
   fields: IntakeField[];
 };
 
+import type { LucideIcon } from 'lucide-react';
+import {
+  FolderOpen,
+  FileText,
+  Search,
+  Gavel,
+  ScrollText,
+  FileSearch,
+  Stamp,
+} from 'lucide-react';
+
 export type IntakeFlow = {
   key: string;
   label: string;
   endpoint: string;
   steps: IntakeStep[];
+  description?: string;
+  icon?: LucideIcon;
 };
 
 // ─────────────────────────────────────────────
@@ -579,30 +592,40 @@ export const judicialFlows: IntakeFlow[] = [
     label: 'Case Files',
     endpoint: '/tickets/intake/judicial/case-files',
     steps: caseFilesSteps,
+    description: 'Order certified or non-attested copies of complete case files and order sheets.',
+    icon: FolderOpen,
   },
   {
     key: 'judicial_case_information',
     label: 'Case Information',
     endpoint: '/tickets/intake/judicial/case-information',
     steps: caseInformationSteps,
+    description: 'Retrieve paperbook, petition, and order details for an existing case.',
+    icon: FileText,
   },
   {
     key: 'judicial_case_search',
     label: 'Case Search',
     endpoint: '/tickets/intake/judicial/case-search',
     steps: caseSearchSteps,
+    description: 'Locate a case by party name or particulars when the case number is unknown.',
+    icon: Search,
   },
   {
     key: 'judicial_case_filing',
     label: 'Case Filling',
     endpoint: '/tickets/intake/judicial/case-filing',
     steps: caseFilingSteps,
+    description: 'File a new petition or matter at the selected court seat.',
+    icon: Gavel,
   },
   {
     key: 'judicial_power_of_attorney',
     label: 'Power of Attorney',
     endpoint: '/tickets/intake/judicial/power-of-attorney',
     steps: powerOfAttorneySteps,
+    description: 'Prepare and file a power of attorney for representation in court.',
+    icon: ScrollText,
   },
 ];
 
@@ -612,11 +635,50 @@ export const nonJudicialFlows: IntakeFlow[] = [
     label: 'Copy of FIR',
     endpoint: '/tickets/intake/non-judicial/copy-of-fir',
     steps: copyOfFirSteps,
+    description: 'Obtain a certified copy of a First Information Report from the relevant police station.',
+    icon: FileSearch,
   },
   {
     key: 'non_judicial_registry_deed',
     label: 'Registry/Deed',
     endpoint: '/tickets/intake/non-judicial/registry-deed',
     steps: registryDeedSteps,
+    description: 'Request registry, mutation, or deed copies from the land/registrar office.',
+    icon: Stamp,
   },
 ];
+
+const FLOW_KEY_TO_SLUG: Record<string, string> = {
+  judicial_case_files: 'case-files',
+  judicial_case_information: 'case-information',
+  judicial_case_search: 'case-search',
+  judicial_case_filing: 'case-filing',
+  judicial_power_of_attorney: 'power-of-attorney',
+  non_judicial_copy_of_fir: 'copy-of-fir',
+  non_judicial_registry_deed: 'registry-deed',
+};
+
+const SLUG_TO_FLOW_KEY: Record<'judicial' | 'non_judicial', Record<string, string>> = {
+  judicial: {
+    'case-files': 'judicial_case_files',
+    'case-information': 'judicial_case_information',
+    'case-search': 'judicial_case_search',
+    'case-filing': 'judicial_case_filing',
+    'power-of-attorney': 'judicial_power_of_attorney',
+  },
+  non_judicial: {
+    'copy-of-fir': 'non_judicial_copy_of_fir',
+    'registry-deed': 'non_judicial_registry_deed',
+  },
+};
+
+export function flowKeyToSlug(key: string): string {
+  return FLOW_KEY_TO_SLUG[key] ?? key;
+}
+
+export function slugToFlowKey(
+  slug: string,
+  category: 'judicial' | 'non_judicial',
+): string | null {
+  return SLUG_TO_FLOW_KEY[category][slug] ?? null;
+}

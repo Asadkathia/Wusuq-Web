@@ -1,6 +1,6 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { subDays, startOfDay, format } from 'date-fns';
+import { subDays, startOfDay, endOfDay, format } from 'date-fns';
 
 @Injectable()
 export class DashboardService {
@@ -136,6 +136,8 @@ export class DashboardService {
     }
 
     const startDate = startOfDay(subDays(new Date(), days - 1));
+    const prevStart = startOfDay(subDays(new Date(), days * 2 - 1));
+    const prevEnd = startDate;
 
     const totalTickets = await this.prisma.ticket.count();
     const completedTickets = await this.prisma.ticket.count({
@@ -153,6 +155,56 @@ export class DashboardService {
       completedTickets,
       totalRevenue,
       outstandingBalance: totalOutstanding > 0 ? totalOutstanding : 0,
+    };
+
+    // Period-over-period deltas (current window vs same-length prior window)
+    const [
+      currTicketsInRange,
+      prevTicketsInRange,
+      currCompletedInRange,
+      prevCompletedInRange,
+      currRevenueAgg,
+      prevRevenueAgg,
+    ] = await Promise.all([
+      this.prisma.ticket.count({ where: { createdAt: { gte: startDate } } }),
+      this.prisma.ticket.count({
+        where: { createdAt: { gte: prevStart, lt: prevEnd } },
+      }),
+      this.prisma.ticket.count({
+        where: { status: 'COMPLETED', updatedAt: { gte: startDate } },
+      }),
+      this.prisma.ticket.count({
+        where: {
+          status: 'COMPLETED',
+          updatedAt: { gte: prevStart, lt: prevEnd },
+        },
+      }),
+      this.prisma.walletTransaction.aggregate({
+        where: { verifiedAt: { gte: startDate }, status: 'VERIFIED' },
+        _sum: { amount: true },
+      }),
+      this.prisma.walletTransaction.aggregate({
+        where: {
+          verifiedAt: { gte: prevStart, lt: prevEnd },
+          status: 'VERIFIED',
+        },
+        _sum: { amount: true },
+      }),
+    ]);
+
+    const pct = (curr: number, prev: number): number | null => {
+      if (prev === 0) return curr === 0 ? 0 : null;
+      return Math.round(((curr - prev) / prev) * 1000) / 10;
+    };
+
+    const kpisDelta = {
+      totalTickets: pct(currTicketsInRange, prevTicketsInRange),
+      completedTickets: pct(currCompletedInRange, prevCompletedInRange),
+      totalRevenue: pct(
+        Number(currRevenueAgg._sum.amount || 0),
+        Number(prevRevenueAgg._sum.amount || 0),
+      ),
+      outstandingBalance: null as number | null,
     };
 
     const statusGroups = await this.prisma.ticket.groupBy({
@@ -188,6 +240,25 @@ export class DashboardService {
     });
 
     const ticketTrend = Array.from(ticketTrendMap.entries())
+      .reverse()
+      .map(([date, count]) => ({ date, count }));
+
+    // Per-day completed tickets for KPI sparkline
+    const completedInRange = await this.prisma.ticket.findMany({
+      where: { status: 'COMPLETED', updatedAt: { gte: startDate } },
+      select: { updatedAt: true },
+    });
+    const completedTrendMap = new Map<string, number>();
+    for (let i = 0; i < days; i++) {
+      completedTrendMap.set(format(subDays(new Date(), i), 'MMM dd'), 0);
+    }
+    completedInRange.forEach((t) => {
+      const day = format(t.updatedAt, 'MMM dd');
+      if (completedTrendMap.has(day)) {
+        completedTrendMap.set(day, completedTrendMap.get(day)! + 1);
+      }
+    });
+    const completedTrend = Array.from(completedTrendMap.entries())
       .reverse()
       .map(([date, count]) => ({ date, count }));
 
@@ -230,18 +301,116 @@ export class DashboardService {
       .reverse()
       .map(([date, amount]) => ({ date, amount }));
 
-    // Pending Actions
-    const pendingVerifications = await this.prisma.walletTransaction.count({
-      where: { status: 'PENDING_VERIFICATION' }
-    });
-    const pendingTickets = await this.prisma.ticket.count({
-      where: { status: 'PENDING' }
-    });
-    
-    const pendingActions = {
+    // Pending Actions — structured for the action center
+    const sevenDaysAgo = subDays(new Date(), 7);
+    const thirtyDaysAgo = subDays(new Date(), 30);
+
+    const [
       pendingVerifications,
-      pendingTickets,
-    };
+      oldestPendingVerification,
+      pendingTicketsCount,
+      oldestPendingTicket,
+      waitingApprovalCount,
+      oldestWaitingApproval,
+      clerkSubmittedCount,
+      stuckInProgressCount,
+      agedOutstandingAgg,
+    ] = await Promise.all([
+      this.prisma.walletTransaction.count({
+        where: { status: 'PENDING_VERIFICATION' },
+      }),
+      this.prisma.walletTransaction.findFirst({
+        where: { status: 'PENDING_VERIFICATION' },
+        orderBy: { createdAt: 'asc' },
+        select: { createdAt: true },
+      }),
+      this.prisma.ticket.count({ where: { status: 'PENDING' } }),
+      this.prisma.ticket.findFirst({
+        where: { status: 'PENDING' },
+        orderBy: { createdAt: 'asc' },
+        select: { createdAt: true },
+      }),
+      this.prisma.ticket.count({ where: { status: 'WAITING_APPROVAL' } }),
+      this.prisma.ticket.findFirst({
+        where: { status: 'WAITING_APPROVAL' },
+        orderBy: { updatedAt: 'asc' },
+        select: { updatedAt: true },
+      }),
+      this.prisma.ticket.count({
+        where: { clerkApprovalStatus: 'SUBMITTED' },
+      }),
+      this.prisma.ticket.count({
+        where: {
+          status: 'IN_PROGRESS',
+          updatedAt: { lt: sevenDaysAgo },
+        },
+      }),
+      this.prisma.ticket.aggregate({
+        where: {
+          paymentStatus: { not: 'PAID' },
+          createdAt: { lt: thirtyDaysAgo },
+        },
+        _sum: { totalAmount: true, amountPaid: true },
+      }),
+    ]);
+
+    const ageHours = (d: Date | null | undefined): number | null =>
+      d ? Math.round((Date.now() - new Date(d).getTime()) / 36e5) : null;
+
+    const agedOutstandingAmount =
+      Number(agedOutstandingAgg._sum.totalAmount || 0) -
+      Number(agedOutstandingAgg._sum.amountPaid || 0);
+
+    const pendingActions = [
+      {
+        key: 'wallet_verifications',
+        label: 'Wallet receipts to verify',
+        count: pendingVerifications,
+        oldestAgeHours: ageHours(oldestPendingVerification?.createdAt),
+        deepLink: '/wallet?tab=pending',
+        severity: 'warning' as const,
+      },
+      {
+        key: 'pending_tickets',
+        label: 'Tickets pending assignment',
+        count: pendingTicketsCount,
+        oldestAgeHours: ageHours(oldestPendingTicket?.createdAt),
+        deepLink: '/tickets/pending',
+        severity: 'info' as const,
+      },
+      {
+        key: 'waiting_approval',
+        label: 'Tickets waiting approval',
+        count: waitingApprovalCount,
+        oldestAgeHours: ageHours(oldestWaitingApproval?.updatedAt),
+        deepLink: '/tickets/waiting-approval',
+        severity: 'info' as const,
+      },
+      {
+        key: 'clerk_submitted',
+        label: 'Clerk submissions to verify',
+        count: clerkSubmittedCount,
+        oldestAgeHours: null,
+        deepLink: '/tickets/in-progress',
+        severity: 'info' as const,
+      },
+      {
+        key: 'stuck_in_progress',
+        label: 'Tickets stuck in progress > 7 days',
+        count: stuckInProgressCount,
+        oldestAgeHours: null,
+        deepLink: '/tickets/in-progress',
+        severity: 'danger' as const,
+      },
+      {
+        key: 'aged_outstanding',
+        label: 'Outstanding > 30 days (PKR)',
+        count: Math.max(0, Math.round(agedOutstandingAmount)),
+        oldestAgeHours: null,
+        deepLink: '/finance',
+        severity: 'danger' as const,
+      },
+    ];
 
     // Recent Activity
     const recentActivity = await this.prisma.auditLog.findMany({
@@ -249,8 +418,72 @@ export class DashboardService {
       take: 10,
     });
 
+    // Today's hearings
+    const todayStart = startOfDay(new Date());
+    const todayEnd = endOfDay(new Date());
+    const todaysHearings = await this.prisma.hearing.findMany({
+      where: {
+        scheduledDate: { gte: todayStart, lte: todayEnd },
+        deletedAt: null,
+      },
+      orderBy: { scheduledDate: 'asc' },
+      take: 8,
+      select: {
+        id: true,
+        scheduledDate: true,
+        hearingType: true,
+        case: {
+          select: {
+            id: true,
+            title: true,
+            consumer: { select: { id: true, name: true } },
+          },
+        },
+      },
+    });
+
+    // Top paralegals — by completed-ticket count in current range
+    const topAssignments = await this.prisma.assignment.groupBy({
+      by: ['representativeId'],
+      where: {
+        ticket: {
+          status: 'COMPLETED',
+          updatedAt: { gte: startDate },
+        },
+      },
+      _count: { _all: true },
+      orderBy: { _count: { representativeId: 'desc' } },
+      take: 5,
+    });
+    const topRepIds = topAssignments.map((a) => a.representativeId);
+    const topRepUsers = topRepIds.length
+      ? await this.prisma.user.findMany({
+          where: { id: { in: topRepIds } },
+          select: { id: true, name: true, email: true, city: true },
+        })
+      : [];
+    const topParalegals = topAssignments.map((a) => {
+      const user = topRepUsers.find((u) => u.id === a.representativeId);
+      return {
+        id: a.representativeId,
+        name: user?.name ?? 'Unknown',
+        email: user?.email ?? null,
+        city: user?.city ?? null,
+        completed: a._count._all,
+      };
+    });
+
+    const kpiSparks = {
+      totalTickets: ticketTrend.map((p) => p.count),
+      completedTickets: completedTrend.map((p) => p.count),
+      totalRevenue: financeTrend.map((p) => p.amount),
+      outstandingBalance: [] as number[],
+    };
+
     return {
       kpis,
+      kpisDelta,
+      kpiSparks,
       ticketsByStatus,
       ticketTrend,
       financeTrend,
@@ -258,6 +491,8 @@ export class DashboardService {
       cityMix,
       pendingActions,
       recentActivity,
+      todaysHearings,
+      topParalegals,
     };
   }
 }

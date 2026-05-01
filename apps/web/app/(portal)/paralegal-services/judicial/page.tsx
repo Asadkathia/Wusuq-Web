@@ -1,6 +1,13 @@
-import { IntakeWizard } from '@/components/intake-wizard';
+import { ServicePicker } from '@/components/service-picker';
 import { judicialFlows } from '@/lib/intake-flows';
 
 export default function JudicialServicesPage() {
-  return <IntakeWizard title="Paralegal Services / Judicial" flows={judicialFlows} variant="admin" />;
+  return (
+    <ServicePicker
+      flows={judicialFlows}
+      variant="admin"
+      basePath="/paralegal-services/judicial"
+      title="Paralegal Services / Judicial"
+    />
+  );
 }
