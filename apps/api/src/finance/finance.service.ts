@@ -370,7 +370,7 @@ export class FinanceService {
       createdAt: Date;
       ticket: {
         batchNo: string;
-        consumer: { name: string; email: string };
+        consumer: { name: string | null; email: string | null };
         service: { name: string; category: string };
       };
     },
@@ -422,8 +422,8 @@ export class FinanceService {
 
       // Consumer & service
       doc.fontSize(11).font('Helvetica-Bold').text('Bill To:');
-      doc.fontSize(10).font('Helvetica').text(invoice.ticket.consumer.name);
-      doc.text(invoice.ticket.consumer.email);
+      doc.fontSize(10).font('Helvetica').text(invoice.ticket.consumer.name ?? '');
+      doc.text(invoice.ticket.consumer.email ?? '');
       doc.moveDown(0.5);
 
       doc.fontSize(11).font('Helvetica-Bold').text('Service:');

@@ -11,8 +11,9 @@ export default async function JudicialFlowPage({
 }) {
   const { flowKey: slug } = await params;
   const key = slugToFlowKey(slug, 'judicial');
-  const flow = key ? judicialFlows.find((f) => f.key === key) : null;
-  if (!flow) notFound();
+  const found = key ? judicialFlows.find((f) => f.key === key) : null;
+  if (!found) notFound();
+  const { icon: _icon, ...flow } = found;
 
   return (
     <div className="flex flex-col gap-3">

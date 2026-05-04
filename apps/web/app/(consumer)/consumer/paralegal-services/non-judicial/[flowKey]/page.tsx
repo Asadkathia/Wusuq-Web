@@ -11,8 +11,9 @@ export default async function ConsumerNonJudicialFlowPage({
 }) {
   const { flowKey: slug } = await params;
   const key = slugToFlowKey(slug, 'non_judicial');
-  const flow = key ? nonJudicialFlows.find((f) => f.key === key) : null;
-  if (!flow) notFound();
+  const found = key ? nonJudicialFlows.find((f) => f.key === key) : null;
+  if (!found) notFound();
+  const { icon: _icon, ...flow } = found;
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 px-4 py-6">

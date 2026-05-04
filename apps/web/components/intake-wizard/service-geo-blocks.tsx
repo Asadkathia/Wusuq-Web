@@ -1,7 +1,7 @@
 'use client';
 
-import { Select, type SelectOption } from '@/components/ui/select';
 import { Building2, CalendarDays, HelpCircle, MapPin, MapPinned, ShieldAlert } from 'lucide-react';
+import { SelectionTileGrid } from './selection-tile-grid';
 
 type GeoState = {
   provinces: { id: string; name: string }[];
@@ -13,7 +13,7 @@ type GeoState = {
 
 type GeoIds = { provinceId: string; districtId: string; cityId: string };
 
-function toOptions(items: { id: string; name: string }[]): SelectOption[] {
+function toTileOptions(items: { id: string; name: string }[]) {
   return items.map((item) => ({ value: item.id, label: item.name }));
 }
 
@@ -78,8 +78,8 @@ function ChipGroup({
   );
 }
 
-// ─── City Block (flat, single dropdown of all cities) ───────────────────────
-type CityWithRegion = { id: string; name: string; province?: string };
+// ─── City Block (flat, single tile grid of all cities) ───────────────────────
+type CityWithRegion = { id: string; name: string; province?: string; district?: string };
 type CityBlockProps = {
   cities: CityWithRegion[];
   cityId: string;
@@ -87,11 +87,16 @@ type CityBlockProps = {
 };
 
 export function CityBlock({ cities, cityId, onCityChange }: CityBlockProps) {
-  const cityOptions: SelectOption[] = cities.map((c) => ({
-    value: c.id,
-    label: c.province ? `${c.name} · ${c.province}` : c.name,
-    hint: c.province,
-  }));
+  // Show district + province as subtext so visually-similar names (e.g.
+  // "Ahmadpur East" vs "Ahmedpur Sial") are clearly distinguishable by region.
+  const cityOptions = cities.map((c) => {
+    const region = [c.district, c.province].filter(Boolean).join(' · ');
+    return {
+      value: c.id,
+      label: c.name,
+      subtext: region || c.province,
+    };
+  });
   const findName = (items: CityWithRegion[], id: string) =>
     items.find((x) => x.id === id)?.name ?? '';
 
@@ -102,38 +107,15 @@ export function CityBlock({ cities, cityId, onCityChange }: CityBlockProps) {
         title="Service location"
         description="Which city is this request for?"
       />
-      <label className="block">
+      <div>
         <FieldLabel required>City</FieldLabel>
-        <Select
+        <SelectionTileGrid
+          options={cityOptions}
           value={cityId}
           onChange={(v) => onCityChange(v, findName(cities, v))}
-          options={cityOptions}
-          placeholder="Select a city"
-          searchPlaceholder="Search cities or province…"
-          allowClear
           ariaLabel="City"
-          renderOption={(opt, selected) => {
-            const [cityName, region] = opt.label.includes(' · ')
-              ? opt.label.split(' · ')
-              : [opt.label, ''];
-            return (
-              <span className="flex items-baseline justify-between gap-3">
-                <span
-                  className={[
-                    'truncate text-sm',
-                    selected ? 'font-semibold text-slate-900' : 'text-slate-800',
-                  ].join(' ')}
-                >
-                  {cityName}
-                </span>
-                {region ? (
-                  <span className="shrink-0 text-xs text-slate-500">{region}</span>
-                ) : null}
-              </span>
-            );
-          }}
         />
-      </label>
+      </div>
     </div>
   );
 }
@@ -154,9 +136,9 @@ export function LocationBlock({
   onDistrictChange,
   onCityChange,
 }: LocationBlockProps) {
-  const provinceOptions = toOptions(geo.provinces);
-  const districtOptions = toOptions(geo.districts);
-  const cityOptions = toOptions(geo.cities);
+  const provinceOptions = toTileOptions(geo.provinces);
+  const districtOptions = toTileOptions(geo.districts);
+  const cityOptions = toTileOptions(geo.cities);
   const findName = (items: { id: string; name: string }[], id: string) =>
     items.find((x) => x.id === id)?.name ?? '';
 
@@ -167,45 +149,39 @@ export function LocationBlock({
         title="Service location"
         description="Tell us where this service is required — province, district, then city."
       />
-      <div className="grid gap-4 md:grid-cols-3">
-        <label className="block">
-          <FieldLabel required>Province</FieldLabel>
-          <Select
-            value={geoIds.provinceId}
-            onChange={(v) => onProvinceChange(v, findName(geo.provinces, v))}
-            options={provinceOptions}
-            placeholder="Select province"
-            searchPlaceholder="Search provinces…"
-            allowClear
-            ariaLabel="Province"
-          />
-        </label>
-        <label className="block">
-          <FieldLabel required>District</FieldLabel>
-          <Select
-            value={geoIds.districtId}
-            onChange={(v) => onDistrictChange(v, findName(geo.districts, v))}
-            options={districtOptions}
-            placeholder={geoIds.provinceId ? 'Select district' : 'Select province first'}
-            searchPlaceholder="Search districts…"
-            allowClear
-            disabled={!geoIds.provinceId}
-            ariaLabel="District"
-          />
-        </label>
-        <label className="block">
-          <FieldLabel required>City</FieldLabel>
-          <Select
-            value={geoIds.cityId}
-            onChange={(v) => onCityChange(v, findName(geo.cities, v))}
-            options={cityOptions}
-            placeholder={geoIds.districtId ? 'Select city' : 'Select district first'}
-            searchPlaceholder="Search cities…"
-            allowClear
-            disabled={!geoIds.districtId}
-            ariaLabel="City"
-          />
-        </label>
+
+      <div>
+        <FieldLabel required>Province</FieldLabel>
+        <SelectionTileGrid
+          options={provinceOptions}
+          value={geoIds.provinceId}
+          onChange={(v) => onProvinceChange(v, findName(geo.provinces, v))}
+          ariaLabel="Province"
+        />
+      </div>
+
+      <div>
+        <FieldLabel required>District</FieldLabel>
+        <SelectionTileGrid
+          options={districtOptions}
+          value={geoIds.districtId}
+          onChange={(v) => onDistrictChange(v, findName(geo.districts, v))}
+          ariaLabel="District"
+          disabled={!geoIds.provinceId}
+          emptyPlaceholder="Select a province above to see districts."
+        />
+      </div>
+
+      <div>
+        <FieldLabel required>City</FieldLabel>
+        <SelectionTileGrid
+          options={cityOptions}
+          value={geoIds.cityId}
+          onChange={(v) => onCityChange(v, findName(geo.cities, v))}
+          ariaLabel="City"
+          disabled={!geoIds.districtId}
+          emptyPlaceholder="Select a district above to see cities."
+        />
       </div>
     </div>
   );
@@ -215,10 +191,10 @@ export function LocationBlock({
 // After the user picks a Court tier (Supreme / High / Federal Shariat / Lower
 // / Special), this block picks the specific Service within that court:
 //   • If the court tier offers exactly one service in the selected city, it's
-//     rendered as a read-only confirmation row (no trivial dropdown for
+//     rendered as a read-only confirmation row (no trivial tile for
 //     Supreme Court → Supreme Court of Pakistan, etc.).
 //   • If multiple services exist (e.g. Lower Court → Sessions/Civil/Family/
-//     Magisterial, or High Court benches), renders a dropdown.
+//     Magisterial, or High Court benches), renders a tile grid.
 type CourtOption = { id: string; name: string; isPrincipalSeat: boolean };
 
 type JudicialServiceBlockProps = {
@@ -243,6 +219,12 @@ export function JudicialServiceBlock({
   const single = services.length === 1 ? services[0] : null;
   const cityQualifier = cityName ? ` in ${cityName}` : '';
   const tierLabel = (courtTierName || 'court').toLowerCase();
+
+  const tileOptions = services.map((s) => ({
+    value: s.id,
+    label: s.name,
+    subtext: s.isPrincipalSeat ? 'Principal seat' : undefined,
+  }));
 
   return (
     <div className="md:col-span-2 rounded-2xl border border-border-soft bg-surface-muted/50 p-5 space-y-5">
@@ -275,24 +257,18 @@ export function JudicialServiceBlock({
           </span>
         </div>
       ) : (
-        <label className="block">
+        <div>
           <FieldLabel required>Service</FieldLabel>
-          <Select
+          <SelectionTileGrid
+            options={tileOptions}
             value={selectServiceId}
             onChange={(id) => {
               const picked = services.find((s) => s.id === id);
               if (picked) onServiceChange(picked);
             }}
-            options={services.map((s) => ({
-              value: s.id,
-              label: s.isPrincipalSeat ? `${s.name} · Principal seat` : s.name,
-            }))}
-            placeholder="Select service"
-            searchPlaceholder="Search services…"
-            allowClear
             ariaLabel="Service"
           />
-        </label>
+        </div>
       )}
     </div>
   );
@@ -327,7 +303,7 @@ export function FirBlock({
   onPoliceStationChange,
   onCityTypeChange,
 }: FirBlockProps) {
-  const stationOptions = toOptions(geo.policeStations);
+  const stationOptions = toTileOptions(geo.policeStations);
   const findName = (items: { id: string; name: string }[], id: string) =>
     items.find((x) => x.id === id)?.name ?? '';
 
@@ -340,18 +316,15 @@ export function FirBlock({
       />
 
       {geoIds.districtId && geo.policeStations.length > 0 ? (
-        <label className="block">
+        <div>
           <FieldLabel required>Police station</FieldLabel>
-          <Select
+          <SelectionTileGrid
+            options={stationOptions}
             value={stationId}
             onChange={(v) => onStationIdChange(v, findName(geo.policeStations, v))}
-            options={stationOptions}
-            placeholder="Select police station"
-            searchPlaceholder="Search police stations…"
-            allowClear
             ariaLabel="Police station"
           />
-        </label>
+        </div>
       ) : (
         <label className="block">
           <FieldLabel required>Police station</FieldLabel>

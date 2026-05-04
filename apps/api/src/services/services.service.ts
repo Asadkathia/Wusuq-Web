@@ -51,6 +51,7 @@ const FLOWS = [
 // court name → array of cities it serves
 const COURT_CITIES: Record<string, string[]> = {
   'Supreme Court': ['Islamabad', 'Lahore', 'Karachi', 'Peshawar', 'Quetta', 'Azad Kashmir', 'Gilgit Baltistan'],
+  'Federal Constitutional Court': ['Islamabad'],
   'Islamabad Court': ['Islamabad'],
   'Lahore High Court': ['Lahore', 'Bahawalpur', 'Multan', 'Rawalpindi'],
   'Sindh High Court': ['Karachi', 'Sukkur', 'Hyderabad', 'Larkana'],
@@ -258,6 +259,14 @@ const CASE_TYPES: Record<string, string[]> = {
     'Sh.M.A.',
     'Reference.',
   ],
+  svc_judicial_federal_constitutional: [
+    'Const.P.',
+    'C.P.',
+    'C.M.A.',
+    'C.R.P.',
+    'I.C.A.',
+    'Reference.',
+  ],
   svc_judicial_supreme_court: [
     'C.A.',
     'C.M.A.',
@@ -374,6 +383,15 @@ const DEFAULT_SERVICE_CATALOG = [
     courtLevel: 'Federal Shariat Court',
     description: 'Judicial service for federal shariat court matters.',
     courts: ['Islamabad Court'],
+  },
+  {
+    id: 'svc_judicial_federal_constitutional',
+    name: 'Federal Constitutional Court Paralegal Service',
+    type: ServiceType.JUDICIAL,
+    category: 'Judicial',
+    courtLevel: 'Federal Constitutional Court',
+    description: 'Judicial service for federal constitutional court matters.',
+    courts: ['Federal Constitutional Court'],
   },
   {
     id: 'svc_judicial_supreme_court',

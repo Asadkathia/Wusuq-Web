@@ -22,6 +22,7 @@ import { PanelCard } from '@/components/ui/panel-card';
 import { StatusPill } from '@/components/ui/status-pill';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
+import { ProfileCompletionBanner } from './profile-completion-banner';
 
 type ConsumerSummary = {
   myTickets: { total: number; pending: number; inProgress: number; completed: number };
@@ -167,6 +168,7 @@ export default function ConsumerDashboardPage() {
 
   return (
     <div className="mx-auto max-w-7xl space-y-8">
+      <ProfileCompletionBanner />
       {/* Hero greeting */}
       <section className="relative overflow-hidden rounded-2xl bg-brand-500 p-6 text-white shadow-elev-2 sm:p-10">
         <div className="pointer-events-none absolute -top-24 -right-24 h-72 w-72 rounded-full bg-brand-400 opacity-40 blur-[100px]" />

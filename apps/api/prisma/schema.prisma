@@ -93,9 +93,10 @@ enum CaseEventType {
 
 model User {
   id                 String      @id @default(cuid())
-  name               String
-  email              String      @unique
+  name               String?
+  email              String?     @unique
   phone              String?
+  phoneVerified      Boolean     @default(false)
   cnic               String?
   dateOfBirth        DateTime?
   gender             String?
@@ -110,7 +111,7 @@ model User {
   serviceFocus       String?
   court              String?
   courtCity          String?
-  passwordHash       String
+  passwordHash       String?
   hashedRefreshToken String?
   role               UserRole
   verified           Boolean     @default(false)
@@ -537,4 +538,16 @@ model CaseDocument {
   ticket           Ticket?  @relation(fields: [ticketId], references: [id])
 
   @@index([caseId])
+}
+
+model OtpCode {
+  id         String   @id @default(cuid())
+  phone      String   @db.VarChar(20)
+  code       String   @db.VarChar(6)
+  expiresAt  DateTime
+  attempts   Int      @default(0)
+  consumed   Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  @@index([phone, createdAt])
 }

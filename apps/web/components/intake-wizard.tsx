@@ -4,7 +4,6 @@
 import { useMemo, useEffect, useState, useCallback, useRef } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { PanelCard } from '@/components/ui/panel-card';
-import { Select } from '@/components/ui/select';
 import { ChevronRight, CheckCircle2, FolderOpen, Sparkles, X } from 'lucide-react';
 import type { IntakeFlow, IntakeStep } from '@/lib/intake-flows';
 
@@ -106,44 +105,6 @@ const DEFAULT_JUDGE_DESIGNATIONS = [
   'Judge', 'Additional Judge', 'Senior Judge', 'Presiding Officer', 'Chairman',
 ];
 
-
-// ─── Service Dropdown ────────────────────────────────────────────────────────
-function ServiceSelect({
-  value,
-  onChange,
-  services,
-}: {
-  value: string;
-  onChange: (id: string, name: string, courts: string[], courtCities: Record<string, string[]>, caseTypes: string[]) => void;
-  inputClass?: string;
-  services: ServiceHit[];
-}) {
-  const options = services.map((s) => ({
-    value: s.id,
-    label: s.name,
-    description: SERVICE_DESCRIPTIONS[s.name],
-  }));
-  return (
-    <Select
-      value={value}
-      onChange={(id) => {
-        const selected = services.find((s) => s.id === id);
-        onChange(
-          id,
-          selected?.name ?? '',
-          selected?.courts ?? [],
-          selected?.courtCities ?? {},
-          selected?.caseTypes ?? [],
-        );
-      }}
-      options={options}
-      placeholder="Select a court"
-      searchPlaceholder="Search courts…"
-      allowClear
-      ariaLabel="Court"
-    />
-  );
-}
 
 function ServiceCardGrid({
   services,
@@ -377,11 +338,29 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
 
   // Filter services: non-judicial services are always listed; judicial
   // services show only if the city has at least one court of their tier.
+  // Judicial services are then ordered by court hierarchy (lowest → highest).
   const availableServices: ServiceHit[] = useMemo(() => {
-    if (!draft.payload.city) return services;
-    return services.filter((svc) => {
-      if (!svc.courtLevel) return true;
-      return cityCourtTypes.has(svc.courtLevel);
+    const filtered = !draft.payload.city
+      ? services
+      : services.filter((svc) => {
+          if (!svc.courtLevel) return true;
+          return cityCourtTypes.has(svc.courtLevel);
+        });
+
+    const COURT_RANK: Record<string, number> = {
+      'Lower Court': 1,
+      'Special Court': 2,
+      'High Court': 3,
+      'Federal Shariat Court': 4,
+      'Federal Constitutional Court': 5,
+      'Supreme Court': 6,
+    };
+
+    return [...filtered].sort((a, b) => {
+      const ra = a.courtLevel ? (COURT_RANK[a.courtLevel] ?? 99) : 100;
+      const rb = b.courtLevel ? (COURT_RANK[b.courtLevel] ?? 99) : 100;
+      if (ra !== rb) return ra - rb;
+      return a.name.localeCompare(b.name);
     });
   }, [services, cityCourtTypes, draft.payload.city]);
 
@@ -911,45 +890,6 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
 
           {isCityCourtStep && (
             <>
-              <label className="space-y-1.5 block">
-                <span className="text-sm font-medium text-slate-700">
-                  {isConsumerVariant ? 'Service type' : 'Intake Flow'}
-                </span>
-                <Select
-                  value={draft.flow}
-                  onChange={(next) => {
-                    setField('flow', next);
-                    setField('step', 1);
-                    setField('serviceId', '');
-                    setDraft((c) => ({ ...c, payload: {} }));
-                    setSelectedServiceCaseTypes([]);
-                    setCityCourtGroups([]);
-                    setGeoIds({ provinceId: '', districtId: '', cityId: '' });
-                  }}
-                  options={flows.map((f) => ({ value: f.key, label: f.label }))}
-                  placeholder="Select a flow"
-                  ariaLabel="Intake flow"
-                />
-              </label>
-
-              {!isConsumerVariant ? (
-                <label className="space-y-1 block">
-                  <span className="text-sm font-medium text-slate-700">Consumer<span className="text-rose-500 ml-0.5">*</span></span>
-                  {isConsumer || isAdminTestingMode ? (
-                    <div className="flex items-center rounded-xl border-0 py-2.5 px-3.5 text-slate-900 shadow-sm ring-1 ring-inset ring-border-soft bg-slate-50 text-sm">
-                      <span>
-                        {consumerLabel || currentUser?.name || currentUser?.email || 'Current User'}
-                        {isAdminTestingMode ? ' (dev testing consumer)' : ''}
-                      </span>
-                    </div>
-                  ) : (
-                    <div className="flex items-center rounded-xl border-0 py-2.5 px-3.5 text-slate-500 shadow-sm ring-1 ring-inset ring-border-soft bg-slate-50 text-sm">
-                      Consumer selection is disabled in this environment.
-                    </div>
-                  )}
-                </label>
-              ) : null}
-
               {isFirFlow ? (
                 <LocationBlock
                   geo={geo}
@@ -976,7 +916,7 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
                   <p className="mt-1 rounded-xl bg-amber-50 p-3 text-sm text-amber-700 ring-1 ring-inset ring-amber-100">
                     No courts are available in {draft.payload.city}. Pick a different city.
                   </p>
-                ) : isConsumerVariant ? (
+                ) : (
                   <ServiceCardGrid
                     services={availableServices}
                     value={draft.serviceId}
@@ -986,14 +926,6 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
                         service.name,
                         service.caseTypes ?? [],
                       )
-                    }
-                  />
-                ) : (
-                  <ServiceSelect
-                    value={draft.serviceId}
-                    services={availableServices}
-                    onChange={(id, name, _courts, _courtCities, caseTypes) =>
-                      applySelectedService(id, name, caseTypes)
                     }
                   />
                 )}

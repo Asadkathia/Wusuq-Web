@@ -1,6 +1,7 @@
 import { ConflictException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
+import { UserRole } from '@prisma/client';
 import { compare, hash } from 'bcryptjs';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -41,13 +42,16 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
+    if (!user.passwordHash) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
     const isValid = await compare(dto.password, user.passwordHash);
     if (!isValid) {
       await this.auditLogsService.create({
         action: 'AUTH_LOGIN_FAILED',
         entity: 'AUTH',
         actorUserId: user.id,
-        actorEmail: user.email,
+        actorEmail: user.email ?? undefined,
         metadata: { reason: 'invalid_password' },
       });
       throw new UnauthorizedException('Invalid credentials');
@@ -55,7 +59,7 @@ export class AuthService {
 
     const payload: JwtUser = {
       sub: user.id,
-      email: user.email,
+      email: user.email!,
       role: mapPrismaRoleToShared(user.role),
     };
 
@@ -68,7 +72,7 @@ export class AuthService {
       action: 'AUTH_LOGIN_SUCCESS',
       entity: 'AUTH',
       actorUserId: user.id,
-      actorEmail: user.email,
+      actorEmail: user.email ?? undefined,
     });
 
     return {
@@ -112,7 +116,7 @@ export class AuthService {
         action: 'AUTH_REFRESH_FAILED',
         entity: 'AUTH',
         actorUserId: user.id,
-        actorEmail: user.email,
+        actorEmail: user.email ?? undefined,
         metadata: { reason: 'refresh_token_hash_mismatch' },
       });
       throw new UnauthorizedException('Invalid refresh token');
@@ -120,7 +124,7 @@ export class AuthService {
 
     const nextPayload: JwtUser = {
       sub: user.id,
-      email: user.email,
+      email: user.email ?? user.id,
       role: mapPrismaRoleToShared(user.role),
     };
 
@@ -133,7 +137,7 @@ export class AuthService {
       action: 'AUTH_REFRESH_SUCCESS',
       entity: 'AUTH',
       actorUserId: user.id,
-      actorEmail: user.email,
+      actorEmail: user.email ?? undefined,
     });
 
     return tokens;
@@ -172,7 +176,7 @@ export class AuthService {
 
     const payload: JwtUser = {
       sub: user.id,
-      email: user.email,
+      email: user.email ?? user.id,
       role: mapPrismaRoleToShared(user.role),
     };
 
@@ -203,6 +207,23 @@ export class AuthService {
     };
   }
 
+  async completeProfile(userId: string, dto: { name: string; cityName?: string }) {
+    const user = await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        name: dto.name,
+        ...(dto.cityName ? { city: dto.cityName } : {}),
+      },
+    });
+    return {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      city: user.city,
+    };
+  }
+
   async logout(userId?: string) {
     if (userId) {
       await this.prisma.user.update({
@@ -216,6 +237,29 @@ export class AuthService {
       });
     }
     return { success: true };
+  }
+
+  async issueTokensForUser(user: { id: string; email: string | null; role: UserRole; name: string | null }) {
+    const payload: JwtUser = {
+      sub: user.id,
+      email: user.email ?? '',
+      role: mapPrismaRoleToShared(user.role),
+    };
+    const tokens = await this.issueTokens(payload);
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { hashedRefreshToken: await hash(tokens.refreshToken, 10) },
+    });
+    return {
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: payload.role,
+      },
+    };
   }
 
   private async issueTokens(payload: JwtUser): Promise<AuthTokens> {

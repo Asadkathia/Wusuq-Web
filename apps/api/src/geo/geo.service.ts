@@ -50,12 +50,27 @@ export class GeoService {
         },
       },
     });
-    return rows.map((c) => ({
-      id: c.id,
-      name: c.name,
-      district: c.district.name,
-      province: c.district.province.name,
-    }));
+    // Deduplicate by (normalized-name, district, province). Keeps the first row
+    // whenever the seed has accidentally created multiple GeoCity entries for
+    // the same physical place (a known issue with the historical seed expansion
+    // where district fallbacks could re-insert names already allocated). When a
+    // name legitimately recurs across districts/provinces it is preserved.
+    const seen = new Map<string, { id: string; name: string; district: string; province: string }>();
+    for (const c of rows) {
+      const province = c.district.province.name;
+      const district = c.district.name;
+      const normName = c.name.replace(/\s+/g, ' ').trim().toLowerCase();
+      const key = `${province}|${district}|${normName}`;
+      if (!seen.has(key)) {
+        seen.set(key, {
+          id: c.id,
+          name: c.name,
+          district,
+          province,
+        });
+      }
+    }
+    return Array.from(seen.values());
   }
 
   /**
