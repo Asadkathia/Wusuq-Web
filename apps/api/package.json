@@ -15,9 +15,9 @@
     "start:prod": "node dist/main.js",
     "lint": "eslint \"{src,test}/**/*.ts\"",
     "lint:fix": "eslint \"{src,test}/**/*.ts\" --fix",
-    "test": "jest",
-    "test:watch": "jest --watch",
-    "test:cov": "jest --coverage",
+    "test": "NODE_OPTIONS=--experimental-vm-modules jest",
+    "test:watch": "NODE_OPTIONS=--experimental-vm-modules jest --watch",
+    "test:cov": "NODE_OPTIONS=--experimental-vm-modules jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "typecheck": "tsc --noEmit",
@@ -27,12 +27,15 @@
     "prisma:seed": "prisma db seed"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1041.0",
+    "@aws-sdk/s3-request-presigner": "^3.1041.0",
     "@nestjs/common": "^11.0.1",
     "@nestjs/config": "^4.0.2",
     "@nestjs/core": "^11.0.1",
     "@nestjs/jwt": "^11.0.1",
     "@nestjs/passport": "^11.0.5",
     "@nestjs/platform-express": "^11.0.1",
+    "@nestjs/schedule": "^6.1.3",
     "@nestjs/throttler": "^6.5.0",
     "@prisma/client": "^6.5.0",
     "@types/nodemailer": "^7.0.11",
@@ -42,6 +45,7 @@
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.2",
     "date-fns": "^4.1.0",
+    "file-type": "^22.0.1",
     "helmet": "^8.1.0",
     "multer": "^2.1.1",
     "nodemailer": "^8.0.4",
@@ -80,21 +84,34 @@
     "typescript-eslint": "^8.20.0"
   },
   "jest": {
-    "moduleFileExtensions": [
-      "js",
-      "json",
-      "ts"
-    ],
-    "rootDir": "src",
-    "testRegex": ".*\\.spec\\.ts$",
-    "transform": {
-      "^.+\\.(t|j)s$": "ts-jest"
-    },
-    "collectCoverageFrom": [
-      "**/*.(t|j)s"
-    ],
-    "coverageDirectory": "../coverage",
-    "testEnvironment": "node"
+    "projects": [
+      {
+        "displayName": "cjs",
+        "moduleFileExtensions": ["js", "json", "ts"],
+        "rootDir": "src",
+        "testRegex": "(?<!personal-files/lib/magic-bytes)(?<!personal-files/personal-files\\.service)\\.spec\\.ts$",
+        "transform": {
+          "^.+\\.(t|j)s$": "ts-jest"
+        },
+        "collectCoverageFrom": ["**/*.(t|j)s"],
+        "coverageDirectory": "../coverage",
+        "testEnvironment": "node"
+      },
+      {
+        "displayName": "esm",
+        "moduleFileExtensions": ["js", "json", "ts"],
+        "rootDir": "src",
+        "testRegex": "(personal-files/lib/magic-bytes|personal-files/personal-files\\.service)\\.spec\\.ts$",
+        "extensionsToTreatAsEsm": [".ts"],
+        "transform": {
+          "^.+\\.ts$": ["ts-jest", {"useESM": true, "tsconfig": "<rootDir>/../tsconfig.jest-esm.json"}]
+        },
+        "moduleNameMapper": {
+          "^@jest/globals$": "<rootDir>/../node_modules/.pnpm/@jest+globals@30.3.0/node_modules/@jest/globals/build/index.js"
+        },
+        "testEnvironment": "node"
+      }
+    ]
   },
   "prisma": {
     "seed": "node prisma/seed.mjs"

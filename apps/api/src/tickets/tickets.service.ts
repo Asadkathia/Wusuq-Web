@@ -7,6 +7,13 @@ import {
 } from '@nestjs/common';
 import { UserRole, type Prisma } from '@prisma/client';
 import type { TicketStatus } from '@wusuq/shared';
+import {
+  PAYLOAD_FIELD_ALIASES as SHARED_ALIASES,
+  readAliased,
+  recommendationsForCase,
+  isFlowKey,
+  type FlowKey,
+} from '@wusuq/shared';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { PricingService } from '../pricing/pricing.service';
 import { GeoService } from '../geo/geo.service';
@@ -110,21 +117,8 @@ const REQUIRED_FIELDS_BY_FLOW: Record<string, string[]> = {
   ],
 };
 
-const PAYLOAD_FIELD_ALIASES: Record<string, readonly string[]> = {
-  province: ['province_capital'],
-  district_id: ['select_district', 'district_name'],
-  station_id: ['police_station'],
-  city: ['select_city', 'select_court_city'],
-  case_date: ['fir_date', 'date'],
-  case_title: ['title', 'title_party_a'],
-  delivery_mode: ['mode_of_delivery'],
-  sets: ['no_of_sets'],
-  set_type: ['setType'],
-  notes: ['note'],
-  // Frontend sends case_no / year; API required list uses the legacy names
-  case_petition_no: ['case_no'],
-  case_year: ['year'],
-};
+// Re-exported from @wusuq/shared so the API and web stay in sync.
+const PAYLOAD_FIELD_ALIASES: Record<string, readonly string[]> = SHARED_ALIASES;
 
 const STATUS_TRANSITIONS: Record<TicketStatus, TicketStatus[]> = {
   PENDING: ['ASSIGNED'],
@@ -410,6 +404,11 @@ export class TicketsService {
         totalAmount: pricing.matched ? pricing.total : 0,
         intakeFlow: dto.flow,
         formPayload: dto.payload as Prisma.InputJsonValue | undefined,
+        // Atomic case linkage + scheduling. Replaces the prior two-step
+        // pattern in cases.service.ts (create then update).
+        caseId: dto.caseId,
+        scheduledDate: dto.scheduledDate ? new Date(dto.scheduledDate) : undefined,
+        hearingType: dto.hearingType,
       },
     });
 
@@ -553,6 +552,11 @@ export class TicketsService {
           },
         });
       }
+
+      // Fill-only write-back from ticket payload to Case canonical context
+      // (cases workflow design §2.3). Conflicts emit CONTEXT_DRIFT_DETECTED
+      // events; values are never overwritten.
+      await this.applyTicketCompletionToCase(updated.caseId, id, actor);
     }
 
     if (status === 'COMPLETED') {
@@ -588,7 +592,30 @@ export class TicketsService {
       metadata: { from: ticket.status, to: status, note },
     });
 
-    return updated;
+    // When marking COMPLETED on a case-linked ticket, surface case
+    // recommendations in the response so the admin's UI can show a toast.
+    let caseRecommendations: ReturnType<typeof recommendationsForCase> = [];
+    if (status === 'COMPLETED' && updated.caseId) {
+      const tickets = await this.prisma.ticket.findMany({
+        where: { caseId: updated.caseId },
+        select: {
+          status: true,
+          intakeFlow: true,
+          service: { select: { flowKey: true } },
+        },
+      });
+      const triggerFlows: FlowKey[] = [];
+      const blockingFlows: FlowKey[] = [];
+      for (const t of tickets) {
+        const flow = t.service?.flowKey ?? t.intakeFlow;
+        if (!flow || !isFlowKey(flow)) continue;
+        blockingFlows.push(flow);
+        if (t.status === 'COMPLETED') triggerFlows.push(flow);
+      }
+      caseRecommendations = recommendationsForCase({ triggerFlows, blockingFlows });
+    }
+
+    return { ...updated, caseRecommendations };
   }
 
   async assign(
@@ -1183,6 +1210,107 @@ export class TicketsService {
 
     if (!ticket) {
       throw new NotFoundException('Ticket not found');
+    }
+  }
+
+  /**
+   * Fill-only write-back from a completed ticket's payload to the Case row.
+   * - If the Case field is null and the ticket reports a value → write it.
+   * - If both differ → emit CONTEXT_DRIFT_DETECTED, no overwrite.
+   * - If both match or ticket has no value → no-op.
+   */
+  private async applyTicketCompletionToCase(
+    caseId: string,
+    ticketId: string,
+    actor?: { actorUserId?: string; actorEmail?: string },
+  ) {
+    const ticket = await this.prisma.ticket.findUnique({
+      where: { id: ticketId },
+      select: { formPayload: true },
+    });
+    const caseRec = await this.prisma.case.findUnique({
+      where: { id: caseId },
+    });
+    if (!ticket || !caseRec) return;
+
+    const payload =
+      ticket.formPayload && typeof ticket.formPayload === 'object'
+        ? (ticket.formPayload as Record<string, unknown>)
+        : {};
+
+    // (caseColumn, payloadCanonicalKey, parser?)
+    type Mapping = {
+      column: string;
+      canonical: string;
+      parse?: (raw: unknown) => string | number | null;
+    };
+    const mappings: Mapping[] = [
+      { column: 'caseNo', canonical: 'case_petition_no' },
+      { column: 'caseYear', canonical: 'case_year', parse: (v) => {
+        const s = String(v ?? '').trim();
+        const n = parseInt(s, 10);
+        return Number.isFinite(n) ? n : null;
+      } },
+      { column: 'court', canonical: 'select_court' },
+      { column: 'courtCity', canonical: 'select_court_city' },
+      { column: 'caseCategory', canonical: 'case_type' },
+      { column: 'courtCaseStatus', canonical: 'case_status' },
+      { column: 'judgeDesignation', canonical: 'judge_designation' },
+      { column: 'province', canonical: 'province' },
+      { column: 'district', canonical: 'district_id' },
+      { column: 'policeStation', canonical: 'station_id' },
+      { column: 'firNo', canonical: 'fir_no' },
+      { column: 'offence', canonical: 'offence' },
+      { column: 'docNo', canonical: 'doc_no' },
+      { column: 'officeCity', canonical: 'office_city' },
+    ];
+
+    const updateData: Record<string, string | number | null> = {};
+    type DriftEvent = { field: string; caseValue: string; ticketValue: string };
+    const drifts: DriftEvent[] = [];
+    const caseAsRecord = caseRec as unknown as Record<string, unknown>;
+
+    for (const m of mappings) {
+      const raw = readAliased(payload, m.canonical);
+      if (raw === undefined) continue;
+      const parsed = m.parse ? m.parse(raw) : String(raw).trim();
+      if (parsed === null || parsed === '') continue;
+
+      const existing = caseAsRecord[m.column];
+      if (existing === null || existing === undefined || existing === '') {
+        updateData[m.column] = parsed;
+        continue;
+      }
+      // Normalised compare (string-form, case-insensitive for free text).
+      const a = typeof existing === 'number' ? String(existing) : String(existing).trim();
+      const b = typeof parsed === 'number' ? String(parsed) : String(parsed).trim();
+      if (a.toLowerCase() === b.toLowerCase()) continue;
+      drifts.push({ field: m.column, caseValue: a, ticketValue: b });
+    }
+
+    if (Object.keys(updateData).length > 0) {
+      await this.prisma.case.update({
+        where: { id: caseId },
+        data: updateData,
+      });
+    }
+
+    for (const d of drifts) {
+      await this.prisma.caseEvent.create({
+        data: {
+          caseId,
+          type: 'CONTEXT_DRIFT_DETECTED',
+          title: `Drift: ${d.field}`,
+          description: `Ticket reported "${d.ticketValue}" but case has "${d.caseValue}".`,
+          ticketId,
+          actorUserId: actor?.actorUserId,
+          metadata: {
+            field: d.field,
+            caseValue: d.caseValue,
+            ticketValue: d.ticketValue,
+          },
+        },
+      });
     }
   }
 }

@@ -4,6 +4,7 @@ import {
   BriefcaseBusiness,
   FileText,
   FolderOpen,
+  HardDrive,
   LayoutDashboard,
   Scale,
   Ticket,
@@ -25,6 +26,7 @@ export const consumerNavItems: NavItem[] = [
     ],
   },
   { label: 'Documents', href: '/consumer/documents', icon: FileText },
+  { label: 'My Files', href: '/consumer/files', icon: HardDrive },
   { label: 'Profile', href: '/consumer/profile', icon: BriefcaseBusiness },
 ];
 

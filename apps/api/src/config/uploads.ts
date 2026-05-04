@@ -17,6 +17,7 @@ export const UPLOADS_BUCKETS = {
   ticketDocuments: 'ticket-documents',
   clerkReceipts: 'clerk-receipts',
   walletReceipts: 'wallet-receipts',
+  personalFiles: 'personal-files',
 } as const;
 
 export type UploadsBucket = (typeof UPLOADS_BUCKETS)[keyof typeof UPLOADS_BUCKETS];

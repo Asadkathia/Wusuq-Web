@@ -324,8 +324,22 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
   const completeTicket = async (ticket: TicketRow) => {
     if (!confirm(`Mark ticket ${ticket.batchNo} as Completed? Payment status will be set to Paid.`)) return;
     try {
-      await apiClient.patch(`/tickets/${ticket.id}/status`, { status: 'COMPLETED' });
-      setMessage(`Ticket ${ticket.batchNo} marked as Completed.`);
+      const updated = await apiClient.patch<{
+        caseId?: string | null;
+        caseRecommendations?: Array<{ next: string; priority: number; reason?: string }>;
+      }>(`/tickets/${ticket.id}/status`, { status: 'COMPLETED' });
+      const recs = updated.caseRecommendations ?? [];
+      if (updated.caseId && recs.length > 0) {
+        const { FLOW_LABELS, isFlowKey } = await import('@wusuq/shared');
+        const labels = recs
+          .slice(0, 2)
+          .map((r) => (isFlowKey(r.next) ? FLOW_LABELS[r.next] : r.next));
+        setMessage(
+          `✅ ${ticket.batchNo} completed. Suggested next on this case: ${labels.join(', ')}.`,
+        );
+      } else {
+        setMessage(`Ticket ${ticket.batchNo} marked as Completed.`);
+      }
       loadTickets();
     } catch (error: any) {
       setMessage(error.message || 'Failed to complete ticket');

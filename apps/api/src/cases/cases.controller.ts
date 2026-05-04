@@ -16,10 +16,7 @@ import { CreateCaseDto } from './dto/create-case.dto';
 import { UpdateCaseDto } from './dto/update-case.dto';
 import { FilterCasesDto } from './dto/filter-cases.dto';
 import { UpdateCaseStatusDto } from './dto/update-case-status.dto';
-import { CreateHearingDto } from './dto/create-hearing.dto';
-import { UpdateHearingDto } from './dto/update-hearing.dto';
 import { CreateCaseTicketDto } from './dto/create-case-ticket.dto';
-import { ContinueCaseTicketDto } from './dto/continue-case-ticket.dto';
 
 @Controller('cases')
 export class CasesController {
@@ -107,52 +104,6 @@ export class CasesController {
   }
 
   @RequirePermissions('cases.write')
-  @Post(':id/hearings')
-  createHearing(
-    @Param('id') caseId: string,
-    @Body() dto: CreateHearingDto,
-    @CurrentUser() actor: JwtUser | undefined,
-  ) {
-    return this.casesService.createHearing(caseId, dto, {
-      actorUserId: actor?.sub,
-      actorEmail: actor?.email,
-    });
-  }
-
-  @RequirePermissions('cases.read')
-  @Get(':id/hearings')
-  listHearings(@Param('id') caseId: string) {
-    return this.casesService.listHearings(caseId);
-  }
-
-  @RequirePermissions('cases.write')
-  @Patch(':id/hearings/:hid')
-  updateHearing(
-    @Param('id') caseId: string,
-    @Param('hid') hid: string,
-    @Body() dto: UpdateHearingDto,
-    @CurrentUser() actor: JwtUser | undefined,
-  ) {
-    return this.casesService.updateHearing(caseId, hid, dto, {
-      actorUserId: actor?.sub,
-      actorEmail: actor?.email,
-    });
-  }
-
-  @RequirePermissions('cases.write')
-  @Delete(':id/hearings/:hid')
-  deleteHearing(
-    @Param('id') caseId: string,
-    @Param('hid') hid: string,
-    @CurrentUser() actor: JwtUser | undefined,
-  ) {
-    return this.casesService.deleteHearing(caseId, hid, {
-      actorUserId: actor?.sub,
-      actorEmail: actor?.email,
-    });
-  }
-
-  @RequirePermissions('cases.write')
   @Post(':id/tickets')
   createCaseTicket(
     @Param('id') caseId: string,
@@ -165,23 +116,48 @@ export class CasesController {
     });
   }
 
-  @RequirePermissions('cases.write')
-  @Post(':id/tickets/continue/:prevId')
-  continueCaseTicket(
+  @RequirePermissions('cases.read')
+  @Get(':id/tickets')
+  listTickets(@Param('id') caseId: string) {
+    return this.casesService.listCaseTickets(caseId);
+  }
+
+  @RequirePermissions('cases.read')
+  @Get(':id/recommendations')
+  recommendations(@Param('id') caseId: string) {
+    return this.casesService.getRecommendations(caseId);
+  }
+
+  @RequirePermissions('cases.read')
+  @Post(':id/recommendations/track-click')
+  trackRecommendationClick(
     @Param('id') caseId: string,
-    @Param('prevId') prevId: string,
-    @Body() dto: ContinueCaseTicketDto,
+    @Body() body: { flowKey: string; surface?: string },
     @CurrentUser() actor: JwtUser | undefined,
   ) {
-    return this.casesService.continueCaseTicket(caseId, prevId, dto, {
+    return this.casesService.trackRecommendationClick(caseId, body, {
       actorUserId: actor?.sub,
       actorEmail: actor?.email,
     });
   }
 
   @RequirePermissions('cases.read')
-  @Get(':id/tickets')
-  listTickets(@Param('id') caseId: string) {
-    return this.casesService.listCaseTickets(caseId);
+  @Get(':id/drifts')
+  drifts(@Param('id') caseId: string) {
+    return this.casesService.getUnresolvedDrifts(caseId);
+  }
+
+  @RequirePermissions('cases.write')
+  @Post(':id/drifts/:eventId/resolve')
+  resolveDrift(
+    @Param('id') caseId: string,
+    @Param('eventId') eventId: string,
+    @Body() body: { source: 'CASE' | 'TICKET' },
+    @CurrentUser() actor: JwtUser | undefined,
+  ) {
+    return this.casesService.resolveDrift(caseId, eventId, body.source, {
+      actorUserId: actor?.sub,
+      actorEmail: actor?.email,
+    });
   }
 }

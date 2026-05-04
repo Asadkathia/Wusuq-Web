@@ -18,6 +18,7 @@ export function CasesBoard() {
   const [message, setMessage] = useState('');
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [hasRecommendations, setHasRecommendations] = useState(false);
 
   const [createForm, setCreateForm] = useState({
     title: '',
@@ -44,6 +45,7 @@ export function CasesBoard() {
         search: search || undefined,
         status: (statusFilter as any) || undefined,
         consumerId: isConsumer && userId ? userId : undefined,
+        hasRecommendations: hasRecommendations || undefined,
       });
       setItems(result.items || []);
     } catch (error: any) {
@@ -51,7 +53,7 @@ export function CasesBoard() {
     } finally {
       setLoading(false);
     }
-  }, [search, statusFilter, isConsumer, userId]);
+  }, [search, statusFilter, isConsumer, userId, hasRecommendations]);
 
   useEffect(() => {
     load();
@@ -127,6 +129,18 @@ export function CasesBoard() {
                 onSearch={setSearch} 
                 actions={
                   <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+                    <button
+                      type="button"
+                      onClick={() => setHasRecommendations((v) => !v)}
+                      className={[
+                        'inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold transition-colors',
+                        hasRecommendations
+                          ? 'bg-brand-500 text-white shadow-sm hover:bg-brand-600'
+                          : 'bg-surface text-slate-700 ring-1 ring-inset ring-border-soft hover:bg-surface-hover',
+                      ].join(' ')}
+                    >
+                      ✨ Has suggestions
+                    </button>
                     <select
                       className="w-full sm:w-auto rounded-lg border-0 py-2 pl-3 pr-8 text-slate-900 shadow-sm ring-1 ring-inset ring-border-soft focus:ring-2 focus:ring-primary-600 sm:text-sm"
                       value={statusFilter}
@@ -169,8 +183,7 @@ export function CasesBoard() {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="text-sm text-slate-700">
-                           <span className="font-medium">{item._count?.tickets || 0}</span> tickets <br/>
-                           <span className="font-medium">{item._count?.hearings || 0}</span> hearings
+                           <span className="font-medium">{item._count?.tickets || 0}</span> tickets
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm">

@@ -3,12 +3,14 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { casesApi, type Case, type CaseEvent, type Hearing } from '@/lib/api/cases';
+import { casesApi, type Case, type CaseEvent } from '@/lib/api/cases';
 import { SectionHeader } from '@/components/ui/section-header';
 import { PanelCard } from '@/components/ui/panel-card';
 import { StatusPill } from '@/components/ui/status-pill';
 import { DataTableShell } from '@/components/ui/data-table-shell';
-import { ArrowLeft, Clock, Ticket as TicketIcon, Calendar, FileText, Plus, RefreshCw, Info } from 'lucide-react';
+import { ArrowLeft, Clock, Ticket as TicketIcon, Calendar, FileText, Plus, RefreshCw, Info, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { CaseSuggestedSteps } from '@/components/case-suggested-steps';
+import { CaseDriftBanner } from '@/components/case-drift-banner';
 
 type CaseDetailProps = {
   caseId: string;
@@ -18,7 +20,7 @@ type CaseDetailProps = {
 
 export function CaseDetail({ caseId, basePath = '/cases', readOnly = false }: CaseDetailProps) {
   const router = useRouter();
-  const [caseData, setCaseData] = useState<Case & { hearings: Hearing[], events: CaseEvent[], tickets: any[], documents: any[] } | null>(null);
+  const [caseData, setCaseData] = useState<Case & { events: CaseEvent[], tickets: any[], documents: any[] } | null>(null);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
   
@@ -84,13 +86,16 @@ export function CaseDetail({ caseId, basePath = '/cases', readOnly = false }: Ca
         </div>
       )}
 
+      {!readOnly ? <CaseDriftBanner caseId={caseId} /> : null}
+      {!readOnly ? <CaseSuggestedSteps caseId={caseId} basePath={basePath} /> : null}
+
       {/* Tabs */}
       <div className="border-b border-slate-200">
         <nav className="-mb-px flex space-x-8">
           {[
             { id: 'overview', name: 'Overview', icon: Info },
             { id: 'tickets', name: 'Tickets/Proceedings', icon: TicketIcon, count: caseData.tickets.length },
-            { id: 'hearings', name: 'Hearings', icon: Calendar, count: caseData.hearings.length },
+            { id: 'hearings', name: 'Schedule', icon: Calendar, count: caseData.tickets.filter((t: any) => t.scheduledDate).length },
             { id: 'timeline', name: 'Timeline & Events', icon: Clock },
           ].map((tab) => (
             <button
@@ -232,12 +237,19 @@ export function CaseDetail({ caseId, basePath = '/cases', readOnly = false }: Ca
         </PanelCard>
       )}
 
-      {/* Hearings Tab */}
-      {activeTab === 'hearings' && (
-        <PanelCard className="p-0 border-slate-200">
-           <DataTableShell header={
+      {/* Schedule Tab — case schedule lives on tickets with scheduledDate set. */}
+      {activeTab === 'hearings' && (() => {
+        const entries = (caseData.tickets ?? [])
+          .filter((t: any) => t.scheduledDate)
+          .sort(
+            (a: any, b: any) =>
+              new Date(b.scheduledDate).getTime() - new Date(a.scheduledDate).getTime(),
+          );
+        return (
+          <PanelCard className="p-0 border-slate-200">
+            <DataTableShell header={
               <div className="flex items-center justify-between py-3 px-4 border-b border-slate-100">
-                <h3 className="text-lg font-semibold text-slate-900">Case Hearings</h3>
+                <h3 className="text-lg font-semibold text-slate-900">Case Schedule</h3>
               </div>
             }>
               <table className="min-w-full divide-y divide-slate-100">
@@ -245,32 +257,38 @@ export function CaseDetail({ caseId, basePath = '/cases', readOnly = false }: Ca
                   <tr>
                     <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Date</th>
                     <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Type</th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Ticket</th>
                     <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Outcome</th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-slate-100">
-                  {caseData.hearings.map((h) => (
-                    <tr key={h.id} className="hover:bg-slate-50">
+                  {entries.map((t: any) => (
+                    <tr key={t.id} className="hover:bg-slate-50">
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm font-semibold text-slate-900">{new Date(h.scheduledDate).toLocaleDateString()}</div>
+                        <div className="text-sm font-semibold text-slate-900">{new Date(t.scheduledDate).toLocaleDateString()}</div>
                       </td>
                       <td className="px-6 py-4">
-                        <div className="text-sm text-slate-900">{h.hearingType || 'Standard'}</div>
-                        {h.notes && <div className="text-xs text-slate-500 mt-1">{h.notes}</div>}
+                        <div className="text-sm text-slate-900">{t.hearingType || 'Standard'}</div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-slate-700">{h.outcome || '-'}</div>
+                        <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">
+                          {t.batchNo ?? '-'}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm text-slate-700">{t.outcome || '-'}</div>
                       </td>
                     </tr>
                   ))}
-                  {caseData.hearings.length === 0 && (
-                     <tr><td colSpan={3} className="px-6 py-8 text-center text-sm text-slate-500">No hearings exist.</td></tr>
+                  {entries.length === 0 && (
+                    <tr><td colSpan={4} className="px-6 py-8 text-center text-sm text-slate-500">No scheduled items.</td></tr>
                   )}
                 </tbody>
               </table>
-           </DataTableShell>
-        </PanelCard>
-      )}
+            </DataTableShell>
+          </PanelCard>
+        );
+      })()}
 
       {/* Timeline Tab */}
       {activeTab === 'timeline' && (
@@ -283,9 +301,15 @@ export function CaseDetail({ caseId, basePath = '/cases', readOnly = false }: Ca
                 )}
                 
                 <div className={`
-                  relative flex h-5 w-5 mt-1 flex-none items-center justify-center bg-white rounded-full ring-2 
-                  ${event.type.includes('COMPLETED') ? 'ring-emerald-500' : event.type.includes('HEARING') ? 'ring-amber-500' : 'ring-primary-600'}
+                  relative flex h-5 w-5 mt-1 flex-none items-center justify-center bg-white rounded-full ring-2
+                  ${event.type === 'CONTEXT_DRIFT_DETECTED' ? 'ring-amber-500'
+                    : event.type === 'CONTEXT_RESOLVED' ? 'ring-emerald-500'
+                    : event.type.includes('COMPLETED') ? 'ring-emerald-500'
+                    : event.type.includes('HEARING') ? 'ring-amber-500'
+                    : 'ring-primary-600'}
                 `}>
+                  {event.type === 'CONTEXT_DRIFT_DETECTED' && <AlertTriangle className="h-2.5 w-2.5 text-amber-500" />}
+                  {event.type === 'CONTEXT_RESOLVED' && <CheckCircle2 className="h-2.5 w-2.5 text-emerald-500" />}
                   {event.type.includes('HEARING') && <Calendar className="h-2.5 w-2.5 text-amber-500" />}
                   {event.type.includes('TICKET') && <TicketIcon className="h-2.5 w-2.5 text-primary-600" />}
                 </div>

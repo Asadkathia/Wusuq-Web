@@ -81,6 +81,13 @@ export function PhoneStep({
       <p className="text-center text-[11px] text-slate-400">
         By continuing, you agree to our Terms and Privacy.
       </p>
+
+      <div className="border-t border-border-soft pt-3 text-center text-xs text-slate-500">
+        Are you staff?{' '}
+        <Link href="/login" className="font-medium text-brand-600 hover:underline">
+          Sign in to the admin portal →
+        </Link>
+      </div>
     </div>
   );
 }

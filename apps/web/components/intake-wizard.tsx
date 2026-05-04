@@ -223,13 +223,20 @@ function formatRelativeTime(value: number | null) {
 }
 
 // ─── Main Wizard ─────────────────────────────────────────────────────────────
-export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardProps) {
+export function IntakeWizard({
+  title,
+  flows,
+  variant = 'admin',
+  caseId,
+  lockedConsumerId,
+  initialPayload,
+}: IntakeWizardProps) {
   const [draft, setDraft] = useState<TicketDraft>({
     flow: flows[0]?.key ?? '',
-    consumerId: '',
+    consumerId: lockedConsumerId ?? '',
     serviceId: '',
     step: 1,
-    payload: {},
+    payload: initialPayload ?? {},
   });
   const [consumerLabel, setConsumerLabel] = useState('');
   const [isConsumer, setIsConsumer] = useState(false);
@@ -839,6 +846,8 @@ export function IntakeWizard({ title, flows, variant = 'admin' }: IntakeWizardPr
           p.case_title ??
           '',
         payload: { ...p, sets, source: 'next-web-intake' },
+        // Atomic case linkage when the wizard is launched from a case page.
+        ...(caseId ? { caseId } : {}),
       });
       for (const file of files) {
         const fd = new FormData(); fd.append('file', file);

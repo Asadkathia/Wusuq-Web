@@ -15,6 +15,11 @@
     "sourceMap": true,
     "outDir": "./dist",
     "baseUrl": "./",
+    "paths": {
+      "@jest/globals": [
+        "../../node_modules/.pnpm/@jest+globals@30.3.0/node_modules/@jest/globals/build/index.d.ts"
+      ]
+    },
     "incremental": true,
     "strictNullChecks": true,
     "noImplicitAny": true,

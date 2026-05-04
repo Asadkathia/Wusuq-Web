@@ -1,17 +1,18 @@
 # Wusuq UAT Execution Log
 
-Executed At: 2026-03-18T19:51:44.585Z
+Executed At: 2026-05-04T17:03:38.125Z
 API Base URL: http://localhost:4000/api
-Rate-limit check: enabled
-Duration: 0s
+Rate-limit check: disabled
+Duration: 2s
 
 ## Results
 
 | Check | Status | Required | Details |
 | --- | --- | --- | --- |
 | GET /health | PASS | Yes |  |
-| POST /auth/refresh rate-limit burst | PASS | Yes |  |
-| Auth flow (login/refresh/logout) | SKIP | No | Set UAT_IDENTIFIER and UAT_PASSWORD to enable auth smoke tests |
+| POST /auth/login | PASS | Yes |  |
+| POST /auth/refresh | PASS | Yes |  |
+| POST /auth/logout | PASS | Yes |  |
 
 Overall: PASS
 

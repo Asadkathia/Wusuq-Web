@@ -1,6 +1,11 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { subDays, startOfDay, endOfDay, format } from 'date-fns';
+import {
+  recommendationsForCase,
+  isFlowKey,
+  type FlowKey,
+} from '@wusuq/shared';
 
 @Injectable()
 export class DashboardService {
@@ -79,10 +84,11 @@ export class DashboardService {
             service: { select: { name: true } },
           },
         }),
-        this.prisma.hearing.findFirst({
+        this.prisma.ticket.findFirst({
           where: {
             scheduledDate: { gte: now },
-            case: { consumerId: userId },
+            consumerId: userId,
+            caseId: { not: null },
           },
           orderBy: { scheduledDate: 'asc' },
           select: {
@@ -412,19 +418,68 @@ export class DashboardService {
       },
     ];
 
+    // Cases-with-suggestions row (case workflow redesign §2.5).
+    // Counts open, non-deleted cases that have at least one active
+    // recommendation. Uses the pure shared filter — no DB roundtrip per case.
+    const openCases = await this.prisma.case.findMany({
+      where: { status: 'OPEN', deletedAt: null },
+      select: {
+        id: true,
+        createdAt: true,
+        tickets: {
+          select: {
+            status: true,
+            intakeFlow: true,
+            service: { select: { flowKey: true } },
+          },
+        },
+      },
+    });
+
+    let casesWithRecommendations = 0;
+    let oldestRecommendationCaseAt: Date | null = null;
+    for (const c of openCases) {
+      const triggerFlows: FlowKey[] = [];
+      const blockingFlows: FlowKey[] = [];
+      for (const t of c.tickets) {
+        const flow = t.service?.flowKey ?? t.intakeFlow;
+        if (!flow || !isFlowKey(flow)) continue;
+        blockingFlows.push(flow);
+        if (t.status === 'COMPLETED') triggerFlows.push(flow);
+      }
+      const recs = recommendationsForCase({ triggerFlows, blockingFlows });
+      if (recs.length > 0) {
+        casesWithRecommendations++;
+        if (!oldestRecommendationCaseAt || c.createdAt < oldestRecommendationCaseAt) {
+          oldestRecommendationCaseAt = c.createdAt;
+        }
+      }
+    }
+
+    pendingActions.push({
+      key: 'case_recommendations',
+      label: 'Cases with suggested next steps',
+      count: casesWithRecommendations,
+      oldestAgeHours: oldestRecommendationCaseAt
+        ? Math.round((Date.now() - oldestRecommendationCaseAt.getTime()) / 36e5)
+        : null,
+      deepLink: '/cases?filter=has_recommendations',
+      severity: 'info' as const,
+    });
+
     // Recent Activity
     const recentActivity = await this.prisma.auditLog.findMany({
       orderBy: { createdAt: 'desc' },
       take: 10,
     });
 
-    // Today's hearings
+    // Today's hearings — sourced from tickets with scheduledDate set today.
     const todayStart = startOfDay(new Date());
     const todayEnd = endOfDay(new Date());
-    const todaysHearings = await this.prisma.hearing.findMany({
+    const todayTickets = await this.prisma.ticket.findMany({
       where: {
         scheduledDate: { gte: todayStart, lte: todayEnd },
-        deletedAt: null,
+        caseId: { not: null },
       },
       orderBy: { scheduledDate: 'asc' },
       take: 8,
@@ -441,6 +496,12 @@ export class DashboardService {
         },
       },
     });
+    const todaysHearings = todayTickets.map((t) => ({
+      id: t.id,
+      scheduledDate: t.scheduledDate,
+      hearingType: t.hearingType,
+      case: t.case,
+    }));
 
     // Top paralegals — by completed-ticket count in current range
     const topAssignments = await this.prisma.assignment.groupBy({

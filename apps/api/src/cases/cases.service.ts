@@ -10,11 +10,13 @@ import { CreateCaseDto } from './dto/create-case.dto';
 import { UpdateCaseDto } from './dto/update-case.dto';
 import { FilterCasesDto } from './dto/filter-cases.dto';
 import { UpdateCaseStatusDto } from './dto/update-case-status.dto';
-import { CreateHearingDto } from './dto/create-hearing.dto';
-import { UpdateHearingDto } from './dto/update-hearing.dto';
 import { CreateCaseTicketDto } from './dto/create-case-ticket.dto';
-import { ContinueCaseTicketDto } from './dto/continue-case-ticket.dto';
 import { Prisma } from '@prisma/client';
+import {
+  recommendationsForCase,
+  isFlowKey,
+  type FlowKey,
+} from '@wusuq/shared';
 
 @Injectable()
 export class CasesService {
@@ -72,6 +74,7 @@ export class CasesService {
     const skip = (query.page - 1) * query.limit;
 
     const where: Prisma.CaseWhereInput = {
+      deletedAt: null,
       ...(query.status ? { status: query.status } : {}),
       ...(query.consumerId ? { consumerId: query.consumerId } : {}),
       ...(query.type ? { type: query.type } : {}),
@@ -95,6 +98,52 @@ export class CasesService {
         : {}),
     };
 
+    if (query.hasRecommendations) {
+      // Recommendations are computed, not stored, so filter in memory after
+      // fetching the candidate set. Limited to OPEN cases — closed/archived
+      // cases don't get recommended next steps.
+      const candidates = await this.prisma.case.findMany({
+        where: { ...where, status: 'OPEN' },
+        orderBy: { createdAt: 'desc' },
+        include: {
+          consumer: { select: { id: true, name: true } },
+          _count: { select: { tickets: true } },
+          tickets: {
+            select: {
+              status: true,
+              intakeFlow: true,
+              service: { select: { flowKey: true } },
+            },
+          },
+        },
+      });
+
+      const filtered = candidates.filter((c) => {
+        const triggerFlows: FlowKey[] = [];
+        const blockingFlows: FlowKey[] = [];
+        for (const t of c.tickets) {
+          const flow = t.service?.flowKey ?? t.intakeFlow;
+          if (!flow || !isFlowKey(flow)) continue;
+          blockingFlows.push(flow);
+          if (t.status === 'COMPLETED') triggerFlows.push(flow);
+        }
+        return recommendationsForCase({ triggerFlows, blockingFlows }).length > 0;
+      });
+
+      const total = filtered.length;
+      const items = filtered
+        .slice(skip, skip + query.limit)
+        // Strip the heavy `tickets` payload before returning.
+        .map(({ tickets: _t, ...rest }) => rest);
+
+      return {
+        items,
+        page: query.page,
+        limit: query.limit,
+        total,
+      };
+    }
+
     const [items, total] = await this.prisma.$transaction([
       this.prisma.case.findMany({
         where,
@@ -104,7 +153,7 @@ export class CasesService {
         include: {
           consumer: { select: { id: true, name: true } },
           _count: {
-            select: { tickets: true, hearings: true },
+            select: { tickets: true },
           },
         },
       }),
@@ -120,14 +169,10 @@ export class CasesService {
   }
 
   async findOne(id: string) {
-    const caseRec = await this.prisma.case.findUnique({
-      where: { id },
+    const caseRec = await this.prisma.case.findFirst({
+      where: { id, deletedAt: null },
       include: {
         consumer: { select: { id: true, name: true, phone: true, email: true } },
-        hearings: {
-          where: { deletedAt: null },
-          orderBy: { scheduledDate: 'asc' },
-        },
         tickets: {
           orderBy: { createdAt: 'desc' },
           include: { service: { select: { name: true } } },
@@ -180,7 +225,9 @@ export class CasesService {
     dto: UpdateCaseStatusDto,
     actor?: { actorUserId?: string; actorEmail?: string },
   ) {
-    const caseRec = await this.prisma.case.findUnique({ where: { id } });
+    const caseRec = await this.prisma.case.findFirst({
+      where: { id, deletedAt: null },
+    });
     if (!caseRec) {
       throw new NotFoundException('Case not found');
     }
@@ -231,12 +278,19 @@ export class CasesService {
     id: string,
     actor?: { actorUserId?: string; actorEmail?: string },
   ) {
-    const caseRec = await this.prisma.case.findUnique({ where: { id } });
+    const caseRec = await this.prisma.case.findFirst({
+      where: { id, deletedAt: null },
+    });
     if (!caseRec) {
       throw new NotFoundException('Case not found');
     }
 
-    await this.prisma.case.delete({ where: { id } });
+    // Soft delete: preserves history (events, tickets, audit log) and is
+    // reversible. Hard purge is a separate admin op (out of scope).
+    await this.prisma.case.update({
+      where: { id },
+      data: { deletedAt: new Date() },
+    });
 
     await this.auditLogsService.create({
       action: 'CASE_DELETED',
@@ -260,22 +314,14 @@ export class CasesService {
         ticket: {
           select: { batchNo: true, status: true, serviceCost: true, totalAmount: true, service: { select: { name: true } } },
         },
-        hearing: { select: { scheduledDate: true, hearingType: true } },
       },
     });
   }
 
   async getCaseSummary(id: string) {
-    const caseRec = await this.prisma.case.findUnique({
-      where: { id },
-      include: {
-        tickets: true,
-        hearings: {
-          where: { deletedAt: null, scheduledDate: { gte: new Date() } },
-          orderBy: { scheduledDate: 'asc' },
-          take: 1,
-        },
-      },
+    const caseRec = await this.prisma.case.findFirst({
+      where: { id, deletedAt: null },
+      include: { tickets: true },
     });
 
     if (!caseRec) throw new NotFoundException('Case not found');
@@ -295,6 +341,11 @@ export class CasesService {
 
     const activeTicket = caseRec.tickets.find((t) => t.status === 'IN_PROGRESS' || t.status === 'ASSIGNED');
 
+    // Next scheduled item — first future ticket with scheduledDate set.
+    const nextScheduled = caseRec.tickets
+      .filter((t) => t.scheduledDate && new Date(t.scheduledDate).getTime() >= Date.now())
+      .sort((a, b) => new Date(a.scheduledDate!).getTime() - new Date(b.scheduledDate!).getTime())[0];
+
     return {
       caseRef: caseRec.caseRef,
       title: caseRec.title,
@@ -303,113 +354,15 @@ export class CasesService {
       ticketStats: { total: totalTickets, pending, inProgress, completed },
       financials: { totalCost, amountPaid, outstanding: totalCost - amountPaid },
       lastActivity: lastEvent?.createdAt,
-      nextHearing: caseRec.hearings[0] || null,
+      nextHearing: nextScheduled
+        ? {
+            scheduledDate: nextScheduled.scheduledDate,
+            hearingType: nextScheduled.hearingType,
+            ticketId: nextScheduled.id,
+          }
+        : null,
       activeTicket: activeTicket || null,
     };
-  }
-
-  async createHearing(
-    caseId: string,
-    dto: CreateHearingDto,
-    actor?: { actorUserId?: string; actorEmail?: string },
-  ) {
-    const caseRec = await this.prisma.case.findUnique({ where: { id: caseId } });
-    if (!caseRec) throw new NotFoundException('Case not found');
-
-    const hearing = await this.prisma.hearing.create({
-      data: {
-        caseId,
-        ...dto,
-      },
-    });
-
-    await this.prisma.caseEvent.create({
-      data: {
-        caseId,
-        type: 'HEARING_SCHEDULED',
-        title: `Hearing scheduled: ${dto.scheduledDate.toISOString().split('T')[0]}`,
-        description: dto.hearingType,
-        hearingId: hearing.id,
-        actorUserId: actor?.actorUserId,
-      },
-    });
-
-    await this.auditLogsService.create({
-      action: 'HEARING_SCHEDULED',
-      entity: 'HEARING',
-      entityId: hearing.id,
-      actorUserId: actor?.actorUserId,
-      actorEmail: actor?.actorEmail,
-      metadata: { caseId },
-    });
-
-    return hearing;
-  }
-
-  async listHearings(caseId: string) {
-    return this.prisma.hearing.findMany({
-      where: { caseId, deletedAt: null },
-      orderBy: { scheduledDate: 'desc' },
-      include: {
-        _count: { select: { tickets: true } },
-      },
-    });
-  }
-
-  async updateHearing(
-    caseId: string,
-    hearingId: string,
-    dto: UpdateHearingDto,
-    actor?: { actorUserId?: string; actorEmail?: string },
-  ) {
-    const hearing = await this.prisma.hearing.findFirst({
-      where: { id: hearingId, caseId, deletedAt: null },
-    });
-    if (!hearing) throw new NotFoundException('Hearing not found');
-
-    const updated = await this.prisma.hearing.update({
-      where: { id: hearingId },
-      data: dto,
-    });
-
-    await this.prisma.caseEvent.create({
-      data: {
-        caseId,
-        type: 'HEARING_UPDATED',
-        title: `Hearing updated: ${updated.scheduledDate.toISOString().split('T')[0]}`,
-        hearingId: hearing.id,
-        actorUserId: actor?.actorUserId,
-      },
-    });
-
-    return updated;
-  }
-
-  async deleteHearing(
-    caseId: string,
-    hearingId: string,
-    actor?: { actorUserId?: string; actorEmail?: string },
-  ) {
-    const hearing = await this.prisma.hearing.findFirst({
-      where: { id: hearingId, caseId, deletedAt: null },
-    });
-    if (!hearing) throw new NotFoundException('Hearing not found');
-
-    await this.prisma.hearing.update({
-      where: { id: hearingId },
-      data: { deletedAt: new Date() },
-    });
-
-    await this.auditLogsService.create({
-      action: 'HEARING_DELETED',
-      entity: 'HEARING',
-      entityId: hearingId,
-      actorUserId: actor?.actorUserId,
-      actorEmail: actor?.actorEmail,
-      metadata: { caseId },
-    });
-
-    return { deleted: true, id: hearingId };
   }
 
   async createCaseTicket(
@@ -417,8 +370,8 @@ export class CasesService {
     dto: CreateCaseTicketDto,
     actor?: { actorUserId?: string; actorEmail?: string },
   ) {
-    const caseRec = await this.prisma.case.findUnique({
-      where: { id: caseId, status: 'OPEN' },
+    const caseRec = await this.prisma.case.findFirst({
+      where: { id: caseId, status: 'OPEN', deletedAt: null },
     });
     if (!caseRec) throw new BadRequestException('Case must exist and be OPEN');
 
@@ -466,24 +419,28 @@ export class CasesService {
       formPayload = { ...formPayload, ...dto.overrides };
     }
 
-    const flow = dto.flow || this.inferFlow(service, caseRec.type);
+    // Resolve the flow: prefer Service.flowKey (canonical), fall back to
+    // legacy inferFlow for services that haven't been backfilled yet.
+    const flow =
+      dto.flow ||
+      service.flowKey ||
+      this.inferFlow(service, caseRec.type);
 
+    // Single atomic create — caseId is written in the same row insert by
+    // ticketsService.createIntakeTicket (no second update).
     const ticket = await this.ticketsService.createIntakeTicket(
       {
         flow,
         consumerId: caseRec.consumerId,
         serviceId: service.id,
         payload: formPayload,
+        caseId,
       },
       actor,
     );
 
-    const updatedTicket = await this.prisma.ticket.update({
+    const ticketWithService = await this.prisma.ticket.findUnique({
       where: { id: ticket.id },
-      data: {
-        caseId,
-        hearingId: dto.hearingId,
-      },
       include: { service: true },
     });
 
@@ -493,7 +450,6 @@ export class CasesService {
         type: 'TICKET_CREATED',
         title: `Ticket created: ${service.name} (${ticket.batchNo})`,
         ticketId: ticket.id,
-        hearingId: dto.hearingId,
         actorUserId: actor?.actorUserId,
       },
     });
@@ -507,40 +463,7 @@ export class CasesService {
       metadata: { caseId },
     });
 
-    return updatedTicket;
-  }
-
-  async continueCaseTicket(
-    caseId: string,
-    previousTicketId: string,
-    dto: ContinueCaseTicketDto,
-    actor?: { actorUserId?: string; actorEmail?: string },
-  ) {
-    const prevTicket = await this.prisma.ticket.findUnique({
-      where: { id: previousTicketId },
-    });
-    if (!prevTicket || prevTicket.caseId !== caseId) {
-      throw new BadRequestException('Previous ticket not found in this case');
-    }
-
-    const prevPayload = (prevTicket.formPayload as Record<string, unknown>) || {};
-    
-    // Create new object without unneeded stuff or just pass prevPayload to createCaseTicket
-    const mergedOverrides = {
-      ...prevPayload,
-      ...(dto.overrides || {}),
-    };
-
-    return this.createCaseTicket(
-      caseId,
-      {
-        serviceId: dto.serviceId,
-        hearingId: dto.hearingId,
-        flow: dto.flow,
-        overrides: mergedOverrides,
-      },
-      actor,
-    );
+    return ticketWithService;
   }
 
   async listCaseTickets(caseId: string) {
@@ -556,6 +479,173 @@ export class CasesService {
         },
       },
     });
+  }
+
+  /**
+   * Lists unresolved drift events for a case. A drift is unresolved when a
+   * CONTEXT_DRIFT_DETECTED event exists for a field with no later
+   * CONTEXT_RESOLVED event for the same field.
+   */
+  async getUnresolvedDrifts(caseId: string) {
+    await this.findOne(caseId);
+    const events = await this.prisma.caseEvent.findMany({
+      where: {
+        caseId,
+        type: { in: ['CONTEXT_DRIFT_DETECTED', 'CONTEXT_RESOLVED'] },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    type Pending = {
+      id: string;
+      field: string;
+      caseValue: string;
+      ticketValue: string;
+      ticketId: string | null;
+      detectedAt: Date;
+    };
+
+    const pendingByField = new Map<string, Pending>();
+    for (const e of events) {
+      const meta =
+        e.metadata && typeof e.metadata === 'object'
+          ? (e.metadata as Record<string, unknown>)
+          : {};
+      const field = String(meta.field ?? '');
+      if (!field) continue;
+
+      if (e.type === 'CONTEXT_DRIFT_DETECTED') {
+        pendingByField.set(field, {
+          id: e.id,
+          field,
+          caseValue: String(meta.caseValue ?? ''),
+          ticketValue: String(meta.ticketValue ?? ''),
+          ticketId: e.ticketId,
+          detectedAt: e.createdAt,
+        });
+      } else if (e.type === 'CONTEXT_RESOLVED') {
+        pendingByField.delete(field);
+      }
+    }
+
+    return [...pendingByField.values()].sort(
+      (a, b) => a.detectedAt.getTime() - b.detectedAt.getTime(),
+    );
+  }
+
+  /**
+   * Resolves a drift event by writing the chosen value to the Case row and
+   * appending a CONTEXT_RESOLVED event. `source: 'CASE'` keeps the existing
+   * value; `source: 'TICKET'` adopts the ticket-reported value.
+   */
+  async resolveDrift(
+    caseId: string,
+    eventId: string,
+    source: 'CASE' | 'TICKET',
+    actor?: { actorUserId?: string; actorEmail?: string },
+  ) {
+    const event = await this.prisma.caseEvent.findFirst({
+      where: { id: eventId, caseId, type: 'CONTEXT_DRIFT_DETECTED' },
+    });
+    if (!event) throw new NotFoundException('Drift event not found');
+
+    const meta =
+      event.metadata && typeof event.metadata === 'object'
+        ? (event.metadata as Record<string, unknown>)
+        : {};
+    const field = String(meta.field ?? '');
+    const caseValue = String(meta.caseValue ?? '');
+    const ticketValue = String(meta.ticketValue ?? '');
+    if (!field) throw new BadRequestException('Drift event is missing field');
+
+    const chosenValue = source === 'TICKET' ? ticketValue : caseValue;
+
+    if (source === 'TICKET') {
+      // Coerce caseYear back to a number on assignment.
+      const data: Record<string, string | number> =
+        field === 'caseYear'
+          ? { caseYear: parseInt(ticketValue, 10) || 0 }
+          : { [field]: ticketValue };
+      await this.prisma.case.update({ where: { id: caseId }, data });
+    }
+
+    await this.prisma.caseEvent.create({
+      data: {
+        caseId,
+        type: 'CONTEXT_RESOLVED',
+        title: `Resolved drift: ${field} → ${source.toLowerCase()} value`,
+        description: `Chose ${source} value "${chosenValue}".`,
+        ticketId: event.ticketId,
+        actorUserId: actor?.actorUserId,
+        metadata: { field, chosenValue, source, driftEventId: event.id },
+      },
+    });
+
+    await this.auditLogsService.create({
+      action: 'CASE_DRIFT_RESOLVED',
+      entity: 'CASE',
+      entityId: caseId,
+      actorUserId: actor?.actorUserId,
+      actorEmail: actor?.actorEmail,
+      metadata: { field, source, chosenValue },
+    });
+
+    return { resolved: true, field, source, chosenValue };
+  }
+
+  /**
+   * Logs a RECOMMENDATION_TRIGGERED event when a user clicks a suggested
+   * next-step card. Used for analytics; does not change state otherwise.
+   */
+  async trackRecommendationClick(
+    caseId: string,
+    body: { flowKey: string; surface?: string },
+    actor?: { actorUserId?: string; actorEmail?: string },
+  ) {
+    await this.findOne(caseId);
+    if (!isFlowKey(body.flowKey)) {
+      throw new BadRequestException('Unknown flowKey');
+    }
+    await this.prisma.caseEvent.create({
+      data: {
+        caseId,
+        type: 'RECOMMENDATION_TRIGGERED',
+        title: `Suggestion clicked: ${body.flowKey}`,
+        actorUserId: actor?.actorUserId,
+        metadata: { flowKey: body.flowKey, surface: body.surface ?? 'case_detail' },
+      },
+    });
+    return { tracked: true };
+  }
+
+  /**
+   * Computes "next ticket" recommendations for a case from current ticket
+   * state (Option D filter — see spec). Pure function of state; no
+   * persistence.
+   */
+  async getRecommendations(caseId: string) {
+    await this.findOne(caseId);
+
+    const tickets = await this.prisma.ticket.findMany({
+      where: { caseId },
+      select: { intakeFlow: true, status: true, service: { select: { flowKey: true } } },
+    });
+
+    const triggerFlows: FlowKey[] = [];
+    const blockingFlows: FlowKey[] = [];
+
+    for (const t of tickets) {
+      // Prefer Service.flowKey (canonical), fall back to ticket.intakeFlow.
+      const flow = t.service?.flowKey ?? t.intakeFlow;
+      if (!flow || !isFlowKey(flow)) continue;
+      // Today's TicketStatus enum has no CANCELLED. Treat REJECTED-like
+      // states (none today) as un-blocking when added; for now every
+      // status that isn't a future cancellation counts as blocking.
+      blockingFlows.push(flow);
+      if (t.status === 'COMPLETED') triggerFlows.push(flow);
+    }
+
+    return recommendationsForCase({ triggerFlows, blockingFlows });
   }
 
   private inferFlow(service: any, caseType: string) {

@@ -7,10 +7,6 @@ export class CreateCaseTicketDto {
 
   @IsString()
   @IsOptional()
-  hearingId?: string;
-
-  @IsString()
-  @IsOptional()
   flow?: string;
 
   @IsObject()

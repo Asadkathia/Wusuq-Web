@@ -36,4 +36,21 @@ export type IntakeWizardProps = {
   title: string;
   flows: IntakeFlow[];
   variant?: 'admin' | 'consumer';
+  /**
+   * If set, the ticket created by this wizard is attached to the given case.
+   * The wizard sends `caseId` in the create-ticket payload; consumer is
+   * locked to the case's consumer (no consumer picker shown).
+   */
+  caseId?: string;
+  /**
+   * Optional consumer to lock the wizard to (used together with `caseId`).
+   * When provided, the consumer picker is hidden.
+   */
+  lockedConsumerId?: string;
+  /**
+   * Pre-fills the wizard's payload draft. Keys may be canonical Case
+   * column names (e.g. `caseNo`) or wizard field names (e.g.
+   * `case_petition_no`); the wizard normalizes via PAYLOAD_FIELD_ALIASES.
+   */
+  initialPayload?: Record<string, string>;
 };

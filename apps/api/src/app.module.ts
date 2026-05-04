@@ -25,6 +25,9 @@ import { PermissionsGuard } from './roles-permissions/guards/permissions.guard';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { CasesModule } from './cases/cases.module';
 import { CurrencyModule } from './currency/currency.module';
+import { ScheduleModule } from '@nestjs/schedule';
+import { FileStorageModule } from './file-storage/file-storage.module';
+import { PersonalFilesModule } from './personal-files/personal-files.module';
 
 @Module({
   imports: [
@@ -70,6 +73,9 @@ import { CurrencyModule } from './currency/currency.module';
     DashboardModule,
     CasesModule,
     CurrencyModule,
+    ScheduleModule.forRoot(),
+    FileStorageModule,
+    PersonalFilesModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },
