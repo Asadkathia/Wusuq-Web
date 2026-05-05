@@ -13,6 +13,7 @@ import {
   Wallet as WalletIcon,
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import { advanceOnEnter } from '@/lib/form-utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { FormField } from '@/components/ui/form-field';
@@ -264,7 +265,7 @@ function TopupDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={submit} className="space-y-4">
+        <form onSubmit={submit} onKeyDown={advanceOnEnter} className="space-y-4">
           <FormField label="Amount (PKR)" required htmlFor="amount">
             <Input
               id="amount"

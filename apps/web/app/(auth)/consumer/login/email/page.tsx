@@ -7,6 +7,7 @@ import { ArrowRight, Lock, Mail, Scale, ShieldCheck, Sparkles } from 'lucide-rea
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { FormField } from '@/components/ui/form-field';
+import { advanceOnEnter } from '@/lib/form-utils';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:4000/api';
 const LOGIN_TIMEOUT_MS = 15000;
@@ -136,7 +137,7 @@ export default function ConsumerLoginPage() {
               </p>
             </div>
 
-            <form onSubmit={onSubmit} className="mt-8 space-y-5">
+            <form onSubmit={onSubmit} onKeyDown={advanceOnEnter} className="mt-8 space-y-5">
               <FormField label="Email or phone" required htmlFor="identifier">
                 <Input
                   id="identifier"

@@ -6,6 +6,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { apiClient } from '@/lib/api-client';
+import { advanceOnEnter } from '@/lib/form-utils';
 import { SectionHeader } from '@/components/ui/section-header';
 import { PanelCard } from '@/components/ui/panel-card';
 import { DataTableShell } from '@/components/ui/data-table-shell';
@@ -458,7 +459,7 @@ export function WalletBoard() {
               <p className="text-sm text-slate-500 text-center mt-1">Manually credit a user's wallet.</p>
             </div>
 
-            <form onSubmit={submitTopup} className="space-y-4">
+            <form onSubmit={submitTopup} onKeyDown={advanceOnEnter} className="space-y-4">
               <label className="block">
                 <span className="text-sm font-medium text-slate-700">User ID</span>
                 <input

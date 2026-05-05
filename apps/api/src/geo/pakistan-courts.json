@@ -2,6 +2,7 @@
   "metadata": {
     "total_records": 711,
     "court_types": [
+      "Federal Constitutional Court",
       "Supreme Court",
       "High Court",
       "Federal Shariat Court",
@@ -19,6 +20,16 @@
     ]
   },
   "nested": {
+    "Federal Constitutional Court": {
+      "Federal Constitutional Court of Pakistan": {
+        "Federal": [
+          {
+            "city": "Islamabad",
+            "is_principal_seat": true
+          }
+        ]
+      }
+    },
     "Supreme Court": {
       "Supreme Court of Pakistan": {
         "Balochistan": [

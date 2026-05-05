@@ -6,6 +6,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { apiClient } from '@/lib/api-client';
+import { advanceOnEnter } from '@/lib/form-utils';
 import { SectionHeader } from '@/components/ui/section-header';
 import { DataTableShell } from '@/components/ui/data-table-shell';
 import { FilterBar } from '@/components/ui/filter-bar';
@@ -216,7 +217,7 @@ export function DocumentsBoard() {
               <button onClick={() => setIsUploadOpen(false)} className="text-slate-400 hover:text-slate-700"><X className="h-5 w-5" /></button>
             </div>
             
-            <form onSubmit={handleUploadSubmit} className="space-y-6">
+            <form onSubmit={handleUploadSubmit} onKeyDown={advanceOnEnter} className="space-y-6">
               <label className="block">
                 <span className="text-sm font-medium text-slate-700 mb-1 flex justify-between">
                   <span>Target Ticket ID</span>

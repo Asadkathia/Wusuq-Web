@@ -3,6 +3,7 @@
 
 import { useCallback, useEffect, useState, useMemo } from 'react';
 import { apiClient } from '@/lib/api-client';
+import { advanceOnEnter } from '@/lib/form-utils';
 import { SectionHeader } from '@/components/ui/section-header';
 import { PanelCard } from '@/components/ui/panel-card';
 import { DataTableShell } from '@/components/ui/data-table-shell';
@@ -234,7 +235,7 @@ export function CostRulesBoard({ title }: CostRulesBoardProps) {
           <Calculator className="h-5 w-5 text-primary-600" />
           Add New Clerk Cost Rule
         </h3>
-        <form onSubmit={createRule} className="space-y-4">
+        <form onSubmit={createRule} onKeyDown={advanceOnEnter} className="space-y-4">
           <RuleFormFields f={form} onChange={patch => setForm(c => ({ ...c, ...patch }))} />
           <div className="flex justify-end pt-2">
             <button type="submit" disabled={loading} className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 disabled:opacity-50 transition-colors">

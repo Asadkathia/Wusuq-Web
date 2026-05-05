@@ -3,6 +3,7 @@
 
 import { useCallback, useEffect, useState, useMemo } from 'react';
 import { apiClient } from '@/lib/api-client';
+import { advanceOnEnter } from '@/lib/form-utils';
 import { SectionHeader } from '@/components/ui/section-header';
 import { PanelCard } from '@/components/ui/panel-card';
 import { DataTableShell } from '@/components/ui/data-table-shell';
@@ -721,7 +722,7 @@ export function PricingRulesBoard() {
             <DollarSign className="h-5 w-5 text-primary-600" />
             New Pricing Rule
           </h3>
-          <form onSubmit={createRule} className="space-y-4">
+          <form onSubmit={createRule} onKeyDown={advanceOnEnter} className="space-y-4">
             <RuleFormFields f={form} onChange={patch => setForm(c => ({ ...c, ...patch }))} />
             <div className="flex justify-end pt-2">
               <button

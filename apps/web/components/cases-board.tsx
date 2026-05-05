@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { casesApi, type Case } from '@/lib/api/cases';
+import { advanceOnEnter } from '@/lib/form-utils';
 import { SectionHeader } from '@/components/ui/section-header';
 import { PanelCard } from '@/components/ui/panel-card';
 import { DataTableShell } from '@/components/ui/data-table-shell';
@@ -220,7 +221,7 @@ export function CasesBoard() {
             <h3 className="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2 border-b border-slate-100 pb-4">
               <Plus className="h-5 w-5 text-primary-600" /> Open New Case
             </h3>
-            <form onSubmit={handleCreate} className="space-y-4">
+            <form onSubmit={handleCreate} onKeyDown={advanceOnEnter} className="space-y-4">
               <label className="block">
                 <span className="text-sm font-medium text-slate-700 block mb-1">Title</span>
                 <input 

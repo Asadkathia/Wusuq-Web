@@ -4,6 +4,7 @@ import React, { useEffect, useRef, useState } from "react";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
 import { ChevronDown, Send, User, Mail, Phone, MapPin, Building2, Landmark, Check } from "lucide-react";
+import { advanceOnEnter } from "@/lib/form-utils";
 
 gsap.registerPlugin(useGSAP);
 
@@ -105,7 +106,7 @@ export default function CreateRepresentativeForm() {
           <p className="text-slate-400">Add a new representative to the system.</p>
         </div>
 
-        <form ref={formRef} className="space-y-6" onSubmit={(e) => e.preventDefault()}>
+        <form ref={formRef} className="space-y-6" onSubmit={(e) => e.preventDefault()} onKeyDown={advanceOnEnter}>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             
             {/* Name */}

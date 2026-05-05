@@ -3,6 +3,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { apiClient } from '@/lib/api-client';
+import { advanceOnEnter } from '@/lib/form-utils';
 import { SectionHeader } from '@/components/ui/section-header';
 import { DataTableShell } from '@/components/ui/data-table-shell';
 import { FilterBar } from '@/components/ui/filter-bar';
@@ -457,7 +458,7 @@ export function RepresentativesBoard() {
               </button>
             </div>
 
-            <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <form onSubmit={handleSubmit} onKeyDown={advanceOnEnter} className="grid grid-cols-1 md:grid-cols-2 gap-4">
 
               {/* ── Account fields ── */}
               {textField('Full Name', 'name', { required: true })}

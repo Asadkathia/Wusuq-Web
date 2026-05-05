@@ -4,6 +4,7 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { KeyRound, Save, Shield, User as UserIcon } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import { advanceOnEnter } from '@/lib/form-utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { FormField } from '@/components/ui/form-field';
@@ -124,7 +125,7 @@ export function ConsumerProfileBoard() {
 
         <TabsContent value="general">
           <PanelCard>
-            <form onSubmit={saveGeneral} className="space-y-5">
+            <form onSubmit={saveGeneral} onKeyDown={advanceOnEnter} className="space-y-5">
               <div className="grid gap-5 sm:grid-cols-2">
                 <FormField label="Full name" htmlFor="name">
                   <Input id="name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Your name" />
@@ -154,7 +155,7 @@ export function ConsumerProfileBoard() {
 
         <TabsContent value="security">
           <PanelCard>
-            <form onSubmit={savePassword} className="space-y-5">
+            <form onSubmit={savePassword} onKeyDown={advanceOnEnter} className="space-y-5">
               <div className="flex items-center gap-3">
                 <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-50 text-brand-500">
                   <KeyRound className="h-4 w-4" />

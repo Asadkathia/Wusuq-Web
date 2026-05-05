@@ -359,8 +359,8 @@ export function IntakeWizard({
       'Special Court': 2,
       'High Court': 3,
       'Federal Shariat Court': 4,
-      'Federal Constitutional Court': 5,
-      'Supreme Court': 6,
+      'Supreme Court': 5,
+      'Federal Constitutional Court': 6,
     };
 
     return [...filtered].sort((a, b) => {

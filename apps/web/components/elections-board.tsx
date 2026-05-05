@@ -6,6 +6,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { apiClient } from '@/lib/api-client';
+import { advanceOnEnter } from '@/lib/form-utils';
 import { SectionHeader } from '@/components/ui/section-header';
 import { PanelCard } from '@/components/ui/panel-card';
 import { DataTableShell } from '@/components/ui/data-table-shell';
@@ -300,7 +301,7 @@ export function ElectionsBoard() {
             <h3 className="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2 border-b border-slate-100 pb-4">
               <Plus className="h-5 w-5 text-primary-600" /> Create Election
             </h3>
-            <form onSubmit={createElection} className="space-y-4">
+            <form onSubmit={createElection} onKeyDown={advanceOnEnter} className="space-y-4">
               <label className="block">
                 <span className="text-sm font-medium text-slate-700 block mb-1">Name</span>
                 <input required className="w-full rounded-lg border-0 py-2 px-3 text-slate-900 ring-1 ring-inset ring-border-soft focus:ring-2 focus:ring-primary-600 sm:text-sm" placeholder="e.g. Board of Directors 2026" value={electionForm.name} onChange={e => setElectionForm(c => ({...c, name: e.target.value}))} />
@@ -344,7 +345,7 @@ export function ElectionsBoard() {
                 <Users className="h-5 w-5 text-primary-600" /> Manage Candidates
               </h3>
               
-              <form onSubmit={addCandidate} className="space-y-3 mb-6">
+              <form onSubmit={addCandidate} onKeyDown={advanceOnEnter} className="space-y-3 mb-6">
                 <label className="block">
                   <span className="text-xs font-medium text-slate-700 block mb-1">Member Name</span>
                   <input required className="w-full rounded-md border-0 py-1.5 px-3 ring-1 ring-inset ring-border-soft sm:text-sm" placeholder="Full name" value={candidateForm.memberName} onChange={e => setCandidateForm(c => ({...c, memberName: e.target.value}))} />

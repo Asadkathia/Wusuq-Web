@@ -3,6 +3,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { apiClient } from '@/lib/api-client';
+import { advanceOnEnter } from '@/lib/form-utils';
 import { SectionHeader } from '@/components/ui/section-header';
 import { DataTableShell } from '@/components/ui/data-table-shell';
 import { FilterBar } from '@/components/ui/filter-bar';
@@ -188,7 +189,7 @@ export function UsersBoard() {
             <h3 className="text-lg font-semibold text-slate-900">{editUser ? 'Edit User' : 'Create User'}</h3>
             <button onClick={() => setShowCreate(false)}><X className="h-5 w-5 text-slate-400 hover:text-slate-700" /></button>
           </div>
-          <form onSubmit={saveUser} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <form onSubmit={saveUser} onKeyDown={advanceOnEnter} className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {[
               { label: 'Full Name', key: 'name', required: true },
               { label: 'Email', key: 'email', required: !editUser, type: 'email' },
@@ -242,7 +243,7 @@ export function UsersBoard() {
             <h3 className="text-lg font-semibold text-slate-900">Topup Wallet ({topupUser.name})</h3>
             <button onClick={() => setTopupUser(null)}><X className="h-5 w-5 text-slate-400 hover:text-slate-700" /></button>
           </div>
-          <form onSubmit={submitTopup} className="space-y-4 max-w-sm">
+          <form onSubmit={submitTopup} onKeyDown={advanceOnEnter} className="space-y-4 max-w-sm">
             <label className="block">
               <span className="text-sm font-medium text-slate-700">Amount (PKR)</span>
               <input type="number" required className="mt-1 block w-full rounded-lg border-0 py-2 px-3 text-slate-900 ring-1 ring-inset ring-border-soft focus:ring-2 focus:ring-emerald-600 sm:text-sm"

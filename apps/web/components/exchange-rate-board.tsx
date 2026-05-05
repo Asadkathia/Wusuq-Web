@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { apiClient } from '@/lib/api-client';
+import { advanceOnEnter } from '@/lib/form-utils';
 import { SectionHeader } from '@/components/ui/section-header';
 import { PanelCard } from '@/components/ui/panel-card';
 import { DataTableShell } from '@/components/ui/data-table-shell';
@@ -112,7 +113,7 @@ export function ExchangeRateBoard() {
           <Plus className="h-5 w-5 text-primary-600" />
           Add Exchange Rate
         </h3>
-        <form onSubmit={addRate} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5 items-end">
+        <form onSubmit={addRate} onKeyDown={advanceOnEnter} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5 items-end">
           <label className="block">
             <span className="text-xs font-semibold text-slate-600">From Currency</span>
             <input

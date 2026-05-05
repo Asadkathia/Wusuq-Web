@@ -2,6 +2,8 @@
 import { useEffect, useState } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { Select } from '@/components/ui/select';
+import { CountryPicker } from '@/components/ui/country-picker';
+import { DEFAULT_COUNTRY_CODE } from '@/lib/countries';
 
 type CityRow = { id: string; name: string; district?: string; province?: string };
 
@@ -23,6 +25,10 @@ export function ProfileStep({
   loading: boolean;
 }) {
   const [cities, setCities] = useState<CityRow[]>([]);
+  // Country picker is frontend-only for now; selection is held in local
+  // component state and will be wired to pricing once the backend contract
+  // is defined. Defaults to Pakistan.
+  const [countryCode, setCountryCode] = useState<string>(DEFAULT_COUNTRY_CODE);
 
   useEffect(() => {
     apiClient
@@ -67,6 +73,14 @@ export function ProfileStep({
           className="rounded-xl border-0 px-3.5 py-2.5 text-slate-900 shadow-sm ring-1 ring-inset ring-border-soft focus:ring-2 focus:ring-brand-500/50"
           autoFocus
         />
+      </label>
+
+      <label className="flex flex-col gap-1.5">
+        <span className="text-sm font-medium text-slate-700">Country *</span>
+        <CountryPicker value={countryCode} onChange={setCountryCode} />
+        <span className="text-xs text-slate-500">
+          Pricing is calculated based on your country.
+        </span>
       </label>
 
       <label className="flex flex-col gap-1.5">
