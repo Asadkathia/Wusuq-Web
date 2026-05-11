@@ -150,7 +150,6 @@ Items from the `Wusuq Edits 5-10-26.pdf` feedback that are intentionally deferre
 
 ### Case Files / Case Information
 - **PDF #11** — Helper-text copy under every wizard field. `IntakeField.hint` infrastructure is shipped; awaiting copy strings from the product owner.
-- **PDF #22** — "Pending Case requires two clicks" bug. Not reproducible in current code — recheck with reporter or fold into a wider field-renderer audit.
 
 ### Catalogue scraping — still uncovered
 - **LHC scraper** — `scrape-lhc.ts` exists with a documented probe trail in its header but the Lahore High Court doesn't publish a public case-type catalogue today (every plausible portal returns 404/500/blocked). Falls back to `hardcoded_fallback` in `CourtCaseType`. Update the `URL` constant if LHC ever publishes a search form.
