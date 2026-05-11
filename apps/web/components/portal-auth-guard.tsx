@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { startTransition, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 
 type PortalAuthGuardProps = {
@@ -47,7 +47,6 @@ export function PortalAuthGuard({ children }: PortalAuthGuardProps) {
       const CONSUMER_ROLES = ['consumer', 'lawyer', 'company'];
       if (CONSUMER_ROLES.includes(user?.role ?? '')) {
         router.replace('/consumer/dashboard');
-        setIsAuthorized(false);
         return;
       }
     } catch {
@@ -60,8 +59,8 @@ export function PortalAuthGuard({ children }: PortalAuthGuardProps) {
     };
 
     window.addEventListener('auth:unauthorized', onUnauthorized);
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setIsAuthorized(true);
+
+    startTransition(() => setIsAuthorized(true));
 
     return () => {
       window.removeEventListener('auth:unauthorized', onUnauthorized);

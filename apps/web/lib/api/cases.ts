@@ -43,7 +43,7 @@ export interface CaseEvent {
   actorUserId?: string;
   ticketId?: string;
   hearingId?: string;
-  metadata?: any;
+  metadata?: Record<string, unknown>;
   createdAt: string;
   ticket?: {
     batchNo: string;
@@ -54,12 +54,35 @@ export interface CaseEvent {
   };
 }
 
+export interface CaseTicket {
+  id: string;
+  batchNo: string;
+  status: string;
+  scheduledDate?: string;
+  hearingType?: string;
+  outcome?: string;
+  createdAt: string;
+  service: { name: string };
+  [key: string]: unknown;
+}
+
+export interface CaseDocument {
+  id: string;
+  name?: string;
+  url?: string;
+  [key: string]: unknown;
+}
+
 export interface CreateCaseDto {
   consumerId: string;
   title: string;
   type: string;
-  [key: string]: any;
+  [key: string]: unknown;
 }
+
+export type CaseUpdateDto = Partial<Omit<Case, 'id' | 'consumer' | '_count' | 'createdAt' | 'updatedAt'>>;
+
+export type CaseSummary = Record<string, unknown>;
 
 export const casesApi = {
   createCase: (data: CreateCaseDto) => apiClient.post<Case>('/cases', data),
@@ -75,19 +98,19 @@ export const casesApi = {
     return apiClient.get<{ items: Case[]; total: number; page: number; limit: number }>(`/cases?${qs.toString()}`);
   },
 
-  getCase: (id: string) => apiClient.get<Case & { events: CaseEvent[], tickets: any[], documents: any[] }>(`/cases/${id}`),
-  
-  updateCase: (id: string, data: any) => apiClient.patch<Case>(`/cases/${id}`, data),
-  
+  getCase: (id: string) => apiClient.get<Case & { events: CaseEvent[]; tickets: CaseTicket[]; documents: CaseDocument[] }>(`/cases/${id}`),
+
+  updateCase: (id: string, data: CaseUpdateDto) => apiClient.patch<Case>(`/cases/${id}`, data),
+
   updateStatus: (id: string, status: CaseStatus, notes?: string) => apiClient.patch<Case>(`/cases/${id}/status`, { status, notes }),
-  
+
   deleteCase: (id: string) => apiClient.delete<{ deleted: boolean }>(`/cases/${id}`),
-  
+
   getTimeline: (id: string) => apiClient.get<CaseEvent[]>(`/cases/${id}/timeline`),
-  
-  getSummary: (id: string) => apiClient.get<any>(`/cases/${id}/summary`),
-  
-  listTickets: (caseId: string) => apiClient.get<any[]>(`/cases/${caseId}/tickets`),
+
+  getSummary: (id: string) => apiClient.get<CaseSummary>(`/cases/${id}/summary`),
+
+  listTickets: (caseId: string) => apiClient.get<CaseTicket[]>(`/cases/${caseId}/tickets`),
 
   getRecommendations: (caseId: string) =>
     apiClient.get<Array<{ next: string; priority: 1 | 2 | 3; reason?: string }>>(

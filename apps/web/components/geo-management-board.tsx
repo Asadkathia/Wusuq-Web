@@ -26,8 +26,8 @@ export function GeoManagementBoard() {
     try {
       const data = await apiClient.get<GeoProvince[]>('/geo/tree');
       setProvinces(Array.isArray(data) ? data : []);
-    } catch (e: any) {
-      setMessage(e.message || 'Failed to load');
+    } catch (e: unknown) {
+      setMessage(e instanceof Error ? e.message : 'Failed to load');
     } finally {
       setLoading(false);
     }
@@ -42,7 +42,7 @@ export function GeoManagementBoard() {
       const res = await apiClient.post<{ message: string; created: Record<string, number> }>('/geo/seed', {});
       msg(`${res.message} — provinces: ${res.created.provinces}, districts: ${res.created.districts}, cities: ${res.created.cities}`);
       load();
-    } catch (e: any) { msg(e.message || 'Seed failed'); }
+    } catch (e: unknown) { msg(e instanceof Error ? e.message : 'Seed failed'); }
   };
 
   const resetAndSeed = async () => {
@@ -60,8 +60,8 @@ export function GeoManagementBoard() {
         `${res.message} — provinces: ${res.created.provinces}, districts: ${res.created.districts}, cities: ${res.created.cities}`,
       );
       load();
-    } catch (e: any) {
-      msg(e.message || 'Reset and reseed failed');
+    } catch (e: unknown) {
+      msg(e instanceof Error ? e.message : 'Reset and reseed failed');
     }
   };
 
@@ -72,7 +72,7 @@ export function GeoManagementBoard() {
       setNewProvince('');
       msg('Province added');
       load();
-    } catch (e: any) { msg(e.message || 'Failed'); }
+    } catch (e: unknown) { msg(e instanceof Error ? e.message : 'Failed'); }
   };
 
   const deleteProvince = async (id: string) => {
@@ -80,7 +80,7 @@ export function GeoManagementBoard() {
       await apiClient.delete(`/geo/provinces/${id}`);
       msg('Province deleted');
       load();
-    } catch (e: any) { msg(e.message || 'Failed'); }
+    } catch (e: unknown) { msg(e instanceof Error ? e.message : 'Failed'); }
   };
 
   const addDistrict = async (provinceId: string) => {
@@ -91,7 +91,7 @@ export function GeoManagementBoard() {
       setNewDistrict(p => ({ ...p, [provinceId]: '' }));
       msg('District added');
       load();
-    } catch (e: any) { msg(e.message || 'Failed'); }
+    } catch (e: unknown) { msg(e instanceof Error ? e.message : 'Failed'); }
   };
 
   const deleteDistrict = async (id: string) => {
@@ -99,7 +99,7 @@ export function GeoManagementBoard() {
       await apiClient.delete(`/geo/districts/${id}`);
       msg('District deleted');
       load();
-    } catch (e: any) { msg(e.message || 'Failed'); }
+    } catch (e: unknown) { msg(e instanceof Error ? e.message : 'Failed'); }
   };
 
   const addCity = async (districtId: string) => {
@@ -110,7 +110,7 @@ export function GeoManagementBoard() {
       setNewCity(p => ({ ...p, [districtId]: '' }));
       msg('City added');
       load();
-    } catch (e: any) { msg(e.message || 'Failed'); }
+    } catch (e: unknown) { msg(e instanceof Error ? e.message : 'Failed'); }
   };
 
   const deleteCity = async (id: string) => {
@@ -118,7 +118,7 @@ export function GeoManagementBoard() {
       await apiClient.delete(`/geo/cities/${id}`);
       msg('City deleted');
       load();
-    } catch (e: any) { msg(e.message || 'Failed'); }
+    } catch (e: unknown) { msg(e instanceof Error ? e.message : 'Failed'); }
   };
 
   const toggle = (id: string) => setExpanded(p => ({ ...p, [id]: !p[id] }));
@@ -186,7 +186,7 @@ export function GeoManagementBoard() {
       <div className="space-y-3">
         {loading && <p className="text-sm text-slate-400 text-center py-8">Loading...</p>}
         {!loading && provinces.length === 0 && (
-          <p className="text-sm text-slate-400 text-center py-8">No provinces yet. Use "Seed Pakistan Data" to populate.</p>
+          <p className="text-sm text-slate-400 text-center py-8">No provinces yet. Use &quot;Seed Pakistan Data&quot; to populate.</p>
         )}
         {provinces.map(province => (
           <PanelCard key={province.id} className="overflow-hidden">

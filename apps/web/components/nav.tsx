@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { startTransition, useEffect, useState } from 'react';
 import {
   BarChart3,
   BriefcaseBusiness,
@@ -76,14 +76,21 @@ const clerkNavItems: NavItem[] = [
   { label: 'Profile', href: '/profile', icon: BriefcaseBusiness },
 ];
 
+function readIsClerk(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    const u = JSON.parse(localStorage.getItem('wusuq_user') || 'null');
+    return u?.role === 'representative';
+  } catch {
+    return false;
+  }
+}
+
 export function useStaffNavItems(): NavItem[] {
   const [isClerk, setIsClerk] = useState(false);
 
   useEffect(() => {
-    try {
-      const u = JSON.parse(localStorage.getItem('wusuq_user') || 'null');
-      if (u?.role === 'representative') setIsClerk(true);
-    } catch {}
+    startTransition(() => setIsClerk(readIsClerk()));
   }, []);
 
   return isClerk ? clerkNavItems : navItems;
