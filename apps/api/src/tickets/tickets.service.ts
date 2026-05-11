@@ -1035,6 +1035,49 @@ export class TicketsService {
       },
     });
 
+    // Persist clerk-side files-availability report if any clerk-report field
+    // was supplied. Upserted so a clerk can resubmit during WAITING_APPROVAL.
+    const hasClerkReport =
+      dto.filesAvailable !== undefined ||
+      dto.perPageRateAttested !== undefined ||
+      dto.perPageRateNonAttested !== undefined ||
+      dto.unavailableReason !== undefined ||
+      dto.partialCompletion !== undefined;
+
+    if (hasClerkReport) {
+      const fa = dto.filesAvailable ?? {};
+      await this.prisma.ticketClerkReport.upsert({
+        where: { ticketId },
+        create: {
+          ticketId,
+          attestedAvailable: fa.attested ?? false,
+          nonAttestedAvailable: fa.nonAttested ?? false,
+          bothAvailable: fa.both ?? false,
+          perPageRateAttested: dto.perPageRateAttested ?? null,
+          perPageRateNonAttested: dto.perPageRateNonAttested ?? null,
+          unavailableReason: dto.unavailableReason ?? null,
+          partialCompletion: dto.partialCompletion ?? false,
+        },
+        update: {
+          ...(fa.attested !== undefined ? { attestedAvailable: fa.attested } : {}),
+          ...(fa.nonAttested !== undefined ? { nonAttestedAvailable: fa.nonAttested } : {}),
+          ...(fa.both !== undefined ? { bothAvailable: fa.both } : {}),
+          ...(dto.perPageRateAttested !== undefined
+            ? { perPageRateAttested: dto.perPageRateAttested }
+            : {}),
+          ...(dto.perPageRateNonAttested !== undefined
+            ? { perPageRateNonAttested: dto.perPageRateNonAttested }
+            : {}),
+          ...(dto.unavailableReason !== undefined
+            ? { unavailableReason: dto.unavailableReason }
+            : {}),
+          ...(dto.partialCompletion !== undefined
+            ? { partialCompletion: dto.partialCompletion }
+            : {}),
+        },
+      });
+    }
+
     await this.prisma.ticketStatusHistory.create({
       data: {
         ticketId,
@@ -1059,6 +1102,11 @@ export class TicketsService {
         noOfPages: dto.noOfPages,
         costPerPage: dto.costPerPage,
         rejectionReason: dto.rejectionReason,
+        filesAvailable: dto.filesAvailable ? { ...dto.filesAvailable } : undefined,
+        perPageRateAttested: dto.perPageRateAttested,
+        perPageRateNonAttested: dto.perPageRateNonAttested,
+        unavailableReason: dto.unavailableReason,
+        partialCompletion: dto.partialCompletion,
         from: ticket.status,
         to: 'WAITING_APPROVAL',
       },

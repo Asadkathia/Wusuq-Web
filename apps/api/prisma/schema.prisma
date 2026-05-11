@@ -190,10 +190,29 @@ model Ticket {
   caseEvents      CaseEvent[]
   caseDocuments   CaseDocument[]
   invoice         Invoice?
+  clerkReport     TicketClerkReport?
 
   @@index([consumerId])
   @@index([status])
   @@index([paymentStatus])
+}
+
+// Structured clerk-side "what files can this court actually produce" report,
+// captured when the fulfilling clerk submits costs. The pricing engine prefers
+// the clerk-reported per-page rates over the global PricingSettings defaults.
+model TicketClerkReport {
+  id                     String   @id @default(cuid())
+  ticketId               String   @unique
+  attestedAvailable      Boolean  @default(false)
+  nonAttestedAvailable   Boolean  @default(false)
+  bothAvailable          Boolean  @default(false)
+  perPageRateAttested    Decimal?
+  perPageRateNonAttested Decimal?
+  unavailableReason      String?
+  partialCompletion      Boolean  @default(false)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+  ticket                 Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
 }
 
 model Election {
