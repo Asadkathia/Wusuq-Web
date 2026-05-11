@@ -35,6 +35,7 @@ const INTAKE_FLOWS = new Set([
   'judicial_power_of_attorney',
   'non_judicial_copy_of_fir',
   'non_judicial_registry_deed',
+  'non_judicial_criminal_record_search',
 ]);
 
 const REQUIRED_FIELDS_BY_FLOW: Record<string, string[]> = {
@@ -114,6 +115,16 @@ const REQUIRED_FIELDS_BY_FLOW: Record<string, string[]> = {
     'delivery_mode',
     'sets',
     'set_type',
+  ],
+  non_judicial_criminal_record_search: [
+    'province',
+    'district_id',
+    'city',
+    'station_id',
+    'subject_cnic',
+    'subject_full_name',
+    'purpose',
+    'delivery_mode',
   ],
 };
 

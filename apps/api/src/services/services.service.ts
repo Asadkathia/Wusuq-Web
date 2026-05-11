@@ -46,6 +46,12 @@ const FLOWS = [
     type: 'non-judicial',
     route: '/create/NonjudicialService/registry',
   },
+  {
+    key: 'non_judicial_criminal_record_search',
+    label: 'Search Criminal Record',
+    type: 'non-judicial',
+    route: '/create/NonjudicialService/criminal-record-search',
+  },
 ] as const;
 
 // court name → array of cities it serves
@@ -300,6 +306,7 @@ const CASE_TYPES: Record<string, string[]> = {
   ],
   svc_non_judicial_registry_deed: [],
   svc_non_judicial_fir: [],
+  svc_non_judicial_criminal_record: [],
 };
 
 const DEFAULT_SERVICE_CATALOG = [
@@ -428,6 +435,15 @@ const DEFAULT_SERVICE_CATALOG = [
     category: 'Non Judicial',
     courtLevel: null,
     description: 'Non-judicial FIR service.',
+    courts: [],
+  },
+  {
+    id: 'svc_non_judicial_criminal_record',
+    name: 'Search Criminal Record',
+    type: ServiceType.NON_JUDICIAL,
+    category: 'Non Judicial',
+    courtLevel: null,
+    description: 'Search criminal records by CNIC and Police Station.',
     courts: [],
   },
 ] as const;

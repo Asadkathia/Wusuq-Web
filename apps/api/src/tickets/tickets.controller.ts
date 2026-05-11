@@ -237,6 +237,24 @@ export class TicketsController {
   }
 
   @RequirePermissions('tickets.read')
+  @Get('intake-drafts/active')
+  getActiveDraft(
+    @Query('flow') flow: string,
+    @CurrentUser() actor: JwtUser | undefined,
+  ) {
+    if (!flow) {
+      throw new BadRequestException('flow query parameter is required');
+    }
+    if (!actor?.sub) {
+      throw new BadRequestException('Authenticated user required');
+    }
+    return this.ticketsService.getActiveDraft({
+      consumerId: actor.sub,
+      flow,
+    });
+  }
+
+  @RequirePermissions('tickets.read')
   @Get('intake-drafts/:id')
   getDraft(@Param('id') id: string) {
     return this.ticketsService.getIntakeDraft(id);

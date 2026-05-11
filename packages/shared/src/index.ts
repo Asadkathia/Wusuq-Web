@@ -135,6 +135,7 @@ export const INTAKE_FLOW_KEYS = [
   'judicial_power_of_attorney',
   'non_judicial_copy_of_fir',
   'non_judicial_registry_deed',
+  'non_judicial_criminal_record_search',
 ] as const;
 
 export type FlowKey = (typeof INTAKE_FLOW_KEYS)[number];
@@ -187,6 +188,7 @@ export const RECOMMENDATIONS_BY_FLOW: Record<FlowKey, RecommendationRule[]> = {
   judicial_case_filing: [],
   non_judicial_copy_of_fir: [],
   non_judicial_registry_deed: [],
+  non_judicial_criminal_record_search: [],
 };
 
 /**
@@ -220,6 +222,7 @@ const FLOW_KEY_TO_SLUG: Record<FlowKey, string> = {
   judicial_power_of_attorney: 'power-of-attorney',
   non_judicial_copy_of_fir: 'copy-of-fir',
   non_judicial_registry_deed: 'registry-deed',
+  non_judicial_criminal_record_search: 'criminal-record-search',
 };
 
 const SLUG_TO_FLOW_KEY: Record<'judicial' | 'non_judicial', Record<string, FlowKey>> = {
@@ -233,6 +236,7 @@ const SLUG_TO_FLOW_KEY: Record<'judicial' | 'non_judicial', Record<string, FlowK
   non_judicial: {
     'copy-of-fir': 'non_judicial_copy_of_fir',
     'registry-deed': 'non_judicial_registry_deed',
+    'criminal-record-search': 'non_judicial_criminal_record_search',
   },
 };
 
@@ -259,4 +263,5 @@ export const FLOW_LABELS: Record<FlowKey, string> = {
   judicial_power_of_attorney: 'Power of Attorney',
   non_judicial_copy_of_fir: 'Copy of FIR',
   non_judicial_registry_deed: 'Registry / Deed',
+  non_judicial_criminal_record_search: 'Search Criminal Record',
 };
