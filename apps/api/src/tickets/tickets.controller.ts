@@ -376,15 +376,21 @@ export class TicketsController {
     @Param('id') id: string,
     @UploadedFile()
     file: { filename: string; mimetype: string; path: string },
+    @Body('caption') caption: string | undefined,
     @CurrentUser() actor: JwtUser | undefined,
   ) {
     if (!file) {
       throw new BadRequestException('File is required');
     }
-    return this.ticketsService.uploadDocument(id, file, {
-      actorUserId: actor?.sub,
-      actorEmail: actor?.email,
-    });
+    return this.ticketsService.uploadDocument(
+      id,
+      file,
+      {
+        actorUserId: actor?.sub,
+        actorEmail: actor?.email,
+      },
+      typeof caption === 'string' ? caption.slice(0, 200) : undefined,
+    );
   }
 
   @RequirePermissions('tickets.write')

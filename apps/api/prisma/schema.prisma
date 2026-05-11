@@ -314,6 +314,7 @@ model TicketDocument {
   name      String
   type      String
   fileUrl   String
+  caption   String?
   createdAt DateTime @default(now())
   ticket    Ticket   @relation(fields: [ticketId], references: [id])
 }

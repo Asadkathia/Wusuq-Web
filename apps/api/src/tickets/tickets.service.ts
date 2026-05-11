@@ -75,10 +75,16 @@ const REQUIRED_FIELDS_BY_FLOW: Record<string, string[]> = {
     'delivery_mode',
   ],
   judicial_case_filing: [
+    // PDF #42: Case Filing covers both NEW cases (no case-number yet — that's
+    // the whole point: the lawyer is filing it now) and replies on PENDING
+    // cases. `case_petition_no` is therefore intentionally NOT required here;
+    // when the consumer is replying on a pending case the wizard captures it
+    // under `case_no` (aliased to `case_petition_no` via PAYLOAD_FIELD_ALIASES)
+    // but it must remain optional at the validator level so new-case filings
+    // can submit cleanly.
     'select_service',
     'select_court',
     'select_court_city',
-    'case_petition_no',
     'case_year',
     'case_type',
     'case_status',
@@ -815,15 +821,18 @@ export class TicketsService {
       path: string;
     },
     actor?: { actorUserId?: string; actorEmail?: string },
+    caption?: string,
   ) {
     await this.ensureTicketExists(ticketId);
 
+    const trimmedCaption = caption?.trim();
     const document = await this.prisma.ticketDocument.create({
       data: {
         ticketId,
         name: file.filename,
         type: file.mimetype,
         fileUrl: file.path,
+        caption: trimmedCaption && trimmedCaption.length > 0 ? trimmedCaption : null,
       },
     });
 
