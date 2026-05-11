@@ -138,3 +138,42 @@ NestJS convention: create `src/<domain>/<domain>.module.ts`, `.controller.ts`, `
 Default super admin created by `pnpm prisma:seed`:
 - Email: `superadmin@wusuq.com`
 - Password: `password`
+
+## Deferred work (Wusuq Edits 5-10-26 backlog)
+
+Items from the `Wusuq Edits 5-10-26.pdf` feedback that are intentionally deferred. Pick these up in future batches.
+
+### Onboarding
+- **PDF #2** — Pending tickets: add "Future tickets" button + prompt consumer for next hearing date. No UI surface today.
+- **PDF #3** — Phone country/region selector instead of hardcoded `+92`. Paired with the deferred OTP/SMS provider.
+- **PDF #4** — Force profile-complete after signup; capture user type (Lawyer / Non-Lawyer / Corporate). Affects dashboard variants downstream.
+- **PDF #7** — Post-ticket-completion notification + "order another service for same city/court" prompt.
+
+### Geo
+- **PDF #8** — Special Court availability per-city audit (cross-reference `apps/api/src/geo/pakistan-courts.json` against the `Pakistan Court Wise` sheet in `apps/api/data/pricing-sheet.xlsx`).
+
+### Case Files / Case Information
+- **PDF #11** — Helper-text copy under every wizard field. `IntakeField.hint` infrastructure is shipped; awaiting copy strings from the product owner.
+- **PDF #22** — "Pending Case requires two clicks" bug. Not reproducible in current code — recheck with reporter or fold into a wider field-renderer audit.
+
+### Case Filing
+- **PDF #15 + #16 (clerk side)** — Surface the captured bench shape (`payload.bench`) in the staff ticket detail panel; currently only the derived `judge_name` string is displayed.
+
+### Catalogue scraping — out of M2.1 v1 scope
+- LHC, PHC, BHC scrapers (Lahore / Peshawar / Balochistan High Courts) — fall back to `hardcoded_fallback` in `CourtCaseType` for now.
+- Non-Punjab Lower Court scrapers (Sindh, KPK, Balochistan district-court portals).
+- Special Court scraping.
+- Federal Shariat Court scraping.
+
+### Admin / staff
+- Admin UI to edit `CourtCaseType` rows (today: CLI / SQL only).
+- Admin UI to edit `PricingRule` rows (today: re-run the xlsx-driven seed).
+- Migration of historical ticket `case_type` display strings to canonical codes (currently forward-only).
+
+### Infrastructure
+- **OTP / SMS provider** integration (Twilio / Vonage / local SMSC selection).
+- Scraper scheduling — currently manual quarterly run; consider a low-priority cron when the catalogue stabilises.
+
+### Minor UI follow-ups
+- Live `apps/api/data/pricing-sheet.xlsx` reload on seed re-run (today: copy + re-run).
+- Per-flow "Case Filing" remote workflow scaffolding (PDF #42 / #43) is shipped at the wizard level; backend-side dispatch routing to the clerk's court office is still placeholder text in the UI.
