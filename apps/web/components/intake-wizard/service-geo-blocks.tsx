@@ -1,6 +1,7 @@
 'use client';
 
-import { Building2, CalendarDays, HelpCircle, MapPin, MapPinned, ShieldAlert } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Building2, CalendarDays, HelpCircle, MapPin, MapPinned, Pencil, ShieldAlert } from 'lucide-react';
 import { SelectionTileGrid } from './selection-tile-grid';
 
 type GeoState = {
@@ -100,6 +101,23 @@ export function CityBlock({ cities, cityId, onCityChange }: CityBlockProps) {
   const findName = (items: CityWithRegion[], id: string) =>
     items.find((x) => x.id === id)?.name ?? '';
 
+  const selected = cities.find((c) => c.id === cityId) ?? null;
+  const [forceOpen, setForceOpen] = useState(false);
+  const lastCityIdRef = useRef(cityId);
+  // When the selected cityId changes (user picked a new city), collapse back
+  // to the chip view by clearing the local force-open state.
+  useEffect(() => {
+    if (lastCityIdRef.current !== cityId) {
+      lastCityIdRef.current = cityId;
+      if (cityId) setForceOpen(false);
+    }
+  }, [cityId]);
+
+  const showChip = Boolean(selected) && !forceOpen;
+  const selectedRegion = selected
+    ? [selected.district, selected.province].filter(Boolean).join(' · ')
+    : '';
+
   return (
     <div className="md:col-span-2 rounded-2xl border border-border-soft bg-surface-muted/50 p-5 space-y-5">
       <SectionHeader
@@ -109,12 +127,32 @@ export function CityBlock({ cities, cityId, onCityChange }: CityBlockProps) {
       />
       <div>
         <FieldLabel required>City</FieldLabel>
-        <SelectionTileGrid
-          options={cityOptions}
-          value={cityId}
-          onChange={(v) => onCityChange(v, findName(cities, v))}
-          ariaLabel="City"
-        />
+        {showChip && selected ? (
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="inline-flex items-center gap-2 rounded-full border border-brand-200 bg-brand-50 px-4 py-2 text-sm font-medium text-brand-700">
+              <MapPinned className="h-3.5 w-3.5" />
+              <span className="font-semibold">{selected.name}</span>
+              {selectedRegion ? (
+                <span className="text-brand-600/80">— {selectedRegion}</span>
+              ) : null}
+            </span>
+            <button
+              type="button"
+              onClick={() => setForceOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-border-soft bg-surface px-3 py-1.5 text-xs font-semibold text-slate-700 transition-colors hover:bg-surface-muted"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+              Change
+            </button>
+          </div>
+        ) : (
+          <SelectionTileGrid
+            options={cityOptions}
+            value={cityId}
+            onChange={(v) => onCityChange(v, findName(cities, v))}
+            ariaLabel="City"
+          />
+        )}
       </div>
     </div>
   );

@@ -1,6 +1,7 @@
 'use client';
 
 import type { IntakeField } from '@/lib/intake-flows';
+import { parseDeliveryAddress } from '@/lib/intake-flows';
 import { Select } from '@/components/ui/select';
 
 const YEAR_OPTIONS: string[] = (() => {
@@ -21,6 +22,10 @@ export function renderField(
   dynamicOptions?: string[],
   onBlur?: (key: string) => void,
   errorMsg?: string,
+  /** Per-option disabled + hint map keyed by the raw option value. Currently
+   *  consumed only by the `radio` renderer (used for the Set Type picker's
+   *  "Can't Get" hide-out). */
+  disabledOptions?: Record<string, { disabled: boolean; hint?: string }>,
 ): React.ReactNode {
   if (field.showWhen && payload[field.showWhen.field] !== field.showWhen.value) return null;
 
@@ -93,27 +98,43 @@ export function renderField(
         <div className="flex flex-wrap gap-2 pt-1">
           {options.map((o) => {
             const active = value === o;
+            const optMeta = disabledOptions?.[o];
+            const disabled = Boolean(optMeta?.disabled);
             return (
-              <button
-                key={o}
-                type="button"
-                onClick={() => { onChange(field.key, o); onBlur?.(field.key); }}
-                className={[
-                  'inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-medium',
-                  'transition-[background-color,border-color,color] duration-150',
-                  active
-                    ? 'border-brand-500 bg-brand-50 text-brand-700'
-                    : 'border-border-soft bg-surface text-slate-700 hover:bg-surface-muted',
-                ].join(' ')}
-              >
-                <span
+              <div key={o} className="flex flex-col">
+                <button
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => {
+                    if (disabled) return;
+                    onChange(field.key, o);
+                    onBlur?.(field.key);
+                  }}
                   className={[
-                    'h-3.5 w-3.5 rounded-full border-2 transition-colors',
-                    active ? 'border-brand-500 bg-brand-500 ring-2 ring-inset ring-white' : 'border-slate-300',
+                    'inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-medium',
+                    'transition-[background-color,border-color,color] duration-150',
+                    disabled
+                      ? 'cursor-not-allowed border-border-soft bg-surface-muted text-slate-400 opacity-60'
+                      : active
+                        ? 'border-brand-500 bg-brand-50 text-brand-700'
+                        : 'border-border-soft bg-surface text-slate-700 hover:bg-surface-muted',
                   ].join(' ')}
-                />
-                <span className="capitalize">{o.replace(/_/g, ' ')}</span>
-              </button>
+                  aria-disabled={disabled}
+                >
+                  <span
+                    className={[
+                      'h-3.5 w-3.5 rounded-full border-2 transition-colors',
+                      active && !disabled
+                        ? 'border-brand-500 bg-brand-500 ring-2 ring-inset ring-white'
+                        : 'border-slate-300',
+                    ].join(' ')}
+                  />
+                  <span className="capitalize">{o.replace(/_/g, ' ')}</span>
+                </button>
+                {disabled && optMeta?.hint ? (
+                  <span className="mt-1 text-[11px] text-slate-500">{optMeta.hint}</span>
+                ) : null}
+              </div>
             );
           })}
         </div>
@@ -124,6 +145,7 @@ export function renderField(
 
   if (field.type === 'checkbox_single') {
     const options = field.options ?? [];
+    const labelFor = field.optionsLabel ? (o: string) => field.optionsLabel!(o, payload) : (o: string) => o;
     return (
       <>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
@@ -154,13 +176,82 @@ export function renderField(
                     </svg>
                   ) : null}
                 </span>
-                <span className="min-w-0 flex-1">{o}</span>
+                <span className="min-w-0 flex-1">{labelFor(o)}</span>
               </button>
             );
           })}
         </div>
         {hasError && <p className="mt-1 text-xs text-rose-600">{errorMsg}</p>}
       </>
+    );
+  }
+
+  if (field.type === 'structured_address') {
+    // PDF #31b: replace the single delivery_address textarea with a
+    // multi-part form modelled after the KFC delivery flow.
+    // TODO: integrate a map pin / geocoder for the "Main Area" field in a
+    // follow-up iteration — out of scope for this pass.
+    const addr = parseDeliveryAddress(value);
+    const cityFromPayload = payload.city ?? addr.city ?? '';
+    const update = (patch: Partial<{ house: string; block: string; mainArea: string }>) => {
+      const next = {
+        house: addr.house,
+        block: addr.block,
+        mainArea: addr.mainArea,
+        ...(cityFromPayload ? { city: cityFromPayload } : {}),
+        ...patch,
+      };
+      onChange(field.key, JSON.stringify(next));
+    };
+    return (
+      <div className="space-y-3">
+        <div className="text-sm font-semibold text-slate-800">Delivery address</div>
+        {cityFromPayload ? (
+          <div className="text-xs text-slate-500">
+            Delivering to: <span className="font-medium text-slate-700">{cityFromPayload}</span>
+          </div>
+        ) : null}
+        <div>
+          <label className="block text-xs font-medium text-slate-600 mb-1">
+            House / Flat / Apartment / Office Number
+          </label>
+          <input
+            className={inputClass}
+            type="text"
+            value={addr.house}
+            onChange={(e) => update({ house: e.target.value })}
+            onBlur={() => onBlur?.(field.key)}
+            placeholder="e.g. House 12-A"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-slate-600 mb-1">
+            Block / Sector / Street / Building / Floor Name
+          </label>
+          <input
+            className={inputClass}
+            type="text"
+            value={addr.block}
+            onChange={(e) => update({ block: e.target.value })}
+            onBlur={() => onBlur?.(field.key)}
+            placeholder="e.g. Block C, DHA Phase 5"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-slate-600 mb-1">
+            Main Area / Town / Nearest Landmark
+          </label>
+          <input
+            className={inputClass}
+            type="text"
+            value={addr.mainArea}
+            onChange={(e) => update({ mainArea: e.target.value })}
+            onBlur={() => onBlur?.(field.key)}
+            placeholder="e.g. Near Liberty Market"
+          />
+        </div>
+        {hasError && <p className="mt-1 text-xs text-rose-600">{errorMsg}</p>}
+      </div>
     );
   }
 
@@ -180,6 +271,6 @@ export function renderField(
 }
 
 export function colSpan(field: IntakeField): string {
-  if (['textarea', 'radio', 'checkbox_single'].includes(field.type)) return 'md:col-span-2';
+  if (['textarea', 'radio', 'checkbox_single', 'structured_address'].includes(field.type)) return 'md:col-span-2';
   return '';
 }
