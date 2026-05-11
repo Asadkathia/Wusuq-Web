@@ -1,0 +1,247 @@
+[
+  {
+    "courtLevel": "Supreme Court",
+    "code": "C.A.",
+    "label": "C.A.",
+    "source": "scp.gov.pk",
+    "priority": 1000
+  },
+  {
+    "courtLevel": "Supreme Court",
+    "code": "C.M.A.",
+    "label": "C.M.A.",
+    "source": "scp.gov.pk",
+    "priority": 999
+  },
+  {
+    "courtLevel": "Supreme Court",
+    "code": "C.M.Appeal.",
+    "label": "C.M.Appeal.",
+    "source": "scp.gov.pk",
+    "priority": 998
+  },
+  {
+    "courtLevel": "Supreme Court",
+    "code": "C.P.",
+    "label": "C.P.",
+    "source": "scp.gov.pk",
+    "priority": 997
+  },
+  {
+    "courtLevel": "Supreme Court",
+    "code": "C.P.L.A.",
+    "label": "C.P.L.A.",
+    "source": "scp.gov.pk",
+    "priority": 996
+  },
+  {
+    "courtLevel": "Supreme Court",
+    "code": "C.R.P.",
+    "label": "C.R.P.",
+    "source": "scp.gov.pk",
+    "priority": 995
+  },
+  {
+    "courtLevel": "Supreme Court",
+    "code": "C.Sh.A.",
+    "label": "C.Sh.A.",
+    "source": "scp.gov.pk",
+    "priority": 994
+  },
+  {
+    "courtLevel": "Supreme Court",
+    "code": "C.Sh.P.",
+    "label": "C.Sh.P.",
+    "source": "scp.gov.pk",
+    "priority": 993
+  },
+  {
+    "courtLevel": "Supreme Court",
+    "code": "C.Sh.R.P.",
+    "label": "C.Sh.R.P.",
+    "source": "scp.gov.pk",
+    "priority": 992
+  },
+  {
+    "courtLevel": "Supreme Court",
+    "code": "C.U.O.",
+    "label": "C.U.O.",
+    "source": "scp.gov.pk",
+    "priority": 991
+  },
+  {
+    "courtLevel": "Supreme Court",
+    "code": "Crl.A.",
+    "label": "Crl.A.",
+    "source": "scp.gov.pk",
+    "priority": 990
+  },
+  {
+    "courtLevel": "Supreme Court",
+    "code": "Crl.I.C.A.",
+    "label": "Crl.I.C.A.",
+    "source": "scp.gov.pk",
+    "priority": 989
+  },
+  {
+    "courtLevel": "Supreme Court",
+    "code": "Crl.M.A.",
+    "label": "Crl.M.A.",
+    "source": "scp.gov.pk",
+    "priority": 988
+  },
+  {
+    "courtLevel": "Supreme Court",
+    "code": "Crl.M.Appeal.",
+    "label": "Crl.M.Appeal.",
+    "source": "scp.gov.pk",
+    "priority": 987
+  },
+  {
+    "courtLevel": "Supreme Court",
+    "code": "Crl.O.P.",
+    "label": "Crl.O.P.",
+    "source": "scp.gov.pk",
+    "priority": 986
+  },
+  {
+    "courtLevel": "Supreme Court",
+    "code": "Crl.P.L.A.",
+    "label": "Crl.P.L.A.",
+    "source": "scp.gov.pk",
+    "priority": 985
+  },
+  {
+    "courtLevel": "Supreme Court",
+    "code": "Crl.R.P.",
+    "label": "Crl.R.P.",
+    "source": "scp.gov.pk",
+    "priority": 984
+  },
+  {
+    "courtLevel": "Supreme Court",
+    "code": "Crl.S.M.R.P.",
+    "label": "Crl.S.M.R.P.",
+    "source": "scp.gov.pk",
+    "priority": 983
+  },
+  {
+    "courtLevel": "Supreme Court",
+    "code": "Crl.S.M.Sh.R.P.",
+    "label": "Crl.S.M.Sh.R.P.",
+    "source": "scp.gov.pk",
+    "priority": 982
+  },
+  {
+    "courtLevel": "Supreme Court",
+    "code": "Crl.Sh.A.",
+    "label": "Crl.Sh.A.",
+    "source": "scp.gov.pk",
+    "priority": 981
+  },
+  {
+    "courtLevel": "Supreme Court",
+    "code": "Crl.Sh.P.",
+    "label": "Crl.Sh.P.",
+    "source": "scp.gov.pk",
+    "priority": 980
+  },
+  {
+    "courtLevel": "Supreme Court",
+    "code": "Crl.Sh.R.P.",
+    "label": "Crl.Sh.R.P.",
+    "source": "scp.gov.pk",
+    "priority": 979
+  },
+  {
+    "courtLevel": "Supreme Court",
+    "code": "D.S.A.",
+    "label": "D.S.A.",
+    "source": "scp.gov.pk",
+    "priority": 978
+  },
+  {
+    "courtLevel": "Supreme Court",
+    "code": "H.R.C.",
+    "label": "H.R.C.",
+    "source": "scp.gov.pk",
+    "priority": 977
+  },
+  {
+    "courtLevel": "Supreme Court",
+    "code": "H.R.M.A.",
+    "label": "H.R.M.A.",
+    "source": "scp.gov.pk",
+    "priority": 976
+  },
+  {
+    "courtLevel": "Supreme Court",
+    "code": "I.C.A.",
+    "label": "I.C.A.",
+    "source": "scp.gov.pk",
+    "priority": 975
+  },
+  {
+    "courtLevel": "Supreme Court",
+    "code": "J.P.",
+    "label": "J.P.",
+    "source": "scp.gov.pk",
+    "priority": 974
+  },
+  {
+    "courtLevel": "Supreme Court",
+    "code": "J.Sh.P.",
+    "label": "J.Sh.P.",
+    "source": "scp.gov.pk",
+    "priority": 973
+  },
+  {
+    "courtLevel": "Supreme Court",
+    "code": "Reference.",
+    "label": "Reference.",
+    "source": "scp.gov.pk",
+    "priority": 972
+  },
+  {
+    "courtLevel": "Supreme Court",
+    "code": "Report",
+    "label": "Report",
+    "source": "scp.gov.pk",
+    "priority": 971
+  },
+  {
+    "courtLevel": "Supreme Court",
+    "code": "S.M.C.",
+    "label": "S.M.C.",
+    "source": "scp.gov.pk",
+    "priority": 970
+  },
+  {
+    "courtLevel": "Supreme Court",
+    "code": "S.M.R.P.",
+    "label": "S.M.R.P.",
+    "source": "scp.gov.pk",
+    "priority": 969
+  },
+  {
+    "courtLevel": "Supreme Court",
+    "code": "T.A.(C)",
+    "label": "T.A.(C)",
+    "source": "scp.gov.pk",
+    "priority": 968
+  },
+  {
+    "courtLevel": "Supreme Court",
+    "code": "T.A.(F)",
+    "label": "T.A.(F)",
+    "source": "scp.gov.pk",
+    "priority": 967
+  },
+  {
+    "courtLevel": "Supreme Court",
+    "code": "T.Case",
+    "label": "T.Case",
+    "source": "scp.gov.pk",
+    "priority": 966
+  }
+]
