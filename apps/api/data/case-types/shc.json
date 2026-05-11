@@ -1,0 +1,594 @@
+[
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "Adm. Suit",
+    "label": "Adm. Suit",
+    "source": "cases.shc.gov.pk",
+    "priority": 1000
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "Adm.A",
+    "label": "Adm.A",
+    "source": "cases.shc.gov.pk",
+    "priority": 999
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "B.T.A",
+    "label": "B.T.A",
+    "source": "cases.shc.gov.pk",
+    "priority": 998
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "Civil Appeal",
+    "label": "Civil Appeal",
+    "source": "cases.shc.gov.pk",
+    "priority": 997
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "Civil Ref.",
+    "label": "Civil Ref.",
+    "source": "cases.shc.gov.pk",
+    "priority": 996
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "Civil Revision",
+    "label": "Civil Revision",
+    "source": "cases.shc.gov.pk",
+    "priority": 995
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "Civil Tran",
+    "label": "Civil Tran",
+    "source": "cases.shc.gov.pk",
+    "priority": 994
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "Conf. Case",
+    "label": "Conf. Case",
+    "source": "cases.shc.gov.pk",
+    "priority": 993
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "Conf. Case (A.T.A)",
+    "label": "Conf. Case (A.T.A)",
+    "source": "cases.shc.gov.pk",
+    "priority": 992
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "Const. P.",
+    "label": "Const. P.",
+    "source": "cases.shc.gov.pk",
+    "priority": 991
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "Cr. Suo Moto Revision",
+    "label": "Cr. Suo Moto Revision",
+    "source": "cases.shc.gov.pk",
+    "priority": 990
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "Cr.Acctt. J. Appeal",
+    "label": "Cr.Acctt. J. Appeal",
+    "source": "cases.shc.gov.pk",
+    "priority": 989
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "Cr.Acctt.A",
+    "label": "Cr.Acctt.A",
+    "source": "cases.shc.gov.pk",
+    "priority": 988
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "Cr.Acctt.Acq. A.",
+    "label": "Cr.Acctt.Acq. A.",
+    "source": "cases.shc.gov.pk",
+    "priority": 987
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "Cr.Acq.A.",
+    "label": "Cr.Acq.A.",
+    "source": "cases.shc.gov.pk",
+    "priority": 986
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "Cr.Appeal",
+    "label": "Cr.Appeal",
+    "source": "cases.shc.gov.pk",
+    "priority": 985
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "Cr.Bail",
+    "label": "Cr.Bail",
+    "source": "cases.shc.gov.pk",
+    "priority": 984
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "Cr.J.Appeal",
+    "label": "Cr.J.Appeal",
+    "source": "cases.shc.gov.pk",
+    "priority": 983
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "Cr.J.Misc.",
+    "label": "Cr.J.Misc.",
+    "source": "cases.shc.gov.pk",
+    "priority": 982
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "Cr.Misc. Appln",
+    "label": "Cr.Misc. Appln",
+    "source": "cases.shc.gov.pk",
+    "priority": 981
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "Cr.Org.Misc.",
+    "label": "Cr.Org.Misc.",
+    "source": "cases.shc.gov.pk",
+    "priority": 980
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "Cr.Reference",
+    "label": "Cr.Reference",
+    "source": "cases.shc.gov.pk",
+    "priority": 979
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "Cr.Rev",
+    "label": "Cr.Rev",
+    "source": "cases.shc.gov.pk",
+    "priority": 978
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "Cr.Tran",
+    "label": "Cr.Tran",
+    "source": "cases.shc.gov.pk",
+    "priority": 977
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "Departmental Appeal",
+    "label": "Departmental Appeal",
+    "source": "cases.shc.gov.pk",
+    "priority": 976
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "Divorce P.",
+    "label": "Divorce P.",
+    "source": "cases.shc.gov.pk",
+    "priority": 975
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "Election Appeal",
+    "label": "Election Appeal",
+    "source": "cases.shc.gov.pk",
+    "priority": 974
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "Election Petition",
+    "label": "Election Petition",
+    "source": "cases.shc.gov.pk",
+    "priority": 973
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "Execution",
+    "label": "Execution",
+    "source": "cases.shc.gov.pk",
+    "priority": 972
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "F.E.A",
+    "label": "F.E.A",
+    "source": "cases.shc.gov.pk",
+    "priority": 971
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "F.R.A",
+    "label": "F.R.A",
+    "source": "cases.shc.gov.pk",
+    "priority": 970
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "H.C.A",
+    "label": "H.C.A",
+    "source": "cases.shc.gov.pk",
+    "priority": 969
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "I.T.A.",
+    "label": "I.T.A.",
+    "source": "cases.shc.gov.pk",
+    "priority": 968
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "I.T.C",
+    "label": "I.T.C",
+    "source": "cases.shc.gov.pk",
+    "priority": 967
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "I.T.C.A",
+    "label": "I.T.C.A",
+    "source": "cases.shc.gov.pk",
+    "priority": 966
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "I.T.R",
+    "label": "I.T.R",
+    "source": "cases.shc.gov.pk",
+    "priority": 965
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "I.T.R.A",
+    "label": "I.T.R.A",
+    "source": "cases.shc.gov.pk",
+    "priority": 964
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "IInd Appeal",
+    "label": "IInd Appeal",
+    "source": "cases.shc.gov.pk",
+    "priority": 963
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "Insolvency",
+    "label": "Insolvency",
+    "source": "cases.shc.gov.pk",
+    "priority": 962
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "Interlocutory Appln",
+    "label": "Interlocutory Appln",
+    "source": "cases.shc.gov.pk",
+    "priority": 961
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "Intra Court Appeal",
+    "label": "Intra Court Appeal",
+    "source": "cases.shc.gov.pk",
+    "priority": 960
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "Ist Appeal",
+    "label": "Ist Appeal",
+    "source": "cases.shc.gov.pk",
+    "priority": 959
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "J.M",
+    "label": "J.M",
+    "source": "cases.shc.gov.pk",
+    "priority": 958
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "J.M. OGRA",
+    "label": "J.M. OGRA",
+    "source": "cases.shc.gov.pk",
+    "priority": 957
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "Judicial Companies Misc.",
+    "label": "Judicial Companies Misc.",
+    "source": "cases.shc.gov.pk",
+    "priority": 956
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "L.C.A",
+    "label": "L.C.A",
+    "source": "cases.shc.gov.pk",
+    "priority": 955
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "Labour Aappeal",
+    "label": "Labour Aappeal",
+    "source": "cases.shc.gov.pk",
+    "priority": 954
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "Labour Revision Appln",
+    "label": "Labour Revision Appln",
+    "source": "cases.shc.gov.pk",
+    "priority": 953
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "Labour Trans. App.",
+    "label": "Labour Trans. App.",
+    "source": "cases.shc.gov.pk",
+    "priority": 952
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "Misc Appeal",
+    "label": "Misc Appeal",
+    "source": "cases.shc.gov.pk",
+    "priority": 951
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "S.M.A",
+    "label": "S.M.A",
+    "source": "cases.shc.gov.pk",
+    "priority": 950
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "S.T.A",
+    "label": "S.T.A",
+    "source": "cases.shc.gov.pk",
+    "priority": 949
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "Service Appeal",
+    "label": "Service Appeal",
+    "source": "cases.shc.gov.pk",
+    "priority": 948
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "Spl Central Excise A.",
+    "label": "Spl Central Excise A.",
+    "source": "cases.shc.gov.pk",
+    "priority": 947
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "Spl. Cr. Appeal",
+    "label": "Spl. Cr. Appeal",
+    "source": "cases.shc.gov.pk",
+    "priority": 946
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "Spl. Cus. Ref. A.",
+    "label": "Spl. Cus. Ref. A.",
+    "source": "cases.shc.gov.pk",
+    "priority": 945
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "Spl. Fed Excise Ref. Appln",
+    "label": "Spl. Fed Excise Ref. Appln",
+    "source": "cases.shc.gov.pk",
+    "priority": 944
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "Spl.Anti.T.Acq.A",
+    "label": "Spl.Anti.T.Acq.A",
+    "source": "cases.shc.gov.pk",
+    "priority": 943
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "Spl.Anti.Ter.A.",
+    "label": "Spl.Anti.Ter.A.",
+    "source": "cases.shc.gov.pk",
+    "priority": 942
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "Spl.Anti.Ter.J.A.",
+    "label": "Spl.Anti.Ter.J.A.",
+    "source": "cases.shc.gov.pk",
+    "priority": 941
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "Spl.Cr.Acq. A",
+    "label": "Spl.Cr.Acq. A",
+    "source": "cases.shc.gov.pk",
+    "priority": 940
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "Spl.Cr.Bail",
+    "label": "Spl.Cr.Bail",
+    "source": "cases.shc.gov.pk",
+    "priority": 939
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "Spl.Cr.Misc",
+    "label": "Spl.Cr.Misc",
+    "source": "cases.shc.gov.pk",
+    "priority": 938
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "Spl.Cr.Rev.",
+    "label": "Spl.Cr.Rev.",
+    "source": "cases.shc.gov.pk",
+    "priority": 937
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "Spl.Cr.Tran",
+    "label": "Spl.Cr.Tran",
+    "source": "cases.shc.gov.pk",
+    "priority": 936
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "Spl.Cus.Appeal",
+    "label": "Spl.Cus.Appeal",
+    "source": "cases.shc.gov.pk",
+    "priority": 935
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "Spl.H.C.A",
+    "label": "Spl.H.C.A",
+    "source": "cases.shc.gov.pk",
+    "priority": 934
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "Spl.Sales Tax.A",
+    "label": "Spl.Sales Tax.A",
+    "source": "cases.shc.gov.pk",
+    "priority": 933
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "Spl:Sales Tax Ref: A.",
+    "label": "Spl:Sales Tax Ref: A.",
+    "source": "cases.shc.gov.pk",
+    "priority": 932
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "Suit",
+    "label": "Suit",
+    "source": "cases.shc.gov.pk",
+    "priority": 931
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "Suit.B",
+    "label": "Suit.B",
+    "source": "cases.shc.gov.pk",
+    "priority": 930
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "W.T.A",
+    "label": "W.T.A",
+    "source": "cases.shc.gov.pk",
+    "priority": 929
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "W.T.C",
+    "label": "W.T.C",
+    "source": "cases.shc.gov.pk",
+    "priority": 928
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "SHC",
+    "code": "W.T.R",
+    "label": "W.T.R",
+    "source": "cases.shc.gov.pk",
+    "priority": 927
+  }
+]

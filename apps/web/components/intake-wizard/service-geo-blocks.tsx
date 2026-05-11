@@ -85,9 +85,25 @@ type CityBlockProps = {
   cities: CityWithRegion[];
   cityId: string;
   onCityChange: (cityId: string, name: string) => void;
+  /**
+   * Multi-city mode (PDF #36 — Case Search). When set, the picker tracks an
+   * array of selected city ids; clicking a tile toggles membership. `cityId`
+   * is interpreted as `selectedCityIds[0]` (the primary city used by the
+   * court loader) and remains in sync via the parent.
+   */
+  multiSelect?: boolean;
+  selectedCityIds?: string[];
+  onCitiesChange?: (ids: string[]) => void;
 };
 
-export function CityBlock({ cities, cityId, onCityChange }: CityBlockProps) {
+export function CityBlock({
+  cities,
+  cityId,
+  onCityChange,
+  multiSelect,
+  selectedCityIds,
+  onCitiesChange,
+}: CityBlockProps) {
   // Show district + province as subtext so visually-similar names (e.g.
   // "Ahmadpur East" vs "Ahmedpur Sial") are clearly distinguishable by region.
   const cityOptions = cities.map((c) => {
@@ -117,6 +133,73 @@ export function CityBlock({ cities, cityId, onCityChange }: CityBlockProps) {
   const selectedRegion = selected
     ? [selected.district, selected.province].filter(Boolean).join(' · ')
     : '';
+
+  // ── Multi-select branch (PDF #36 — Case Search) ──────────────────────────
+  if (multiSelect) {
+    const ids = selectedCityIds ?? (cityId ? [cityId] : []);
+    const selectedCities = ids
+      .map((id) => cities.find((c) => c.id === id))
+      .filter((c): c is CityWithRegion => Boolean(c));
+    const toggle = (id: string) => {
+      const next = ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id];
+      // The wizard owner is responsible for both persisting the full city
+      // list AND syncing the primary city (cities[0]) into city_id /
+      // select_court_city so the court loader still works. Don't fire
+      // onCityChange here — it would clobber the freshly written cities
+      // array via the wizard's reset-on-city-change handler.
+      if (onCitiesChange) onCitiesChange(next);
+    };
+
+    return (
+      <div className="md:col-span-2 rounded-2xl border border-border-soft bg-surface-muted/50 p-5 space-y-5">
+        <SectionHeader
+          icon={<MapPinned className="h-4 w-4" />}
+          title="Service location"
+          description="Pick one or more cities to search. Charges are added per city."
+        />
+        <div>
+          <FieldLabel required>Cities</FieldLabel>
+          {selectedCities.length > 0 ? (
+            <div className="mb-3 flex flex-wrap items-center gap-2">
+              {selectedCities.map((c) => {
+                const region = [c.district, c.province].filter(Boolean).join(' · ');
+                return (
+                  <span
+                    key={c.id}
+                    className="inline-flex items-center gap-2 rounded-full border border-brand-200 bg-brand-50 px-3 py-1.5 text-xs font-medium text-brand-700"
+                  >
+                    <MapPinned className="h-3 w-3" />
+                    <span className="font-semibold">{c.name}</span>
+                    {region ? <span className="text-brand-600/80">— {region}</span> : null}
+                    <button
+                      type="button"
+                      aria-label={`Remove ${c.name}`}
+                      onClick={() => toggle(c.id)}
+                      className="ml-1 inline-flex h-4 w-4 items-center justify-center rounded-full text-brand-600 transition-colors hover:bg-brand-100"
+                    >
+                      ×
+                    </button>
+                  </span>
+                );
+              })}
+              <span className="ml-1 text-xs text-slate-500">
+                {selectedCities.length} {selectedCities.length === 1 ? 'city' : 'cities'} selected
+              </span>
+            </div>
+          ) : null}
+          <SelectionTileGrid
+            options={cityOptions.map((o) => ({
+              ...o,
+              subtext: ids.includes(o.value) ? '✓ Selected' : o.subtext,
+            }))}
+            value={''}
+            onChange={(v) => toggle(v)}
+            ariaLabel="Cities"
+          />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="md:col-span-2 rounded-2xl border border-border-soft bg-surface-muted/50 p-5 space-y-5">

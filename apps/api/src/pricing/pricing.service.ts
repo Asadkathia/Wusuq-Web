@@ -7,6 +7,19 @@ import { UpdatePricingSettingsDto } from './dto/pricing-settings.dto';
 
 const PUNJAB_NAMES = new Set(['Punjab']);
 
+// PDF #14: when the case title starts with "State vs <X>" (criminal cases
+// where the state is the plaintiff) the resolver adds a flat surcharge on
+// top of the rule-based price. Exported so tests can reference the constant
+// directly without redefining the magic number.
+export const STATE_VS_SURCHARGE = 1000;
+export const STATE_VS_PATTERN = /^\s*state\s+vs\b/i;
+
+// PDF #37: Case Search "both methods" surcharge. When the consumer picks both
+// the CNIC and Case Details search tabs, an additional Rs 1,000 is added on
+// top of the base per-city rate. The total then scales linearly with the
+// number of cities (PDF #36).
+export const SEARCH_BOTH_SURCHARGE = 1000;
+
 function deriveRegion(province?: string): 'Punjab' | 'other' | undefined {
   if (!province) return undefined;
   return PUNJAB_NAMES.has(province) ? 'Punjab' : 'other';
@@ -185,6 +198,13 @@ export class PricingService {
     base: number;
     pdfSurcharge: number;
     deliveryFee: number;
+    titleSurcharge: number;
+    // PDF #37: Rs 1,000 surcharge added per city when search_method === 'both'
+    // for `judicial_case_search`. Zero for every other flow.
+    searchBothSurcharge: number;
+    // PDF #36: multi-city multiplier applied to Case Search totals. Equal to
+    // the number of cities the consumer picked (>=1). Always 1 for other flows.
+    cityCount: number;
     clerkRateOverride?: { attested?: number; nonAttested?: number };
     attestedCharge: number;
     nonAttestedCharge: number;
@@ -260,6 +280,9 @@ export class PricingService {
         base: 0,
         pdfSurcharge: 0,
         deliveryFee: 0,
+        titleSurcharge: 0,
+        searchBothSurcharge: 0,
+        cityCount: 1,
         attestedCharge: 0,
         nonAttestedCharge: 0,
         deliveryCharge: 0,
@@ -283,6 +306,9 @@ export class PricingService {
         base: 0,
         pdfSurcharge: 0,
         deliveryFee: 0,
+        titleSurcharge: 0,
+        searchBothSurcharge: 0,
+        cityCount: 1,
         attestedCharge: 0,
         nonAttestedCharge: 0,
         deliveryCharge: 0,
@@ -328,9 +354,31 @@ export class PricingService {
       dto.deliveryMethod.toLowerCase() !== 'none';
     const pdfSurcharge = wantPdf ? Number(best.pdfSurchargeAmount ?? 0) : 0;
     const deliveryFee = deliveryNeeded ? Number(best.deliveryGuyFee ?? 0) : 0;
+    // PDF #14: flat Rs 1,000 add-on when the case title is "State vs <X>".
+    // Universal — doesn't depend on court tier or year band, so it lives in
+    // the resolver as a constant rather than as a PricingRule row.
+    const titleSurcharge =
+      dto.caseTitle && STATE_VS_PATTERN.test(dto.caseTitle) ? STATE_VS_SURCHARGE : 0;
+
+    // PDF #36 / #37 — Case Search-specific multipliers. Other flows ignore
+    // both: cityCount stays 1 and searchBothSurcharge stays 0.
+    const isCaseSearch = dto.flow === 'judicial_case_search';
+    const cityCount = isCaseSearch ? Math.max(1, dto.cityCount ?? 1) : 1;
+    const searchBothSurcharge =
+      isCaseSearch && dto.searchMethod === 'both' ? SEARCH_BOTH_SURCHARGE : 0;
+
     const deliveryCharge = Number(best.deliveryCharge) + deliveryFee;
-    const serviceCost = basePrice + attestedCharge + nonAttestedCharge + pdfSurcharge;
-    const total = serviceCost + Number(best.deliveryCharge) + deliveryFee;
+    const serviceCost =
+      basePrice + attestedCharge + nonAttestedCharge + pdfSurcharge + titleSurcharge;
+    // For Case Search the per-city block (base + searchBoth + title + pdf +
+    // deliveryFee) is multiplied by the city count. Per-set rates and the
+    // rule's flat deliveryCharge are NOT multiplied — they're already
+    // per-ticket. Other flows degenerate to the original formula (cityCount=1,
+    // searchBothSurcharge=0).
+    const perCityBlock =
+      basePrice + searchBothSurcharge + titleSurcharge + pdfSurcharge + deliveryFee;
+    const total =
+      perCityBlock * cityCount + attestedCharge + nonAttestedCharge + Number(best.deliveryCharge);
 
     return {
       matched: true,
@@ -343,6 +391,9 @@ export class PricingService {
       base: basePrice,
       pdfSurcharge,
       deliveryFee,
+      titleSurcharge,
+      searchBothSurcharge,
+      cityCount,
       clerkRateOverride: clerkOverride,
       attestedCharge,
       nonAttestedCharge,

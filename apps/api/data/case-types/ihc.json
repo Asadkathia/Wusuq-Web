@@ -1,0 +1,498 @@
+[
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "IHC",
+    "code": "W.P.",
+    "label": "Writ Petition",
+    "source": "mis.ihc.gov.pk",
+    "priority": 1000
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "IHC",
+    "code": "Crl. Misc.",
+    "label": "Criminal Miscellaneous",
+    "source": "mis.ihc.gov.pk",
+    "priority": 999
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "IHC",
+    "code": "Cr",
+    "label": "Civil Revision",
+    "source": "mis.ihc.gov.pk",
+    "priority": 998
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "IHC",
+    "code": "R.F.A.",
+    "label": "Regular First Appeal",
+    "source": "mis.ihc.gov.pk",
+    "priority": 997
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "IHC",
+    "code": "F.A.O.",
+    "label": "First Appeal Against Order",
+    "source": "mis.ihc.gov.pk",
+    "priority": 996
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "IHC",
+    "code": "Crl. Appeal",
+    "label": "Criminal Appeal",
+    "source": "mis.ihc.gov.pk",
+    "priority": 995
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "IHC",
+    "code": "Crl. Rev.",
+    "label": "Criminal Revision",
+    "source": "mis.ihc.gov.pk",
+    "priority": 994
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "IHC",
+    "code": "M.R.",
+    "label": "Murder Reference",
+    "source": "mis.ihc.gov.pk",
+    "priority": 993
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "IHC",
+    "code": "P.S.L.A.",
+    "label": "Petition For Special Leave To Appeal",
+    "source": "mis.ihc.gov.pk",
+    "priority": 992
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "IHC",
+    "code": "Inst No.",
+    "label": "Institution Number",
+    "source": "mis.ihc.gov.pk",
+    "priority": 991
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "IHC",
+    "code": "I.C.A.",
+    "label": "Intra Court Appeal",
+    "source": "mis.ihc.gov.pk",
+    "priority": 990
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "IHC",
+    "code": "R.A.",
+    "label": "Review Application",
+    "source": "mis.ihc.gov.pk",
+    "priority": 989
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "IHC",
+    "code": "C.S.",
+    "label": "Civil Suit",
+    "source": "mis.ihc.gov.pk",
+    "priority": 988
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "IHC",
+    "code": "L.A.",
+    "label": "Labour Appeal",
+    "source": "mis.ihc.gov.pk",
+    "priority": 987
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "IHC",
+    "code": "Arb. Pet.",
+    "label": "Arbitration Petition",
+    "source": "mis.ihc.gov.pk",
+    "priority": 986
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "IHC",
+    "code": "C.O.",
+    "label": "Companies Original",
+    "source": "mis.ihc.gov.pk",
+    "priority": 985
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "IHC",
+    "code": "Ex. Pet.",
+    "label": "Execution Petition",
+    "source": "mis.ihc.gov.pk",
+    "priority": 984
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "IHC",
+    "code": "H.R.P.",
+    "label": "Human Rights Petition",
+    "source": "mis.ihc.gov.pk",
+    "priority": 983
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "IHC",
+    "code": "E.P.",
+    "label": "Election Petition",
+    "source": "mis.ihc.gov.pk",
+    "priority": 982
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "IHC",
+    "code": "Suo Moto",
+    "label": "Suo Moto",
+    "source": "mis.ihc.gov.pk",
+    "priority": 981
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "IHC",
+    "code": "T.R.",
+    "label": "Tax Reference",
+    "source": "mis.ihc.gov.pk",
+    "priority": 980
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "IHC",
+    "code": "R.S.A.",
+    "label": "Regular Second Appeal",
+    "source": "mis.ihc.gov.pk",
+    "priority": 979
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "IHC",
+    "code": "S.A.O.",
+    "label": "Second Appeal Against Order",
+    "source": "mis.ihc.gov.pk",
+    "priority": 978
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "IHC",
+    "code": "T.A.",
+    "label": "Transfer Application",
+    "source": "mis.ihc.gov.pk",
+    "priority": 977
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "IHC",
+    "code": "C.O.S.",
+    "label": "Civil Original Suit",
+    "source": "mis.ihc.gov.pk",
+    "priority": 976
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "IHC",
+    "code": "E.F.A.",
+    "label": "Execution First Appeal",
+    "source": "mis.ihc.gov.pk",
+    "priority": 975
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "IHC",
+    "code": "P.L.A.",
+    "label": "Petition For Leave To Appear And Defend",
+    "source": "mis.ihc.gov.pk",
+    "priority": 974
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "IHC",
+    "code": "E.S.A.",
+    "label": "Execution Second Appeal",
+    "source": "mis.ihc.gov.pk",
+    "priority": 973
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "IHC",
+    "code": "T. Ap.",
+    "label": "Tax Appeal",
+    "source": "mis.ihc.gov.pk",
+    "priority": 972
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "IHC",
+    "code": "Cust. Ref.",
+    "label": "Custom Reference",
+    "source": "mis.ihc.gov.pk",
+    "priority": 971
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "IHC",
+    "code": "Civil Ref.",
+    "label": "Civil Reference",
+    "source": "mis.ihc.gov.pk",
+    "priority": 970
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "IHC",
+    "code": "Cm Ind.",
+    "label": "Cm Independent",
+    "source": "mis.ihc.gov.pk",
+    "priority": 969
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "IHC",
+    "code": "W.T.A.",
+    "label": "Wealth Tax Appeal",
+    "source": "mis.ihc.gov.pk",
+    "priority": 968
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "IHC",
+    "code": "Comm. Ap.",
+    "label": "Commercial Appeal",
+    "source": "mis.ihc.gov.pk",
+    "priority": 967
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "IHC",
+    "code": "Jail Appeal",
+    "label": "Jail Appeal",
+    "source": "mis.ihc.gov.pk",
+    "priority": 966
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "IHC",
+    "code": "C.S.R.",
+    "label": "Capital Sentence Reference",
+    "source": "mis.ihc.gov.pk",
+    "priority": 965
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "IHC",
+    "code": "Fera",
+    "label": "Federal Excise And Reference Application",
+    "source": "mis.ihc.gov.pk",
+    "priority": 964
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "IHC",
+    "code": "S.T.R.",
+    "label": "Sales Tax Reference",
+    "source": "mis.ihc.gov.pk",
+    "priority": 963
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "IHC",
+    "code": "I.T.R.",
+    "label": "Income Tax Reference",
+    "source": "mis.ihc.gov.pk",
+    "priority": 962
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "IHC",
+    "code": "S.T.A.",
+    "label": "Sales Tax Appeal",
+    "source": "mis.ihc.gov.pk",
+    "priority": 961
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "IHC",
+    "code": "I.T.A.",
+    "label": "Income Tax Appeal",
+    "source": "mis.ihc.gov.pk",
+    "priority": 960
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "IHC",
+    "code": "Custom Ap.",
+    "label": "Custom Appeal",
+    "source": "mis.ihc.gov.pk",
+    "priority": 959
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "IHC",
+    "code": "C.T.R",
+    "label": "C.T.R",
+    "source": "mis.ihc.gov.pk",
+    "priority": 958
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "IHC",
+    "code": "Objection Case",
+    "label": "Objection Case",
+    "source": "mis.ihc.gov.pk",
+    "priority": 957
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "IHC",
+    "code": "Office Objection",
+    "label": "Office Objection",
+    "source": "mis.ihc.gov.pk",
+    "priority": 956
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "IHC",
+    "code": "Crl. Org.",
+    "label": "Criminal Original",
+    "source": "mis.ihc.gov.pk",
+    "priority": 955
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "IHC",
+    "code": "Succ. Ap.",
+    "label": "Succession Appeal",
+    "source": "mis.ihc.gov.pk",
+    "priority": 954
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "IHC",
+    "code": "Objection Pet.",
+    "label": "Objection Petition",
+    "source": "mis.ihc.gov.pk",
+    "priority": 953
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "IHC",
+    "code": "Cr.Obj.",
+    "label": "Cross Objection",
+    "source": "mis.ihc.gov.pk",
+    "priority": 952
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "IHC",
+    "code": "Secp Appeal",
+    "label": "Secp Appeal",
+    "source": "mis.ihc.gov.pk",
+    "priority": 951
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "IHC",
+    "code": "Judicial Ref.",
+    "label": "Judicial Reference",
+    "source": "mis.ihc.gov.pk",
+    "priority": 950
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "IHC",
+    "code": "Ogra Application",
+    "label": "Ogra Application",
+    "source": "mis.ihc.gov.pk",
+    "priority": 949
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "IHC",
+    "code": "Consumer Appeal",
+    "label": "Consumer Appeal",
+    "source": "mis.ihc.gov.pk",
+    "priority": 948
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "IHC",
+    "code": "J.S.A",
+    "label": "Judicial Service Appeal",
+    "source": "mis.ihc.gov.pk",
+    "priority": 947
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "IHC",
+    "code": "Auqaf Appeal",
+    "label": "Auqaf Appeal",
+    "source": "mis.ihc.gov.pk",
+    "priority": 946
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "IHC",
+    "code": "Ea",
+    "label": "Election Appeal",
+    "source": "mis.ihc.gov.pk",
+    "priority": 945
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "IHC",
+    "code": "Crl. Org. Cse",
+    "label": "Criminal Original Case",
+    "source": "mis.ihc.gov.pk",
+    "priority": 944
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "IHC",
+    "code": "C.M. A",
+    "label": "Civil Miscellaneous Appeals",
+    "source": "mis.ihc.gov.pk",
+    "priority": 943
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "IHC",
+    "code": "Misc. Pet.",
+    "label": "Miscellaneous Petitions",
+    "source": "mis.ihc.gov.pk",
+    "priority": 942
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "IHC",
+    "code": "Enfrc. Pet.",
+    "label": "Enforcement Petition",
+    "source": "mis.ihc.gov.pk",
+    "priority": 941
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "IHC",
+    "code": "Complaint",
+    "label": "Complaint",
+    "source": "mis.ihc.gov.pk",
+    "priority": 940
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "IHC",
+    "code": "Jail Rev.",
+    "label": "Jail Revision",
+    "source": "mis.ihc.gov.pk",
+    "priority": 939
+  }
+]

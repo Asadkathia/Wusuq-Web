@@ -314,6 +314,7 @@ model TicketDocument {
   name      String
   type      String
   fileUrl   String
+  caption   String?
   createdAt DateTime @default(now())
   ticket    Ticket   @relation(fields: [ticketId], references: [id])
 }
@@ -395,6 +396,28 @@ model PricingSettings {
   attestedPricePerSet    Decimal  @default(0)
   nonAttestedPricePerSet Decimal  @default(0)
   updatedAt              DateTime @updatedAt
+}
+
+// Per-court case-type catalogue. Seeded from one-off scrapes of 5 government
+// sites (SCP, FCC, IHC, SHC, DSJ Lahore) plus a hardcoded fallback snapshot
+// covering tiers/regions the PDF doesn't enumerate. The wizard's
+// case-type dropdown is sourced from this table via GET /case-types.
+model CourtCaseType {
+  id            String   @id @default(cuid())
+  courtLevel    String
+  subCourt      String?
+  district      String?
+  region        String?
+  highCourtCode String?
+  code          String
+  label         String
+  source        String
+  priority      Int      @default(0)
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+
+  @@unique([courtLevel, subCourt, district, region, highCourtCode, code])
+  @@index([courtLevel, subCourt])
 }
 
 model AuditLog {

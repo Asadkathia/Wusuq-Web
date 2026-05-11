@@ -24,4 +24,21 @@ export class ResolvePricingDto {
   // so the pricing engine prefers the clerk-reported rate over the global
   // PricingSettings defaults. Falls back silently if no report exists.
   @IsOptional() @IsString() ticketId?: string;
+
+  // PDF #14: when the case title is "State vs <X>" (state is the plaintiff,
+  // criminal cases), the resolver adds a flat Rs 1,000 surcharge on top of
+  // whatever the rule-based pricing produces. Optional — callers that omit
+  // it (or pass an unrelated title) get a 0 surcharge.
+  @IsOptional() @IsString() caseTitle?: string;
+
+  // PDF #36 (Case Search multi-city): consumer can select 1..N cities. The
+  // resolver multiplies (base + searchBothSurcharge + titleSurcharge +
+  // pdfSurcharge + deliveryFee) by this count for `judicial_case_search`
+  // only. Other flows ignore the multiplier. Defaults to 1.
+  @IsOptional() @IsInt() @Min(1) cityCount?: number;
+
+  // PDF #37 (Case Search search-method tabs). One of 'cnic' | 'details' |
+  // 'both'. Only consulted for `judicial_case_search`; 'both' adds a
+  // Rs 1,000 per-city surcharge.
+  @IsOptional() @IsString() searchMethod?: string;
 }

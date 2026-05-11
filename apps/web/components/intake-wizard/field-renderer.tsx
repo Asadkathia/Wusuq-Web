@@ -1,8 +1,10 @@
 'use client';
 
 import type { IntakeField } from '@/lib/intake-flows';
-import { parseDeliveryAddress } from '@/lib/intake-flows';
+import { parseDeliveryAddress, parseBench, formatBenchJudgeName, showWhenSatisfied } from '@/lib/intake-flows';
 import { Select } from '@/components/ui/select';
+
+export type BenchTypeOption = { value: string; label: string; count: number };
 
 const YEAR_OPTIONS: string[] = (() => {
   const current = new Date().getFullYear();
@@ -26,12 +28,122 @@ export function renderField(
    *  consumed only by the `radio` renderer (used for the Set Type picker's
    *  "Can't Get" hide-out). */
   disabledOptions?: Record<string, { disabled: boolean; hint?: string }>,
+  /** Bench-type options for the `bench` field renderer. Lower/Special tiers
+   *  pass a single-entry list to suppress the bench-type selector. */
+  benchTypeOptions?: BenchTypeOption[],
 ): React.ReactNode {
-  if (field.showWhen && payload[field.showWhen.field] !== field.showWhen.value) return null;
+  if (!showWhenSatisfied(field, payload)) return null;
 
   const hasError = Boolean(errorMsg);
   const ringClass = hasError ? 'ring-rose-500' : 'ring-border-soft';
   const inputClass = `${BASE_CLASS.replace('ring-border-soft', ringClass)}`;
+
+  if (field.type === 'info') {
+    // Readonly informational notes — used by Case Filing (PDF #42–#43) to show
+    // the clerk dispatch address summary derived from the selected court.
+    // For `clerk_dispatch_address` we compose a sentence from the chosen court
+    // + city; the geo data does not yet carry the clerk's street address, so
+    // v1 surfaces only the court name + city.
+    let body: React.ReactNode = null;
+    if (field.key === 'clerk_dispatch_address') {
+      const court = payload.select_court?.trim();
+      const city = (payload.select_court_city || payload.city)?.trim();
+      if (court && city) {
+        body = (
+          <>
+            Documents will be dispatched to the <strong>{court}</strong> clerk&apos;s office in{' '}
+            <strong>{city}</strong>.
+          </>
+        );
+      } else {
+        body = 'Select a court and city in Step 1 to see dispatch details.';
+      }
+    } else {
+      body = field.hint ?? '';
+    }
+    return (
+      <div className="rounded-xl border border-dashed border-border-soft bg-slate-50/60 px-4 py-3 text-sm text-slate-700">
+        {body}
+      </div>
+    );
+  }
+
+  if (field.type === 'search_method_tabs') {
+    // PDF #37: two-tab toggle for Case Search. The user can pick one or both
+    // tabs. The stored value is one of:
+    //   ''        — neither selected (initial)
+    //   'cnic'    — only CNIC tab on
+    //   'details' — only Case Details tab on
+    //   'both'    — both tabs on (pricing surcharge applies)
+    const current = value ?? '';
+    const cnicOn = current === 'cnic' || current === 'both';
+    const detailsOn = current === 'details' || current === 'both';
+    const toggle = (which: 'cnic' | 'details') => {
+      const nextCnic = which === 'cnic' ? !cnicOn : cnicOn;
+      const nextDetails = which === 'details' ? !detailsOn : detailsOn;
+      const next =
+        nextCnic && nextDetails ? 'both' : nextCnic ? 'cnic' : nextDetails ? 'details' : '';
+      onChange(field.key, next);
+    };
+    const tabClass = (active: boolean) =>
+      [
+        'flex-1 inline-flex items-center justify-center gap-2 rounded-xl border px-4 py-3 text-sm font-semibold',
+        'transition-[background-color,border-color,color] duration-150',
+        active
+          ? 'border-brand-500 bg-brand-50 text-brand-700'
+          : 'border-border-soft bg-surface text-slate-700 hover:bg-surface-muted',
+      ].join(' ');
+    return (
+      <div className="space-y-2">
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <button
+            type="button"
+            aria-pressed={cnicOn}
+            onClick={() => toggle('cnic')}
+            className={tabClass(cnicOn)}
+          >
+            <span
+              className={[
+                'flex h-4 w-4 shrink-0 items-center justify-center rounded-md border',
+                cnicOn ? 'border-brand-500 bg-brand-500 text-white' : 'border-slate-300 bg-surface',
+              ].join(' ')}
+            >
+              {cnicOn ? (
+                <svg viewBox="0 0 12 12" className="h-2.5 w-2.5" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M2.5 6.5l2.5 2.5 4.5-5.5" />
+                </svg>
+              ) : null}
+            </span>
+            Search by CNIC
+          </button>
+          <button
+            type="button"
+            aria-pressed={detailsOn}
+            onClick={() => toggle('details')}
+            className={tabClass(detailsOn)}
+          >
+            <span
+              className={[
+                'flex h-4 w-4 shrink-0 items-center justify-center rounded-md border',
+                detailsOn ? 'border-brand-500 bg-brand-500 text-white' : 'border-slate-300 bg-surface',
+              ].join(' ')}
+            >
+              {detailsOn ? (
+                <svg viewBox="0 0 12 12" className="h-2.5 w-2.5" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M2.5 6.5l2.5 2.5 4.5-5.5" />
+                </svg>
+              ) : null}
+            </span>
+            Search by Case Details
+          </button>
+        </div>
+        <p className="text-xs text-slate-500">
+          Pick either method or both. Selecting both adds a Rs 1,000 surcharge per city.
+        </p>
+        {hasError && <p className="mt-1 text-xs text-rose-600">{errorMsg}</p>}
+      </div>
+    );
+  }
 
   if (field.type === 'textarea') {
     return (
@@ -186,6 +298,79 @@ export function renderField(
     );
   }
 
+  if (field.type === 'bench') {
+    // Multi-judge bench picker (PDF #15, #16). Stored as a JSON-serialised
+    // { benchType, judges } object under payload[field.key] (typically `bench`),
+    // with payload.judge_name kept in sync as a human-readable display string
+    // ("J. <name1> & J. <name2> …") so existing read paths still work.
+    const FALLBACK_BENCH: BenchTypeOption = { value: 'single_judge', label: 'Single Judge', count: 1 };
+    const opts: BenchTypeOption[] = benchTypeOptions && benchTypeOptions.length > 0
+      ? benchTypeOptions
+      : [FALLBACK_BENCH];
+    const parsed = parseBench(value);
+    const matched: BenchTypeOption = opts.find((o) => o.value === parsed.benchType) ?? opts[0] ?? FALLBACK_BENCH;
+    const count = matched.count;
+    // Pad / truncate the judges array to match the active bench count, but
+    // preserve any names the user has already typed so swapping bench types
+    // doesn't destroy data.
+    const judges: string[] = Array.from({ length: count }, (_, i) => parsed.judges[i] ?? '');
+
+    const commit = (nextBenchType: string, nextJudges: string[]) => {
+      const benchObj = { benchType: nextBenchType, judges: nextJudges };
+      onChange(field.key, JSON.stringify(benchObj));
+      // Keep the derived display string in sync so existing read paths
+      // (audit logs, server-side renderers) see human-readable text.
+      onChange('judge_name', formatBenchJudgeName(nextJudges));
+    };
+
+    const handleBenchTypeChange = (nextValue: string) => {
+      const nextOpt: BenchTypeOption = opts.find((o) => o.value === nextValue) ?? opts[0] ?? FALLBACK_BENCH;
+      const nextJudges = Array.from({ length: nextOpt.count }, (_, i) => judges[i] ?? '');
+      commit(nextOpt.value, nextJudges);
+    };
+
+    const handleJudgeChange = (index: number, name: string) => {
+      const nextJudges = judges.slice();
+      nextJudges[index] = name;
+      commit(matched.value, nextJudges);
+    };
+
+    return (
+      <div className="space-y-3">
+        {opts.length > 1 ? (
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">Bench type</label>
+            <Select
+              value={matched.value}
+              onChange={handleBenchTypeChange}
+              options={opts.map((o) => ({ value: o.value, label: o.label }))}
+              placeholder="Select bench type"
+              ariaLabel="Bench type"
+            />
+          </div>
+        ) : null}
+        <div className="space-y-2">
+          {judges.map((judgeName, i) => (
+            <div key={i}>
+              <label className="block text-xs font-medium text-slate-600 mb-1">
+                {count === 1 ? 'Judge name' : `Judge ${i + 1} name`}
+              </label>
+              <input
+                className={inputClass}
+                type="text"
+                value={judgeName}
+                onChange={(e) => handleJudgeChange(i, e.target.value)}
+                onBlur={() => onBlur?.(field.key)}
+                placeholder="e.g. Amjad Ali"
+              />
+            </div>
+          ))}
+        </div>
+        {hasError && <p className="mt-1 text-xs text-rose-600">{errorMsg}</p>}
+      </div>
+    );
+  }
+
   if (field.type === 'structured_address') {
     // PDF #31b: replace the single delivery_address textarea with a
     // multi-part form modelled after the KFC delivery flow.
@@ -255,15 +440,31 @@ export function renderField(
     );
   }
 
+  // Soft CNIC formatter: any text field whose key ends in `cnic` gets dashes
+  // inserted at positions 5 and 13 as the user types. Keeps the value
+  // canonical (12345-1234567-1) without blocking keystrokes — pasted text
+  // and partial input both get reformatted on change.
+  const isCnicField = field.type === 'text' && /^.*cnic$/i.test(field.key);
+  const formatCnic = (raw: string): string => {
+    const digits = raw.replace(/\D/g, '').slice(0, 13);
+    if (digits.length <= 5) return digits;
+    if (digits.length <= 12) return `${digits.slice(0, 5)}-${digits.slice(5)}`;
+    return `${digits.slice(0, 5)}-${digits.slice(5, 12)}-${digits.slice(12)}`;
+  };
+
   return (
     <>
       <input
         className={inputClass}
         type={field.type === 'number' ? 'number' : field.type === 'date' ? 'date' : 'text'}
         value={value}
-        onChange={(e) => onChange(field.key, e.target.value)}
+        onChange={(e) => {
+          const next = isCnicField ? formatCnic(e.target.value) : e.target.value;
+          onChange(field.key, next);
+        }}
         onBlur={() => onBlur?.(field.key)}
-        placeholder={`Enter ${field.label.toLowerCase()}`}
+        placeholder={field.placeholder ?? (isCnicField ? '12345-1234567-1' : `Enter ${field.label.toLowerCase()}`)}
+        inputMode={isCnicField ? 'numeric' : undefined}
       />
       {hasError && <p className="mt-1 text-xs text-rose-600">{errorMsg}</p>}
     </>
@@ -271,6 +472,6 @@ export function renderField(
 }
 
 export function colSpan(field: IntakeField): string {
-  if (['textarea', 'radio', 'checkbox_single', 'structured_address'].includes(field.type)) return 'md:col-span-2';
+  if (['textarea', 'radio', 'checkbox_single', 'structured_address', 'bench', 'info', 'search_method_tabs'].includes(field.type)) return 'md:col-span-2';
   return '';
 }

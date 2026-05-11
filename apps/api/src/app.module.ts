@@ -28,6 +28,7 @@ import { CurrencyModule } from './currency/currency.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { FileStorageModule } from './file-storage/file-storage.module';
 import { PersonalFilesModule } from './personal-files/personal-files.module';
+import { CaseTypesModule } from './case-types/case-types.module';
 
 @Module({
   imports: [
@@ -76,6 +77,7 @@ import { PersonalFilesModule } from './personal-files/personal-files.module';
     ScheduleModule.forRoot(),
     FileStorageModule,
     PersonalFilesModule,
+    CaseTypesModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },
