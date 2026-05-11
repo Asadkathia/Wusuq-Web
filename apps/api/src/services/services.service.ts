@@ -404,6 +404,15 @@ const DEFAULT_SERVICE_CATALOG = [
     courts: ['Supreme Court'],
   },
   {
+    id: 'svc_judicial_case_record',
+    name: 'Case Record Paralegal Service',
+    type: ServiceType.JUDICIAL,
+    category: 'Judicial',
+    courtLevel: null,
+    description: 'Year-banded case record retrieval across court tiers.',
+    courts: [],
+  },
+  {
     id: 'svc_non_judicial_registry_deed',
     name: 'Registry/Deed Paralegal Service',
     type: ServiceType.NON_JUDICIAL,

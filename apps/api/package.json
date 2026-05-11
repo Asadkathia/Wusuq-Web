@@ -53,7 +53,8 @@
     "passport-jwt": "^4.0.1",
     "pdfkit": "^0.18.0",
     "reflect-metadata": "^0.2.2",
-    "rxjs": "^7.8.1"
+    "rxjs": "^7.8.1",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.2.0",
@@ -87,24 +88,42 @@
     "projects": [
       {
         "displayName": "cjs",
-        "moduleFileExtensions": ["js", "json", "ts"],
+        "moduleFileExtensions": [
+          "js",
+          "json",
+          "ts"
+        ],
         "rootDir": "src",
         "testRegex": "(?<!personal-files/lib/magic-bytes)(?<!personal-files/personal-files\\.service)\\.spec\\.ts$",
         "transform": {
           "^.+\\.(t|j)s$": "ts-jest"
         },
-        "collectCoverageFrom": ["**/*.(t|j)s"],
+        "collectCoverageFrom": [
+          "**/*.(t|j)s"
+        ],
         "coverageDirectory": "../coverage",
         "testEnvironment": "node"
       },
       {
         "displayName": "esm",
-        "moduleFileExtensions": ["js", "json", "ts"],
+        "moduleFileExtensions": [
+          "js",
+          "json",
+          "ts"
+        ],
         "rootDir": "src",
         "testRegex": "(personal-files/lib/magic-bytes|personal-files/personal-files\\.service)\\.spec\\.ts$",
-        "extensionsToTreatAsEsm": [".ts"],
+        "extensionsToTreatAsEsm": [
+          ".ts"
+        ],
         "transform": {
-          "^.+\\.ts$": ["ts-jest", {"useESM": true, "tsconfig": "<rootDir>/../tsconfig.jest-esm.json"}]
+          "^.+\\.ts$": [
+            "ts-jest",
+            {
+              "useESM": true,
+              "tsconfig": "<rootDir>/../tsconfig.jest-esm.json"
+            }
+          ]
         },
         "moduleNameMapper": {
           "^@jest/globals$": "<rootDir>/../node_modules/.pnpm/@jest+globals@30.3.0/node_modules/@jest/globals/build/index.js"
