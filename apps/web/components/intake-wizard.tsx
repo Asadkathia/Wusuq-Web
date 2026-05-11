@@ -5,7 +5,9 @@ import { useMemo, useEffect, useState, useCallback, useRef } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { PanelCard } from '@/components/ui/panel-card';
 import { ChevronRight, CheckCircle2, FolderOpen, Sparkles, X } from 'lucide-react';
-import type { IntakeFlow, IntakeStep } from '@/lib/intake-flows';
+import type { IntakeFlow, IntakeStep, CourtTier } from '@/lib/intake-flows';
+import { courtTierFromCourtType, resolveRequired, docBundleLabel, normalizeDraftPayload, isStructuredAddressComplete, computeYearBand } from '@/lib/intake-flows';
+import type { YearBand } from '@/lib/intake-flows';
 
 import type { IntakeWizardProps, TicketDraft, ServiceHit, LocalUser, CityCourtGroup } from './intake-wizard/types';
 import { StepRail } from './intake-wizard/step-rail';
@@ -79,7 +81,7 @@ const SERVICE_CASE_TYPES: Record<string, string[]> = {
 // Judge designations — first looked up by sub-court / service name (e.g.
 // "Sessions Court"), then by court type (e.g. "Lower Court").
 const JUDGE_DESIGNATIONS_BY_SERVICE: Record<string, string[]> = {
-  'Sessions Court': ['Additional Session Judge', 'District and Session Judge'],
+  'Sessions Court': ['District and Session Judge', 'Additional Session Judge'],
   'Civil Court': ['Civil Judge I', 'Civil Judge II', 'Civil Judge III', 'Civil Judge Rent Controller'],
   'Magisterial Court': ['Civil Judge 1 / Judicial Magistrate Section 30', 'Judicial Magistrate'],
   'Family Court': ['Family Judge', 'Guardian Judge'],
@@ -93,7 +95,7 @@ const JUDGE_DESIGNATIONS_BY_TYPE: Record<string, string[]> = {
   'Federal Shariat Court': ['Chief Justice', 'Justice'],
   'Federal Constitutional Court': ['Chief Justice Bench', 'Divisional Bench'],
   'Lower Court': [
-    'Additional Session Judge', 'District and Session Judge',
+    'District and Session Judge', 'Additional Session Judge',
     'Civil Judge I', 'Civil Judge II', 'Civil Judge III', 'Civil Judge Rent Controller',
     'Civil Judge 1 / Judicial Magistrate Section 30', 'Judicial Magistrate',
     'Family Judge', 'Guardian Judge',
@@ -265,13 +267,24 @@ export function IntakeWizard({
   const [selectedServiceCaseTypes, setSelectedServiceCaseTypes] = useState<string[]>([]);
   const [pricingResult, setPricingResult] = useState<{
     matched: boolean;
+    available?: boolean;
+    reason?: string;
     basePrice: number;
+    base?: number;
+    pdfSurcharge?: number;
+    deliveryFee?: number;
     attestedCharge: number;
     nonAttestedCharge: number;
     deliveryCharge: number;
     serviceCost: number;
     total: number;
   } | null>(null);
+  // Per-option availability for the Set Type picker. Populated by the
+  // /pricing-rules/availability endpoint whenever the relevant context
+  // (court level, case status, year band, city) changes. The wizard uses
+  // this to grey-out "Can't Get" combinations rather than letting the user
+  // submit a request that the resolver will reject.
+  const [setTypeAvailability, setSetTypeAvailability] = useState<Record<string, boolean>>({});
   // Courts available in the currently selected Step-1 city, grouped by court
   // type. Populated from GET /geo/cities/:cityId/courts whenever the user
   // picks (or clears) a city.
@@ -291,6 +304,35 @@ export function IntakeWizard({
       .then((r) => setServices(r.items ?? r ?? []))
       .catch(() => setServices([]));
   }, [serviceCategory]);
+
+  // Clear a stale "Non Attested" selection when the user flips to Decided Case,
+  // since that option is hidden in this configuration.
+  useEffect(() => {
+    if (draft.payload.case_status === 'Decided Case' && draft.payload.set_type === 'non_attested') {
+      setDraft((c) => ({ ...c, payload: { ...c.payload, set_type: '', non_attested_qty: '' } }));
+    }
+  }, [draft.payload.case_status, draft.payload.set_type]);
+
+  // Apply any per-field `defaultValue` declared in the flow to the payload
+  // when the flow changes, so radios/selects start preselected.
+  useEffect(() => {
+    if (!selectedFlow) return;
+    setDraft((c) => {
+      const next = { ...c.payload };
+      let changed = false;
+      for (const step of selectedFlow.steps) {
+        for (const f of step.fields) {
+          if (f.defaultValue !== undefined && (next[f.key] === undefined || next[f.key] === '')) {
+            next[f.key] = f.defaultValue;
+            changed = true;
+          }
+        }
+      }
+      return changed ? { ...c, payload: next } : c;
+    });
+  // Re-run when draftId becomes available so that defaults are re-applied
+  // AFTER server-side draft hydration overwrites the payload.
+  }, [selectedFlow, draft.draftId]);
 
   const displaySteps = useMemo<IntakeStep[]>(() => {
     if (!selectedFlow) return [];
@@ -384,6 +426,14 @@ export function IntakeWizard({
   const selectedCourtType: string = selectedService?.courtLevel ?? '';
   const selectedCourtList = selectedCourtGroup?.courts ?? [];
 
+  // Active court tier governs per-tier `requiredByCourtTier` overrides on
+  // intake fields. Derive from the payload-persisted select_court_type so
+  // the value survives draft hydration and admin pre-fill.
+  const activeCourtTier: CourtTier | null = useMemo(
+    () => courtTierFromCourtType(draft.payload.select_court_type ?? selectedCourtType),
+    [draft.payload.select_court_type, selectedCourtType],
+  );
+
   const judgeDesignationOptions: string[] = useMemo(() => {
     const subCourt = draft.payload.select_court ?? '';
     if (subCourt && JUDGE_DESIGNATIONS_BY_SERVICE[subCourt]) {
@@ -437,6 +487,8 @@ export function IntakeWizard({
     }
   }, [draft.flow, draft.payload.office_name]);
 
+  // ── Pricing resolver — recompute total whenever the payload's pricing
+  //    inputs change. Surfaces base/PDF/delivery surcharges in the checkout.
   useEffect(() => {
     const flow = draft.flow;
     const p = draft.payload;
@@ -448,16 +500,30 @@ export function IntakeWizard({
     const nonAttestedQty =
       setType === 'non_attested' ? parseInt(p.non_attested_qty ?? '0') || 0 :
       setType === 'both' ? parseInt(p.both_non_attested_qty ?? '0') || 0 : 0;
-    const caseYear = parseInt(p.case_year ?? p.year ?? '0') || undefined;
+    const decidedYear = (() => {
+      if (p.decided_date) {
+        const m = /^(\d{4})/.exec(p.decided_date);
+        if (m && m[1]) return parseInt(m[1]);
+      }
+      return undefined;
+    })();
+    const caseYear = decidedYear ?? (parseInt(p.case_year ?? p.year ?? '0') || undefined);
+    const isPending = p.case_status === 'Pending Case';
+    const yearBand: YearBand = computeYearBand(caseYear, isPending);
+    const wantPdf = p.want_pdf_before_dispatch === 'Yes';
+    const deliveryMethod = (p.delivery_mode || p.delivery_method || '').toString().toLowerCase();
 
     apiClient.post<any>('/pricing-rules/resolve', {
       flow,
       courtLevel: p.select_court_type || undefined,
       caseStatus: p.case_status || undefined,
       caseYear,
+      yearBand,
       setType: setType || undefined,
       attestedQty,
       nonAttestedQty,
+      wantPdf,
+      deliveryMethod: deliveryMethod || undefined,
       province: p.province ?? p.province_capital ?? undefined,
       city: p.select_court_city ?? p.city ?? undefined,
     })
@@ -471,12 +537,80 @@ export function IntakeWizard({
     draft.payload.case_status,
     draft.payload.case_year,
     draft.payload.year,
+    draft.payload.decided_date,
     draft.payload.set_type,
     draft.payload.attested_qty,
     draft.payload.non_attested_qty,
     draft.payload.both_attested_qty,
     draft.payload.both_non_attested_qty,
+    draft.payload.want_pdf_before_dispatch,
+    draft.payload.delivery_mode,
   ]);
+
+  // ── Set-type availability — batched lookup ("Can't Get" handling) ────────
+  // Whenever the upstream context (court level, case status, year band, city)
+  // changes, hit /pricing-rules/availability once and cache which set-type
+  // options are purchasable. We avoid an N+1 round trip per option.
+  useEffect(() => {
+    const flow = draft.flow;
+    const p = draft.payload;
+    if (!flow || !p.select_court_type) { setSetTypeAvailability({}); return; }
+    const isPending = p.case_status === 'Pending Case';
+    const decidedYear = (() => {
+      if (p.decided_date) {
+        const m = /^(\d{4})/.exec(p.decided_date);
+        if (m && m[1]) return parseInt(m[1]);
+      }
+      return undefined;
+    })();
+    const caseYear = decidedYear ?? (parseInt(p.case_year ?? p.year ?? '0') || undefined);
+    const yearBand: YearBand = computeYearBand(caseYear, isPending);
+
+    let cancelled = false;
+    apiClient.post<Record<string, boolean>>('/pricing-rules/availability', {
+      flow,
+      courtLevel: p.select_court_type || undefined,
+      caseStatus: p.case_status || undefined,
+      yearBand,
+      province: p.province ?? p.province_capital ?? undefined,
+      city: p.select_court_city ?? p.city ?? undefined,
+      options: ['attested', 'non_attested', 'both'],
+    })
+      .then((r) => { if (!cancelled) setSetTypeAvailability(r ?? {}); })
+      .catch(() => { if (!cancelled) setSetTypeAvailability({}); });
+    return () => { cancelled = true; };
+  }, [
+    draft.flow,
+    draft.payload.select_court_type,
+    draft.payload.select_court_city,
+    draft.payload.city,
+    draft.payload.case_status,
+    draft.payload.case_year,
+    draft.payload.year,
+    draft.payload.decided_date,
+  ]);
+
+  // Auto-uncheck the currently selected set type if the availability map flips
+  // it to false (e.g. user changed from Pending → Decided and Non-Attested is
+  // no longer purchasable). Keeps the form internally consistent.
+  useEffect(() => {
+    const current = draft.payload.set_type;
+    if (!current) return;
+    if (Object.keys(setTypeAvailability).length === 0) return;
+    if (setTypeAvailability[current] === false) {
+      setDraft((c) => ({
+        ...c,
+        payload: {
+          ...c.payload,
+          set_type: '',
+          attested_qty: '',
+          non_attested_qty: '',
+          both_attested_qty: '',
+          both_non_attested_qty: '',
+        },
+      }));
+    }
+  }, [setTypeAvailability, draft.payload.set_type]);
 
   useEffect(() => {
     try {
@@ -497,6 +631,69 @@ export function IntakeWizard({
       }
     } catch {}
   }, []);
+
+  // Resume from server-side draft. The server is the source of truth; the
+  // localStorage id is only a fast-path cache. Always ask the API for the
+  // active draft for (consumer, flow) so a cleared localStorage / different
+  // browser / re-login still resumes where the user left off.
+  useEffect(() => {
+    const flowKey = flows[0]?.key;
+    if (!flowKey) return;
+    if (!draft.consumerId) return; // wait until the consumer id is known
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await apiClient.get<any>(
+          `/tickets/intake-drafts/active?flow=${encodeURIComponent(flowKey)}`,
+        );
+        if (cancelled || !r || !r.id) return;
+        setDraft((current) => ({
+          ...current,
+          draftId: r.id,
+          flow: r.flow ?? current.flow,
+          serviceId: r.serviceId ?? current.serviceId,
+          step: typeof r.step === 'number' ? r.step : current.step,
+          // Normalise legacy display-string values (e.g. "Petition + Last Order")
+          // into canonical DocBundle keys so the renderer can swap the word
+          // Petition <-> Paperbook based on court tier. See PDF feedback #35b.
+          payload: normalizeDraftPayload({ ...(r.payload ?? {}) }),
+        }));
+        // Hydrate geoIds from the resumed payload so the cascading geo selects
+        // and city-court loader behave correctly on resume.
+        const p = (r.payload ?? {}) as Record<string, string>;
+        setGeoIds((g) => ({
+          provinceId: g.provinceId,
+          districtId: p.district_id || g.districtId,
+          cityId: p.city_id || g.cityId,
+        }));
+        if (p.city_id) {
+          apiClient
+            .get<CityCourtGroup[]>(`/geo/cities/${p.city_id}/courts`)
+            .then((groups) => {
+              if (!cancelled) setCityCourtGroups(groups ?? []);
+            })
+            .catch(() => {});
+        }
+        try {
+          localStorage.setItem(
+            `wusuq_intake_draft_id:${variant}:${flowKey}`,
+            r.id,
+          );
+        } catch {}
+        // Mark hydration as complete so the autosave effect doesn't immediately
+        // fire on the just-restored state.
+        didHydrateRef.current = true;
+      } catch {
+        // No active draft / not authenticated yet — leave the wizard in its
+        // initial state.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  // We intentionally only run this once per (consumerId, first-flow) pairing.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft.consumerId, flows[0]?.key]);
 
   useEffect(() => {
     if (!apiError) return;
@@ -605,7 +802,9 @@ export function IntakeWizard({
     setIsDraggingFiles(false);
   }, []);
 
-  const isFirFlow = draft.flow === 'non_judicial_copy_of_fir';
+  const isFirFlow =
+    draft.flow === 'non_judicial_copy_of_fir' ||
+    draft.flow === 'non_judicial_criminal_record_search';
 
   const validateLocationStep = useCallback(() => {
     if (!draft.consumerId) {
@@ -672,8 +871,13 @@ export function IntakeWizard({
   const validateField = (key: string, value: string): string => {
     const allFields = activeStep?.fields ?? [];
     const field = allFields.find((f) => f.key === key);
-    if (!field?.required) return '';
+    if (!field) return '';
+    if (!resolveRequired(field, activeCourtTier)) return '';
     if (field.showWhen && draft.payload[field.showWhen.field] !== field.showWhen.value) return '';
+    if (field.type === 'structured_address') {
+      if (!isStructuredAddressComplete(value)) return 'Please complete the delivery address';
+      return '';
+    }
     if (!hasValue(value)) return `${field.label} is required`;
     return '';
   };
@@ -696,15 +900,26 @@ export function IntakeWizard({
 
     for (const f of activeStep.fields) {
       if (GEO_HANDLED_KEYS.has(f.key)) continue;
-      if (!f.required) continue;
+      if (!resolveRequired(f, activeCourtTier)) continue;
       if (f.showWhen && draft.payload[f.showWhen.field] !== f.showWhen.value) continue;
       if (f.key === 'select_service') continue;
 
       newTouched[f.key] = true;
 
-      if (draft.flow === 'non_judicial_copy_of_fir' && f.key === 'station_id') {
+      if (
+        (draft.flow === 'non_judicial_copy_of_fir' ||
+          draft.flow === 'non_judicial_criminal_record_search') &&
+        f.key === 'station_id'
+      ) {
         if (!hasValue(draft.payload.station_id) && !hasValue(draft.payload.police_station)) {
           newErrors[f.key] = `${f.label} is required`;
+          if (!firstInvalidKey) firstInvalidKey = f.key;
+        }
+        continue;
+      }
+      if (f.type === 'structured_address') {
+        if (!isStructuredAddressComplete(draft.payload[f.key])) {
+          newErrors[f.key] = 'Please complete the delivery address';
           if (!firstInvalidKey) firstInvalidKey = f.key;
         }
         continue;
@@ -792,10 +1007,18 @@ export function IntakeWizard({
       items.push({ label: 'Service', detail: p.select_court, amount: null });
     }
 
-    // Pricing breakdown — only show when matched
-    if (pr?.matched) {
+    // Pricing breakdown — only show when matched. PDF surcharge and
+    // Delivery Guy fee are surfaced as their own line items so the
+    // consumer sees why the total moved.
+    if (pr?.matched && pr.available !== false) {
       if (pr.basePrice > 0) {
         items.push({ label: 'Base fee', amount: pr.basePrice });
+      }
+      if ((pr.pdfSurcharge ?? 0) > 0) {
+        items.push({ label: 'PDF surcharge', amount: pr.pdfSurcharge! });
+      }
+      if ((pr.deliveryFee ?? 0) > 0) {
+        items.push({ label: 'Delivery fee', amount: pr.deliveryFee! });
       }
       if (pr.attestedCharge > 0) {
         items.push({ label: 'Attested copies', amount: pr.attestedCharge });
@@ -803,8 +1026,11 @@ export function IntakeWizard({
       if (pr.nonAttestedCharge > 0) {
         items.push({ label: 'Non-attested copies', amount: pr.nonAttestedCharge });
       }
-      if (pr.deliveryCharge > 0) {
-        items.push({ label: 'Delivery', amount: pr.deliveryCharge });
+      // Show the static deliveryCharge from the rule only when there's any
+      // (the new flat deliveryFee already covers the Rs 100 surcharge).
+      const staticDelivery = pr.deliveryCharge - (pr.deliveryFee ?? 0);
+      if (staticDelivery > 0) {
+        items.push({ label: 'Delivery', amount: staticDelivery });
       }
     } else {
       // Keep existing delivery_mode display when no pricing match
@@ -813,11 +1039,12 @@ export function IntakeWizard({
       }
     }
 
+    const matchedAndAvailable = pr?.matched && pr.available !== false;
     return {
       items,
-      subtotal: pr?.matched ? pr.serviceCost : null,
+      subtotal: matchedAndAvailable ? pr!.serviceCost : null,
       fees: null,
-      total: pr?.matched ? pr.total : null,
+      total: matchedAndAvailable ? pr!.total : null,
       currency: 'PKR',
     };
   }, [draft.payload, pricingResult, selectedFlow]);
@@ -832,6 +1059,11 @@ export function IntakeWizard({
         p.set_type === 'non_attested' ? (p.non_attested_qty ?? '') :
         p.set_type === 'both' ? (p.both_attested_qty ?? '') :
         '';
+      // The Case Information service only supports pending cases — make the
+      // implicit assumption explicit in the persisted payload so downstream
+      // consumers (pricing, dispatch, reporting) can rely on it.
+      const flowDefaults =
+        draft.flow === 'judicial_case_information' ? { case_status: 'Pending Case' } : {};
       const ticket = await apiClient.post<any>(selectedFlow.endpoint, {
         consumerId: draft.consumerId,
         serviceId: draft.serviceId,
@@ -845,7 +1077,7 @@ export function IntakeWizard({
           p.offence ??
           p.case_title ??
           '',
-        payload: { ...p, sets, source: 'next-web-intake' },
+        payload: { ...p, ...flowDefaults, sets, source: 'next-web-intake' },
         // Atomic case linkage when the wizard is launched from a case page.
         ...(caseId ? { caseId } : {}),
       });
@@ -1011,7 +1243,7 @@ export function IntakeWizard({
                 <div>
                   <label className="text-sm font-medium text-slate-700">
                     {caseStatusField.label}
-                    {caseStatusField.required ? <span className="text-rose-500 ml-0.5">*</span> : null}
+                    {resolveRequired(caseStatusField, activeCourtTier) ? <span className="text-rose-500 ml-0.5">*</span> : null}
                   </label>
                   {isConsumerVariant && caseStatusField.hint ? (
                     <p className="mt-1 text-xs text-slate-500">{caseStatusField.hint}</p>
@@ -1048,13 +1280,51 @@ export function IntakeWizard({
 
           {!isCityCourtStep && activeStep?.fields
             .filter((f) => !GEO_HANDLED_KEYS.has(f.key) && !DATE_HANDLED_KEYS.has(f.key))
-            .map((field) => {
+            .map((rawField) => {
+              // A decided case has, by definition, been attested by the court — so the
+              // "Non Attested" set type is invalid. Filter it out of the options when
+              // case_status is Decided Case. Safe when case_status is undefined.
+              let field =
+                rawField.key === 'set_type' && draft.payload.case_status === 'Decided Case'
+                  ? { ...rawField, options: (rawField.options ?? []).filter((o) => o !== 'non_attested') }
+                  : rawField;
+              // For the document-bundle picker, render labels as
+              // Petition / Paperbook based on the active court tier while
+              // keeping the canonical DocBundle key as the stored value.
+              if (field.key === 'required_documentations') {
+                field = {
+                  ...field,
+                  optionsLabel: (opt: string) => docBundleLabel(opt, activeCourtTier),
+                };
+              }
               const dynamicOpts =
                 field.key === 'case_type' ? selectedServiceCaseTypes :
                 field.key === 'judge_designation' ? judgeDesignationOptions :
                 undefined;
               const errorMsg = touched[field.key] ? (errors[field.key] ?? '') : '';
-              const rendered = renderField(field, draft.payload[field.key] ?? '', draft.payload, setPayloadField, dynamicOpts, handleFieldBlur, errorMsg);
+              // For the Set Type picker, mark options the pricing engine has
+              // flagged as "Can't Get" as disabled so the user can't proceed
+              // with an impossible combination. Hint copy reflects the reason.
+              const disabledOpts: Record<string, { disabled: boolean; hint?: string }> | undefined =
+                field.key === 'set_type'
+                  ? (field.options ?? []).reduce(
+                      (acc, opt) => {
+                        const available = setTypeAvailability[opt];
+                        if (available === false) {
+                          const isDecided = draft.payload.case_status === 'Decided Case';
+                          acc[opt] = {
+                            disabled: true,
+                            hint: isDecided
+                              ? '(unavailable for decided cases)'
+                              : '(unavailable at this court tier)',
+                          };
+                        }
+                        return acc;
+                      },
+                      {} as Record<string, { disabled: boolean; hint?: string }>,
+                    )
+                  : undefined;
+              const rendered = renderField(field, draft.payload[field.key] ?? '', draft.payload, setPayloadField, dynamicOpts, handleFieldBlur, errorMsg, disabledOpts);
               if (rendered === null) return null;
 
               return (
@@ -1062,7 +1332,7 @@ export function IntakeWizard({
                   <div>
                     <label className="text-sm font-medium text-slate-700">
                       {field.label}
-                      {field.required && (!field.showWhen || draft.payload[field.showWhen.field] === field.showWhen.value) && (
+                      {resolveRequired(field, activeCourtTier) && (!field.showWhen || draft.payload[field.showWhen.field] === field.showWhen.value) && (
                         <span className="text-rose-500 ml-0.5">*</span>
                       )}
                     </label>

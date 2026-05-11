@@ -35,6 +35,7 @@ const INTAKE_FLOWS = new Set([
   'judicial_power_of_attorney',
   'non_judicial_copy_of_fir',
   'non_judicial_registry_deed',
+  'non_judicial_criminal_record_search',
 ]);
 
 const REQUIRED_FIELDS_BY_FLOW: Record<string, string[]> = {
@@ -114,6 +115,16 @@ const REQUIRED_FIELDS_BY_FLOW: Record<string, string[]> = {
     'delivery_mode',
     'sets',
     'set_type',
+  ],
+  non_judicial_criminal_record_search: [
+    'province',
+    'district_id',
+    'city',
+    'station_id',
+    'subject_cnic',
+    'subject_full_name',
+    'purpose',
+    'delivery_mode',
   ],
 };
 
@@ -453,27 +464,28 @@ export class TicketsService {
   ) {
     this.ensureFlowSupported(dto.flow);
 
-    const draft = dto.draftId
-      ? await this.prisma.ticketIntakeDraft.update({
-          where: { id: dto.draftId },
-          data: {
-            flow: dto.flow,
-            consumerId: dto.consumerId,
-            serviceId: dto.serviceId,
-            step: dto.step,
-            payload: dto.payload as Prisma.InputJsonValue | undefined,
-          },
-        })
-      : await this.prisma.ticketIntakeDraft.create({
-          data: {
-            flow: dto.flow,
-            consumerId: dto.consumerId,
-            serviceId: dto.serviceId,
-            step: dto.step,
-            payload: dto.payload as Prisma.InputJsonValue | undefined,
-            savedByUserId: actor?.actorUserId,
-          },
-        });
+    // Upsert by (consumerId, flow) so a consumer always has at most one active
+    // draft per flow. This is the server-side source of truth for resume —
+    // the client only caches the draft id in localStorage as a fast path.
+    const payload = dto.payload as Prisma.InputJsonValue | undefined;
+    const draft = await this.prisma.ticketIntakeDraft.upsert({
+      where: {
+        consumerId_flow: { consumerId: dto.consumerId, flow: dto.flow },
+      },
+      update: {
+        serviceId: dto.serviceId,
+        step: dto.step,
+        payload,
+      },
+      create: {
+        flow: dto.flow,
+        consumerId: dto.consumerId,
+        serviceId: dto.serviceId,
+        step: dto.step,
+        payload,
+        savedByUserId: actor?.actorUserId,
+      },
+    });
 
     await this.auditLogsService.create({
       action: 'TICKET_DRAFT_SAVED',
@@ -497,6 +509,19 @@ export class TicketsService {
     }
 
     return draft;
+  }
+
+  async getActiveDraft({
+    consumerId,
+    flow,
+  }: {
+    consumerId: string;
+    flow: string;
+  }) {
+    this.ensureFlowSupported(flow);
+    return this.prisma.ticketIntakeDraft.findUnique({
+      where: { consumerId_flow: { consumerId, flow } },
+    });
   }
 
   async updateStatus(
@@ -1021,6 +1046,49 @@ export class TicketsService {
       },
     });
 
+    // Persist clerk-side files-availability report if any clerk-report field
+    // was supplied. Upserted so a clerk can resubmit during WAITING_APPROVAL.
+    const hasClerkReport =
+      dto.filesAvailable !== undefined ||
+      dto.perPageRateAttested !== undefined ||
+      dto.perPageRateNonAttested !== undefined ||
+      dto.unavailableReason !== undefined ||
+      dto.partialCompletion !== undefined;
+
+    if (hasClerkReport) {
+      const fa = dto.filesAvailable ?? {};
+      await this.prisma.ticketClerkReport.upsert({
+        where: { ticketId },
+        create: {
+          ticketId,
+          attestedAvailable: fa.attested ?? false,
+          nonAttestedAvailable: fa.nonAttested ?? false,
+          bothAvailable: fa.both ?? false,
+          perPageRateAttested: dto.perPageRateAttested ?? null,
+          perPageRateNonAttested: dto.perPageRateNonAttested ?? null,
+          unavailableReason: dto.unavailableReason ?? null,
+          partialCompletion: dto.partialCompletion ?? false,
+        },
+        update: {
+          ...(fa.attested !== undefined ? { attestedAvailable: fa.attested } : {}),
+          ...(fa.nonAttested !== undefined ? { nonAttestedAvailable: fa.nonAttested } : {}),
+          ...(fa.both !== undefined ? { bothAvailable: fa.both } : {}),
+          ...(dto.perPageRateAttested !== undefined
+            ? { perPageRateAttested: dto.perPageRateAttested }
+            : {}),
+          ...(dto.perPageRateNonAttested !== undefined
+            ? { perPageRateNonAttested: dto.perPageRateNonAttested }
+            : {}),
+          ...(dto.unavailableReason !== undefined
+            ? { unavailableReason: dto.unavailableReason }
+            : {}),
+          ...(dto.partialCompletion !== undefined
+            ? { partialCompletion: dto.partialCompletion }
+            : {}),
+        },
+      });
+    }
+
     await this.prisma.ticketStatusHistory.create({
       data: {
         ticketId,
@@ -1045,6 +1113,11 @@ export class TicketsService {
         noOfPages: dto.noOfPages,
         costPerPage: dto.costPerPage,
         rejectionReason: dto.rejectionReason,
+        filesAvailable: dto.filesAvailable ? { ...dto.filesAvailable } : undefined,
+        perPageRateAttested: dto.perPageRateAttested,
+        perPageRateNonAttested: dto.perPageRateNonAttested,
+        unavailableReason: dto.unavailableReason,
+        partialCompletion: dto.partialCompletion,
         from: ticket.status,
         to: 'WAITING_APPROVAL',
       },

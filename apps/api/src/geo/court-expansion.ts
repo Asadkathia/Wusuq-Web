@@ -15,8 +15,8 @@ export type SubCourt = { name: string };
  */
 export const LOWER_COURT_SUBCOURTS: SubCourt[] = [
   { name: 'Sessions Court' },
-  { name: 'Magisterial Court' },
   { name: 'Civil Court' },
+  { name: 'Magisterial Court' },
   { name: 'Family Court' },
 ];
 

@@ -46,6 +46,12 @@ const FLOWS = [
     type: 'non-judicial',
     route: '/create/NonjudicialService/registry',
   },
+  {
+    key: 'non_judicial_criminal_record_search',
+    label: 'Search Criminal Record',
+    type: 'non-judicial',
+    route: '/create/NonjudicialService/criminal-record-search',
+  },
 ] as const;
 
 // court name → array of cities it serves
@@ -300,6 +306,7 @@ const CASE_TYPES: Record<string, string[]> = {
   ],
   svc_non_judicial_registry_deed: [],
   svc_non_judicial_fir: [],
+  svc_non_judicial_criminal_record: [],
 };
 
 const DEFAULT_SERVICE_CATALOG = [
@@ -310,7 +317,8 @@ const DEFAULT_SERVICE_CATALOG = [
     category: 'Judicial',
     courtLevel: 'Lower Court',
     description: 'Judicial service for lower court matters.',
-    courts: ['Sessions Court', 'Magisterial Court', 'Civil Court', 'Family Court'],
+    courts: ['Sessions Court', 'Civil Court', 'Magisterial Court', 'Family Court'],
+    deliveryTimeHours: 48,
   },
   {
     id: 'svc_judicial_special_court',
@@ -403,6 +411,15 @@ const DEFAULT_SERVICE_CATALOG = [
     courts: ['Supreme Court'],
   },
   {
+    id: 'svc_judicial_case_record',
+    name: 'Case Record Paralegal Service',
+    type: ServiceType.JUDICIAL,
+    category: 'Judicial',
+    courtLevel: null,
+    description: 'Year-banded case record retrieval across court tiers.',
+    courts: [],
+  },
+  {
     id: 'svc_non_judicial_registry_deed',
     name: 'Registry/Deed Paralegal Service',
     type: ServiceType.NON_JUDICIAL,
@@ -418,6 +435,15 @@ const DEFAULT_SERVICE_CATALOG = [
     category: 'Non Judicial',
     courtLevel: null,
     description: 'Non-judicial FIR service.',
+    courts: [],
+  },
+  {
+    id: 'svc_non_judicial_criminal_record',
+    name: 'Search Criminal Record',
+    type: ServiceType.NON_JUDICIAL,
+    category: 'Non Judicial',
+    courtLevel: null,
+    description: 'Search criminal records by CNIC and Police Station.',
     courts: [],
   },
 ] as const;

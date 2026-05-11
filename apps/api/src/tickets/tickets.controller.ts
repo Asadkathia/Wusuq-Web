@@ -209,6 +209,22 @@ export class TicketsController {
   }
 
   @RequirePermissions('tickets.write')
+  @Post('intake/non-judicial/criminal-record-search')
+  createNonJudicialCriminalRecordSearch(
+    @Body() dto: Omit<CreateTicketIntakeDto, 'flow'>,
+    @CurrentUser() actor: JwtUser | undefined,
+  ) {
+    return this.ticketsService.createIntakeTicketFromFlow(
+      'non_judicial_criminal_record_search',
+      dto,
+      {
+        actorUserId: actor?.sub,
+        actorEmail: actor?.email,
+      },
+    );
+  }
+
+  @RequirePermissions('tickets.write')
   @Post('intake-drafts')
   saveDraft(
     @Body() dto: SaveTicketIntakeDraftDto,
@@ -217,6 +233,24 @@ export class TicketsController {
     return this.ticketsService.saveIntakeDraft(dto, {
       actorUserId: actor?.sub,
       actorEmail: actor?.email,
+    });
+  }
+
+  @RequirePermissions('tickets.read')
+  @Get('intake-drafts/active')
+  getActiveDraft(
+    @Query('flow') flow: string,
+    @CurrentUser() actor: JwtUser | undefined,
+  ) {
+    if (!flow) {
+      throw new BadRequestException('flow query parameter is required');
+    }
+    if (!actor?.sub) {
+      throw new BadRequestException('Authenticated user required');
+    }
+    return this.ticketsService.getActiveDraft({
+      consumerId: actor.sub,
+      flow,
     });
   }
 

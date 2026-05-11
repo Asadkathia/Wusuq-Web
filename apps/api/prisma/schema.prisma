@@ -190,10 +190,29 @@ model Ticket {
   caseEvents      CaseEvent[]
   caseDocuments   CaseDocument[]
   invoice         Invoice?
+  clerkReport     TicketClerkReport?
 
   @@index([consumerId])
   @@index([status])
   @@index([paymentStatus])
+}
+
+// Structured clerk-side "what files can this court actually produce" report,
+// captured when the fulfilling clerk submits costs. The pricing engine prefers
+// the clerk-reported per-page rates over the global PricingSettings defaults.
+model TicketClerkReport {
+  id                     String   @id @default(cuid())
+  ticketId               String   @unique
+  attestedAvailable      Boolean  @default(false)
+  nonAttestedAvailable   Boolean  @default(false)
+  bothAvailable          Boolean  @default(false)
+  perPageRateAttested    Decimal?
+  perPageRateNonAttested Decimal?
+  unavailableReason      String?
+  partialCompletion      Boolean  @default(false)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+  ticket                 Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
 }
 
 model Election {
@@ -266,6 +285,8 @@ model TicketIntakeDraft {
   savedByUserId String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+
+  @@unique([consumerId, flow])
 }
 
 model TicketStatusHistory {
@@ -341,17 +362,31 @@ model PricingRule {
   caseStatus             String?
   yearFrom               Int?
   yearTo                 Int?
+  // v2: canonical year band key (pending | current | y2025 | y2024_2023 |
+  // y2022_2020 | y2019_2017 | y2016_back). yearFrom/yearTo retained as
+  // backwards-compat derivation helpers.
+  yearBand               String?
   setType                String?
   region                 String?
   isLegacy               Boolean  @default(false)
+  // v2 availability flag — when false ("Can't Get" in the source sheet) the
+  // wizard hides this combination instead of pricing it.
+  availability           Boolean  @default(true)
   basePrice              Decimal  @default(0)
   attestedPricePerSet    Decimal  @default(0)
   nonAttestedPricePerSet Decimal  @default(0)
   deliveryCharge         Decimal  @default(0)
+  // v2 flat surcharges — PDF copy and Delivery Guy line items.
+  pdfSurchargeAmount     Decimal  @default(300)
+  deliveryGuyFee         Decimal  @default(100)
+  // v2 informational clerk-side cost (not part of consumer total).
+  clerkBaseCost          Decimal?
   priority               Int      @default(0)
   isActive               Boolean  @default(true)
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
+
+  @@unique([region, courtLevel, flow, yearBand, setType], name: "PricingRule_dimensions_unique")
 }
 
 model PricingSettings {
