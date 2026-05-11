@@ -4,6 +4,12 @@ import { apiClient } from '@/lib/api-client';
 import { Select } from '@/components/ui/select';
 import { CountryPicker } from '@/components/ui/country-picker';
 import { DEFAULT_COUNTRY_CODE } from '@/lib/countries';
+import {
+  CONSUMER_KINDS,
+  CONSUMER_KIND_LABELS,
+  CONSUMER_KIND_DESCRIPTIONS,
+  type ConsumerKind,
+} from '@wusuq/shared';
 
 type CityRow = { id: string; name: string; district?: string; province?: string };
 
@@ -12,16 +18,21 @@ export function ProfileStep({
   onNameChange,
   cityName,
   onCityChange,
+  consumerKind,
+  onConsumerKindChange,
   onSubmit,
-  onSkip,
   loading,
 }: {
   name: string;
   onNameChange: (v: string) => void;
   cityName: string;
   onCityChange: (v: string) => void;
+  consumerKind: ConsumerKind | null;
+  onConsumerKindChange: (v: ConsumerKind) => void;
   onSubmit: () => void;
-  onSkip: () => void;
+  // onSkip retained in the parent but intentionally unused here:
+  // PDF #4 forces profile completion — no skip path until kind is chosen.
+  onSkip?: () => void;
   loading: boolean;
 }) {
   const [cities, setCities] = useState<CityRow[]>([]);
@@ -54,7 +65,7 @@ export function ProfileStep({
     };
   });
 
-  const valid = name.trim().length >= 2;
+  const valid = name.trim().length >= 2 && consumerKind !== null;
 
   return (
     <div className="flex flex-col gap-4">
@@ -62,6 +73,37 @@ export function ProfileStep({
         <h2 className="text-2xl font-semibold text-slate-900">Tell us about you</h2>
         <p className="mt-1 text-sm text-slate-500">This helps us serve you better.</p>
       </div>
+
+      <fieldset className="flex flex-col gap-2">
+        <legend className="text-sm font-medium text-slate-700">I am a… *</legend>
+        <div className="grid gap-2 sm:grid-cols-3">
+          {CONSUMER_KINDS.map((kind) => {
+            const selected = consumerKind === kind;
+            return (
+              <button
+                key={kind}
+                type="button"
+                onClick={() => onConsumerKindChange(kind)}
+                aria-pressed={selected}
+                className={[
+                  'flex flex-col gap-1 rounded-xl border px-3 py-3 text-left transition',
+                  'focus:outline-none focus:ring-2 focus:ring-brand-500/50',
+                  selected
+                    ? 'border-brand-500 bg-brand-50 ring-2 ring-brand-500/40'
+                    : 'border-border-soft bg-white hover:border-brand-300',
+                ].join(' ')}
+              >
+                <span className="text-sm font-semibold text-slate-900">
+                  {CONSUMER_KIND_LABELS[kind]}
+                </span>
+                <span className="text-xs leading-snug text-slate-500">
+                  {CONSUMER_KIND_DESCRIPTIONS[kind]}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </fieldset>
 
       <label className="flex flex-col gap-1.5">
         <span className="text-sm font-medium text-slate-700">Full name *</span>
@@ -71,7 +113,6 @@ export function ProfileStep({
           onChange={(e) => onNameChange(e.target.value)}
           placeholder="Ali Raza"
           className="rounded-xl border-0 px-3.5 py-2.5 text-slate-900 shadow-sm ring-1 ring-inset ring-border-soft focus:ring-2 focus:ring-brand-500/50"
-          autoFocus
         />
       </label>
 
@@ -103,14 +144,6 @@ export function ProfileStep({
         className="rounded-xl bg-brand-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-brand-700 disabled:opacity-40"
       >
         {loading ? 'Saving…' : 'Continue to dashboard →'}
-      </button>
-
-      <button
-        type="button"
-        onClick={onSkip}
-        className="text-center text-xs text-slate-500 hover:underline"
-      >
-        I&apos;ll do this later
       </button>
     </div>
   );

@@ -1,4 +1,5 @@
-import { IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
+import { CONSUMER_KINDS, type ConsumerKind } from '@wusuq/shared';
 
 export class ProfileCompleteDto {
   @IsString()
@@ -9,4 +10,8 @@ export class ProfileCompleteDto {
   @IsString()
   @MaxLength(120)
   cityName?: string;
+
+  @IsOptional()
+  @IsIn(CONSUMER_KINDS as unknown as string[])
+  consumerKind?: ConsumerKind;
 }

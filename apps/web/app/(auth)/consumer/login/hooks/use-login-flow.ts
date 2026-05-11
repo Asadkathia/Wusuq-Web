@@ -2,6 +2,7 @@
 import { useCallback, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { requestOtp, verifyOtp, completeProfile, type OtpVerifyResponse } from '../api';
+import type { ConsumerKind } from '@wusuq/shared';
 
 export type LoginStep = 'phone' | 'otp' | 'profile';
 
@@ -12,6 +13,7 @@ export function useLoginFlow() {
   const [otp, setOtp] = useState('');
   const [name, setName] = useState('');
   const [cityName, setCityName] = useState('');
+  const [consumerKind, setConsumerKind] = useState<ConsumerKind | null>(null);
   const [devCode, setDevCode] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -69,14 +71,26 @@ export function useLoginFlow() {
     setError(null);
     setLoading(true);
     try {
-      await completeProfile(name, cityName || undefined);
+      await completeProfile(name, cityName || undefined, consumerKind ?? undefined);
+      try {
+        const raw = localStorage.getItem('wusuq_user');
+        if (raw) {
+          const u = JSON.parse(raw) as Record<string, unknown>;
+          u.name = name;
+          if (cityName) u.city = cityName;
+          if (consumerKind) u.consumerKind = consumerKind;
+          localStorage.setItem('wusuq_user', JSON.stringify(u));
+        }
+      } catch {
+        // localStorage unavailable
+      }
     } catch {
       // Best-effort: even on failure, account exists; let the user into the dashboard.
     } finally {
       setLoading(false);
       router.replace('/consumer/dashboard');
     }
-  }, [name, cityName, router]);
+  }, [name, cityName, consumerKind, router]);
 
   const skipProfile = useCallback(() => {
     router.replace('/consumer/dashboard');
@@ -90,6 +104,7 @@ export function useLoginFlow() {
 
   return {
     step, phone, setPhone, otp, setOtp, name, setName, cityName, setCityName,
+    consumerKind, setConsumerKind,
     error, loading, devCode,
     sendOtp, submitOtp, submitProfile, skipProfile, changePhone,
   };

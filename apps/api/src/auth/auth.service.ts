@@ -207,12 +207,16 @@ export class AuthService {
     };
   }
 
-  async completeProfile(userId: string, dto: { name: string; cityName?: string }) {
+  async completeProfile(
+    userId: string,
+    dto: { name: string; cityName?: string; consumerKind?: 'LAWYER' | 'NON_LAWYER' | 'CORPORATE' },
+  ) {
     const user = await this.prisma.user.update({
       where: { id: userId },
       data: {
         name: dto.name,
         ...(dto.cityName ? { city: dto.cityName } : {}),
+        ...(dto.consumerKind ? { consumerKind: dto.consumerKind } : {}),
       },
     });
     return {
@@ -221,6 +225,7 @@ export class AuthService {
       email: user.email,
       role: user.role,
       city: user.city,
+      consumerKind: user.consumerKind,
     };
   }
 
