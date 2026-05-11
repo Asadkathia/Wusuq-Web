@@ -1,0 +1,914 @@
+[
+  {
+    "courtLevel": "Lower Court",
+    "subCourt": "Sessions Court",
+    "code": "Bail Application (S)",
+    "label": "Bail Application (S)"
+  },
+  {
+    "courtLevel": "Lower Court",
+    "subCourt": "Sessions Court",
+    "code": "Criminal Appeal",
+    "label": "Criminal Appeal"
+  },
+  {
+    "courtLevel": "Lower Court",
+    "subCourt": "Sessions Court",
+    "code": "Criminal Misc.",
+    "label": "Criminal Misc."
+  },
+  {
+    "courtLevel": "Lower Court",
+    "subCourt": "Sessions Court",
+    "code": "Criminal Revision",
+    "label": "Criminal Revision"
+  },
+  {
+    "courtLevel": "Lower Court",
+    "subCourt": "Sessions Court",
+    "code": "Hadood Cases (Under Hadood Ordinance)",
+    "label": "Hadood Cases (Under Hadood Ordinance)"
+  },
+  {
+    "courtLevel": "Lower Court",
+    "subCourt": "Sessions Court",
+    "code": "Harrassment",
+    "label": "Harrassment"
+  },
+  {
+    "courtLevel": "Lower Court",
+    "subCourt": "Sessions Court",
+    "code": "Illegal Dispossession Act",
+    "label": "Illegal Dispossession Act"
+  },
+  {
+    "courtLevel": "Lower Court",
+    "subCourt": "Sessions Court",
+    "code": "Inquiry (S)",
+    "label": "Inquiry (S)"
+  },
+  {
+    "courtLevel": "Lower Court",
+    "subCourt": "Sessions Court",
+    "code": "Money Laundering Act",
+    "label": "Money Laundering Act"
+  },
+  {
+    "courtLevel": "Lower Court",
+    "subCourt": "Sessions Court",
+    "code": "Narcotics Cases (S)",
+    "label": "Narcotics Cases (S)"
+  },
+  {
+    "courtLevel": "Lower Court",
+    "subCourt": "Sessions Court",
+    "code": "Other Cases (S)",
+    "label": "Other Cases (S)"
+  },
+  {
+    "courtLevel": "Lower Court",
+    "subCourt": "Sessions Court",
+    "code": "Petitions u/s 22-A/22-B Cr.P.C",
+    "label": "Petitions u/s 22-A/22-B Cr.P.C"
+  },
+  {
+    "courtLevel": "Lower Court",
+    "subCourt": "Sessions Court",
+    "code": "Sessions Cases (Murder)",
+    "label": "Sessions Cases (Murder)"
+  },
+  {
+    "courtLevel": "Lower Court",
+    "subCourt": "Sessions Court",
+    "code": "Sessions Cases (Others)",
+    "label": "Sessions Cases (Others)"
+  },
+  {
+    "courtLevel": "Lower Court",
+    "subCourt": "Sessions Court",
+    "code": "STA Cases",
+    "label": "STA Cases"
+  },
+  {
+    "courtLevel": "Lower Court",
+    "subCourt": "Sessions Court",
+    "code": "Superdari",
+    "label": "Superdari"
+  },
+  {
+    "courtLevel": "Lower Court",
+    "subCourt": "Sessions Court",
+    "code": "Habeas Corpus",
+    "label": "Habeas Corpus"
+  },
+  {
+    "courtLevel": "Lower Court",
+    "subCourt": "Sessions Court",
+    "code": "Execution Petition (S)",
+    "label": "Execution Petition (S)"
+  },
+  {
+    "courtLevel": "Lower Court",
+    "subCourt": "Civil Court",
+    "code": "Civil Appeal",
+    "label": "Civil Appeal"
+  },
+  {
+    "courtLevel": "Lower Court",
+    "subCourt": "Civil Court",
+    "code": "Civil Case of Summary Nature Involving Evidence",
+    "label": "Civil Case of Summary Nature Involving Evidence"
+  },
+  {
+    "courtLevel": "Lower Court",
+    "subCourt": "Civil Court",
+    "code": "Civil Misc.",
+    "label": "Civil Misc."
+  },
+  {
+    "courtLevel": "Lower Court",
+    "subCourt": "Civil Court",
+    "code": "Civil Revision",
+    "label": "Civil Revision"
+  },
+  {
+    "courtLevel": "Lower Court",
+    "subCourt": "Civil Court",
+    "code": "Civil Suit",
+    "label": "Civil Suit"
+  },
+  {
+    "courtLevel": "Lower Court",
+    "subCourt": "Civil Court",
+    "code": "Commercial Cases",
+    "label": "Commercial Cases"
+  },
+  {
+    "courtLevel": "Lower Court",
+    "subCourt": "Civil Court",
+    "code": "Election Petition",
+    "label": "Election Petition"
+  },
+  {
+    "courtLevel": "Lower Court",
+    "subCourt": "Civil Court",
+    "code": "Execution Petition (C)",
+    "label": "Execution Petition (C)"
+  },
+  {
+    "courtLevel": "Lower Court",
+    "subCourt": "Civil Court",
+    "code": "Inquiry (C)",
+    "label": "Inquiry (C)"
+  },
+  {
+    "courtLevel": "Lower Court",
+    "subCourt": "Civil Court",
+    "code": "Insolvency Cases",
+    "label": "Insolvency Cases"
+  },
+  {
+    "courtLevel": "Lower Court",
+    "subCourt": "Civil Court",
+    "code": "Insurance Cases",
+    "label": "Insurance Cases"
+  },
+  {
+    "courtLevel": "Lower Court",
+    "subCourt": "Civil Court",
+    "code": "Labour Cases",
+    "label": "Labour Cases"
+  },
+  {
+    "courtLevel": "Lower Court",
+    "subCourt": "Civil Court",
+    "code": "Land Acquisition Cases",
+    "label": "Land Acquisition Cases"
+  },
+  {
+    "courtLevel": "Lower Court",
+    "subCourt": "Civil Court",
+    "code": "Obejcton Petiton",
+    "label": "Obejcton Petiton"
+  },
+  {
+    "courtLevel": "Lower Court",
+    "subCourt": "Civil Court",
+    "code": "Original Suit",
+    "label": "Original Suit"
+  },
+  {
+    "courtLevel": "Lower Court",
+    "subCourt": "Civil Court",
+    "code": "Other Cases (C)",
+    "label": "Other Cases (C)"
+  },
+  {
+    "courtLevel": "Lower Court",
+    "subCourt": "Civil Court",
+    "code": "Pauper Cases",
+    "label": "Pauper Cases"
+  },
+  {
+    "courtLevel": "Lower Court",
+    "subCourt": "Civil Court",
+    "code": "Rent Cases",
+    "label": "Rent Cases"
+  },
+  {
+    "courtLevel": "Lower Court",
+    "subCourt": "Civil Court",
+    "code": "Small Clam & Minor Offence",
+    "label": "Small Clam & Minor Offence"
+  },
+  {
+    "courtLevel": "Lower Court",
+    "subCourt": "Magisterial Court",
+    "code": "Bail Application (M)",
+    "label": "Bail Application (M)"
+  },
+  {
+    "courtLevel": "Lower Court",
+    "subCourt": "Magisterial Court",
+    "code": "Ist Class Cases",
+    "label": "Ist Class Cases"
+  },
+  {
+    "courtLevel": "Lower Court",
+    "subCourt": "Magisterial Court",
+    "code": "Minor Offences",
+    "label": "Minor Offences"
+  },
+  {
+    "courtLevel": "Lower Court",
+    "subCourt": "Magisterial Court",
+    "code": "Narcotics Cases (M)",
+    "label": "Narcotics Cases (M)"
+  },
+  {
+    "courtLevel": "Lower Court",
+    "subCourt": "Magisterial Court",
+    "code": "Other Cases (M)",
+    "label": "Other Cases (M)"
+  },
+  {
+    "courtLevel": "Lower Court",
+    "subCourt": "Magisterial Court",
+    "code": "Section 30 Case",
+    "label": "Section 30 Case"
+  },
+  {
+    "courtLevel": "Lower Court",
+    "subCourt": "Family Court",
+    "code": "Family Cases",
+    "label": "Family Cases"
+  },
+  {
+    "courtLevel": "Lower Court",
+    "subCourt": "Family Court",
+    "code": "Guardianship Cases",
+    "label": "Guardianship Cases"
+  },
+  {
+    "courtLevel": "Lower Court",
+    "subCourt": "Family Court",
+    "code": "Application for Succession",
+    "label": "Application for Succession"
+  },
+  {
+    "courtLevel": "Special Court",
+    "subCourt": null,
+    "code": "Pre-Arrest Bail Petition",
+    "label": "Pre-Arrest Bail Petition"
+  },
+  {
+    "courtLevel": "Special Court",
+    "subCourt": null,
+    "code": "Post-Arrest Bail Petition",
+    "label": "Post-Arrest Bail Petition"
+  },
+  {
+    "courtLevel": "Special Court",
+    "subCourt": null,
+    "code": "Trail File",
+    "label": "Trail File"
+  },
+  {
+    "courtLevel": "Special Court",
+    "subCourt": null,
+    "code": "Miscellaneous",
+    "label": "Miscellaneous"
+  },
+  {
+    "courtLevel": "High Court",
+    "subCourt": null,
+    "code": "Writ Petition",
+    "label": "Writ Petition"
+  },
+  {
+    "courtLevel": "High Court",
+    "subCourt": null,
+    "code": "Criminal Miscellaneous",
+    "label": "Criminal Miscellaneous"
+  },
+  {
+    "courtLevel": "High Court",
+    "subCourt": null,
+    "code": "Civil Revision",
+    "label": "Civil Revision"
+  },
+  {
+    "courtLevel": "High Court",
+    "subCourt": null,
+    "code": "Regular First Appeal",
+    "label": "Regular First Appeal"
+  },
+  {
+    "courtLevel": "High Court",
+    "subCourt": null,
+    "code": "First Appeal Against Order",
+    "label": "First Appeal Against Order"
+  },
+  {
+    "courtLevel": "High Court",
+    "subCourt": null,
+    "code": "Criminal Appeal",
+    "label": "Criminal Appeal"
+  },
+  {
+    "courtLevel": "High Court",
+    "subCourt": null,
+    "code": "Criminal Revision",
+    "label": "Criminal Revision"
+  },
+  {
+    "courtLevel": "High Court",
+    "subCourt": null,
+    "code": "Murder Reference",
+    "label": "Murder Reference"
+  },
+  {
+    "courtLevel": "High Court",
+    "subCourt": null,
+    "code": "Petition For Special Leave To Appeal",
+    "label": "Petition For Special Leave To Appeal"
+  },
+  {
+    "courtLevel": "High Court",
+    "subCourt": null,
+    "code": "Diary Number",
+    "label": "Diary Number"
+  },
+  {
+    "courtLevel": "High Court",
+    "subCourt": null,
+    "code": "Intra Court Appeal",
+    "label": "Intra Court Appeal"
+  },
+  {
+    "courtLevel": "High Court",
+    "subCourt": null,
+    "code": "Review Application",
+    "label": "Review Application"
+  },
+  {
+    "courtLevel": "High Court",
+    "subCourt": null,
+    "code": "Civil Suit",
+    "label": "Civil Suit"
+  },
+  {
+    "courtLevel": "High Court",
+    "subCourt": null,
+    "code": "Labour Appeal",
+    "label": "Labour Appeal"
+  },
+  {
+    "courtLevel": "High Court",
+    "subCourt": null,
+    "code": "Arbitration Petition",
+    "label": "Arbitration Petition"
+  },
+  {
+    "courtLevel": "High Court",
+    "subCourt": null,
+    "code": "Companies Original",
+    "label": "Companies Original"
+  },
+  {
+    "courtLevel": "High Court",
+    "subCourt": null,
+    "code": "Execution Petition",
+    "label": "Execution Petition"
+  },
+  {
+    "courtLevel": "High Court",
+    "subCourt": null,
+    "code": "Human Rights Petition",
+    "label": "Human Rights Petition"
+  },
+  {
+    "courtLevel": "High Court",
+    "subCourt": null,
+    "code": "Election Petition",
+    "label": "Election Petition"
+  },
+  {
+    "courtLevel": "High Court",
+    "subCourt": null,
+    "code": "Suo Moto",
+    "label": "Suo Moto"
+  },
+  {
+    "courtLevel": "High Court",
+    "subCourt": null,
+    "code": "Tax Reference",
+    "label": "Tax Reference"
+  },
+  {
+    "courtLevel": "High Court",
+    "subCourt": null,
+    "code": "Regular Second Appeal",
+    "label": "Regular Second Appeal"
+  },
+  {
+    "courtLevel": "High Court",
+    "subCourt": null,
+    "code": "Second Appeal Against Order",
+    "label": "Second Appeal Against Order"
+  },
+  {
+    "courtLevel": "High Court",
+    "subCourt": null,
+    "code": "Transfer Application",
+    "label": "Transfer Application"
+  },
+  {
+    "courtLevel": "High Court",
+    "subCourt": null,
+    "code": "Civil Original Suit",
+    "label": "Civil Original Suit"
+  },
+  {
+    "courtLevel": "High Court",
+    "subCourt": null,
+    "code": "Execution First Appeal",
+    "label": "Execution First Appeal"
+  },
+  {
+    "courtLevel": "High Court",
+    "subCourt": null,
+    "code": "Petition For Leave To Appear And Defend",
+    "label": "Petition For Leave To Appear And Defend"
+  },
+  {
+    "courtLevel": "High Court",
+    "subCourt": null,
+    "code": "Execution Second Appeal",
+    "label": "Execution Second Appeal"
+  },
+  {
+    "courtLevel": "High Court",
+    "subCourt": null,
+    "code": "Tax Appeal",
+    "label": "Tax Appeal"
+  },
+  {
+    "courtLevel": "High Court",
+    "subCourt": null,
+    "code": "Custom Reference",
+    "label": "Custom Reference"
+  },
+  {
+    "courtLevel": "High Court",
+    "subCourt": null,
+    "code": "Civil Reference",
+    "label": "Civil Reference"
+  },
+  {
+    "courtLevel": "High Court",
+    "subCourt": null,
+    "code": "Cm Independent",
+    "label": "Cm Independent"
+  },
+  {
+    "courtLevel": "High Court",
+    "subCourt": null,
+    "code": "Wealth Tax Appeal",
+    "label": "Wealth Tax Appeal"
+  },
+  {
+    "courtLevel": "High Court",
+    "subCourt": null,
+    "code": "Commercial Appeal",
+    "label": "Commercial Appeal"
+  },
+  {
+    "courtLevel": "High Court",
+    "subCourt": null,
+    "code": "Jail Appeal",
+    "label": "Jail Appeal"
+  },
+  {
+    "courtLevel": "High Court",
+    "subCourt": null,
+    "code": "Capital Sentence Reference",
+    "label": "Capital Sentence Reference"
+  },
+  {
+    "courtLevel": "High Court",
+    "subCourt": null,
+    "code": "Federal Excise & Reference Application",
+    "label": "Federal Excise & Reference Application"
+  },
+  {
+    "courtLevel": "High Court",
+    "subCourt": null,
+    "code": "Sales Tax Reference",
+    "label": "Sales Tax Reference"
+  },
+  {
+    "courtLevel": "High Court",
+    "subCourt": null,
+    "code": "Income Tax Reference",
+    "label": "Income Tax Reference"
+  },
+  {
+    "courtLevel": "High Court",
+    "subCourt": null,
+    "code": "Sales Tax Appeal",
+    "label": "Sales Tax Appeal"
+  },
+  {
+    "courtLevel": "High Court",
+    "subCourt": null,
+    "code": "Income Tax Appeal",
+    "label": "Income Tax Appeal"
+  },
+  {
+    "courtLevel": "High Court",
+    "subCourt": null,
+    "code": "Custom Appeal",
+    "label": "Custom Appeal"
+  },
+  {
+    "courtLevel": "High Court",
+    "subCourt": null,
+    "code": "C.T.R",
+    "label": "C.T.R"
+  },
+  {
+    "courtLevel": "High Court",
+    "subCourt": null,
+    "code": "Objection Case",
+    "label": "Objection Case"
+  },
+  {
+    "courtLevel": "High Court",
+    "subCourt": null,
+    "code": "Office Objection",
+    "label": "Office Objection"
+  },
+  {
+    "courtLevel": "High Court",
+    "subCourt": null,
+    "code": "Criminal Original",
+    "label": "Criminal Original"
+  },
+  {
+    "courtLevel": "High Court",
+    "subCourt": null,
+    "code": "Succession Appeal",
+    "label": "Succession Appeal"
+  },
+  {
+    "courtLevel": "High Court",
+    "subCourt": null,
+    "code": "Objection Petition",
+    "label": "Objection Petition"
+  },
+  {
+    "courtLevel": "High Court",
+    "subCourt": null,
+    "code": "Cross Objection",
+    "label": "Cross Objection"
+  },
+  {
+    "courtLevel": "High Court",
+    "subCourt": null,
+    "code": "Secp Appeal",
+    "label": "Secp Appeal"
+  },
+  {
+    "courtLevel": "High Court",
+    "subCourt": null,
+    "code": "Judicial Reference",
+    "label": "Judicial Reference"
+  },
+  {
+    "courtLevel": "High Court",
+    "subCourt": null,
+    "code": "Ogra Application",
+    "label": "Ogra Application"
+  },
+  {
+    "courtLevel": "High Court",
+    "subCourt": null,
+    "code": "Consumer Appeal",
+    "label": "Consumer Appeal"
+  },
+  {
+    "courtLevel": "High Court",
+    "subCourt": null,
+    "code": "Judicial Service Appeal",
+    "label": "Judicial Service Appeal"
+  },
+  {
+    "courtLevel": "High Court",
+    "subCourt": null,
+    "code": "Auqaf Appeal",
+    "label": "Auqaf Appeal"
+  },
+  {
+    "courtLevel": "High Court",
+    "subCourt": null,
+    "code": "Election Appeal",
+    "label": "Election Appeal"
+  },
+  {
+    "courtLevel": "High Court",
+    "subCourt": null,
+    "code": "Criminal Original Case",
+    "label": "Criminal Original Case"
+  },
+  {
+    "courtLevel": "High Court",
+    "subCourt": null,
+    "code": "Civil Miscellaneous Appeals",
+    "label": "Civil Miscellaneous Appeals"
+  },
+  {
+    "courtLevel": "High Court",
+    "subCourt": null,
+    "code": "Miscellaneous Petitions",
+    "label": "Miscellaneous Petitions"
+  },
+  {
+    "courtLevel": "High Court",
+    "subCourt": null,
+    "code": "Enforcement Petition",
+    "label": "Enforcement Petition"
+  },
+  {
+    "courtLevel": "High Court",
+    "subCourt": null,
+    "code": "Complaint",
+    "label": "Complaint"
+  },
+  {
+    "courtLevel": "High Court",
+    "subCourt": null,
+    "code": "Pre-Arrest Bail Petition",
+    "label": "Pre-Arrest Bail Petition"
+  },
+  {
+    "courtLevel": "High Court",
+    "subCourt": null,
+    "code": "Post-Arrest Bail Petition",
+    "label": "Post-Arrest Bail Petition"
+  },
+  {
+    "courtLevel": "Federal Shariat Court",
+    "subCourt": null,
+    "code": "C.Sh.A.",
+    "label": "C.Sh.A."
+  },
+  {
+    "courtLevel": "Federal Shariat Court",
+    "subCourt": null,
+    "code": "C.Sh.P.",
+    "label": "C.Sh.P."
+  },
+  {
+    "courtLevel": "Federal Shariat Court",
+    "subCourt": null,
+    "code": "C.Sh.R.P.",
+    "label": "C.Sh.R.P."
+  },
+  {
+    "courtLevel": "Federal Shariat Court",
+    "subCourt": null,
+    "code": "Crl.Sh.A.",
+    "label": "Crl.Sh.A."
+  },
+  {
+    "courtLevel": "Federal Shariat Court",
+    "subCourt": null,
+    "code": "Crl.Sh.P.",
+    "label": "Crl.Sh.P."
+  },
+  {
+    "courtLevel": "Federal Shariat Court",
+    "subCourt": null,
+    "code": "Crl.Sh.R.P.",
+    "label": "Crl.Sh.R.P."
+  },
+  {
+    "courtLevel": "Federal Shariat Court",
+    "subCourt": null,
+    "code": "Crl.S.M.Sh.R.P.",
+    "label": "Crl.S.M.Sh.R.P."
+  },
+  {
+    "courtLevel": "Federal Shariat Court",
+    "subCourt": null,
+    "code": "J.Sh.P.",
+    "label": "J.Sh.P."
+  },
+  {
+    "courtLevel": "Federal Shariat Court",
+    "subCourt": null,
+    "code": "Sh.M.A.",
+    "label": "Sh.M.A."
+  },
+  {
+    "courtLevel": "Federal Shariat Court",
+    "subCourt": null,
+    "code": "Reference.",
+    "label": "Reference."
+  },
+  {
+    "courtLevel": "Supreme Court",
+    "subCourt": null,
+    "code": "C.A.",
+    "label": "C.A."
+  },
+  {
+    "courtLevel": "Supreme Court",
+    "subCourt": null,
+    "code": "C.M.A.",
+    "label": "C.M.A."
+  },
+  {
+    "courtLevel": "Supreme Court",
+    "subCourt": null,
+    "code": "C.M.Appeal.",
+    "label": "C.M.Appeal."
+  },
+  {
+    "courtLevel": "Supreme Court",
+    "subCourt": null,
+    "code": "C.P.",
+    "label": "C.P."
+  },
+  {
+    "courtLevel": "Supreme Court",
+    "subCourt": null,
+    "code": "C.R.P.",
+    "label": "C.R.P."
+  },
+  {
+    "courtLevel": "Supreme Court",
+    "subCourt": null,
+    "code": "C.Sh.A.",
+    "label": "C.Sh.A."
+  },
+  {
+    "courtLevel": "Supreme Court",
+    "subCourt": null,
+    "code": "C.Sh.P.",
+    "label": "C.Sh.P."
+  },
+  {
+    "courtLevel": "Supreme Court",
+    "subCourt": null,
+    "code": "C.Sh.R.P.",
+    "label": "C.Sh.R.P."
+  },
+  {
+    "courtLevel": "Supreme Court",
+    "subCourt": null,
+    "code": "Const.P.",
+    "label": "Const.P."
+  },
+  {
+    "courtLevel": "Supreme Court",
+    "subCourt": null,
+    "code": "Crl.A.",
+    "label": "Crl.A."
+  },
+  {
+    "courtLevel": "Supreme Court",
+    "subCourt": null,
+    "code": "Crl.M.A.",
+    "label": "Crl.M.A."
+  },
+  {
+    "courtLevel": "Supreme Court",
+    "subCourt": null,
+    "code": "Crl.M.Appeal.",
+    "label": "Crl.M.Appeal."
+  },
+  {
+    "courtLevel": "Supreme Court",
+    "subCourt": null,
+    "code": "Crl.O.P.",
+    "label": "Crl.O.P."
+  },
+  {
+    "courtLevel": "Supreme Court",
+    "subCourt": null,
+    "code": "Crl.P.",
+    "label": "Crl.P."
+  },
+  {
+    "courtLevel": "Supreme Court",
+    "subCourt": null,
+    "code": "Crl.R.P.",
+    "label": "Crl.R.P."
+  },
+  {
+    "courtLevel": "Supreme Court",
+    "subCourt": null,
+    "code": "Crl.S.M.R.P.",
+    "label": "Crl.S.M.R.P."
+  },
+  {
+    "courtLevel": "Supreme Court",
+    "subCourt": null,
+    "code": "Crl.S.M.Sh.R.P.",
+    "label": "Crl.S.M.Sh.R.P."
+  },
+  {
+    "courtLevel": "Supreme Court",
+    "subCourt": null,
+    "code": "Crl.Sh.A.",
+    "label": "Crl.Sh.A."
+  },
+  {
+    "courtLevel": "Supreme Court",
+    "subCourt": null,
+    "code": "Crl.Sh.P.",
+    "label": "Crl.Sh.P."
+  },
+  {
+    "courtLevel": "Supreme Court",
+    "subCourt": null,
+    "code": "Crl.Sh.R.P.",
+    "label": "Crl.Sh.R.P."
+  },
+  {
+    "courtLevel": "Supreme Court",
+    "subCourt": null,
+    "code": "D.S.A.",
+    "label": "D.S.A."
+  },
+  {
+    "courtLevel": "Supreme Court",
+    "subCourt": null,
+    "code": "H.R.C.",
+    "label": "H.R.C."
+  },
+  {
+    "courtLevel": "Supreme Court",
+    "subCourt": null,
+    "code": "H.R.M.A.",
+    "label": "H.R.M.A."
+  },
+  {
+    "courtLevel": "Supreme Court",
+    "subCourt": null,
+    "code": "I.C.A.",
+    "label": "I.C.A."
+  },
+  {
+    "courtLevel": "Supreme Court",
+    "subCourt": null,
+    "code": "J.P.",
+    "label": "J.P."
+  },
+  {
+    "courtLevel": "Supreme Court",
+    "subCourt": null,
+    "code": "J.Sh.P.",
+    "label": "J.Sh.P."
+  },
+  {
+    "courtLevel": "Supreme Court",
+    "subCourt": null,
+    "code": "Reference.",
+    "label": "Reference."
+  },
+  {
+    "courtLevel": "Supreme Court",
+    "subCourt": null,
+    "code": "S.M.C.",
+    "label": "S.M.C."
+  },
+  {
+    "courtLevel": "Supreme Court",
+    "subCourt": null,
+    "code": "S.M.R.P.",
+    "label": "S.M.R.P."
+  }
+]
