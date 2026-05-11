@@ -9,7 +9,8 @@ import {
   X, User, FileText, Package, CreditCard, Clock,
   Phone, MapPin, Briefcase, Download, Truck, ClipboardCheck
 } from 'lucide-react';
-import { parseDeliveryAddress } from '@/lib/intake-flows';
+import { parseDeliveryAddress, parseBench } from '@/lib/intake-flows';
+import { BENCH_TYPE_LABELS } from '@/lib/bench-types';
 
 type Props = {
   ticketId: string;
@@ -55,9 +56,10 @@ export function TicketDetailPanel({ ticketId, onClose }: Props) {
       Number(ticket.discountPrice || 0)
     : 0;
 
-  const renderPayload = (payload: Record<string, unknown>) =>
-    Object.entries(payload)
-      .filter(([, v]) => v !== null && v !== '' && !String(v).includes('upload'))
+  const renderPayload = (payload: Record<string, unknown>, opts: { hideKeys?: string[] } = {}) => {
+    const hide = new Set(opts.hideKeys ?? []);
+    return Object.entries(payload)
+      .filter(([k, v]) => !hide.has(k) && v !== null && v !== '' && !String(v).includes('upload'))
       .map(([k, v]) => (
         <div key={k} className="flex gap-2 text-sm py-1 border-b border-slate-50 last:border-0">
           <span className="w-40 flex-shrink-0 font-medium text-slate-500 capitalize">
@@ -66,6 +68,36 @@ export function TicketDetailPanel({ ticketId, onClose }: Props) {
           <span className="text-slate-800">{String(v)}</span>
         </div>
       ));
+  };
+
+  const renderBenchSection = (payload: Record<string, unknown>) => {
+    const rawBench = payload.bench;
+    if (rawBench === undefined || rawBench === null || rawBench === '') return null;
+    const bench = parseBench(rawBench);
+    const nonEmptyJudges = bench.judges.map((j) => j.trim()).filter(Boolean);
+    // If parseBench fell back to single_judge with no judges and there's no
+    // recognisable benchType, skip — the legacy judge_name row below handles it.
+    if (!(BENCH_TYPE_LABELS as Record<string, string>)[bench.benchType] && nonEmptyJudges.length === 0) return null;
+    const label = (BENCH_TYPE_LABELS as Record<string, string>)[bench.benchType] ?? bench.benchType;
+    const judgesDisplay = nonEmptyJudges
+      .map((j) => (j.toLowerCase().startsWith('j.') ? j : `J. ${j}`))
+      .join(' · ');
+    return (
+      <div className="border border-slate-100 rounded-md bg-slate-50/60 px-3 py-2 mb-3">
+        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Bench</p>
+        <div className="flex gap-2 text-sm py-0.5">
+          <span className="w-40 flex-shrink-0 font-medium text-slate-500">Type</span>
+          <span className="text-slate-800">{label}</span>
+        </div>
+        {nonEmptyJudges.length > 0 && (
+          <div className="flex gap-2 text-sm py-0.5">
+            <span className="w-40 flex-shrink-0 font-medium text-slate-500">Judges</span>
+            <span className="text-slate-800">{judgesDisplay}</span>
+          </div>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
@@ -121,7 +153,16 @@ export function TicketDetailPanel({ ticketId, onClose }: Props) {
                 {ticket.formPayload && typeof ticket.formPayload === 'object' && (
                   <div className="border-t border-slate-100 pt-3">
                     <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Case Payload</p>
-                    {renderPayload(ticket.formPayload)}
+                    {renderBenchSection(ticket.formPayload as Record<string, unknown>)}
+                    {renderPayload(
+                      ticket.formPayload as Record<string, unknown>,
+                      // When a structured bench is present, hide the raw JSON
+                      // value and the derived judge_name row to avoid showing
+                      // the same information twice.
+                      (ticket.formPayload as Record<string, unknown>).bench
+                        ? { hideKeys: ['bench', 'judge_name'] }
+                        : { hideKeys: ['bench'] },
+                    )}
                   </div>
                 )}
               </PanelCard>

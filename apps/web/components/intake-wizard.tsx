@@ -7,6 +7,7 @@ import { PanelCard } from '@/components/ui/panel-card';
 import { ChevronRight, CheckCircle2, FolderOpen, Sparkles, X } from 'lucide-react';
 import type { IntakeFlow, IntakeStep, CourtTier } from '@/lib/intake-flows';
 import { courtTierFromCourtType, resolveRequired, docBundleLabel, normalizeDraftPayload, isStructuredAddressComplete, computeYearBand, parseBench, showWhenSatisfied, parseCities, stringifyCities } from '@/lib/intake-flows';
+import { BENCH_TYPE_LABELS } from '@/lib/bench-types';
 import type { YearBand } from '@/lib/intake-flows';
 
 import type { IntakeWizardProps, TicketDraft, ServiceHit, LocalUser, CityCourtGroup } from './intake-wizard/types';
@@ -62,31 +63,31 @@ const DEFAULT_JUDGE_DESIGNATIONS = [
 // Bench composition options per court tier (PDF #15, #16).
 // `count` is the expected number of judge-name inputs to render.
 const BENCH_TYPES_BY_TIER: Record<CourtTier, Array<{ value: string; label: string; count: number }>> = {
-  lower:    [{ value: 'single_judge', label: 'Single Judge', count: 1 }],
-  special:  [{ value: 'single_judge', label: 'Single Judge', count: 1 }],
+  lower:    [{ value: 'single_judge', label: BENCH_TYPE_LABELS.single_judge, count: 1 }],
+  special:  [{ value: 'single_judge', label: BENCH_TYPE_LABELS.single_judge, count: 1 }],
   high:     [
-    { value: 'single_judge', label: 'Single Judge', count: 1 },
-    { value: 'db_2',         label: 'Divisional Bench (2 Judges)', count: 2 },
-    { value: 'fb_3',         label: 'Full Bench (3 Judges)', count: 3 },
-    { value: 'larger',       label: 'Larger Bench (5 Judges)', count: 5 },
+    { value: 'single_judge', label: BENCH_TYPE_LABELS.single_judge, count: 1 },
+    { value: 'db_2',         label: BENCH_TYPE_LABELS.db_2,         count: 2 },
+    { value: 'fb_3',         label: BENCH_TYPE_LABELS.fb_3,         count: 3 },
+    { value: 'larger',       label: BENCH_TYPE_LABELS.larger,       count: 5 },
   ],
   shariat:  [
-    { value: 'single_judge', label: 'Single Judge', count: 1 },
-    { value: 'db_2',         label: 'Divisional Bench (2 Judges)', count: 2 },
-    { value: 'fb_3',         label: 'Full Bench (3 Judges)', count: 3 },
+    { value: 'single_judge', label: BENCH_TYPE_LABELS.single_judge, count: 1 },
+    { value: 'db_2',         label: BENCH_TYPE_LABELS.db_2,         count: 2 },
+    { value: 'fb_3',         label: BENCH_TYPE_LABELS.fb_3,         count: 3 },
   ],
   supreme:  [
-    { value: 'single_judge', label: 'Single Judge', count: 1 },
-    { value: 'db_2',         label: 'Divisional Bench (2 Judges)', count: 2 },
-    { value: 'fb_3',         label: 'Full Bench (3 Judges)', count: 3 },
-    { value: 'larger_5',     label: 'Larger Bench (5 Judges)', count: 5 },
-    { value: 'larger_7',     label: 'Larger Bench (7 Judges)', count: 7 },
+    { value: 'single_judge', label: BENCH_TYPE_LABELS.single_judge, count: 1 },
+    { value: 'db_2',         label: BENCH_TYPE_LABELS.db_2,         count: 2 },
+    { value: 'fb_3',         label: BENCH_TYPE_LABELS.fb_3,         count: 3 },
+    { value: 'larger_5',     label: BENCH_TYPE_LABELS.larger_5,     count: 5 },
+    { value: 'larger_7',     label: BENCH_TYPE_LABELS.larger_7,     count: 7 },
   ],
   fcc:      [
-    { value: 'single_judge', label: 'Single Judge', count: 1 },
-    { value: 'db_2',         label: 'Divisional Bench (2 Judges)', count: 2 },
-    { value: 'fb_3',         label: 'Full Bench (3 Judges)', count: 3 },
-    { value: 'larger',       label: 'Larger Bench (5 Judges)', count: 5 },
+    { value: 'single_judge', label: BENCH_TYPE_LABELS.single_judge, count: 1 },
+    { value: 'db_2',         label: BENCH_TYPE_LABELS.db_2,         count: 2 },
+    { value: 'fb_3',         label: BENCH_TYPE_LABELS.fb_3,         count: 3 },
+    { value: 'larger',       label: BENCH_TYPE_LABELS.larger,       count: 5 },
   ],
 };
 
