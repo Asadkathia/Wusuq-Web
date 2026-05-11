@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { casesApi, type Case, type CaseEvent } from '@/lib/api/cases';
+import { casesApi, type Case, type CaseEvent, type CaseTicket, type CaseDocument } from '@/lib/api/cases';
 import { SectionHeader } from '@/components/ui/section-header';
 import { PanelCard } from '@/components/ui/panel-card';
 import { StatusPill } from '@/components/ui/status-pill';
@@ -20,7 +20,7 @@ type CaseDetailProps = {
 
 export function CaseDetail({ caseId, basePath = '/cases', readOnly = false }: CaseDetailProps) {
   const router = useRouter();
-  const [caseData, setCaseData] = useState<Case & { events: CaseEvent[], tickets: any[], documents: any[] } | null>(null);
+  const [caseData, setCaseData] = useState<Case & { events: CaseEvent[]; tickets: CaseTicket[]; documents: CaseDocument[] } | null>(null);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
   
@@ -31,8 +31,8 @@ export function CaseDetail({ caseId, basePath = '/cases', readOnly = false }: Ca
     try {
       const data = await casesApi.getCase(caseId);
       setCaseData(data);
-    } catch (error: any) {
-      setMessage(error.message || 'Failed to load case details');
+    } catch (error: unknown) {
+      setMessage(error instanceof Error ? error.message : 'Failed to load case details');
     } finally {
       setLoading(false);
     }
@@ -95,12 +95,12 @@ export function CaseDetail({ caseId, basePath = '/cases', readOnly = false }: Ca
           {[
             { id: 'overview', name: 'Overview', icon: Info },
             { id: 'tickets', name: 'Tickets/Proceedings', icon: TicketIcon, count: caseData.tickets.length },
-            { id: 'hearings', name: 'Schedule', icon: Calendar, count: caseData.tickets.filter((t: any) => t.scheduledDate).length },
+            { id: 'hearings', name: 'Schedule', icon: Calendar, count: caseData.tickets.filter((t) => t.scheduledDate).length },
             { id: 'timeline', name: 'Timeline & Events', icon: Clock },
           ].map((tab) => (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
+              onClick={() => setActiveTab(tab.id as typeof activeTab)}
               className={`
                 flex items-center gap-2 whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium
                 ${activeTab === tab.id 
@@ -240,10 +240,10 @@ export function CaseDetail({ caseId, basePath = '/cases', readOnly = false }: Ca
       {/* Schedule Tab — case schedule lives on tickets with scheduledDate set. */}
       {activeTab === 'hearings' && (() => {
         const entries = (caseData.tickets ?? [])
-          .filter((t: any) => t.scheduledDate)
+          .filter((t) => Boolean(t.scheduledDate))
           .sort(
-            (a: any, b: any) =>
-              new Date(b.scheduledDate).getTime() - new Date(a.scheduledDate).getTime(),
+            (a, b) =>
+              new Date(b.scheduledDate ?? 0).getTime() - new Date(a.scheduledDate ?? 0).getTime(),
           );
         return (
           <PanelCard className="p-0 border-slate-200">
@@ -262,10 +262,10 @@ export function CaseDetail({ caseId, basePath = '/cases', readOnly = false }: Ca
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-slate-100">
-                  {entries.map((t: any) => (
+                  {entries.map((t) => (
                     <tr key={t.id} className="hover:bg-slate-50">
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm font-semibold text-slate-900">{new Date(t.scheduledDate).toLocaleDateString()}</div>
+                        <div className="text-sm font-semibold text-slate-900">{new Date(t.scheduledDate ?? 0).toLocaleDateString()}</div>
                       </td>
                       <td className="px-6 py-4">
                         <div className="text-sm text-slate-900">{t.hearingType || 'Standard'}</div>

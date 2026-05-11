@@ -22,7 +22,17 @@ export function renderField(
   payload: Record<string, string>,
   onChange: (key: string, value: string) => void,
   dynamicOptions?: string[],
-  onBlur?: (key: string) => void,
+  /**
+   * Validation hook. Text inputs call `onBlur(key)` — the value has already
+   * been committed via onChange and validateField re-reads it from payload.
+   * Click-style fields (radio / checkbox tile / bench / search-method tabs)
+   * pass the new value explicitly via `onBlur(key, newValue)` because
+   * setState is async — at the moment the click handler runs, the parent's
+   * payload closure still holds the PREVIOUS value, so validating without
+   * the explicit `newValue` argument would error out on the first click and
+   * make the option appear to need a double-click.
+   */
+  onBlur?: (key: string, newValue?: string) => void,
   errorMsg?: string,
   /** Per-option disabled + hint map keyed by the raw option value. Currently
    *  consumed only by the `radio` renderer (used for the Set Type picker's
@@ -84,6 +94,7 @@ export function renderField(
       const next =
         nextCnic && nextDetails ? 'both' : nextCnic ? 'cnic' : nextDetails ? 'details' : '';
       onChange(field.key, next);
+      onBlur?.(field.key, next);
     };
     const tabClass = (active: boolean) =>
       [
@@ -220,7 +231,7 @@ export function renderField(
                   onClick={() => {
                     if (disabled) return;
                     onChange(field.key, o);
-                    onBlur?.(field.key);
+                    onBlur?.(field.key, o);
                   }}
                   className={[
                     'inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-medium',
@@ -267,7 +278,11 @@ export function renderField(
               <button
                 key={o}
                 type="button"
-                onClick={() => { onChange(field.key, value === o ? '' : o); onBlur?.(field.key); }}
+                onClick={() => {
+                  const next = value === o ? '' : o;
+                  onChange(field.key, next);
+                  onBlur?.(field.key, next);
+                }}
                 className={[
                   'flex items-center gap-3 rounded-xl border px-3.5 py-3 text-left text-sm',
                   'transition-[background-color,border-color] duration-150',

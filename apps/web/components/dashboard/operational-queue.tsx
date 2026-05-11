@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { startTransition, useEffect, useState } from 'react';
 import { ArrowRight } from 'lucide-react';
 import { PanelCard } from '@/components/ui/panel-card';
 import { StatusPill } from '@/components/ui/status-pill';
@@ -81,8 +81,10 @@ export function OperationalQueue() {
     let cancelled = false;
     const tab = TABS.find((t) => t.key === active);
     if (!tab) return;
-    setLoading(true);
-    setError(null);
+    startTransition(() => {
+      setLoading(true);
+      setError(null);
+    });
     apiClient
       .get<{ items: Row[]; total: number }>(`/tickets?${tab.query}`)
       .then((res) => {

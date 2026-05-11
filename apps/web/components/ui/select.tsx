@@ -4,6 +4,7 @@ import * as PopoverPrimitive from '@radix-ui/react-popover';
 import { Check, ChevronDown, Search, X } from 'lucide-react';
 import {
   forwardRef,
+  startTransition,
   useCallback,
   useEffect,
   useMemo,
@@ -107,17 +108,17 @@ export const Select = forwardRef<HTMLButtonElement, SelectProps>(function Select
 
   useEffect(() => {
     if (!open) {
-      setQuery('');
+      startTransition(() => setQuery(''));
       return;
     }
-    // Highlight selected on open
     const idx = filtered.findIndex((o) => o.value === value);
-    setHighlighted(idx >= 0 ? idx : 0);
+    startTransition(() => setHighlighted(idx >= 0 ? idx : 0));
   }, [open, value, filtered]);
 
-  // Keep highlighted within filtered range
   useEffect(() => {
-    if (highlighted >= filtered.length) setHighlighted(Math.max(0, filtered.length - 1));
+    if (highlighted >= filtered.length) {
+      startTransition(() => setHighlighted(Math.max(0, filtered.length - 1)));
+    }
   }, [filtered.length, highlighted]);
 
   const commit = useCallback(

@@ -92,6 +92,12 @@ enum CaseEventType {
   RECOMMENDATION_TRIGGERED
 }
 
+enum ConsumerKind {
+  LAWYER
+  NON_LAWYER
+  CORPORATE
+}
+
 model User {
   id                 String      @id @default(cuid())
   name               String?
@@ -117,6 +123,7 @@ model User {
   role               UserRole
   verified           Boolean     @default(false)
   isActive           Boolean     @default(true)
+  consumerKind       ConsumerKind?
   walletBalance      Decimal     @default(0)
   currency           String      @default("PKR")
   lastLoginAt        DateTime?

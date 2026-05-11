@@ -48,8 +48,9 @@ export default function ConsumerLoginPage() {
             onNameChange={f.setName}
             cityName={f.cityName}
             onCityChange={f.setCityName}
+            consumerKind={f.consumerKind}
+            onConsumerKindChange={f.setConsumerKind}
             onSubmit={f.submitProfile}
-            onSkip={f.skipProfile}
             loading={f.loading}
           />
         ) : null}

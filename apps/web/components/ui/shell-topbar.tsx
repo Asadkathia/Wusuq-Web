@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { Bell, LogOut, Menu as MenuIcon, User, Wallet, X } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { startTransition, useEffect, useState } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { IconButton } from './icon-button';
 import { Menu, MenuContent, MenuItem, MenuLabel, MenuSeparator, MenuTrigger } from './menu';
@@ -39,7 +39,7 @@ export function ShellTopbar({ variant, walletHref, profileHref = '/profile', onS
   useEffect(() => {
     try {
       const u = JSON.parse(localStorage.getItem('wusuq_user') || 'null');
-      if (u) setUser(u);
+      if (u) startTransition(() => setUser(u));
     } catch {}
 
     apiClient.get<{ count: number }>('/notifications/unread-count').then((r) => setUnread(r.count)).catch(() => {});

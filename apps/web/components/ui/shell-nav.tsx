@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useEffect, useState, type ComponentType } from 'react';
+import { startTransition, useEffect, useState, type ComponentType } from 'react';
 import { ChevronDown, ChevronRight, ShieldCheck } from 'lucide-react';
 
 export type NavSubItem = { label: string; href: string };
@@ -34,12 +34,18 @@ export function ShellNavBody({ items, variant, onNavigate }: ShellNavBodyProps) 
   const [userName, setUserName] = useState<string | null>(null);
 
   useEffect(() => {
+    let nextUser: string | null = null;
+    let nextImpersonator: string | null = null;
     try {
       const current = JSON.parse(localStorage.getItem('wusuq_user') || 'null');
-      if (current?.name) setUserName(current.name);
+      if (current?.name) nextUser = current.name;
       const impersonator = JSON.parse(localStorage.getItem('wusuq_impersonator_user') || 'null');
-      if (impersonator?.name) setImpersonatorName(impersonator.name);
+      if (impersonator?.name) nextImpersonator = impersonator.name;
     } catch {}
+    startTransition(() => {
+      setUserName(nextUser);
+      setImpersonatorName(nextImpersonator);
+    });
   }, []);
 
   const exitImpersonation = () => {

@@ -1,0 +1,690 @@
+[
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Acquittal Appeals",
+    "label": "Acquittal Appeals",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 1000
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Anti Terrorism Court Cr.Appeal(ATC)",
+    "label": "Anti Terrorism Court Cr.Appeal(ATC)",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 999
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Anti Terrorism Court Cr.Revision",
+    "label": "Anti Terrorism Court Cr.Revision",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 998
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Bar Council Election Petitions",
+    "label": "Bar Council Election Petitions",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 997
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "C.R.C (Execution)",
+    "label": "C.R.C (Execution)",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 996
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "C.R.C (Original)",
+    "label": "C.R.C (Original)",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 995
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Civil Miscellaneous",
+    "label": "Civil Miscellaneous",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 994
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Civil Miscellaneous Banking",
+    "label": "Civil Miscellaneous Banking",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 993
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Civil Miscellaneous Election Petition",
+    "label": "Civil Miscellaneous Election Petition",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 992
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Civil Miscellaneous Labour",
+    "label": "Civil Miscellaneous Labour",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 991
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Civil Miselleneous-Transfer Appeal",
+    "label": "Civil Miselleneous-Transfer Appeal",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 990
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Civil Revisions",
+    "label": "Civil Revisions",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 989
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "CM (Office Note)",
+    "label": "CM (Office Note)",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 988
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "CM (Office Obj.)",
+    "label": "CM (Office Obj.)",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 987
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "CM 12(2)",
+    "label": "CM 12(2)",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 986
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "CM Correction/Rectification",
+    "label": "CM Correction/Rectification",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 985
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "CM in BOS",
+    "label": "CM in BOS",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 984
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "CM in Writ Petitions",
+    "label": "CM in Writ Petitions",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 983
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "CM Restoration",
+    "label": "CM Restoration",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 982
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Company Cases",
+    "label": "Company Cases",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 981
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Constitution petition",
+    "label": "Constitution petition",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 980
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Contempt of Court",
+    "label": "Contempt of Court",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 979
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Cr.M Transit Bail App: Extension",
+    "label": "Cr.M Transit Bail App: Extension",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 978
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Criminal Appeal :(Enhancement)",
+    "label": "Criminal Appeal :(Enhancement)",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 977
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Criminal Appeals:(Short Sen.)",
+    "label": "Criminal Appeals:(Short Sen.)",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 976
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Criminal Miscellaneous",
+    "label": "Criminal Miscellaneous",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 975
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Criminal Miscellaneous Bail",
+    "label": "Criminal Miscellaneous Bail",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 974
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Criminal Miscellaneous Bail Before Arrest",
+    "label": "Criminal Miscellaneous Bail Before Arrest",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 973
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Criminal Miscellaneous Bail Cancellation",
+    "label": "Criminal Miscellaneous Bail Cancellation",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 972
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Criminal Miscellaneous Quashment",
+    "label": "Criminal Miscellaneous Quashment",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 971
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Criminal Miscellaneous Transit Bail Application",
+    "label": "Criminal Miscellaneous Transit Bail Application",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 970
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Criminal Miselleneous-Transfer Appeal",
+    "label": "Criminal Miselleneous-Transfer Appeal",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 969
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Criminal Reference",
+    "label": "Criminal Reference",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 968
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Criminal Revisions",
+    "label": "Criminal Revisions",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 967
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Cross Objection in (C.R)",
+    "label": "Cross Objection in (C.R)",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 966
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Cross Objection in (F.A.O)",
+    "label": "Cross Objection in (F.A.O)",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 965
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Cross Objection in (FAB)",
+    "label": "Cross Objection in (FAB)",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 964
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Cross Objection in (RFA)",
+    "label": "Cross Objection in (RFA)",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 963
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Custom Reference",
+    "label": "Custom Reference",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 962
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Death Appeals",
+    "label": "Death Appeals",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 961
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Departmental Appeals",
+    "label": "Departmental Appeals",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 960
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Early Hearing",
+    "label": "Early Hearing",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 959
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Ehtesab Criminal Appeals",
+    "label": "Ehtesab Criminal Appeals",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 958
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Ehtesab Criminal Revisions",
+    "label": "Ehtesab Criminal Revisions",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 957
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Election Appeals",
+    "label": "Election Appeals",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 956
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Election Petitions",
+    "label": "Election Petitions",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 955
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Execution Petitions",
+    "label": "Execution Petitions",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 954
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "First Appeal against Order (F.A.O)",
+    "label": "First Appeal against Order (F.A.O)",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 953
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "First Appeal Banking (F.A.B)",
+    "label": "First Appeal Banking (F.A.B)",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 952
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Habeas Corpus (HCP)",
+    "label": "Habeas Corpus (HCP)",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 951
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Intra Court Appeal (I.C.A)",
+    "label": "Intra Court Appeal (I.C.A)",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 950
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Labour Appeals",
+    "label": "Labour Appeals",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 949
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Labour Complaints",
+    "label": "Labour Complaints",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 948
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Labour Revisions",
+    "label": "Labour Revisions",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 947
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Leave to Appeal",
+    "label": "Leave to Appeal",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 946
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Life Imprisonment",
+    "label": "Life Imprisonment",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 945
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Murder Refernce",
+    "label": "Murder Refernce",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 944
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Objection Petitions",
+    "label": "Objection Petitions",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 943
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Office Objection",
+    "label": "Office Objection",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 942
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Original Suit Banking",
+    "label": "Original Suit Banking",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 941
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Reference to High Court",
+    "label": "Reference to High Court",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 940
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Regular First Appeal (R.F.A)",
+    "label": "Regular First Appeal (R.F.A)",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 939
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Regular Second Appeal (R.S.A)",
+    "label": "Regular Second Appeal (R.S.A)",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 938
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Review in (C.C)",
+    "label": "Review in (C.C)",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 937
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Review in (C.Rs)",
+    "label": "Review in (C.Rs)",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 936
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Review in (Cust.Ref.)",
+    "label": "Review in (Cust.Ref.)",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 935
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Review in (F.A.B)",
+    "label": "Review in (F.A.B)",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 934
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Review in (F.A.O)",
+    "label": "Review in (F.A.O)",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 933
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Review in (R.F.A)",
+    "label": "Review in (R.F.A)",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 932
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Review in (S.A.O)",
+    "label": "Review in (S.A.O)",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 931
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Review in CM(12/2)",
+    "label": "Review in CM(12/2)",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 930
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Review in COC",
+    "label": "Review in COC",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 929
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Review in Criminal Appeal",
+    "label": "Review in Criminal Appeal",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 928
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Review in Criminal Revision",
+    "label": "Review in Criminal Revision",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 927
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Review in Criminal.Misc",
+    "label": "Review in Criminal.Misc",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 926
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Review in Labor Appeal",
+    "label": "Review in Labor Appeal",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 925
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Review in Sales Tax Reference",
+    "label": "Review in Sales Tax Reference",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 924
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Review in Service Appeals",
+    "label": "Review in Service Appeals",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 923
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Review in Tax Ref.",
+    "label": "Review in Tax Ref.",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 922
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Review in Tranfer Appeal",
+    "label": "Review in Tranfer Appeal",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 921
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Review in Writ Petition",
+    "label": "Review in Writ Petition",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 920
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Sales Tax References",
+    "label": "Sales Tax References",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 919
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Second Appeal against Order (S.A.O)",
+    "label": "Second Appeal against Order (S.A.O)",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 918
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Subordinate Judiciary Appeals",
+    "label": "Subordinate Judiciary Appeals",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 917
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Tax References",
+    "label": "Tax References",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 916
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "PHC",
+    "code": "Writ Petitions",
+    "label": "Writ Petitions",
+    "source": "peshawarhighcourt.gov.pk",
+    "priority": 915
+  }
+]

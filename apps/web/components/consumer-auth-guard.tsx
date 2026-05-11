@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { startTransition, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 
 type ConsumerAuthGuardProps = {
@@ -51,7 +51,6 @@ export function ConsumerAuthGuard({ children }: ConsumerAuthGuardProps) {
 
       if (role.includes('admin') || ADMIN_SIDE_ROLES.includes(role)) {
         router.replace('/dashboard');
-        setIsAuthorized(false);
         return;
       }
 
@@ -69,7 +68,7 @@ export function ConsumerAuthGuard({ children }: ConsumerAuthGuardProps) {
     };
 
     window.addEventListener('auth:unauthorized', onUnauthorized);
-    setIsAuthorized(true);
+    startTransition(() => setIsAuthorized(true));
 
     return () => {
       window.removeEventListener('auth:unauthorized', onUnauthorized);

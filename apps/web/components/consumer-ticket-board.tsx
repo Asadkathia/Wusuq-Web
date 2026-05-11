@@ -2,7 +2,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { startTransition, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ArrowRight,
   ArrowUpRight,
@@ -314,7 +314,7 @@ function ConsumerTicketDrawer({
 
   useEffect(() => {
     if (!ticketId) return;
-    setLoading(true);
+    startTransition(() => setLoading(true));
     apiClient
       .get<any>(`/tickets/${ticketId}`)
       .then((r) => setTicket(r))

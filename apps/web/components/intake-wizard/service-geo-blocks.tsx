@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { startTransition, useEffect, useRef, useState } from 'react';
 import { Building2, CalendarDays, HelpCircle, MapPin, MapPinned, Pencil, ShieldAlert } from 'lucide-react';
 import { SelectionTileGrid } from './selection-tile-grid';
 
@@ -125,7 +125,7 @@ export function CityBlock({
   useEffect(() => {
     if (lastCityIdRef.current !== cityId) {
       lastCityIdRef.current = cityId;
-      if (cityId) setForceOpen(false);
+      if (cityId) startTransition(() => setForceOpen(false));
     }
   }, [cityId]);
 

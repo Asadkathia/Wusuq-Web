@@ -7,6 +7,7 @@ import { PanelCard } from '@/components/ui/panel-card';
 import { ChevronRight, CheckCircle2, FolderOpen, Sparkles, X } from 'lucide-react';
 import type { IntakeFlow, IntakeStep, CourtTier } from '@/lib/intake-flows';
 import { courtTierFromCourtType, resolveRequired, docBundleLabel, normalizeDraftPayload, isStructuredAddressComplete, computeYearBand, parseBench, showWhenSatisfied, parseCities, stringifyCities } from '@/lib/intake-flows';
+import { BENCH_TYPE_LABELS } from '@/lib/bench-types';
 import type { YearBand } from '@/lib/intake-flows';
 
 import type { IntakeWizardProps, TicketDraft, ServiceHit, LocalUser, CityCourtGroup } from './intake-wizard/types';
@@ -62,31 +63,31 @@ const DEFAULT_JUDGE_DESIGNATIONS = [
 // Bench composition options per court tier (PDF #15, #16).
 // `count` is the expected number of judge-name inputs to render.
 const BENCH_TYPES_BY_TIER: Record<CourtTier, Array<{ value: string; label: string; count: number }>> = {
-  lower:    [{ value: 'single_judge', label: 'Single Judge', count: 1 }],
-  special:  [{ value: 'single_judge', label: 'Single Judge', count: 1 }],
+  lower:    [{ value: 'single_judge', label: BENCH_TYPE_LABELS.single_judge, count: 1 }],
+  special:  [{ value: 'single_judge', label: BENCH_TYPE_LABELS.single_judge, count: 1 }],
   high:     [
-    { value: 'single_judge', label: 'Single Judge', count: 1 },
-    { value: 'db_2',         label: 'Divisional Bench (2 Judges)', count: 2 },
-    { value: 'fb_3',         label: 'Full Bench (3 Judges)', count: 3 },
-    { value: 'larger',       label: 'Larger Bench (5 Judges)', count: 5 },
+    { value: 'single_judge', label: BENCH_TYPE_LABELS.single_judge, count: 1 },
+    { value: 'db_2',         label: BENCH_TYPE_LABELS.db_2,         count: 2 },
+    { value: 'fb_3',         label: BENCH_TYPE_LABELS.fb_3,         count: 3 },
+    { value: 'larger',       label: BENCH_TYPE_LABELS.larger,       count: 5 },
   ],
   shariat:  [
-    { value: 'single_judge', label: 'Single Judge', count: 1 },
-    { value: 'db_2',         label: 'Divisional Bench (2 Judges)', count: 2 },
-    { value: 'fb_3',         label: 'Full Bench (3 Judges)', count: 3 },
+    { value: 'single_judge', label: BENCH_TYPE_LABELS.single_judge, count: 1 },
+    { value: 'db_2',         label: BENCH_TYPE_LABELS.db_2,         count: 2 },
+    { value: 'fb_3',         label: BENCH_TYPE_LABELS.fb_3,         count: 3 },
   ],
   supreme:  [
-    { value: 'single_judge', label: 'Single Judge', count: 1 },
-    { value: 'db_2',         label: 'Divisional Bench (2 Judges)', count: 2 },
-    { value: 'fb_3',         label: 'Full Bench (3 Judges)', count: 3 },
-    { value: 'larger_5',     label: 'Larger Bench (5 Judges)', count: 5 },
-    { value: 'larger_7',     label: 'Larger Bench (7 Judges)', count: 7 },
+    { value: 'single_judge', label: BENCH_TYPE_LABELS.single_judge, count: 1 },
+    { value: 'db_2',         label: BENCH_TYPE_LABELS.db_2,         count: 2 },
+    { value: 'fb_3',         label: BENCH_TYPE_LABELS.fb_3,         count: 3 },
+    { value: 'larger_5',     label: BENCH_TYPE_LABELS.larger_5,     count: 5 },
+    { value: 'larger_7',     label: BENCH_TYPE_LABELS.larger_7,     count: 7 },
   ],
   fcc:      [
-    { value: 'single_judge', label: 'Single Judge', count: 1 },
-    { value: 'db_2',         label: 'Divisional Bench (2 Judges)', count: 2 },
-    { value: 'fb_3',         label: 'Full Bench (3 Judges)', count: 3 },
-    { value: 'larger',       label: 'Larger Bench (5 Judges)', count: 5 },
+    { value: 'single_judge', label: BENCH_TYPE_LABELS.single_judge, count: 1 },
+    { value: 'db_2',         label: BENCH_TYPE_LABELS.db_2,         count: 2 },
+    { value: 'fb_3',         label: BENCH_TYPE_LABELS.fb_3,         count: 3 },
+    { value: 'larger',       label: BENCH_TYPE_LABELS.larger,       count: 5 },
   ],
 };
 
@@ -816,7 +817,7 @@ export function IntakeWizard({
     const match = availableServices.find((s) => s.id === selectedFlow.defaultServiceId);
     if (!match) return;
     applySelectedServiceRef.current?.(match.id, match.name, match.caseTypes ?? []);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [selectedFlow?.key, selectedFlow?.defaultServiceId, availableServices, draft.serviceId]);
 
   // Ref-indirection to applySelectedService so the auto-pick effect above
@@ -987,9 +988,19 @@ export function IntakeWizard({
     return '';
   };
 
-  const handleFieldBlur = (key: string) => {
+  // The optional `newValue` argument is critical for click-style fields
+  // (radio, checkbox tile, search-method tabs). React state updates are async,
+  // so the click handler calls `onChange(...)` then `onBlur(key, newValue)`
+  // in the same tick — at that point `draft.payload[key]` still holds the
+  // PREVIOUS value. Without `newValue` the validator would see the stale
+  // value and flag a "Required" error the user perceives as a missed click,
+  // forcing a second click to clear it (PDF #22). Text inputs call
+  // `onBlur(key)` without an argument because their value is committed via
+  // onChange before blur fires, so reading from payload is correct.
+  const handleFieldBlur = (key: string, newValue?: string) => {
     setTouched((t) => ({ ...t, [key]: true }));
-    const err = validateField(key, draft.payload[key] ?? '');
+    const valueToValidate = newValue !== undefined ? newValue : draft.payload[key] ?? '';
+    const err = validateField(key, valueToValidate);
     setErrors((e) => ({ ...e, [key]: err }));
   };
 

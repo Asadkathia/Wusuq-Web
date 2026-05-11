@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { casesApi, type Case } from '@/lib/api/cases';
+import { casesApi, type Case, type CaseStatus } from '@/lib/api/cases';
 import { advanceOnEnter } from '@/lib/form-utils';
 import { SectionHeader } from '@/components/ui/section-header';
 import { PanelCard } from '@/components/ui/panel-card';
@@ -44,13 +44,13 @@ export function CasesBoard() {
     try {
       const result = await casesApi.listCases({
         search: search || undefined,
-        status: (statusFilter as any) || undefined,
+        status: (statusFilter as CaseStatus) || undefined,
         consumerId: isConsumer && userId ? userId : undefined,
         hasRecommendations: hasRecommendations || undefined,
       });
       setItems(result.items || []);
-    } catch (error: any) {
-      setMessage(error.message || 'Failed to load cases');
+    } catch (error: unknown) {
+      setMessage(error instanceof Error ? error.message : 'Failed to load cases');
     } finally {
       setLoading(false);
     }
@@ -72,8 +72,8 @@ export function CasesBoard() {
       setMessage('Case created successfully');
       setCreateForm({ title: '', type: 'JUDICIAL' });
       load();
-    } catch (error: any) {
-      setMessage(error.message || 'Failed to create case');
+    } catch (error: unknown) {
+      setMessage(error instanceof Error ? error.message : 'Failed to create case');
     }
   };
 
@@ -83,8 +83,8 @@ export function CasesBoard() {
       await casesApi.deleteCase(id);
       setMessage('Case deleted');
       load();
-    } catch (error: any) {
-      setMessage(error.message || 'Failed to delete case');
+    } catch (error: unknown) {
+      setMessage(error instanceof Error ? error.message : 'Failed to delete case');
     }
   };
 

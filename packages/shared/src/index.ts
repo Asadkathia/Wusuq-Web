@@ -25,6 +25,20 @@ export type TicketStatus = (typeof TICKET_STATUSES)[number];
 export const PAYMENT_MODES = ['JAZZ_CASH', 'EASY_PAISA', 'BANK_TRANSFER'] as const;
 export type PaymentMode = (typeof PAYMENT_MODES)[number];
 
+export const CONSUMER_KINDS = ['LAWYER', 'NON_LAWYER', 'CORPORATE'] as const;
+export type ConsumerKind = (typeof CONSUMER_KINDS)[number];
+export const CONSUMER_KIND_LABELS: Record<ConsumerKind, string> = {
+  LAWYER: 'Lawyer',
+  NON_LAWYER: 'Non-Lawyer',
+  CORPORATE: 'Corporate',
+};
+export const CONSUMER_KIND_DESCRIPTIONS: Record<ConsumerKind, string> = {
+  LAWYER: 'Practicing attorney filing or pursuing cases.',
+  NON_LAWYER: 'Individual seeking paralegal services.',
+  CORPORATE:
+    'Company or organization requesting services on behalf of staff or clients.',
+};
+
 export const PERMISSIONS = [
   'users.read',
   'users.write',

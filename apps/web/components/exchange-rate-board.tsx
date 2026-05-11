@@ -34,8 +34,8 @@ export function ExchangeRateBoard() {
     try {
       const data = await apiClient.get<ExchangeRate[]>('/currency/rates');
       setRates(Array.isArray(data) ? data : []);
-    } catch (e: any) {
-      setMessage(e.message || 'Failed to load rates');
+    } catch (e: unknown) {
+      setMessage(e instanceof Error ? e.message : 'Failed to load rates');
     } finally {
       setLoading(false);
     }
@@ -62,8 +62,8 @@ export function ExchangeRateBoard() {
       msg('Rate saved successfully');
       setForm(p => ({ ...p, rate: '' }));
       load();
-    } catch (e: any) {
-      msg(e.message || 'Failed to save rate');
+    } catch (e: unknown) {
+      msg(e instanceof Error ? e.message : 'Failed to save rate');
     }
   };
 
