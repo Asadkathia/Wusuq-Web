@@ -463,7 +463,7 @@ export function renderField(
           onChange(field.key, next);
         }}
         onBlur={() => onBlur?.(field.key)}
-        placeholder={isCnicField ? '12345-1234567-1' : `Enter ${field.label.toLowerCase()}`}
+        placeholder={field.placeholder ?? (isCnicField ? '12345-1234567-1' : `Enter ${field.label.toLowerCase()}`)}
         inputMode={isCnicField ? 'numeric' : undefined}
       />
       {hasError && <p className="mt-1 text-xs text-rose-600">{errorMsg}</p>}

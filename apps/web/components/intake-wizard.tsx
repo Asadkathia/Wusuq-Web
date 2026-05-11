@@ -24,101 +24,11 @@ import {
 import { CheckoutPanel, type CheckoutItem, type CheckoutSummary } from './intake-wizard/checkout-panel';
 
 // ─── Static lookup tables ────────────────────────────────────────────────────
-// Case-type options remain service-scoped (they describe what petitions exist
-// inside a given court tier). Courts and court→city relationships now come
-// from the /geo/cities/:id/courts endpoint, backed by pakistan-courts.json.
-
-const SERVICE_CASE_TYPES: Record<string, string[]> = {
-  svc_judicial_lower_court: [
-    'Bail Application (S)', 'Criminal Appeal', 'Criminal Misc.', 'Criminal Revision',
-    'Hadood Cases (Under Hadood Ordinance)', 'Harrassment', 'Illegal Dispossession Act',
-    'Inquiry (S)', 'Money Laundering Act', 'Narcotics Cases (S)', 'Other Cases (S)',
-    'Petitions u/s 22-A/22-B Cr.P.C', 'Sessions Cases (Murder)', 'Sessions Cases (Others)',
-    'STA Cases', 'Superdari', 'Habeas Corpus', 'Execution Petition (S)',
-    'Application for Succession', 'Civil Appeal', 'Civil Case of Summary Nature Involving Evidence',
-    'Civil Misc.', 'Civil Revision', 'Civil Suit', 'Commercial Cases', 'Election Petition',
-    'Execution Petition (C)', 'Family Cases', 'Guardianship Cases', 'Inquiry (C)',
-    'Insolvency Cases', 'Insurance Cases', 'Labour Cases', 'Land Acquisition Cases',
-    'Obejcton Petiton', 'Original Suit', 'Other Cases (C)', 'Pauper Cases', 'Rent Cases',
-    'Small Clam & Minor Offence', 'Bail Application (M)', 'Ist Class Cases', 'Minor Offences',
-    'Narcotics Cases (M)', 'Other Cases (M)', 'Section 30 Case',
-  ],
-  svc_judicial_special_court: [
-    'Pre-Arrest Bail Petition', 'Post-Arrest Bail Petition', 'Trail File', 'Miscellaneous',
-  ],
-  svc_judicial_high_court: [
-    'Writ Petition', 'Criminal Miscellaneous', 'Civil Revision', 'Regular First Appeal',
-    'First Appeal Against Order', 'Criminal Appeal', 'Criminal Revision', 'Murder Reference',
-    'Petition For Special Leave To Appeal', 'Diary Number', 'Intra Court Appeal',
-    'Review Application', 'Civil Suit', 'Labour Appeal', 'Arbitration Petition',
-    'Companies Original', 'Execution Petition', 'Human Rights Petition', 'Election Petition',
-    'Suo Moto', 'Tax Reference', 'Regular Second Appeal', 'Second Appeal Against Order',
-    'Transfer Application', 'Civil Original Suit', 'Execution First Appeal',
-    'Petition For Leave To Appear And Defend', 'Execution Second Appeal', 'Tax Appeal',
-    'Custom Reference', 'Civil Reference', 'Cm Independent', 'Wealth Tax Appeal',
-    'Commercial Appeal', 'Jail Appeal', 'Capital Sentence Reference',
-    'Federal Excise & Reference Application', 'Sales Tax Reference', 'Income Tax Reference',
-    'Sales Tax Appeal', 'Income Tax Appeal', 'Custom Appeal', 'C.T.R', 'Objection Case',
-    'Office Objection', 'Criminal Original', 'Succession Appeal', 'Objection Petition',
-    'Cross Objection', 'Secp Appeal', 'Judicial Reference', 'Ogra Application',
-    'Consumer Appeal', 'Judicial Service Appeal', 'Auqaf Appeal', 'Election Appeal',
-    'Criminal Original Case', 'Civil Miscellaneous Appeals', 'Miscellaneous Petitions',
-    'Enforcement Petition', 'Complaint', 'Pre-Arrest Bail Petition', 'Post-Arrest Bail Petition',
-  ],
-  svc_judicial_federal_shariat: [
-    'C.Sh.A.', 'C.Sh.P.', 'C.Sh.R.P.', 'Crl.Sh.A.', 'Crl.Sh.P.', 'Crl.Sh.R.P.',
-    'Crl.S.M.Sh.R.P.', 'J.Sh.P.', 'Sh.M.A.', 'Reference.',
-  ],
-  svc_judicial_supreme_court: [
-    'C.A.', 'C.M.A.', 'C.M.Appeal.', 'C.P.', 'C.R.P.', 'C.Sh.A.', 'C.Sh.P.',
-    'C.Sh.R.P.', 'Const.P.', 'Crl.A.', 'Crl.M.A.', 'Crl.M.Appeal.', 'Crl.O.P.',
-    'Crl.P.', 'Crl.R.P.', 'Crl.S.M.R.P.', 'Crl.S.M.Sh.R.P.', 'Crl.Sh.A.', 'Crl.Sh.P.',
-    'Crl.Sh.R.P.', 'D.S.A.', 'H.R.C.', 'H.R.M.A.', 'I.C.A.', 'J.P.', 'J.Sh.P.',
-    'Reference.', 'S.M.C.', 'S.M.R.P.',
-  ],
-};
-
-// Sub-court scoped case-types. When the consumer picks a Lower Court sub-court
-// tile (Sessions / Civil / Magisterial / Family), only that bucket's petition
-// types should appear in the Case Type dropdown — PDF #21a. Spellings here
-// match the flat SERVICE_CASE_TYPES list verbatim (incl. legacy misspellings
-// like "Obejcton Petiton" / "Small Clam & Minor Offence") so payloads
-// round-trip unchanged.
-const SUBCOURT_CASE_TYPES: Record<string, Record<string, string[]>> = {
-  svc_judicial_lower_court: {
-    'Sessions Court': [
-      'Bail Application (S)', 'Criminal Appeal', 'Criminal Misc.', 'Criminal Revision',
-      'Hadood Cases (Under Hadood Ordinance)', 'Harrassment', 'Illegal Dispossession Act',
-      'Inquiry (S)', 'Money Laundering Act', 'Narcotics Cases (S)', 'Other Cases (S)',
-      'Petitions u/s 22-A/22-B Cr.P.C', 'Sessions Cases (Murder)', 'Sessions Cases (Others)',
-      'STA Cases', 'Superdari', 'Habeas Corpus', 'Execution Petition (S)',
-    ],
-    'Civil Court': [
-      'Civil Appeal', 'Civil Case of Summary Nature Involving Evidence', 'Civil Misc.',
-      'Civil Revision', 'Civil Suit', 'Commercial Cases', 'Election Petition',
-      'Execution Petition (C)', 'Inquiry (C)', 'Insolvency Cases', 'Insurance Cases',
-      'Labour Cases', 'Land Acquisition Cases', 'Obejcton Petiton', 'Original Suit',
-      'Other Cases (C)', 'Pauper Cases', 'Rent Cases', 'Small Clam & Minor Offence',
-    ],
-    'Magisterial Court': [
-      'Bail Application (M)', 'Ist Class Cases', 'Minor Offences',
-      'Narcotics Cases (M)', 'Other Cases (M)', 'Section 30 Case',
-    ],
-    'Family Court': [
-      'Family Cases', 'Guardianship Cases', 'Application for Succession',
-    ],
-  },
-};
-
-// Resolve the case-type list for a given service, narrowing to a sub-court
-// bucket when one is selected. Falls back to the flat service-level list when
-// no sub-court is in play, or when the sub-court has no specific bucket.
-function caseTypesFor(serviceId: string, subCourt?: string): string[] {
-  if (subCourt && SUBCOURT_CASE_TYPES[serviceId]?.[subCourt]) {
-    return SUBCOURT_CASE_TYPES[serviceId][subCourt];
-  }
-  return SERVICE_CASE_TYPES[serviceId] ?? [];
-}
+// Courts and court→city relationships come from the /geo/cities/:id/courts
+// endpoint, backed by pakistan-courts.json. Case-type options now come from
+// GET /case-types (see selectedServiceCaseTypes loader in the component), so
+// the legacy SERVICE_CASE_TYPES / SUBCOURT_CASE_TYPES constants have been
+// removed (PDF #18-#21b, including the "Other" free-text fallback).
 
 // Judge designations — first looked up by sub-court / service name (e.g.
 // "Sessions Court"), then by court type (e.g. "Lower Court").
@@ -343,13 +253,44 @@ export function IntakeWizard({
   const [touched, setTouched] = useState<Record<string, boolean>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  // Case-type options shown in Step 2's dropdown. Derived from the active
-  // service id and (when present) the chosen Lower Court sub-court — picking
-  // Family Court should restrict the list to family petitions only (PDF #21a).
-  const selectedServiceCaseTypes = useMemo(
-    () => caseTypesFor(draft.serviceId, draft.payload.select_court),
-    [draft.serviceId, draft.payload.select_court],
-  );
+  // Case-type options shown in Step 2's dropdown. Fetched from GET /case-types
+  // keyed on (courtLevel, subCourt, district). The API implements the
+  // specificity-fallback chain (sub-court + district → sub-court → court level)
+  // and always appends an "Other" row. We keep storing labels in payload (no
+  // wire-format change) and detect the Other reveal via
+  // `payload.case_type === 'Other'`.
+  const [selectedServiceCaseTypes, setSelectedServiceCaseTypes] = useState<string[]>([]);
+
+  useEffect(() => {
+    const courtLevel = draft.payload.select_court_type;
+    if (!courtLevel) {
+      setSelectedServiceCaseTypes([]);
+      return;
+    }
+    let cancelled = false;
+    const params = new URLSearchParams({ courtLevel });
+    if (draft.payload.select_court) params.set('subCourt', draft.payload.select_court);
+    if (draft.payload.select_court_city) params.set('district', draft.payload.select_court_city);
+    apiClient
+      .get<Array<{ code: string; label: string; source: string }>>(
+        `/case-types?${params.toString()}`,
+      )
+      .then((rows) => {
+        if (cancelled) return;
+        setSelectedServiceCaseTypes(rows.map((r) => r.label));
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setSelectedServiceCaseTypes([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    draft.payload.select_court_type,
+    draft.payload.select_court,
+    draft.payload.select_court_city,
+  ]);
   const [pricingResult, setPricingResult] = useState<{
     matched: boolean;
     available?: boolean;
@@ -1013,6 +954,16 @@ export function IntakeWizard({
     const allFields = activeStep?.fields ?? [];
     const field = allFields.find((f) => f.key === key);
     if (!field) return '';
+    // Special case: when case_type is 'Other', the case_type_other free-text
+    // field becomes required even though its flat `required` flag is false.
+    if (
+      field.key === 'case_type_other' &&
+      draft.payload.case_type === 'Other' &&
+      showWhenSatisfied(field, draft.payload)
+    ) {
+      if (!hasValue(value)) return `${field.label} is required`;
+      return '';
+    }
     if (!resolveRequired(field, activeCourtTier)) return '';
     if (!showWhenSatisfied(field, draft.payload)) return '';
     if (field.type === 'structured_address') {
@@ -1054,6 +1005,18 @@ export function IntakeWizard({
 
     for (const f of activeStep.fields) {
       if (GEO_HANDLED_KEYS.has(f.key)) continue;
+      // Special case: case_type_other is conditionally required when the user
+      // picks "Other" from the Case Type dropdown.
+      if (f.key === 'case_type_other') {
+        if (draft.payload.case_type === 'Other' && showWhenSatisfied(f, draft.payload)) {
+          newTouched[f.key] = true;
+          if (!hasValue(draft.payload.case_type_other)) {
+            newErrors[f.key] = `${f.label} is required`;
+            if (!firstInvalidKey) firstInvalidKey = f.key;
+          }
+        }
+        continue;
+      }
       if (!resolveRequired(f, activeCourtTier)) continue;
       if (!showWhenSatisfied(f, draft.payload)) continue;
       if (f.key === 'select_service') continue;

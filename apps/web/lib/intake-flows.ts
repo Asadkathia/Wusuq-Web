@@ -203,6 +203,8 @@ export type IntakeField = {
   showWhen?: { field: string; value?: string; valueIn?: string[] };
   /** Shown below the label in consumer variant only */
   hint?: string;
+  /** Optional placeholder for text/textarea inputs */
+  placeholder?: string;
   /** Initial value applied on flow entry when payload has no value for this field */
   defaultValue?: string;
   /**
@@ -546,6 +548,14 @@ const caseFilesSteps: IntakeStep[] = [
         requiredByCourtTier: { lower: false, high: false, special: false, shariat: false, supreme: false, fcc: false },
       },
       {
+        key: 'case_type_other',
+        label: 'Specify case type',
+        type: 'text',
+        required: false,
+        placeholder: 'Type the case type as it appears on your record',
+        showWhen: { field: 'case_type', value: 'Other' },
+      },
+      {
         key: 'case_no',
         label: 'Case No',
         type: 'text',
@@ -666,6 +676,14 @@ const caseInformationSteps: IntakeStep[] = [
         required: true,
         options: [],
         requiredByCourtTier: { lower: false, high: false, special: false, shariat: false, supreme: false, fcc: false },
+      },
+      {
+        key: 'case_type_other',
+        label: 'Specify case type',
+        type: 'text',
+        required: false,
+        placeholder: 'Type the case type as it appears on your record',
+        showWhen: { field: 'case_type', value: 'Other' },
       },
       {
         key: 'case_no',
@@ -795,6 +813,14 @@ const caseSearchSteps: IntakeStep[] = [
         showWhen: { field: 'search_method', valueIn: ['details', 'both'] },
       },
       {
+        key: 'case_type_other',
+        label: 'Specify case type',
+        type: 'text',
+        required: false,
+        placeholder: 'Type the case type as it appears on your record',
+        showWhen: { field: 'case_type', value: 'Other' },
+      },
+      {
         key: 'case_no',
         label: 'Case No',
         type: 'text',
@@ -921,6 +947,14 @@ const caseFilingSteps: IntakeStep[] = [
       },
       { key: 'case_type', label: 'Case Type', type: 'select', required: true, options: [] },
       {
+        key: 'case_type_other',
+        label: 'Specify case type',
+        type: 'text',
+        required: false,
+        placeholder: 'Type the case type as it appears on your record',
+        showWhen: { field: 'case_type', value: 'Other' },
+      },
+      {
         key: 'case_no',
         label: 'Case No',
         type: 'text',
@@ -1003,6 +1037,14 @@ const powerOfAttorneySteps: IntakeStep[] = [
         options: ['Plaintiff/Petitioner', 'Defendant/Respondent'],
       },
       { key: 'case_type', label: 'Case Type', type: 'select', required: true, options: [] },
+      {
+        key: 'case_type_other',
+        label: 'Specify case type',
+        type: 'text',
+        required: false,
+        placeholder: 'Type the case type as it appears on your record',
+        showWhen: { field: 'case_type', value: 'Other' },
+      },
       { key: 'case_no', label: 'Case No', type: 'text', required: true },
       { key: 'year', label: 'Year', type: 'year_select', required: true },
       { key: 'case_title', label: 'Case Title', type: 'text', required: true },
