@@ -209,6 +209,22 @@ export class TicketsController {
   }
 
   @RequirePermissions('tickets.write')
+  @Post('intake/non-judicial/criminal-record-search')
+  createNonJudicialCriminalRecordSearch(
+    @Body() dto: Omit<CreateTicketIntakeDto, 'flow'>,
+    @CurrentUser() actor: JwtUser | undefined,
+  ) {
+    return this.ticketsService.createIntakeTicketFromFlow(
+      'non_judicial_criminal_record_search',
+      dto,
+      {
+        actorUserId: actor?.sub,
+        actorEmail: actor?.email,
+      },
+    );
+  }
+
+  @RequirePermissions('tickets.write')
   @Post('intake-drafts')
   saveDraft(
     @Body() dto: SaveTicketIntakeDraftDto,

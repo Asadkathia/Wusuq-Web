@@ -453,27 +453,28 @@ export class TicketsService {
   ) {
     this.ensureFlowSupported(dto.flow);
 
-    const draft = dto.draftId
-      ? await this.prisma.ticketIntakeDraft.update({
-          where: { id: dto.draftId },
-          data: {
-            flow: dto.flow,
-            consumerId: dto.consumerId,
-            serviceId: dto.serviceId,
-            step: dto.step,
-            payload: dto.payload as Prisma.InputJsonValue | undefined,
-          },
-        })
-      : await this.prisma.ticketIntakeDraft.create({
-          data: {
-            flow: dto.flow,
-            consumerId: dto.consumerId,
-            serviceId: dto.serviceId,
-            step: dto.step,
-            payload: dto.payload as Prisma.InputJsonValue | undefined,
-            savedByUserId: actor?.actorUserId,
-          },
-        });
+    // Upsert by (consumerId, flow) so a consumer always has at most one active
+    // draft per flow. This is the server-side source of truth for resume —
+    // the client only caches the draft id in localStorage as a fast path.
+    const payload = dto.payload as Prisma.InputJsonValue | undefined;
+    const draft = await this.prisma.ticketIntakeDraft.upsert({
+      where: {
+        consumerId_flow: { consumerId: dto.consumerId, flow: dto.flow },
+      },
+      update: {
+        serviceId: dto.serviceId,
+        step: dto.step,
+        payload,
+      },
+      create: {
+        flow: dto.flow,
+        consumerId: dto.consumerId,
+        serviceId: dto.serviceId,
+        step: dto.step,
+        payload,
+        savedByUserId: actor?.actorUserId,
+      },
+    });
 
     await this.auditLogsService.create({
       action: 'TICKET_DRAFT_SAVED',
@@ -497,6 +498,19 @@ export class TicketsService {
     }
 
     return draft;
+  }
+
+  async getActiveDraft({
+    consumerId,
+    flow,
+  }: {
+    consumerId: string;
+    flow: string;
+  }) {
+    this.ensureFlowSupported(flow);
+    return this.prisma.ticketIntakeDraft.findUnique({
+      where: { consumerId_flow: { consumerId, flow } },
+    });
   }
 
   async updateStatus(

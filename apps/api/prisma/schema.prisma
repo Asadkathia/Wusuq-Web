@@ -266,6 +266,8 @@ model TicketIntakeDraft {
   savedByUserId String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+
+  @@unique([consumerId, flow])
 }
 
 model TicketStatusHistory {
