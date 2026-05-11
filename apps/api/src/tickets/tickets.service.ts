@@ -292,6 +292,7 @@ export class TicketsService {
         },
         documents: true,
         history: { orderBy: { createdAt: 'asc' } },
+        clerkReport: true,
       },
     });
 

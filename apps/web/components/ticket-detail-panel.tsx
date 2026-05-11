@@ -7,8 +7,9 @@ import { PanelCard } from '@/components/ui/panel-card';
 import { StatusPill } from '@/components/ui/status-pill';
 import {
   X, User, FileText, Package, CreditCard, Clock,
-  Phone, MapPin, Briefcase, Download
+  Phone, MapPin, Briefcase, Download, Truck, ClipboardCheck
 } from 'lucide-react';
+import { parseDeliveryAddress } from '@/lib/intake-flows';
 
 type Props = {
   ticketId: string;
@@ -168,6 +169,119 @@ export function TicketDetailPanel({ ticketId, onClose }: Props) {
                     <span>Remaining</span><span className="font-medium">PKR {Math.max(0, totalCharges - Number(ticket.amountPaid || 0)).toLocaleString()}</span>
                   </div>
                 </div>
+              </PanelCard>
+
+              {/* Consumer Notes & Delivery */}
+              {ticket.formPayload && typeof ticket.formPayload === 'object' && (() => {
+                const p = ticket.formPayload as Record<string, unknown>;
+                const notes = typeof p.notes === 'string' ? p.notes.trim() : '';
+                const deliveryMode = p.delivery_mode ? String(p.delivery_mode) : '';
+                const deliveryMethod = p.delivery_method ? String(p.delivery_method) : '';
+                const rawAddr = p.delivery_address;
+                const hasAddr = rawAddr !== undefined && rawAddr !== null && rawAddr !== '';
+                let structured: ReturnType<typeof parseDeliveryAddress> | null = null;
+                let legacyAddr = '';
+                if (hasAddr) {
+                  if (typeof rawAddr === 'string') {
+                    const trimmed = rawAddr.trim();
+                    if (trimmed.startsWith('{')) {
+                      structured = parseDeliveryAddress(rawAddr);
+                    } else {
+                      legacyAddr = trimmed;
+                    }
+                  } else if (typeof rawAddr === 'object') {
+                    structured = parseDeliveryAddress(rawAddr);
+                  }
+                }
+                const showCard = notes || deliveryMode || deliveryMethod || hasAddr;
+                if (!showCard) return null;
+                return (
+                  <PanelCard className="p-4">
+                    <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
+                      <Truck className="h-4 w-4 text-primary-500" />Consumer Notes & Delivery
+                    </h3>
+                    <div className="space-y-3 text-sm">
+                      <div>
+                        <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Consumer Note</span>
+                        <p className="mt-1 whitespace-pre-wrap text-slate-800">
+                          {notes || <span className="italic text-slate-400">(no notes)</span>}
+                        </p>
+                      </div>
+                      {(deliveryMode || deliveryMethod) && (
+                        <div className="border-t border-slate-100 pt-3">
+                          <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Delivery</span>
+                          <p className="mt-1 text-slate-800">
+                            {deliveryMode && <span className="font-medium">{deliveryMode}</span>}
+                            {deliveryMode && deliveryMethod && <span className="text-slate-400"> · </span>}
+                            {deliveryMethod}
+                          </p>
+                        </div>
+                      )}
+                      {hasAddr && (
+                        <div className="border-t border-slate-100 pt-3">
+                          <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Delivery Address</span>
+                          {structured ? (
+                            <div className="mt-1 grid grid-cols-2 gap-2 text-slate-800">
+                              {structured.house && <div><span className="text-slate-500">House: </span>{structured.house}</div>}
+                              {structured.block && <div><span className="text-slate-500">Block: </span>{structured.block}</div>}
+                              {structured.mainArea && <div><span className="text-slate-500">Main Area: </span>{structured.mainArea}</div>}
+                              {structured.city && <div><span className="text-slate-500">City: </span>{structured.city}</div>}
+                            </div>
+                          ) : (
+                            <p className="mt-1 whitespace-pre-wrap text-slate-800">{legacyAddr}</p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </PanelCard>
+                );
+              })()}
+
+              {/* Clerk Availability Report */}
+              <PanelCard className="p-4">
+                <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
+                  <ClipboardCheck className="h-4 w-4 text-primary-500" />Clerk Availability Report
+                </h3>
+                {ticket.clerkReport ? (
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <span className="text-slate-500">Attested available</span>
+                      <p className="font-medium text-slate-900 mt-0.5">{ticket.clerkReport.attestedAvailable ? 'Yes' : 'No'}</p>
+                    </div>
+                    <div>
+                      <span className="text-slate-500">Non-Attested available</span>
+                      <p className="font-medium text-slate-900 mt-0.5">{ticket.clerkReport.nonAttestedAvailable ? 'Yes' : 'No'}</p>
+                    </div>
+                    <div>
+                      <span className="text-slate-500">Both</span>
+                      <p className="font-medium text-slate-900 mt-0.5">{ticket.clerkReport.bothAvailable ? 'Yes' : 'No'}</p>
+                    </div>
+                    <div>
+                      <span className="text-slate-500">Partial completion</span>
+                      <p className="font-medium text-slate-900 mt-0.5">{ticket.clerkReport.partialCompletion ? 'Yes' : 'No'}</p>
+                    </div>
+                    {ticket.clerkReport.perPageRateAttested !== null && ticket.clerkReport.perPageRateAttested !== undefined && (
+                      <div>
+                        <span className="text-slate-500">Per-page rate (attested)</span>
+                        <p className="font-medium text-slate-900 mt-0.5">Rs {Number(ticket.clerkReport.perPageRateAttested).toLocaleString()}</p>
+                      </div>
+                    )}
+                    {ticket.clerkReport.perPageRateNonAttested !== null && ticket.clerkReport.perPageRateNonAttested !== undefined && (
+                      <div>
+                        <span className="text-slate-500">Per-page rate (non-attested)</span>
+                        <p className="font-medium text-slate-900 mt-0.5">Rs {Number(ticket.clerkReport.perPageRateNonAttested).toLocaleString()}</p>
+                      </div>
+                    )}
+                    {ticket.clerkReport.unavailableReason && (
+                      <div className="col-span-2">
+                        <span className="text-slate-500">Unavailable reason</span>
+                        <p className="font-medium text-slate-900 mt-0.5 whitespace-pre-wrap">{ticket.clerkReport.unavailableReason}</p>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-sm italic text-slate-400">(no clerk report yet)</p>
+                )}
               </PanelCard>
 
               {/* Documents */}
