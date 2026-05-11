@@ -50,7 +50,63 @@ export type IntakeFieldType =
   | 'checkbox_single'   // single-select checkbox group (required_documentations)
   | 'year_select'       // year dropdown current→1970
   | 'structured_address' // multi-part delivery address (house/block/main area)
+  | 'bench'             // multi-judge bench picker (PDF #15, #16)
+  | 'info'              // readonly informational note (e.g. clerk dispatch address summary)
+  | 'search_method_tabs' // PDF #37: two-tab search method picker (Case Search flow)
   | 'file';
+
+// ─────────────────────────────────────────────
+// Multi-judge bench (PDF #15, #16)
+// ─────────────────────────────────────────────
+
+/**
+ * Shape of the payload value stored under `bench`. `benchType` is one of the
+ * tier-specific bench-type values (see BENCH_TYPES_BY_TIER in
+ * intake-wizard.tsx). `judges` is an array of judge names in seniority order;
+ * its length is governed by the bench-type's expected count, with trailing
+ * empty strings allowed during editing.
+ */
+export type Bench = {
+  benchType: string;
+  judges: string[];
+};
+
+/**
+ * Parse a `bench` payload value (object or JSON string) into a {@link Bench}.
+ * Falls back to a single-judge bench when the value is malformed/missing.
+ */
+export function parseBench(value: unknown): Bench {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const obj = value as Record<string, unknown>;
+    const benchType = typeof obj.benchType === 'string' && obj.benchType ? obj.benchType : 'single_judge';
+    const judges = Array.isArray(obj.judges)
+      ? (obj.judges as unknown[]).map((j) => (typeof j === 'string' ? j : ''))
+      : [];
+    return { benchType, judges };
+  }
+  if (typeof value === 'string' && value.trim().startsWith('{')) {
+    try {
+      const parsed = JSON.parse(value) as Record<string, unknown>;
+      return parseBench(parsed);
+    } catch {
+      // fall through
+    }
+  }
+  return { benchType: 'single_judge', judges: [] };
+}
+
+/**
+ * Format the bench judges into the display string convention
+ * `J. <name1> & J. <name2> ...`, skipping empty names. Returns '' when no
+ * non-empty names are present.
+ */
+export function formatBenchJudgeName(judges: string[]): string {
+  return judges
+    .map((j) => j.trim())
+    .filter(Boolean)
+    .map((j) => (j.toLowerCase().startsWith('j.') ? j : `J. ${j}`))
+    .join(' & ');
+}
 
 // ─────────────────────────────────────────────
 // Structured delivery address (PDF #31b)
@@ -138,8 +194,13 @@ export type IntakeField = {
   type: IntakeFieldType;
   required?: boolean;
   options?: string[];
-  /** Show this field only when another field equals a specific value */
-  showWhen?: { field: string; value: string };
+  /**
+   * Show this field only when another field equals a specific value, OR when
+   * the other field's value is one of `valueIn` (use exactly one of the two).
+   * `valueIn` is used by the Case Search search-method tabs (PDF #37) where a
+   * field is visible for both the "CNIC" and "both" states.
+   */
+  showWhen?: { field: string; value?: string; valueIn?: string[] };
   /** Shown below the label in consumer variant only */
   hint?: string;
   /** Initial value applied on flow entry when payload has no value for this field */
@@ -157,6 +218,13 @@ export type IntakeField = {
    * based on the active court tier.
    */
   optionsLabel?: (opt: string, payload: Record<string, string>) => string;
+  /**
+   * Optional regex pattern enforced on non-empty values. The `regex` string is
+   * compiled with `new RegExp(...)` and the field is rejected with `message`
+   * when the value (after the field is required-resolved and non-empty) does
+   * not match. Empty values fall through to the `required` check.
+   */
+  pattern?: { regex: string; message: string };
 };
 
 // ─────────────────────────────────────────────
@@ -257,11 +325,25 @@ export function normalizeDocBundle(value: string | undefined | null): DocBundle 
  * values are left as-is so we never silently destroy data.
  */
 export function normalizeDraftPayload(payload: Record<string, string>): Record<string, string> {
+  let next: Record<string, string> = payload;
   const raw = payload?.required_documentations;
-  if (!raw) return payload;
-  const normalized = normalizeDocBundle(raw);
-  if (!normalized || normalized === raw) return payload;
-  return { ...payload, required_documentations: normalized };
+  if (raw) {
+    const normalized = normalizeDocBundle(raw);
+    if (normalized && normalized !== raw) {
+      next = { ...next, required_documentations: normalized };
+    }
+  }
+  // Migrate legacy `judge_name` text drafts into a structured `bench`
+  // object (single-judge bench) so the new renderer can hydrate them.
+  // PDF feedback #15/#16.
+  if (next.judge_name && !next.bench) {
+    const synthesized: Bench = {
+      benchType: 'single_judge',
+      judges: [next.judge_name],
+    };
+    next = { ...next, bench: JSON.stringify(synthesized) };
+  }
+  return next;
 }
 
 /**
@@ -288,6 +370,23 @@ export function courtTierFromCourtType(courtType: string | undefined | null): Co
     default:
       return null;
   }
+}
+
+/**
+ * Determine whether a field's `showWhen` is satisfied by the current payload.
+ * Returns true when the field has no `showWhen` (always visible) or when the
+ * referenced field's value matches either `value` or any entry in `valueIn`.
+ */
+export function showWhenSatisfied(
+  field: IntakeField,
+  payload: Record<string, string>,
+): boolean {
+  const sw = field.showWhen;
+  if (!sw) return true;
+  const current = payload[sw.field] ?? '';
+  if (sw.value !== undefined && current === sw.value) return true;
+  if (sw.valueIn && sw.valueIn.includes(current)) return true;
+  return false;
 }
 
 /**
@@ -326,6 +425,14 @@ export type IntakeFlow = {
   steps: IntakeStep[];
   description?: string;
   icon?: LucideIcon;
+  /**
+   * When the slug→flow mapping already uniquely determines the catalogue
+   * service (single-service non-judicial flows), pre-select this service on
+   * wizard mount so the user doesn't have to click the only available tile.
+   * Judicial flows leave this undefined — the service is a genuine choice
+   * (Lower / Special / High / Shariat / Supreme / FCC).
+   */
+  defaultServiceId?: string;
 };
 
 // ─────────────────────────────────────────────
@@ -463,10 +570,11 @@ const caseFilesSteps: IntakeStep[] = [
         requiredByCourtTier: { lower: false, high: false, special: false, shariat: false, supreme: false, fcc: false },
       },
       {
-        key: 'judge_name',
-        label: 'Judge Name',
-        type: 'text',
+        key: 'bench',
+        label: 'Bench',
+        type: 'bench',
         requiredByCourtTier: { lower: false, high: false, special: false, shariat: false, supreme: false, fcc: false },
+        hint: 'For multi-judge benches, name each judge in seniority order.',
       },
       {
         key: 'judge_designation',
@@ -583,10 +691,11 @@ const caseInformationSteps: IntakeStep[] = [
         requiredByCourtTier: { lower: false, high: false, special: false, shariat: false, supreme: false, fcc: false },
       },
       {
-        key: 'judge_name',
-        label: 'Judge Name',
-        type: 'text',
+        key: 'bench',
+        label: 'Bench',
+        type: 'bench',
         requiredByCourtTier: { lower: false, high: false, special: false, shariat: false, supreme: false, fcc: false },
+        hint: 'For multi-judge benches, name each judge in seniority order.',
       },
       {
         key: 'judge_designation',
@@ -628,7 +737,13 @@ const caseInformationSteps: IntakeStep[] = [
 ];
 
 // ─────────────────────────────────────────────
-// 3) Case Search
+// 3) Case Search (PDF #36-#39)
+//
+// Step 1 supports multi-city selection (1..N cities). Pricing is linear in the
+// number of cities (Rs 2,000 per city, or Rs 3,000 per city if both search
+// methods are selected). Step 2 lets the consumer pick one or both of two
+// search methods (by CNIC and/or by Case Details). All fields in Step 2 are
+// optional — the form is intentionally free-form.
 // ─────────────────────────────────────────────
 const caseSearchSteps: IntakeStep[] = [
   {
@@ -638,27 +753,78 @@ const caseSearchSteps: IntakeStep[] = [
   {
     title: 'Case Details',
     fields: [
+      // Search-method picker (PDF #37). Stored as 'cnic' | 'details' | 'both'.
+      {
+        key: 'search_method',
+        label: 'How would you like to search?',
+        type: 'search_method_tabs',
+        hint: 'Pick either method, or pick both for a wider search.',
+      },
+      // CNIC tab fields — visible for 'cnic' and 'both'.
+      {
+        key: 'subject_cnic',
+        label: 'Subject CNIC',
+        type: 'text',
+        hint: 'Format: 12345-1234567-1',
+        showWhen: { field: 'search_method', valueIn: ['cnic', 'both'] },
+        pattern: {
+          regex: '^\\d{5}-\\d{7}-\\d$',
+          message: 'CNIC must be in the format 12345-1234567-1',
+        },
+      },
+      {
+        key: 'subject_full_name',
+        label: 'Subject full name',
+        type: 'text',
+        showWhen: { field: 'search_method', valueIn: ['cnic', 'both'] },
+      },
+      // Case Details tab fields — visible for 'details' and 'both'. All
+      // optional (PDF #37: "Remove all * required asterisks").
       {
         key: 'case_status',
         label: 'Case Status',
         type: 'radio',
-        required: true,
         options: ['Pending Case', 'Decided Case', 'Unknown Case'],
+        showWhen: { field: 'search_method', valueIn: ['details', 'both'] },
       },
-      { key: 'case_type', label: 'Case Type', type: 'select', required: true, options: [] },
-      { key: 'case_no', label: 'Case No', type: 'text', required: true },
-      { key: 'year', label: 'Year', type: 'year_select', required: true },
-      { key: 'case_title', label: 'Case Title', type: 'text', required: true },
-      { key: 'judge_name', label: 'Judge Name', type: 'text' },
-      { key: 'judge_designation', label: 'Judge Designation', type: 'select', options: [] },
       {
-        key: 'case_date_status',
-        label: 'Case Date Status',
-        type: 'radio',
-        options: ['Known', 'Unknown'],
+        key: 'case_type',
+        label: 'Case Type',
+        type: 'select',
+        options: [],
+        showWhen: { field: 'search_method', valueIn: ['details', 'both'] },
       },
-      { key: 'case_date', label: 'Previous Case Date', type: 'date' },
-      { key: 'future_date', label: 'Future Date', type: 'date' },
+      {
+        key: 'case_no',
+        label: 'Case No',
+        type: 'text',
+        showWhen: { field: 'search_method', valueIn: ['details', 'both'] },
+      },
+      {
+        key: 'year',
+        label: 'Year',
+        type: 'year_select',
+        showWhen: { field: 'search_method', valueIn: ['details', 'both'] },
+      },
+      {
+        key: 'case_title',
+        label: 'Case Title',
+        type: 'text',
+        showWhen: { field: 'search_method', valueIn: ['details', 'both'] },
+      },
+      {
+        key: 'judge_name',
+        label: 'Judge Name',
+        type: 'text',
+        showWhen: { field: 'search_method', valueIn: ['details', 'both'] },
+      },
+      {
+        key: 'judge_designation',
+        label: 'Judge Designation',
+        type: 'select',
+        options: [],
+        showWhen: { field: 'search_method', valueIn: ['details', 'both'] },
+      },
       {
         key: 'decided_date',
         label: 'Decided Date',
@@ -693,6 +859,40 @@ const caseSearchSteps: IntakeStep[] = [
     fields: [{ key: 'documents_upload_note', label: 'Upload files below', type: 'text' }],
   },
 ];
+
+// ─────────────────────────────────────────────
+// Multi-city payload helpers (Case Search — PDF #36)
+//
+// Cities are stored on the payload under the key `cities` as a JSON-stringified
+// array of city ids (e.g. '["city_lhr","city_khi"]'). The legacy `city_id`
+// remains in sync with `cities[0]` so the existing court loader / geo blocks
+// continue to function. A consumer picking a single city writes `["<id>"]`.
+// ─────────────────────────────────────────────
+
+export function parseCities(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.filter((v): v is string => typeof v === 'string' && Boolean(v));
+  }
+  if (typeof value !== 'string') return [];
+  const trimmed = value.trim();
+  if (!trimmed) return [];
+  if (trimmed.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(trimmed) as unknown;
+      if (Array.isArray(parsed)) {
+        return parsed.filter((v): v is string => typeof v === 'string' && Boolean(v));
+      }
+    } catch {
+      // fall through
+    }
+  }
+  // Legacy single-id fallback.
+  return [trimmed];
+}
+
+export function stringifyCities(ids: string[]): string {
+  return JSON.stringify(ids.filter(Boolean));
+}
 
 // ─────────────────────────────────────────────
 // 4) Case Filing
@@ -762,7 +962,18 @@ const caseFilingSteps: IntakeStep[] = [
   },
   {
     title: 'Documents & Delivery',
-    fields: [{ key: 'documents_upload_note', label: 'Upload files below', type: 'text' }],
+    fields: [
+      // Readonly summary of where the clerk will physically file these docs
+      // (PDF #42–#43). The wizard pre-populates select_court / select_court_city
+      // in step 1; we just surface them back to the consumer here so they know
+      // a clerk in that city will take dispatch from us.
+      {
+        key: 'clerk_dispatch_address',
+        label: 'Clerk Dispatch Address',
+        type: 'info',
+      },
+      { key: 'documents_upload_note', label: 'Upload files below', type: 'text' },
+    ],
   },
 ];
 
@@ -966,6 +1177,10 @@ const criminalRecordSearchSteps: IntakeStep[] = [
         type: 'text',
         required: true,
         hint: 'Format: 12345-1234567-1',
+        pattern: {
+          regex: '^\\d{5}-\\d{7}-\\d$',
+          message: 'CNIC must be in the format 12345-1234567-1',
+        },
       },
       {
         key: 'subject_full_name',
@@ -1066,6 +1281,7 @@ export const nonJudicialFlows: IntakeFlow[] = [
     steps: copyOfFirSteps,
     description: 'Obtain a certified copy of a First Information Report from the relevant police station.',
     icon: FileSearch,
+    defaultServiceId: 'svc_non_judicial_fir',
   },
   {
     key: 'non_judicial_registry_deed',
@@ -1074,6 +1290,7 @@ export const nonJudicialFlows: IntakeFlow[] = [
     steps: registryDeedSteps,
     description: 'Request registry, mutation, or deed copies from the land/registrar office.',
     icon: Stamp,
+    defaultServiceId: 'svc_non_judicial_registry_deed',
   },
   {
     key: 'non_judicial_criminal_record_search',
@@ -1082,6 +1299,7 @@ export const nonJudicialFlows: IntakeFlow[] = [
     steps: criminalRecordSearchSteps,
     description: 'Lookup records by CNIC at the relevant Police Station.',
     icon: UserSearch,
+    defaultServiceId: 'svc_non_judicial_criminal_record',
   },
 ];
 

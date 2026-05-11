@@ -6,7 +6,7 @@ import { apiClient } from '@/lib/api-client';
 import { PanelCard } from '@/components/ui/panel-card';
 import { ChevronRight, CheckCircle2, FolderOpen, Sparkles, X } from 'lucide-react';
 import type { IntakeFlow, IntakeStep, CourtTier } from '@/lib/intake-flows';
-import { courtTierFromCourtType, resolveRequired, docBundleLabel, normalizeDraftPayload, isStructuredAddressComplete, computeYearBand } from '@/lib/intake-flows';
+import { courtTierFromCourtType, resolveRequired, docBundleLabel, normalizeDraftPayload, isStructuredAddressComplete, computeYearBand, parseBench, showWhenSatisfied, parseCities, stringifyCities } from '@/lib/intake-flows';
 import type { YearBand } from '@/lib/intake-flows';
 
 import type { IntakeWizardProps, TicketDraft, ServiceHit, LocalUser, CityCourtGroup } from './intake-wizard/types';
@@ -78,6 +78,48 @@ const SERVICE_CASE_TYPES: Record<string, string[]> = {
   ],
 };
 
+// Sub-court scoped case-types. When the consumer picks a Lower Court sub-court
+// tile (Sessions / Civil / Magisterial / Family), only that bucket's petition
+// types should appear in the Case Type dropdown — PDF #21a. Spellings here
+// match the flat SERVICE_CASE_TYPES list verbatim (incl. legacy misspellings
+// like "Obejcton Petiton" / "Small Clam & Minor Offence") so payloads
+// round-trip unchanged.
+const SUBCOURT_CASE_TYPES: Record<string, Record<string, string[]>> = {
+  svc_judicial_lower_court: {
+    'Sessions Court': [
+      'Bail Application (S)', 'Criminal Appeal', 'Criminal Misc.', 'Criminal Revision',
+      'Hadood Cases (Under Hadood Ordinance)', 'Harrassment', 'Illegal Dispossession Act',
+      'Inquiry (S)', 'Money Laundering Act', 'Narcotics Cases (S)', 'Other Cases (S)',
+      'Petitions u/s 22-A/22-B Cr.P.C', 'Sessions Cases (Murder)', 'Sessions Cases (Others)',
+      'STA Cases', 'Superdari', 'Habeas Corpus', 'Execution Petition (S)',
+    ],
+    'Civil Court': [
+      'Civil Appeal', 'Civil Case of Summary Nature Involving Evidence', 'Civil Misc.',
+      'Civil Revision', 'Civil Suit', 'Commercial Cases', 'Election Petition',
+      'Execution Petition (C)', 'Inquiry (C)', 'Insolvency Cases', 'Insurance Cases',
+      'Labour Cases', 'Land Acquisition Cases', 'Obejcton Petiton', 'Original Suit',
+      'Other Cases (C)', 'Pauper Cases', 'Rent Cases', 'Small Clam & Minor Offence',
+    ],
+    'Magisterial Court': [
+      'Bail Application (M)', 'Ist Class Cases', 'Minor Offences',
+      'Narcotics Cases (M)', 'Other Cases (M)', 'Section 30 Case',
+    ],
+    'Family Court': [
+      'Family Cases', 'Guardianship Cases', 'Application for Succession',
+    ],
+  },
+};
+
+// Resolve the case-type list for a given service, narrowing to a sub-court
+// bucket when one is selected. Falls back to the flat service-level list when
+// no sub-court is in play, or when the sub-court has no specific bucket.
+function caseTypesFor(serviceId: string, subCourt?: string): string[] {
+  if (subCourt && SUBCOURT_CASE_TYPES[serviceId]?.[subCourt]) {
+    return SUBCOURT_CASE_TYPES[serviceId][subCourt];
+  }
+  return SERVICE_CASE_TYPES[serviceId] ?? [];
+}
+
 // Judge designations — first looked up by sub-court / service name (e.g.
 // "Sessions Court"), then by court type (e.g. "Lower Court").
 const JUDGE_DESIGNATIONS_BY_SERVICE: Record<string, string[]> = {
@@ -106,6 +148,39 @@ const JUDGE_DESIGNATIONS_BY_TYPE: Record<string, string[]> = {
 const DEFAULT_JUDGE_DESIGNATIONS = [
   'Judge', 'Additional Judge', 'Senior Judge', 'Presiding Officer', 'Chairman',
 ];
+
+// Bench composition options per court tier (PDF #15, #16).
+// `count` is the expected number of judge-name inputs to render.
+const BENCH_TYPES_BY_TIER: Record<CourtTier, Array<{ value: string; label: string; count: number }>> = {
+  lower:    [{ value: 'single_judge', label: 'Single Judge', count: 1 }],
+  special:  [{ value: 'single_judge', label: 'Single Judge', count: 1 }],
+  high:     [
+    { value: 'single_judge', label: 'Single Judge', count: 1 },
+    { value: 'db_2',         label: 'Divisional Bench (2 Judges)', count: 2 },
+    { value: 'fb_3',         label: 'Full Bench (3 Judges)', count: 3 },
+    { value: 'larger',       label: 'Larger Bench (5 Judges)', count: 5 },
+  ],
+  shariat:  [
+    { value: 'single_judge', label: 'Single Judge', count: 1 },
+    { value: 'db_2',         label: 'Divisional Bench (2 Judges)', count: 2 },
+    { value: 'fb_3',         label: 'Full Bench (3 Judges)', count: 3 },
+  ],
+  supreme:  [
+    { value: 'single_judge', label: 'Single Judge', count: 1 },
+    { value: 'db_2',         label: 'Divisional Bench (2 Judges)', count: 2 },
+    { value: 'fb_3',         label: 'Full Bench (3 Judges)', count: 3 },
+    { value: 'larger_5',     label: 'Larger Bench (5 Judges)', count: 5 },
+    { value: 'larger_7',     label: 'Larger Bench (7 Judges)', count: 7 },
+  ],
+  fcc:      [
+    { value: 'single_judge', label: 'Single Judge', count: 1 },
+    { value: 'db_2',         label: 'Divisional Bench (2 Judges)', count: 2 },
+    { value: 'fb_3',         label: 'Full Bench (3 Judges)', count: 3 },
+    { value: 'larger',       label: 'Larger Bench (5 Judges)', count: 5 },
+  ],
+};
+
+export { BENCH_TYPES_BY_TIER };
 
 
 function ServiceCardGrid({
@@ -245,6 +320,10 @@ export function IntakeWizard({
   const [isAdminTestingMode, setIsAdminTestingMode] = useState(false);
   const [currentUser, setCurrentUser] = useState<LocalUser | null>(null);
   const [files, setFiles] = useState<File[]>([]);
+  // PDF #43 — per-file caption tagged by the consumer (Petition, PoA, etc.).
+  // Parallel-indexed with `files`; entries default to empty string and stay
+  // in sync via addFiles/removeFileAt below.
+  const [fileCaptions, setFileCaptions] = useState<string[]>([]);
   const stepHeadingRef = useRef<HTMLHeadingElement>(null);
   const errorBannerRef = useRef<HTMLDivElement>(null);
   const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -264,7 +343,13 @@ export function IntakeWizard({
   const [touched, setTouched] = useState<Record<string, boolean>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  const [selectedServiceCaseTypes, setSelectedServiceCaseTypes] = useState<string[]>([]);
+  // Case-type options shown in Step 2's dropdown. Derived from the active
+  // service id and (when present) the chosen Lower Court sub-court — picking
+  // Family Court should restrict the list to family petitions only (PDF #21a).
+  const selectedServiceCaseTypes = useMemo(
+    () => caseTypesFor(draft.serviceId, draft.payload.select_court),
+    [draft.serviceId, draft.payload.select_court],
+  );
   const [pricingResult, setPricingResult] = useState<{
     matched: boolean;
     available?: boolean;
@@ -273,6 +358,7 @@ export function IntakeWizard({
     base?: number;
     pdfSurcharge?: number;
     deliveryFee?: number;
+    titleSurcharge?: number;
     attestedCharge: number;
     nonAttestedCharge: number;
     deliveryCharge: number;
@@ -513,6 +599,16 @@ export function IntakeWizard({
     const wantPdf = p.want_pdf_before_dispatch === 'Yes';
     const deliveryMethod = (p.delivery_mode || p.delivery_method || '').toString().toLowerCase();
 
+    // PDF #36: multi-city pricing multiplier (Case Search only). At least 1.
+    const cityCount = Math.max(
+      1,
+      flow === 'judicial_case_search' ? parseCities(p.cities).length : 1,
+    );
+    // PDF #37: search-method surcharge (Case Search only). 'both' adds
+    // Rs 1,000 per city on top of the base rule.
+    const searchMethod =
+      flow === 'judicial_case_search' ? (p.search_method || undefined) : undefined;
+
     apiClient.post<any>('/pricing-rules/resolve', {
       flow,
       courtLevel: p.select_court_type || undefined,
@@ -526,6 +622,12 @@ export function IntakeWizard({
       deliveryMethod: deliveryMethod || undefined,
       province: p.province ?? p.province_capital ?? undefined,
       city: p.select_court_city ?? p.city ?? undefined,
+      // PDF #14: title-based surcharge ("State vs <X>" → +Rs 1,000). The
+      // resolver does the regex match; we just forward whatever the user
+      // typed in Step 2.
+      caseTitle: p.case_title || '',
+      cityCount,
+      searchMethod,
     })
       .then((r) => setPricingResult(r))
       .catch(() => setPricingResult(null));
@@ -545,6 +647,9 @@ export function IntakeWizard({
     draft.payload.both_non_attested_qty,
     draft.payload.want_pdf_before_dispatch,
     draft.payload.delivery_mode,
+    draft.payload.case_title,
+    draft.payload.cities,
+    draft.payload.search_method,
   ]);
 
   // ── Set-type availability — batched lookup ("Can't Get" handling) ────────
@@ -748,7 +853,6 @@ export function IntakeWizard({
         judge_designation: '',
       },
     }));
-    setSelectedServiceCaseTypes([]);
     if (!cityId) {
       setCityCourtGroups([]);
       return;
@@ -759,16 +863,41 @@ export function IntakeWizard({
       .catch(() => setCityCourtGroups([]));
   };
 
+  // Auto-pick the single available service for non-judicial slugs whose
+  // flow→service mapping is 1:1 (Copy of FIR, Registry/Deed, Search Criminal
+  // Record). The 3-tile picker still renders so it remains visible if the
+  // catalogue grows, but the right tile is pre-selected so the user doesn't
+  // have to click to satisfy the wizard.
+  useEffect(() => {
+    if (!selectedFlow?.defaultServiceId) return;
+    if (draft.serviceId) return;
+    if (!availableServices.length) return;
+    const match = availableServices.find((s) => s.id === selectedFlow.defaultServiceId);
+    if (!match) return;
+    applySelectedServiceRef.current?.(match.id, match.name, match.caseTypes ?? []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedFlow?.key, selectedFlow?.defaultServiceId, availableServices, draft.serviceId]);
+
+  // Ref-indirection to applySelectedService so the auto-pick effect above
+  // doesn't have to be ordered after the callback definition.
+  const applySelectedServiceRef = useRef<((id: string, name: string, caseTypes: string[]) => void) | null>(null);
+
   const applySelectedService = useCallback((id: string, name: string, caseTypes: string[]) => {
+    void caseTypes; // case-type options are now derived; arg preserved for callsite stability
     const courtLevel = availableServices.find((s) => s.id === id)?.courtLevel ?? '';
     setField('serviceId', id);
     setPayloadField('select_service', name || id);
-    setSelectedServiceCaseTypes(SERVICE_CASE_TYPES[id] ?? caseTypes);
     setPayloadField('select_court', '');
     setPayloadField('select_court_id', '');
     setPayloadField('select_court_type', courtLevel);
     setPayloadField('judge_designation', '');
   }, [availableServices]);
+
+  // Keep the auto-pick effect's ref pointed at the latest callback so it can
+  // call into applySelectedService without a forward-declaration loop.
+  useEffect(() => {
+    applySelectedServiceRef.current = applySelectedService;
+  }, [applySelectedService]);
 
   const addFiles = useCallback((incomingFiles: File[]) => {
     if (incomingFiles.length === 0) return;
@@ -780,10 +909,22 @@ export function IntakeWizard({
 
     setUploadError('');
     setFiles((current) => [...current, ...incomingFiles]);
+    setFileCaptions((current) => [...current, ...incomingFiles.map(() => '')]);
   }, []);
 
   const removeFileAt = useCallback((index: number) => {
     setFiles((current) => current.filter((_, currentIndex) => currentIndex !== index));
+    setFileCaptions((current) => current.filter((_, currentIndex) => currentIndex !== index));
+  }, []);
+
+  const setFileCaption = useCallback((index: number, caption: string) => {
+    setFileCaptions((current) => {
+      const next = current.slice();
+      // Backfill in case captions array drifted out of sync (defensive).
+      while (next.length <= index) next.push('');
+      next[index] = caption;
+      return next;
+    });
   }, []);
 
   const handleFileDrop = useCallback((event: React.DragEvent<HTMLDivElement>) => {
@@ -873,12 +1014,25 @@ export function IntakeWizard({
     const field = allFields.find((f) => f.key === key);
     if (!field) return '';
     if (!resolveRequired(field, activeCourtTier)) return '';
-    if (field.showWhen && draft.payload[field.showWhen.field] !== field.showWhen.value) return '';
+    if (!showWhenSatisfied(field, draft.payload)) return '';
     if (field.type === 'structured_address') {
       if (!isStructuredAddressComplete(value)) return 'Please complete the delivery address';
       return '';
     }
+    if (field.type === 'bench') {
+      const bench = parseBench(value);
+      if (!bench.judges.some((j) => j.trim())) return `${field.label} is required`;
+      return '';
+    }
     if (!hasValue(value)) return `${field.label} is required`;
+    if (field.pattern && value) {
+      try {
+        const re = new RegExp(field.pattern.regex);
+        if (!re.test(value)) return field.pattern.message;
+      } catch {
+        // malformed regex in flow definition — fail open so it never blocks
+      }
+    }
     return '';
   };
 
@@ -901,7 +1055,7 @@ export function IntakeWizard({
     for (const f of activeStep.fields) {
       if (GEO_HANDLED_KEYS.has(f.key)) continue;
       if (!resolveRequired(f, activeCourtTier)) continue;
-      if (f.showWhen && draft.payload[f.showWhen.field] !== f.showWhen.value) continue;
+      if (!showWhenSatisfied(f, draft.payload)) continue;
       if (f.key === 'select_service') continue;
 
       newTouched[f.key] = true;
@@ -924,9 +1078,29 @@ export function IntakeWizard({
         }
         continue;
       }
+      if (f.type === 'bench') {
+        const bench = parseBench(draft.payload[f.key]);
+        if (!bench.judges.some((j) => j.trim())) {
+          newErrors[f.key] = `${f.label} is required`;
+          if (!firstInvalidKey) firstInvalidKey = f.key;
+        }
+        continue;
+      }
       if (!hasValue(draft.payload[f.key])) {
         newErrors[f.key] = `${f.label} is required`;
         if (!firstInvalidKey) firstInvalidKey = f.key;
+        continue;
+      }
+      if (f.pattern) {
+        try {
+          const re = new RegExp(f.pattern.regex);
+          if (!re.test(draft.payload[f.key] ?? '')) {
+            newErrors[f.key] = f.pattern.message;
+            if (!firstInvalidKey) firstInvalidKey = f.key;
+          }
+        } catch {
+          // malformed regex — skip
+        }
       }
     }
 
@@ -977,7 +1151,7 @@ export function IntakeWizard({
     });
     if (!(isConsumer || isAdminTestingMode)) setConsumerLabel('');
     setFiles([]);
-    setSelectedServiceCaseTypes([]);
+    setFileCaptions([]);
     setCityCourtGroups([]);
     setGeoIds({ provinceId: '', districtId: '', cityId: '' });
     setTouched({});
@@ -1013,6 +1187,12 @@ export function IntakeWizard({
     if (pr?.matched && pr.available !== false) {
       if (pr.basePrice > 0) {
         items.push({ label: 'Base fee', amount: pr.basePrice });
+      }
+      if ((pr.titleSurcharge ?? 0) > 0) {
+        items.push({
+          label: 'Title surcharge (State vs …)',
+          amount: pr.titleSurcharge!,
+        });
       }
       if ((pr.pdfSurcharge ?? 0) > 0) {
         items.push({ label: 'PDF surcharge', amount: pr.pdfSurcharge! });
@@ -1081,8 +1261,13 @@ export function IntakeWizard({
         // Atomic case linkage when the wizard is launched from a case page.
         ...(caseId ? { caseId } : {}),
       });
-      for (const file of files) {
-        const fd = new FormData(); fd.append('file', file);
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        if (!file) continue;
+        const fd = new FormData();
+        fd.append('file', file);
+        const caption = (fileCaptions[i] ?? '').trim();
+        if (caption) fd.append('caption', caption);
         await apiClient.post(`/tickets/${ticket.id}/documents/upload`, fd);
       }
       setInfoMsg('✅ Ticket created successfully! Batch No: ' + ticket.batchNo);
@@ -1144,33 +1329,100 @@ export function IntakeWizard({
                   cities={geo.allCities}
                   cityId={geoIds.cityId}
                   onCityChange={handleCityChange}
+                  multiSelect={draft.flow === 'judicial_case_search'}
+                  selectedCityIds={
+                    draft.flow === 'judicial_case_search'
+                      ? parseCities(draft.payload.cities)
+                      : undefined
+                  }
+                  onCitiesChange={(ids) => {
+                    // Multi-city sync (Case Search). cities[0] is the primary
+                    // city used by the court loader / select_court_city.
+                    const primaryId = ids[0] ?? '';
+                    const primaryName =
+                      geo.allCities.find((c) => c.id === primaryId)?.name ?? '';
+                    const previousPrimary = geoIds.cityId;
+                    setGeoIds((g) => ({ ...g, cityId: primaryId }));
+                    setDraft((c) => ({
+                      ...c,
+                      // Reset service only when the primary city actually changed
+                      // (adding a 2nd/3rd city to the same primary shouldn't
+                      // wipe the chosen court).
+                      ...(primaryId !== previousPrimary ? { serviceId: '' } : {}),
+                      payload: {
+                        ...c.payload,
+                        cities: stringifyCities(ids),
+                        city_id: primaryId,
+                        city: primaryName,
+                        select_court_city: primaryName,
+                        ...(primaryId !== previousPrimary
+                          ? {
+                              select_service: '',
+                              select_court: '',
+                              select_court_id: '',
+                              select_court_type: '',
+                              case_type: '',
+                              judge_designation: '',
+                            }
+                          : {}),
+                      },
+                    }));
+                    if (primaryId && primaryId !== previousPrimary) {
+                      apiClient
+                        .get<CityCourtGroup[]>(`/geo/cities/${primaryId}/courts`)
+                        .then((r) => setCityCourtGroups(r ?? []))
+                        .catch(() => setCityCourtGroups([]));
+                    } else if (!primaryId) {
+                      setCityCourtGroups([]);
+                    }
+                  }}
                 />
               )}
 
-              <label className="space-y-1 block md:col-span-2">
-                <span className="text-sm font-medium text-slate-700">Court<span className="text-rose-500 ml-0.5">*</span></span>
-                {!draft.payload.city ? (
-                  <p className="mt-1 rounded-xl bg-surface-muted/50 p-3 text-sm text-slate-500 ring-1 ring-inset ring-border-soft">
-                    Select a city above to see available courts.
-                  </p>
-                ) : availableServices.length === 0 ? (
-                  <p className="mt-1 rounded-xl bg-amber-50 p-3 text-sm text-amber-700 ring-1 ring-inset ring-amber-100">
-                    No courts are available in {draft.payload.city}. Pick a different city.
-                  </p>
-                ) : (
-                  <ServiceCardGrid
-                    services={availableServices}
-                    value={draft.serviceId}
-                    onSelect={(service) =>
-                      applySelectedService(
-                        service.id,
-                        service.name,
-                        service.caseTypes ?? [],
-                      )
-                    }
-                  />
-                )}
-              </label>
+              {isJudicial ? (
+                <label className="space-y-1 block md:col-span-2">
+                  <span className="text-sm font-medium text-slate-700">Court<span className="text-rose-500 ml-0.5">*</span></span>
+                  {!draft.payload.city ? (
+                    <p className="mt-1 rounded-xl bg-surface-muted/50 p-3 text-sm text-slate-500 ring-1 ring-inset ring-border-soft">
+                      Select a city above to see available courts.
+                    </p>
+                  ) : availableServices.length === 0 ? (
+                    <p className="mt-1 rounded-xl bg-amber-50 p-3 text-sm text-amber-700 ring-1 ring-inset ring-amber-100">
+                      No courts are available in {draft.payload.city}. Pick a different city.
+                    </p>
+                  ) : (
+                    <ServiceCardGrid
+                      services={availableServices}
+                      value={draft.serviceId}
+                      onSelect={(service) =>
+                        applySelectedService(
+                          service.id,
+                          service.name,
+                          service.caseTypes ?? [],
+                        )
+                      }
+                    />
+                  )}
+                </label>
+              ) : (
+                // Non-judicial flows have no court selection — render the
+                // service tile picker directly without the "Court*" label.
+                availableServices.length > 0 && (
+                  <div className="space-y-1 md:col-span-2">
+                    <ServiceCardGrid
+                      services={availableServices}
+                      value={draft.serviceId}
+                      onSelect={(service) =>
+                        applySelectedService(
+                          service.id,
+                          service.name,
+                          service.caseTypes ?? [],
+                        )
+                      }
+                    />
+                  </div>
+                )
+              )}
 
               {isJudicial && draft.serviceId && (
                 <JudicialServiceBlock
@@ -1324,7 +1576,10 @@ export function IntakeWizard({
                       {} as Record<string, { disabled: boolean; hint?: string }>,
                     )
                   : undefined;
-              const rendered = renderField(field, draft.payload[field.key] ?? '', draft.payload, setPayloadField, dynamicOpts, handleFieldBlur, errorMsg, disabledOpts);
+              const benchOpts = field.type === 'bench'
+                ? (activeCourtTier ? BENCH_TYPES_BY_TIER[activeCourtTier] : BENCH_TYPES_BY_TIER.lower)
+                : undefined;
+              const rendered = renderField(field, draft.payload[field.key] ?? '', draft.payload, setPayloadField, dynamicOpts, handleFieldBlur, errorMsg, disabledOpts, benchOpts);
               if (rendered === null) return null;
 
               return (
@@ -1332,7 +1587,7 @@ export function IntakeWizard({
                   <div>
                     <label className="text-sm font-medium text-slate-700">
                       {field.label}
-                      {resolveRequired(field, activeCourtTier) && (!field.showWhen || draft.payload[field.showWhen.field] === field.showWhen.value) && (
+                      {resolveRequired(field, activeCourtTier) && showWhenSatisfied(field, draft.payload) && (
                         <span className="text-rose-500 ml-0.5">*</span>
                       )}
                     </label>
@@ -1349,6 +1604,8 @@ export function IntakeWizard({
         {draft.step === totalSteps && (
           <FileUpload
             files={files}
+            captions={fileCaptions}
+            onCaptionChange={setFileCaption}
             onFilesAdd={addFiles}
             onRemoveFile={removeFileAt}
             inputId="final-step-file-upload"
@@ -1496,6 +1753,8 @@ export function IntakeWizard({
             </div>
             <FileUpload
               files={files}
+              captions={fileCaptions}
+              onCaptionChange={setFileCaption}
               onFilesAdd={addFiles}
               onRemoveFile={removeFileAt}
               inputId="drawer-file-upload"
