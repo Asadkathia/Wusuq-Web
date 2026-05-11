@@ -1,13 +1,13 @@
 {
   "metadata": {
-    "total_records": 711,
+    "total_records": 726,
     "court_types": [
       "Federal Constitutional Court",
-      "Supreme Court",
-      "High Court",
       "Federal Shariat Court",
+      "High Court",
       "Lower Court",
-      "Special Court"
+      "Special Court",
+      "Supreme Court"
     ],
     "provinces": [
       "AJK",
@@ -20,16 +20,6 @@
     ]
   },
   "nested": {
-    "Federal Constitutional Court": {
-      "Federal Constitutional Court of Pakistan": {
-        "Federal": [
-          {
-            "city": "Islamabad",
-            "is_principal_seat": true
-          }
-        ]
-      }
-    },
     "Supreme Court": {
       "Supreme Court of Pakistan": {
         "Balochistan": [
@@ -68,6 +58,10 @@
       "AJK High Court": {
         "AJK": [
           {
+            "city": "Kotli",
+            "is_principal_seat": false
+          },
+          {
             "city": "Mirpur",
             "is_principal_seat": true
           },
@@ -79,6 +73,14 @@
       },
       "Balochistan High Court": {
         "Balochistan": [
+          {
+            "city": "Khuzdar",
+            "is_principal_seat": false
+          },
+          {
+            "city": "Loralai",
+            "is_principal_seat": false
+          },
           {
             "city": "Quetta",
             "is_principal_seat": true
@@ -104,6 +106,10 @@
       "Gilgit-Baltistan Chief Court": {
         "Gilgit-Baltistan": [
           {
+            "city": "Chilas",
+            "is_principal_seat": false
+          },
+          {
             "city": "Gilgit",
             "is_principal_seat": true
           },
@@ -117,6 +123,10 @@
         "KPK": [
           {
             "city": "Abbottabad",
+            "is_principal_seat": false
+          },
+          {
+            "city": "Bannu",
             "is_principal_seat": false
           },
           {
@@ -156,8 +166,20 @@
       "Sindh High Court": {
         "Sindh": [
           {
+            "city": "Hyderabad",
+            "is_principal_seat": false
+          },
+          {
             "city": "Karachi",
             "is_principal_seat": true
+          },
+          {
+            "city": "Larkana",
+            "is_principal_seat": false
+          },
+          {
+            "city": "Mirpur Khas",
+            "is_principal_seat": false
           },
           {
             "city": "Sukkur",
@@ -264,7 +286,7 @@
             "is_principal_seat": false
           },
           {
-            "city": "Fateh Pur Thakiala (Nakial)",
+            "city": "Fateh Pur Thakiala\u00a0(Nakial)",
             "is_principal_seat": false
           },
           {
@@ -320,7 +342,7 @@
             "is_principal_seat": false
           },
           {
-            "city": "Patehka (Nasirabad)",
+            "city": "Patehka\u00a0(Nasirabad)",
             "is_principal_seat": false
           },
           {
@@ -348,7 +370,7 @@
             "is_principal_seat": false
           },
           {
-            "city": "garhi dopatta (Garhi Dopatta)",
+            "city": "garhi dopatta\u00a0(Garhi Dopatta)",
             "is_principal_seat": false
           }
         ],
@@ -814,7 +836,7 @@
             "is_principal_seat": false
           },
           {
-            "city": "Sonmiani (Winder)",
+            "city": "Sonmiani\u00a0(Winder)",
             "is_principal_seat": false
           },
           {
@@ -1034,7 +1056,7 @@
             "is_principal_seat": false
           },
           {
-            "city": "Babuzai (Swat)",
+            "city": "Babuzai\u00a0(Swat)",
             "is_principal_seat": false
           },
           {
@@ -1054,7 +1076,7 @@
             "is_principal_seat": false
           },
           {
-            "city": "Batagram (Banna)",
+            "city": "Batagram\u00a0(Banna)",
             "is_principal_seat": false
           },
           {
@@ -1082,7 +1104,7 @@
             "is_principal_seat": false
           },
           {
-            "city": "Daggar (Buner)",
+            "city": "Daggar\u00a0(Buner)",
             "is_principal_seat": false
           },
           {
@@ -1262,7 +1284,7 @@
             "is_principal_seat": false
           },
           {
-            "city": "Samarbagh (Barwa)",
+            "city": "Samarbagh\u00a0(Barwa)",
             "is_principal_seat": false
           },
           {
@@ -1930,7 +1952,7 @@
             "is_principal_seat": false
           },
           {
-            "city": "Daulatpur (Qazi Ahmed)",
+            "city": "Daulatpur\u00a0(Qazi Ahmed)",
             "is_principal_seat": false
           },
           {
@@ -2074,7 +2096,7 @@
             "is_principal_seat": false
           },
           {
-            "city": "Khangarh (Khanpur)",
+            "city": "Khangarh\u00a0(Khanpur)",
             "is_principal_seat": false
           },
           {
@@ -2349,10 +2371,18 @@
             "city": "Warah",
             "is_principal_seat": false
           }
-        ],
+        ]
+      },
+      "District Court": {
         "Federal": [
           {
             "city": "Islamabad",
+            "is_principal_seat": false
+          }
+        ],
+        "Punjab": [
+          {
+            "city": "Sharaqpur Sharif",
             "is_principal_seat": false
           }
         ]
@@ -2967,11 +2997,39 @@
             "city": "Umerkot",
             "is_principal_seat": false
           }
+        ]
+      }
+    },
+    "Federal Constitutional Court": {
+      "Federal Constitutional Court of Pakistan": {
+        "Punjab": [
+          {
+            "city": "Lahore",
+            "is_principal_seat": false
+          }
+        ],
+        "Sindh": [
+          {
+            "city": "Karachi",
+            "is_principal_seat": false
+          }
+        ],
+        "KPK": [
+          {
+            "city": "Peshawar",
+            "is_principal_seat": false
+          }
+        ],
+        "Balochistan": [
+          {
+            "city": "Quetta",
+            "is_principal_seat": false
+          }
         ],
         "Federal": [
           {
             "city": "Islamabad",
-            "is_principal_seat": false
+            "is_principal_seat": true
           }
         ]
       }
@@ -3283,7 +3341,7 @@
       "court_type": "Lower Court",
       "court_name": "Lower Court",
       "province_region": "AJK",
-      "city": "Fateh Pur Thakiala (Nakial)",
+      "city": "Fateh Pur Thakiala\u00a0(Nakial)",
       "is_principal_seat": false
     },
     {
@@ -3381,7 +3439,7 @@
       "court_type": "Lower Court",
       "court_name": "Lower Court",
       "province_region": "AJK",
-      "city": "Patehka (Nasirabad)",
+      "city": "Patehka\u00a0(Nasirabad)",
       "is_principal_seat": false
     },
     {
@@ -3430,7 +3488,7 @@
       "court_type": "Lower Court",
       "court_name": "Lower Court",
       "province_region": "AJK",
-      "city": "garhi dopatta (Garhi Dopatta)",
+      "city": "garhi dopatta\u00a0(Garhi Dopatta)",
       "is_principal_seat": false
     },
     {
@@ -4242,7 +4300,7 @@
       "court_type": "Lower Court",
       "court_name": "Lower Court",
       "province_region": "Balochistan",
-      "city": "Sonmiani (Winder)",
+      "city": "Sonmiani\u00a0(Winder)",
       "is_principal_seat": false
     },
     {
@@ -4620,7 +4678,7 @@
       "court_type": "Lower Court",
       "court_name": "Lower Court",
       "province_region": "KPK",
-      "city": "Babuzai (Swat)",
+      "city": "Babuzai\u00a0(Swat)",
       "is_principal_seat": false
     },
     {
@@ -4655,7 +4713,7 @@
       "court_type": "Lower Court",
       "court_name": "Lower Court",
       "province_region": "KPK",
-      "city": "Batagram (Banna)",
+      "city": "Batagram\u00a0(Banna)",
       "is_principal_seat": false
     },
     {
@@ -4704,7 +4762,7 @@
       "court_type": "Lower Court",
       "court_name": "Lower Court",
       "province_region": "KPK",
-      "city": "Daggar (Buner)",
+      "city": "Daggar\u00a0(Buner)",
       "is_principal_seat": false
     },
     {
@@ -5019,7 +5077,7 @@
       "court_type": "Lower Court",
       "court_name": "Lower Court",
       "province_region": "KPK",
-      "city": "Samarbagh (Barwa)",
+      "city": "Samarbagh\u00a0(Barwa)",
       "is_principal_seat": false
     },
     {
@@ -6181,7 +6239,7 @@
       "court_type": "Lower Court",
       "court_name": "Lower Court",
       "province_region": "Sindh",
-      "city": "Daulatpur (Qazi Ahmed)",
+      "city": "Daulatpur\u00a0(Qazi Ahmed)",
       "is_principal_seat": false
     },
     {
@@ -6433,7 +6491,7 @@
       "court_type": "Lower Court",
       "court_name": "Lower Court",
       "province_region": "Sindh",
-      "city": "Khangarh (Khanpur)",
+      "city": "Khangarh\u00a0(Khanpur)",
       "is_principal_seat": false
     },
     {
@@ -7953,6 +8011,111 @@
       "court_name": "Special Court",
       "province_region": "Sindh",
       "city": "Umerkot",
+      "is_principal_seat": false
+    },
+    {
+      "court_type": "High Court",
+      "court_name": "Peshawar High Court",
+      "province_region": "KPK",
+      "city": "Bannu",
+      "is_principal_seat": false
+    },
+    {
+      "court_type": "High Court",
+      "court_name": "Gilgit-Baltistan Chief Court",
+      "province_region": "Gilgit-Baltistan",
+      "city": "Chilas",
+      "is_principal_seat": false
+    },
+    {
+      "court_type": "High Court",
+      "court_name": "Sindh High Court",
+      "province_region": "Sindh",
+      "city": "Hyderabad",
+      "is_principal_seat": false
+    },
+    {
+      "court_type": "High Court",
+      "court_name": "Balochistan High Court",
+      "province_region": "Balochistan",
+      "city": "Khuzdar",
+      "is_principal_seat": false
+    },
+    {
+      "court_type": "High Court",
+      "court_name": "AJK High Court",
+      "province_region": "AJK",
+      "city": "Kotli",
+      "is_principal_seat": false
+    },
+    {
+      "court_type": "High Court",
+      "court_name": "Sindh High Court",
+      "province_region": "Sindh",
+      "city": "Larkana",
+      "is_principal_seat": false
+    },
+    {
+      "court_type": "High Court",
+      "court_name": "Balochistan High Court",
+      "province_region": "Balochistan",
+      "city": "Loralai",
+      "is_principal_seat": false
+    },
+    {
+      "court_type": "High Court",
+      "court_name": "Sindh High Court",
+      "province_region": "Sindh",
+      "city": "Mirpur Khas",
+      "is_principal_seat": false
+    },
+    {
+      "court_type": "Federal Constitutional Court",
+      "court_name": "Federal Constitutional Court of Pakistan",
+      "province_region": "Punjab",
+      "city": "Lahore",
+      "is_principal_seat": false
+    },
+    {
+      "court_type": "Federal Constitutional Court",
+      "court_name": "Federal Constitutional Court of Pakistan",
+      "province_region": "Sindh",
+      "city": "Karachi",
+      "is_principal_seat": false
+    },
+    {
+      "court_type": "Federal Constitutional Court",
+      "court_name": "Federal Constitutional Court of Pakistan",
+      "province_region": "KPK",
+      "city": "Peshawar",
+      "is_principal_seat": false
+    },
+    {
+      "court_type": "Federal Constitutional Court",
+      "court_name": "Federal Constitutional Court of Pakistan",
+      "province_region": "Balochistan",
+      "city": "Quetta",
+      "is_principal_seat": false
+    },
+    {
+      "court_type": "Federal Constitutional Court",
+      "court_name": "Federal Constitutional Court of Pakistan",
+      "province_region": "Federal",
+      "city": "Islamabad",
+      "is_principal_seat": true
+    },
+    {
+      "court_type": "Lower Court",
+      "court_name": "District Court",
+      "province_region": "Federal",
+      "city": "Islamabad",
+      "is_principal_seat": false
+    },
+    {
+      "court_type": "Lower Court",
+      "court_name": "District Court",
+      "province_region": "Punjab",
+      "city": "Sharaqpur Sharif",
       "is_principal_seat": false
     }
   ]
