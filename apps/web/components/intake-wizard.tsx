@@ -817,7 +817,7 @@ export function IntakeWizard({
     const match = availableServices.find((s) => s.id === selectedFlow.defaultServiceId);
     if (!match) return;
     applySelectedServiceRef.current?.(match.id, match.name, match.caseTypes ?? []);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [selectedFlow?.key, selectedFlow?.defaultServiceId, availableServices, draft.serviceId]);
 
   // Ref-indirection to applySelectedService so the auto-pick effect above
@@ -988,9 +988,19 @@ export function IntakeWizard({
     return '';
   };
 
-  const handleFieldBlur = (key: string) => {
+  // The optional `newValue` argument is critical for click-style fields
+  // (radio, checkbox tile, search-method tabs). React state updates are async,
+  // so the click handler calls `onChange(...)` then `onBlur(key, newValue)`
+  // in the same tick — at that point `draft.payload[key]` still holds the
+  // PREVIOUS value. Without `newValue` the validator would see the stale
+  // value and flag a "Required" error the user perceives as a missed click,
+  // forcing a second click to clear it (PDF #22). Text inputs call
+  // `onBlur(key)` without an argument because their value is committed via
+  // onChange before blur fires, so reading from payload is correct.
+  const handleFieldBlur = (key: string, newValue?: string) => {
     setTouched((t) => ({ ...t, [key]: true }));
-    const err = validateField(key, draft.payload[key] ?? '');
+    const valueToValidate = newValue !== undefined ? newValue : draft.payload[key] ?? '';
+    const err = validateField(key, valueToValidate);
     setErrors((e) => ({ ...e, [key]: err }));
   };
 
