@@ -99,6 +99,24 @@ export class GeoService {
       });
       groups.set(seat.court.type, group);
     }
+
+    // Lower Court sub-courts have a canonical priority order (Sessions, Civil,
+    // Magisterial, Family) declared in court-expansion.ts. The database query
+    // returns them alphabetically; re-order them here to match the canonical
+    // sequence so the wizard preserves that priority order.
+    const lowerCourtGroup = groups.get('Lower Court');
+    if (lowerCourtGroup) {
+      const orderIndex = new Map(
+        LOWER_COURT_SUBCOURTS.map((sc, idx) => [sc.name, idx]),
+      );
+      lowerCourtGroup.courts.sort((a, b) => {
+        const ra = orderIndex.get(a.name) ?? Number.MAX_SAFE_INTEGER;
+        const rb = orderIndex.get(b.name) ?? Number.MAX_SAFE_INTEGER;
+        if (ra !== rb) return ra - rb;
+        return a.name.localeCompare(b.name);
+      });
+    }
+
     return Array.from(groups.values());
   }
 

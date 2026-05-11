@@ -310,7 +310,8 @@ const DEFAULT_SERVICE_CATALOG = [
     category: 'Judicial',
     courtLevel: 'Lower Court',
     description: 'Judicial service for lower court matters.',
-    courts: ['Sessions Court', 'Magisterial Court', 'Civil Court', 'Family Court'],
+    courts: ['Sessions Court', 'Civil Court', 'Magisterial Court', 'Family Court'],
+    deliveryTimeHours: 48,
   },
   {
     id: 'svc_judicial_special_court',
