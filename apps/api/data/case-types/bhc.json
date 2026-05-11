@@ -1,0 +1,562 @@
+[
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "BHC",
+    "code": "Admt Appeal",
+    "label": "Admt Appeal",
+    "source": "portal.bhc.gov.pk",
+    "priority": 1000
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "BHC",
+    "code": "Admt Suit",
+    "label": "Admt Suit",
+    "source": "portal.bhc.gov.pk",
+    "priority": 999
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "BHC",
+    "code": "Arb Pet",
+    "label": "Arb Pet",
+    "source": "portal.bhc.gov.pk",
+    "priority": 998
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "BHC",
+    "code": "Bail",
+    "label": "Bail",
+    "source": "portal.bhc.gov.pk",
+    "priority": 997
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "BHC",
+    "code": "Bail After Arrest",
+    "label": "Bail After Arrest",
+    "source": "portal.bhc.gov.pk",
+    "priority": 996
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "BHC",
+    "code": "Bail Before Arrest",
+    "label": "Bail Before Arrest",
+    "source": "portal.bhc.gov.pk",
+    "priority": 995
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "BHC",
+    "code": "Bail Canc",
+    "label": "Bail Canc",
+    "source": "portal.bhc.gov.pk",
+    "priority": 994
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "BHC",
+    "code": "Civil Misc Application",
+    "label": "Civil Misc Application",
+    "source": "portal.bhc.gov.pk",
+    "priority": 993
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "BHC",
+    "code": "CM Appeal",
+    "label": "CM Appeal",
+    "source": "portal.bhc.gov.pk",
+    "priority": 992
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "BHC",
+    "code": "CM Ind",
+    "label": "CM Ind",
+    "source": "portal.bhc.gov.pk",
+    "priority": 991
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "BHC",
+    "code": "CM Ref",
+    "label": "CM Ref",
+    "source": "portal.bhc.gov.pk",
+    "priority": 990
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "BHC",
+    "code": "CMA",
+    "label": "CMA",
+    "source": "portal.bhc.gov.pk",
+    "priority": 989
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "BHC",
+    "code": "Comm Ap",
+    "label": "Comm Ap",
+    "source": "portal.bhc.gov.pk",
+    "priority": 988
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "BHC",
+    "code": "Companies",
+    "label": "Companies",
+    "source": "portal.bhc.gov.pk",
+    "priority": 987
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "BHC",
+    "code": "Concurrent",
+    "label": "Concurrent",
+    "source": "portal.bhc.gov.pk",
+    "priority": 986
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "BHC",
+    "code": "Contempt Appl",
+    "label": "Contempt Appl",
+    "source": "portal.bhc.gov.pk",
+    "priority": 985
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "BHC",
+    "code": "COP",
+    "label": "COP",
+    "source": "portal.bhc.gov.pk",
+    "priority": 984
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "BHC",
+    "code": "CP",
+    "label": "CP",
+    "source": "portal.bhc.gov.pk",
+    "priority": 983
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "BHC",
+    "code": "CP Contempt Appl",
+    "label": "CP Contempt Appl",
+    "source": "portal.bhc.gov.pk",
+    "priority": 982
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "BHC",
+    "code": "CP RA",
+    "label": "CP RA",
+    "source": "portal.bhc.gov.pk",
+    "priority": 981
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "BHC",
+    "code": "CR",
+    "label": "CR",
+    "source": "portal.bhc.gov.pk",
+    "priority": 980
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "BHC",
+    "code": "Crl Appeal",
+    "label": "Crl Appeal",
+    "source": "portal.bhc.gov.pk",
+    "priority": 979
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "BHC",
+    "code": "Crl Contempt Appl",
+    "label": "Crl Contempt Appl",
+    "source": "portal.bhc.gov.pk",
+    "priority": 978
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "BHC",
+    "code": "Crl Misc",
+    "label": "Crl Misc",
+    "source": "portal.bhc.gov.pk",
+    "priority": 977
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "BHC",
+    "code": "Crl Misc Jail",
+    "label": "Crl Misc Jail",
+    "source": "portal.bhc.gov.pk",
+    "priority": 976
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "BHC",
+    "code": "Crl RA",
+    "label": "Crl RA",
+    "source": "portal.bhc.gov.pk",
+    "priority": 975
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "BHC",
+    "code": "Crl Rev",
+    "label": "Crl Rev",
+    "source": "portal.bhc.gov.pk",
+    "priority": 974
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "BHC",
+    "code": "Crl TA",
+    "label": "Crl TA",
+    "source": "portal.bhc.gov.pk",
+    "priority": 973
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "BHC",
+    "code": "CS",
+    "label": "CS",
+    "source": "portal.bhc.gov.pk",
+    "priority": 972
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "BHC",
+    "code": "Cust Ref",
+    "label": "Cust Ref",
+    "source": "portal.bhc.gov.pk",
+    "priority": 971
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "BHC",
+    "code": "Custom Act",
+    "label": "Custom Act",
+    "source": "portal.bhc.gov.pk",
+    "priority": 970
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "BHC",
+    "code": "Custom Ap",
+    "label": "Custom Ap",
+    "source": "portal.bhc.gov.pk",
+    "priority": 969
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "BHC",
+    "code": "Customs",
+    "label": "Customs",
+    "source": "portal.bhc.gov.pk",
+    "priority": 968
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "BHC",
+    "code": "EA",
+    "label": "EA",
+    "source": "portal.bhc.gov.pk",
+    "priority": 967
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "BHC",
+    "code": "EFA",
+    "label": "EFA",
+    "source": "portal.bhc.gov.pk",
+    "priority": 966
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "BHC",
+    "code": "Ehtesab Acquittal Appeal",
+    "label": "Ehtesab Acquittal Appeal",
+    "source": "portal.bhc.gov.pk",
+    "priority": 965
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "BHC",
+    "code": "Ehtesab Appeal",
+    "label": "Ehtesab Appeal",
+    "source": "portal.bhc.gov.pk",
+    "priority": 964
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "BHC",
+    "code": "Envt Appeal",
+    "label": "Envt Appeal",
+    "source": "portal.bhc.gov.pk",
+    "priority": 963
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "BHC",
+    "code": "EP",
+    "label": "EP",
+    "source": "portal.bhc.gov.pk",
+    "priority": 962
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "BHC",
+    "code": "ESA",
+    "label": "ESA",
+    "source": "portal.bhc.gov.pk",
+    "priority": 961
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "BHC",
+    "code": "Ex App",
+    "label": "Ex App",
+    "source": "portal.bhc.gov.pk",
+    "priority": 960
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "BHC",
+    "code": "Excise",
+    "label": "Excise",
+    "source": "portal.bhc.gov.pk",
+    "priority": 959
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "BHC",
+    "code": "FA",
+    "label": "FA",
+    "source": "portal.bhc.gov.pk",
+    "priority": 958
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "BHC",
+    "code": "FAO",
+    "label": "FAO",
+    "source": "portal.bhc.gov.pk",
+    "priority": 957
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "BHC",
+    "code": "FERA",
+    "label": "FERA",
+    "source": "portal.bhc.gov.pk",
+    "priority": 956
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "BHC",
+    "code": "Guardian Appeal",
+    "label": "Guardian Appeal",
+    "source": "portal.bhc.gov.pk",
+    "priority": 955
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "BHC",
+    "code": "HC Appeal",
+    "label": "HC Appeal",
+    "source": "portal.bhc.gov.pk",
+    "priority": 954
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "BHC",
+    "code": "HRP",
+    "label": "HRP",
+    "source": "portal.bhc.gov.pk",
+    "priority": 953
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "BHC",
+    "code": "ICA",
+    "label": "ICA",
+    "source": "portal.bhc.gov.pk",
+    "priority": 952
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "BHC",
+    "code": "Interim Bail",
+    "label": "Interim Bail",
+    "source": "portal.bhc.gov.pk",
+    "priority": 951
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "BHC",
+    "code": "ITA",
+    "label": "ITA",
+    "source": "portal.bhc.gov.pk",
+    "priority": 950
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "BHC",
+    "code": "ITR",
+    "label": "ITR",
+    "source": "portal.bhc.gov.pk",
+    "priority": 949
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "BHC",
+    "code": "Jail Appeal",
+    "label": "Jail Appeal",
+    "source": "portal.bhc.gov.pk",
+    "priority": 948
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "BHC",
+    "code": "LA",
+    "label": "LA",
+    "source": "portal.bhc.gov.pk",
+    "priority": 947
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "BHC",
+    "code": "MR",
+    "label": "MR",
+    "source": "portal.bhc.gov.pk",
+    "priority": 946
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "BHC",
+    "code": "Pre Arrest Bail",
+    "label": "Pre Arrest Bail",
+    "source": "portal.bhc.gov.pk",
+    "priority": 945
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "BHC",
+    "code": "Quashment",
+    "label": "Quashment",
+    "source": "portal.bhc.gov.pk",
+    "priority": 944
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "BHC",
+    "code": "Review Ap",
+    "label": "Review Ap",
+    "source": "portal.bhc.gov.pk",
+    "priority": 943
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "BHC",
+    "code": "Review Pet",
+    "label": "Review Pet",
+    "source": "portal.bhc.gov.pk",
+    "priority": 942
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "BHC",
+    "code": "RFA",
+    "label": "RFA",
+    "source": "portal.bhc.gov.pk",
+    "priority": 941
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "BHC",
+    "code": "RSA",
+    "label": "RSA",
+    "source": "portal.bhc.gov.pk",
+    "priority": 940
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "BHC",
+    "code": "SJA (DJO)",
+    "label": "SJA (DJO)",
+    "source": "portal.bhc.gov.pk",
+    "priority": 939
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "BHC",
+    "code": "SJA (DJS)",
+    "label": "SJA (DJS)",
+    "source": "portal.bhc.gov.pk",
+    "priority": 938
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "BHC",
+    "code": "SJA (HE)",
+    "label": "SJA (HE)",
+    "source": "portal.bhc.gov.pk",
+    "priority": 937
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "BHC",
+    "code": "STA",
+    "label": "STA",
+    "source": "portal.bhc.gov.pk",
+    "priority": 936
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "BHC",
+    "code": "STR",
+    "label": "STR",
+    "source": "portal.bhc.gov.pk",
+    "priority": 935
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "BHC",
+    "code": "Succession Appeal",
+    "label": "Succession Appeal",
+    "source": "portal.bhc.gov.pk",
+    "priority": 934
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "BHC",
+    "code": "T Ap",
+    "label": "T Ap",
+    "source": "portal.bhc.gov.pk",
+    "priority": 933
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "BHC",
+    "code": "TA",
+    "label": "TA",
+    "source": "portal.bhc.gov.pk",
+    "priority": 932
+  },
+  {
+    "courtLevel": "High Court",
+    "highCourtCode": "BHC",
+    "code": "WTA",
+    "label": "WTA",
+    "source": "portal.bhc.gov.pk",
+    "priority": 931
+  }
+]

@@ -24,7 +24,16 @@ type ScrapedRow = {
 
 const DATA_DIR = join(__dirname, '..', 'data', 'case-types');
 
-const SOURCES = ['scp.json', 'fcc.json', 'ihc.json', 'shc.json', 'dsj-lahore.json'];
+const SOURCES = [
+  'scp.json',
+  'fcc.json',
+  'ihc.json',
+  'shc.json',
+  'dsj-lahore.json',
+  'lhc.json',
+  'phc.json',
+  'bhc.json',
+];
 
 function loadJsonOrEmpty(filename: string): ScrapedRow[] {
   const path = join(DATA_DIR, filename);
