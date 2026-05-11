@@ -146,21 +146,14 @@ Items from the `Wusuq Edits 5-10-26.pdf` feedback that are intentionally deferre
 ### Onboarding
 - **PDF #2** — Pending tickets: add "Future tickets" button + prompt consumer for next hearing date. No UI surface today.
 - **PDF #3** — Phone country/region selector instead of hardcoded `+92`. Paired with the deferred OTP/SMS provider.
-- **PDF #4** — Force profile-complete after signup; capture user type (Lawyer / Non-Lawyer / Corporate). Affects dashboard variants downstream.
 - **PDF #7** — Post-ticket-completion notification + "order another service for same city/court" prompt.
-
-### Geo
-- **PDF #8** — Special Court availability per-city audit (cross-reference `apps/api/src/geo/pakistan-courts.json` against the `Pakistan Court Wise` sheet in `apps/api/data/pricing-sheet.xlsx`).
 
 ### Case Files / Case Information
 - **PDF #11** — Helper-text copy under every wizard field. `IntakeField.hint` infrastructure is shipped; awaiting copy strings from the product owner.
 - **PDF #22** — "Pending Case requires two clicks" bug. Not reproducible in current code — recheck with reporter or fold into a wider field-renderer audit.
 
-### Case Filing
-- **PDF #15 + #16 (clerk side)** — Surface the captured bench shape (`payload.bench`) in the staff ticket detail panel; currently only the derived `judge_name` string is displayed.
-
-### Catalogue scraping — out of M2.1 v1 scope
-- LHC, PHC, BHC scrapers (Lahore / Peshawar / Balochistan High Courts) — fall back to `hardcoded_fallback` in `CourtCaseType` for now.
+### Catalogue scraping — still uncovered
+- **LHC scraper** — `scrape-lhc.ts` exists with a documented probe trail in its header but the Lahore High Court doesn't publish a public case-type catalogue today (every plausible portal returns 404/500/blocked). Falls back to `hardcoded_fallback` in `CourtCaseType`. Update the `URL` constant if LHC ever publishes a search form.
 - Non-Punjab Lower Court scrapers (Sindh, KPK, Balochistan district-court portals).
 - Special Court scraping.
 - Federal Shariat Court scraping.
