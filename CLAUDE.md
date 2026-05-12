@@ -144,12 +144,7 @@ Default super admin created by `pnpm prisma:seed`:
 Items from the `Wusuq Edits 5-10-26.pdf` feedback that are intentionally deferred. Pick these up in future batches.
 
 ### Onboarding
-- **PDF #2** — Pending tickets: add "Future tickets" button + prompt consumer for next hearing date. No UI surface today.
 - **PDF #3** — Phone country/region selector instead of hardcoded `+92`. Paired with the deferred OTP/SMS provider.
-- **PDF #7** — Post-ticket-completion notification + "order another service for same city/court" prompt.
-
-### Case Files / Case Information
-- **PDF #11** — Helper-text copy under every wizard field. `IntakeField.hint` infrastructure is shipped; awaiting copy strings from the product owner.
 
 ### Catalogue scraping — still uncovered
 - **LHC scraper** — `scrape-lhc.ts` exists with a documented probe trail in its header but the Lahore High Court doesn't publish a public case-type catalogue today (every plausible portal returns 404/500/blocked). Falls back to `hardcoded_fallback` in `CourtCaseType`. Update the `URL` constant if LHC ever publishes a search form.
