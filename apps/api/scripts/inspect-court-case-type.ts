@@ -1,0 +1,28 @@
+import { PrismaClient } from '@prisma/client';
+const p = new PrismaClient();
+(async () => {
+  const total = await p.courtCaseType.count();
+  const byTier = await p.courtCaseType.groupBy({ by: ['courtLevel'], _count: { _all: true } });
+  const bySource = await p.courtCaseType.groupBy({ by: ['source'], _count: { _all: true } });
+  const byHC = await p.courtCaseType.groupBy({ by: ['highCourtCode'], where: { courtLevel: 'High Court' }, _count: { _all: true } });
+  const byDistrict = await p.courtCaseType.groupBy({ by: ['district'], where: { courtLevel: 'Lower Court', district: { not: null } }, _count: { _all: true } });
+  const sampleSCP = await p.courtCaseType.findMany({ where: { courtLevel: 'Supreme Court' }, orderBy: [{ priority: 'desc' }, { label: 'asc' }], select: { code: true, label: true, source: true, priority: true }, take: 8 });
+  const sampleLahoreLC = await p.courtCaseType.findMany({ where: { courtLevel: 'Lower Court', district: 'Lahore' }, orderBy: [{ priority: 'desc' }, { label: 'asc' }], select: { code: true, label: true, source: true, priority: true }, take: 8 });
+  const sampleIHC = await p.courtCaseType.findMany({ where: { courtLevel: 'High Court', highCourtCode: 'IHC' }, orderBy: [{ priority: 'desc' }, { label: 'asc' }], select: { code: true, label: true, source: true, priority: true }, take: 8 });
+  console.log('Total rows:', total);
+  console.log('\nBy courtLevel:');
+  byTier.forEach((r: { courtLevel: string; _count: { _all: number } }) => console.log(`  ${r.courtLevel.padEnd(35)} ${r._count._all}`));
+  console.log('\nBy source:');
+  bySource.forEach((r: { source: string; _count: { _all: number } }) => console.log(`  ${r.source.padEnd(28)} ${r._count._all}`));
+  console.log('\nHigh Court breakdown by highCourtCode:');
+  byHC.forEach((r: { highCourtCode: string | null; _count: { _all: number } }) => console.log(`  ${(r.highCourtCode ?? '(null)').padEnd(8)} ${r._count._all}`));
+  console.log('\nLower Court distinct districts:', byDistrict.length, ' — top 5 by row count:');
+  byDistrict.sort((a: { _count: { _all: number } }, b: { _count: { _all: number } }) => b._count._all - a._count._all).slice(0, 5).forEach((r: { district: string | null; _count: { _all: number } }) => console.log(`  ${(r.district ?? '').padEnd(20)} ${r._count._all}`));
+  console.log('\nSample — Supreme Court (priority desc):');
+  sampleSCP.forEach((r: { priority: number; code: string; label: string; source: string }) => console.log(`  pri=${String(r.priority).padStart(4)}  ${r.code.padEnd(15)}  ${r.label.padEnd(35)}  [${r.source}]`));
+  console.log('\nSample — Lower Court / Lahore (priority desc):');
+  sampleLahoreLC.forEach((r: { priority: number; code: string; label: string; source: string }) => console.log(`  pri=${String(r.priority).padStart(4)}  ${r.code.slice(0,30).padEnd(30)}  ${r.label.slice(0,30).padEnd(30)}  [${r.source}]`));
+  console.log('\nSample — High Court / IHC (priority desc):');
+  sampleIHC.forEach((r: { priority: number; code: string; label: string; source: string }) => console.log(`  pri=${String(r.priority).padStart(4)}  ${r.code.padEnd(20)}  ${r.label.slice(0,40).padEnd(40)}  [${r.source}]`));
+  await p.$disconnect();
+})();
