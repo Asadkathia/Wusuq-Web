@@ -458,6 +458,7 @@ const REQUIRED_DOCS_CASE_FILES: IntakeField = {
     'doc_only_last_order',
     'doc_only_complete_order_sheet',
   ],
+  hint: "Pick the document bundle you want. 'Petition + Last Order' covers most appeals; higher-court flows use Paperbook instead.",
 };
 
 // Set type picker plus conditional quantity fields. Reused across flows that
@@ -469,6 +470,7 @@ const SET_TYPE_WITH_QUANTITIES: IntakeField[] = [
     type: 'radio',
     required: true,
     options: ['attested', 'non_attested', 'both'],
+    hint: 'Attested copies are sealed by the court. Non-Attested are plain photocopies. Both gives you one of each.',
   },
   {
     key: 'attested_qty',
@@ -516,6 +518,7 @@ const REQUIRED_DOCS_CASE_INFO: IntakeField = {
     'doc_only_last_order',
     'doc_only_complete_order_sheet',
   ],
+  hint: "Pick the document bundle you want. 'Petition + Last Order' covers most appeals; higher-court flows use Paperbook instead.",
 };
 
 // ─────────────────────────────────────────────
@@ -547,6 +550,7 @@ const caseFilesSteps: IntakeStep[] = [
         // PDF #23-#27 literal matrix (case-files step 2).
         // Special Court (#25) is the only tier that flags case_type as required.
         requiredByCourtTier: { lower: false, high: false, special: true, shariat: false, supreme: false, fcc: false },
+        hint: "Pick the case category as printed on the petition or order sheet. Choose 'Other' if your category isn't listed.",
       },
       {
         key: 'case_type_other',
@@ -555,6 +559,7 @@ const caseFilesSteps: IntakeStep[] = [
         required: false,
         placeholder: 'Type the case type as it appears on your record',
         showWhen: { field: 'case_type', value: 'Other' },
+        hint: 'Type the case category exactly as it appears on your court record.',
       },
       {
         key: 'case_no',
@@ -573,6 +578,7 @@ const caseFilesSteps: IntakeStep[] = [
         required: true,
         // PDF #23-#27: year is required only for Special Court (#25).
         requiredByCourtTier: { lower: false, high: false, special: true, shariat: false, supreme: false, fcc: false },
+        hint: 'Year the case was filed (per the order sheet or petition heading).',
       },
       {
         key: 'case_title',
@@ -604,20 +610,33 @@ const caseFilesSteps: IntakeStep[] = [
         // PDF #23-#27: judge_designation required for Special / Shariat /
         // Supreme / FCC; optional for Lower (#23) and High (#24).
         requiredByCourtTier: { lower: false, high: false, special: true, shariat: true, supreme: true, fcc: true },
+        hint: 'Title of the presiding judge — match the most recent order sheet.',
       },
       {
         key: 'case_date_status',
         label: 'Case Date Status',
         type: 'radio',
         options: ['Known', 'Unknown'],
+        hint: "Pick 'Unknown' if you can't find the date on your papers — we'll do our best with what we have.",
       },
-      { key: 'case_date', label: 'Previous Case Date', type: 'date' },
-      { key: 'future_date', label: 'Future Date', type: 'date' },
+      {
+        key: 'case_date',
+        label: 'Previous Case Date',
+        type: 'date',
+        hint: 'Date of the last hearing or order on this case.',
+      },
+      {
+        key: 'future_date',
+        label: 'Future Date',
+        type: 'date',
+        hint: "Date of the upcoming hearing. We'll have the documents ready before then.",
+      },
       {
         key: 'decided_date',
         label: 'Decided Date',
         type: 'date',
         showWhen: { field: 'case_status', value: 'Decided Case' },
+        hint: 'Date the case was decided, per the final court order.',
       },
     ],
   },
@@ -691,6 +710,7 @@ const caseInformationSteps: IntakeStep[] = [
         // aren't separately annotated; mirror the Case-Files Special-Court
         // rule (PDF #25) so Special keeps it required, others optional.
         requiredByCourtTier: { lower: false, high: false, special: true, shariat: false, supreme: false, fcc: false },
+        hint: "Pick the case category as printed on the petition or order sheet. Choose 'Other' if your category isn't listed.",
       },
       {
         key: 'case_type_other',
@@ -699,6 +719,7 @@ const caseInformationSteps: IntakeStep[] = [
         required: false,
         placeholder: 'Type the case type as it appears on your record',
         showWhen: { field: 'case_type', value: 'Other' },
+        hint: 'Type the case category exactly as it appears on your court record.',
       },
       {
         key: 'case_no',
@@ -717,6 +738,7 @@ const caseInformationSteps: IntakeStep[] = [
         // PDF #34 marks year optional for Lower Case Info. Mirror Case-Files
         // Special-Court (#25) so Special keeps it required.
         requiredByCourtTier: { lower: false, high: false, special: true, shariat: false, supreme: false, fcc: false },
+        hint: 'Year the case was filed (per the order sheet or petition heading).',
       },
       {
         key: 'case_title',
@@ -747,8 +769,14 @@ const caseInformationSteps: IntakeStep[] = [
         // matrix as Case-Files (#23-#27): Lower + High optional, the rest
         // required.
         requiredByCourtTier: { lower: true, high: false, special: true, shariat: true, supreme: true, fcc: true },
+        hint: 'Title of the presiding judge — match the most recent order sheet.',
       },
-      { key: 'case_date', label: 'Case Date', type: 'date' },
+      {
+        key: 'case_date',
+        label: 'Case Date',
+        type: 'date',
+        hint: 'Date of the last hearing or order on this case.',
+      },
     ],
   },
   {
@@ -821,6 +849,7 @@ const caseSearchSteps: IntakeStep[] = [
         label: 'Subject full name',
         type: 'text',
         showWhen: { field: 'search_method', valueIn: ['cnic', 'both'] },
+        hint: 'Full name as it appears on the CNIC.',
       },
       // Case Details tab fields — visible for 'details' and 'both'. All
       // optional (PDF #37: "Remove all * required asterisks").
@@ -837,6 +866,7 @@ const caseSearchSteps: IntakeStep[] = [
         type: 'select',
         options: [],
         showWhen: { field: 'search_method', valueIn: ['details', 'both'] },
+        hint: "Pick the case category as printed on the petition or order sheet. Choose 'Other' if your category isn't listed.",
       },
       {
         key: 'case_type_other',
@@ -845,6 +875,7 @@ const caseSearchSteps: IntakeStep[] = [
         required: false,
         placeholder: 'Type the case type as it appears on your record',
         showWhen: { field: 'case_type', value: 'Other' },
+        hint: 'Type the case category exactly as it appears on your court record.',
       },
       {
         key: 'case_no',
@@ -857,6 +888,7 @@ const caseSearchSteps: IntakeStep[] = [
         label: 'Year',
         type: 'year_select',
         showWhen: { field: 'search_method', valueIn: ['details', 'both'] },
+        hint: 'Year the case was filed (per the order sheet or petition heading).',
       },
       {
         key: 'case_title',
@@ -876,12 +908,14 @@ const caseSearchSteps: IntakeStep[] = [
         type: 'select',
         options: [],
         showWhen: { field: 'search_method', valueIn: ['details', 'both'] },
+        hint: 'Title of the presiding judge — match the most recent order sheet.',
       },
       {
         key: 'decided_date',
         label: 'Decided Date',
         type: 'date',
         showWhen: { field: 'case_status', value: 'Decided Case' },
+        hint: 'Date the case was decided, per the final court order.',
       },
     ],
   },
@@ -971,7 +1005,14 @@ const caseFilingSteps: IntakeStep[] = [
         required: true,
         options: ['Plaintiff/Petitioner', 'Defendant/Respondent'],
       },
-      { key: 'case_type', label: 'Case Type', type: 'select', required: true, options: [] },
+      {
+        key: 'case_type',
+        label: 'Case Type',
+        type: 'select',
+        required: true,
+        options: [],
+        hint: "Pick the case category as printed on the petition or order sheet. Choose 'Other' if your category isn't listed.",
+      },
       {
         key: 'case_type_other',
         label: 'Specify case type',
@@ -979,6 +1020,7 @@ const caseFilingSteps: IntakeStep[] = [
         required: false,
         placeholder: 'Type the case type as it appears on your record',
         showWhen: { field: 'case_type', value: 'Other' },
+        hint: 'Type the case category exactly as it appears on your court record.',
       },
       {
         key: 'case_no',
@@ -986,7 +1028,13 @@ const caseFilingSteps: IntakeStep[] = [
         type: 'text',
         showWhen: { field: 'case_status', value: 'Pending Case' },
       },
-      { key: 'year', label: 'Year', type: 'year_select', required: true },
+      {
+        key: 'year',
+        label: 'Year',
+        type: 'year_select',
+        required: true,
+        hint: 'Year the case was filed (per the order sheet or petition heading).',
+      },
       { key: 'case_title', label: 'Case Title', type: 'text', required: true },
       {
         key: 'judge_name',
@@ -994,25 +1042,34 @@ const caseFilingSteps: IntakeStep[] = [
         type: 'text',
         showWhen: { field: 'case_status', value: 'Pending Case' },
       },
-      { key: 'judge_designation', label: 'Judge Designation', type: 'select', options: [] },
+      {
+        key: 'judge_designation',
+        label: 'Judge Designation',
+        type: 'select',
+        options: [],
+        hint: 'Title of the presiding judge — match the most recent order sheet.',
+      },
       {
         key: 'case_date_status',
         label: 'Case Date Status',
         type: 'radio',
         options: ['Known', 'Unknown'],
         showWhen: { field: 'case_status', value: 'Pending Case' },
+        hint: "Pick 'Unknown' if you can't find the date on your papers — we'll do our best with what we have.",
       },
       {
         key: 'case_date',
         label: 'Case Date',
         type: 'date',
         showWhen: { field: 'case_status', value: 'Pending Case' },
+        hint: 'Date of the last hearing or order on this case.',
       },
       {
         key: 'future_date',
         label: 'Future Date',
         type: 'date',
         showWhen: { field: 'case_status', value: 'Pending Case' },
+        hint: "Date of the upcoming hearing. We'll have the documents ready before then.",
       },
     ],
   },
@@ -1062,7 +1119,14 @@ const powerOfAttorneySteps: IntakeStep[] = [
         required: true,
         options: ['Plaintiff/Petitioner', 'Defendant/Respondent'],
       },
-      { key: 'case_type', label: 'Case Type', type: 'select', required: true, options: [] },
+      {
+        key: 'case_type',
+        label: 'Case Type',
+        type: 'select',
+        required: true,
+        options: [],
+        hint: "Pick the case category as printed on the petition or order sheet. Choose 'Other' if your category isn't listed.",
+      },
       {
         key: 'case_type_other',
         label: 'Specify case type',
@@ -1070,20 +1134,44 @@ const powerOfAttorneySteps: IntakeStep[] = [
         required: false,
         placeholder: 'Type the case type as it appears on your record',
         showWhen: { field: 'case_type', value: 'Other' },
+        hint: 'Type the case category exactly as it appears on your court record.',
       },
       { key: 'case_no', label: 'Case No', type: 'text', required: true },
-      { key: 'year', label: 'Year', type: 'year_select', required: true },
+      {
+        key: 'year',
+        label: 'Year',
+        type: 'year_select',
+        required: true,
+        hint: 'Year the case was filed (per the order sheet or petition heading).',
+      },
       { key: 'case_title', label: 'Case Title', type: 'text', required: true },
       { key: 'judge_name', label: 'Judge Name', type: 'text' },
-      { key: 'judge_designation', label: 'Judge Designation', type: 'select', options: [] },
+      {
+        key: 'judge_designation',
+        label: 'Judge Designation',
+        type: 'select',
+        options: [],
+        hint: 'Title of the presiding judge — match the most recent order sheet.',
+      },
       {
         key: 'case_date_status',
         label: 'Case Date Status',
         type: 'radio',
         options: ['Known', 'Unknown'],
+        hint: "Pick 'Unknown' if you can't find the date on your papers — we'll do our best with what we have.",
       },
-      { key: 'case_date', label: 'Case Date', type: 'date' },
-      { key: 'future_date', label: 'Future Date', type: 'date' },
+      {
+        key: 'case_date',
+        label: 'Case Date',
+        type: 'date',
+        hint: 'Date of the last hearing or order on this case.',
+      },
+      {
+        key: 'future_date',
+        label: 'Future Date',
+        type: 'date',
+        hint: "Date of the upcoming hearing. We'll have the documents ready before then.",
+      },
     ],
   },
   {
@@ -1120,10 +1208,21 @@ const copyOfFirSteps: IntakeStep[] = [
     title: 'Case Particulars',
     fields: [
       { key: 'fir_no', label: 'FIR No', type: 'text', required: true },
-      { key: 'year', label: 'Year', type: 'year_select', required: true },
+      {
+        key: 'year',
+        label: 'Year',
+        type: 'year_select',
+        required: true,
+        hint: 'Year the case was filed (per the order sheet or petition heading).',
+      },
       { key: 'offence', label: 'Offence', type: 'text', required: true },
       { key: 'case_title', label: 'Case Title', type: 'text', required: true },
-      { key: 'case_date', label: 'Case Date', type: 'date' },
+      {
+        key: 'case_date',
+        label: 'Case Date',
+        type: 'date',
+        hint: 'Date of the last hearing or order on this case.',
+      },
       {
         key: 'date_unknow',
         label: 'Date Unknown',
@@ -1179,9 +1278,20 @@ const registryDeedSteps: IntakeStep[] = [
     title: 'Case Particulars',
     fields: [
       { key: 'doc_no', label: 'Doc No.', type: 'text', required: true },
-      { key: 'year', label: 'Year', type: 'year_select', required: true },
+      {
+        key: 'year',
+        label: 'Year',
+        type: 'year_select',
+        required: true,
+        hint: 'Year the case was filed (per the order sheet or petition heading).',
+      },
       { key: 'case_title', label: 'Case Title', type: 'text', required: true },
-      { key: 'case_date', label: 'Case Date', type: 'date' },
+      {
+        key: 'case_date',
+        label: 'Case Date',
+        type: 'date',
+        hint: 'Date of the last hearing or order on this case.',
+      },
       {
         key: 'date_unknow',
         label: 'Date Unknown',
@@ -1255,6 +1365,7 @@ const criminalRecordSearchSteps: IntakeStep[] = [
         label: 'Subject full name',
         type: 'text',
         required: true,
+        hint: 'Full name as it appears on the CNIC.',
       },
       {
         key: 'requestor_relationship',
@@ -1262,6 +1373,7 @@ const criminalRecordSearchSteps: IntakeStep[] = [
         type: 'radio',
         required: true,
         options: ['Self', 'Family', 'Legal Representative', 'Other'],
+        hint: 'Your relationship to the subject — helps the police station validate the request.',
       },
       {
         key: 'purpose',
