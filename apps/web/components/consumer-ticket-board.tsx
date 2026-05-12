@@ -36,6 +36,7 @@ import {
 } from '@/components/ui/drawer';
 import { IconButton } from '@/components/ui/icon-button';
 import { useToast } from '@/components/ui/toast';
+import { FutureTicketsStrip } from './consumer-ticket-board/future-tickets-strip';
 
 type TicketStatus = 'PENDING' | 'ASSIGNED' | 'IN_PROGRESS' | 'WAITING_APPROVAL' | 'COMPLETED';
 
@@ -51,6 +52,8 @@ type TicketRow = {
   paymentStatus?: string | null;
   consumer: { id: string; name: string };
   service: { id: string; name: string; category: string; type: string };
+  payload?: Record<string, string> | null;
+  intakeFlow?: string | null;
 };
 
 function statusVariant(status: TicketStatus) {
@@ -241,9 +244,27 @@ function TicketList({
 
   return (
     <div className="grid gap-3 sm:grid-cols-2">
-      {tickets.map((t) => (
-        <TicketCard key={t.id} ticket={t} onOpen={() => onOpen(t.id)} />
-      ))}
+      {tickets.map((t) => {
+        const payload = (t as { payload?: Record<string, string> | null }).payload ?? {};
+        const futureDate = payload.future_date ?? '';
+        const showStrip =
+          t.status === 'COMPLETED' &&
+          payload.case_status === 'Pending Case' &&
+          futureDate !== '' &&
+          (t.intakeFlow === 'judicial_case_files' || t.intakeFlow === 'judicial_case_information');
+        return (
+          <div key={t.id}>
+            <TicketCard ticket={t} onOpen={() => onOpen(t.id)} />
+            {showStrip && (
+              <FutureTicketsStrip
+                ticketId={t.id}
+                flow={t.intakeFlow as 'judicial_case_files' | 'judicial_case_information'}
+                nextHearingDate={futureDate}
+              />
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -447,6 +468,27 @@ function ConsumerTicketDrawer({
                   {ticket.status === 'COMPLETED' && 'All done — you can download the final documents above.'}
                 </p>
               </section>
+
+              {ticket?.status === 'COMPLETED' ? (
+                <PanelCard className="mt-4 border border-brand-200 bg-gradient-to-br from-brand-50 to-violet-50">
+                  <div className="flex items-start gap-3">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-500 text-white">
+                      <ArrowRight className="h-4 w-4" />
+                    </span>
+                    <div className="flex-1">
+                      <h3 className="text-sm font-semibold text-slate-900">Need another service?</h3>
+                      <p className="mt-1 text-sm text-slate-600">
+                        Browse judicial and non-judicial services to start a new request.
+                      </p>
+                      <Link href="/consumer/paralegal-services" className="mt-3 inline-block">
+                        <Button variant="brand" size="sm" rightIcon={<ArrowRight className="h-4 w-4" />}>
+                          Order another service
+                        </Button>
+                      </Link>
+                    </div>
+                  </div>
+                </PanelCard>
+              ) : null}
             </div>
           )}
         </DrawerBody>

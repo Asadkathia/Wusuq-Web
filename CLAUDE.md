@@ -162,6 +162,17 @@ Items from the `Wusuq Edits 5-10-26.pdf` feedback that are intentionally deferre
 - Admin UI to edit `PricingRule` rows (today: re-run the xlsx-driven seed).
 - Migration of historical ticket `case_type` display strings to canonical codes (currently forward-only).
 
+### Consumer-friendly case-type dropdown (post-shipped catalogue)
+The `CourtCaseType` catalogue (3,493 rows across 8 sources) is shipped end-to-end but the wizard renders it as a flat dropdown ordered by scrape-emission order (`priority = 1000 − optionIndex`). With 36–87 options per cohort this is friction. Five layers of improvement, roughly ordered by effort:
+- **Layer 1 — type-ahead search + `Long form (CODE)` display.** Pure renderer change in a new `apps/web/components/intake-wizard/case-type-select.tsx`. Filter by case-insensitive substring against both `code` and `label`. Render `"Writ Petition (W.P.)"` when `code !== label`, else just `label`. No data work, no editorial.
+- **Garbage cleanup.** One-off `isActive=false` sweep for obvious scraper-produced garbage (e.g. IHC's `code: "Cr"`, blank labels, duplicate placeholders). Maintenance, no UX change.
+- **Layer 2 — curated "Most common" pinned subset.** New `pinned BOOLEAN` column on `CourtCaseType` + a seed file `apps/api/data/case-types/pinned.json` keyed `"courtLevel|highCourtCode|subCourt"` listing ~6 codes per cohort. Renderer shows a "─ Most common ─" section above the alphabetical full list. Editorial cost ≈ 75 entries (13 cohorts × ~6). Best done with a Pakistani litigator's input, otherwise commit a best-guess and iterate via PR.
+- **Layer 3 — category grouping** (Civil / Criminal / Constitutional / Tax / Family / Commercial / …). Adds a `category` column; bulk-assigning categories to ~3,500 rows is the editorial cost. Cleaner long-form scan, but Layer 2 likely covers 80% of the pain.
+- **Layer 4 — plain-language descriptions.** Per-row `description` column. On hover/expand the option reveals a one-sentence non-lawyer explanation ("Writ Petition (W.P.) — a petition asking the High Court to enforce a fundamental right …"). ~250 unique case types across cohorts; significant editorial work. Most valuable to PDF #4's Non-Lawyer / Corporate user types.
+- **Layer 5 — self-tuning by analytics.** `usage_count` increment on every wizard submit + a scheduled job that rewrites `priority` based on running counts. Most ergonomic long-term, but blocked on having an analytics hook. Eliminates the editorial cost of Layer 2 once enough traffic accumulates.
+
+Recommended near-term path: ship Layer 1 + garbage cleanup unconditionally; layer 2/3/4 are editorial-heavy and best deferred until either you have a curator or analytics tell us what to prioritise.
+
 ### Infrastructure
 - **OTP / SMS provider** integration (Twilio / Vonage / local SMSC selection).
 - Scraper scheduling — currently manual quarterly run; consider a low-priority cron when the catalogue stabilises.
@@ -169,3 +180,22 @@ Items from the `Wusuq Edits 5-10-26.pdf` feedback that are intentionally deferre
 ### Minor UI follow-ups
 - Live `apps/api/data/pricing-sheet.xlsx` reload on seed re-run (today: copy + re-run).
 - Per-flow "Case Filing" remote workflow scaffolding (PDF #42 / #43) is shipped at the wizard level; backend-side dispatch routing to the clerk's court office is still placeholder text in the UI.
+
+### Lint hygiene (CI-passing warnings, 2026-05-12)
+The Next 16 / React 19 dependency bump introduced stricter hooks rules and surfaced legacy warnings. CI is green (0 errors) but **15 warnings remain** that should be cleaned up opportunistically:
+- **Unused `_icon` destructure** in 4 paralegal-service `[flowKey]/page.tsx` files (consumer + portal × judicial + non-judicial). Icon is read from the flow definition but never rendered — decide whether to render it or drop the destructure.
+- **Unused imports / identifiers** — `SectionHeader` (case-detail), `Button` (consumer-cases-board), `useEffect` + `Check` (create-representative-form), `consumerLabel` (intake-wizard L229), `StatusPill` (pricing-rules-board).
+- **`react-hooks/exhaustive-deps`** missing deps:
+  - `case-drift-banner.tsx:46` — missing `reload`.
+  - `intake-wizard.tsx:576, 629` — missing `draft.payload` (intentional? verify before adding — autosave loops are easy to introduce here).
+  - `intake-wizard.tsx:952` — missing `saveDraft`.
+- **`jsx-a11y/role-has-required-aria-props`** — `ui/select.tsx:150` combobox is missing `aria-controls` (currently only sets `aria-expanded`); needs an id-linked listbox.
+
+### React 19 / Next 16 hook-rule conventions (enforced by lint)
+The `react-hooks/set-state-in-effect` rule (new in React 19) flags synchronous `setState(...)` directly inside `useEffect` bodies. **Don't disable it.** Established patterns in this codebase:
+- **Loading state before a fetch in an effect** → wrap the synchronous setState in `startTransition(...)` from `react`. The rule accepts updates inside callback functions.
+- **Reading `localStorage` on mount** → same: `useEffect(() => { const v = readStorage(); startTransition(() => setX(v)); }, [])`. Plain `setX(readStorage())` is still flagged.
+- **Auth-guard early-exit redirects** → don't call `setIsAuthorized(false)` before `router.replace(...)`; leave the state as its `null` initial value so the loading view renders during the redirect, then the component unmounts.
+- **Derived state mirroring props** → don't sync via `setState` in an effect; either derive on render or use a stable `key` to remount.
+
+When in doubt, the rule's heuristic is "setState that fires synchronously on every render of this effect is a bug." If the update is genuinely needed post-render (DOM measurement, post-mount sync), `startTransition` is the canonical escape hatch.

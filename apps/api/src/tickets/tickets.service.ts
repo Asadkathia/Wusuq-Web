@@ -250,6 +250,7 @@ export class TicketsService {
         serviceCity: ticket.serviceCity,
         caseType: ticket.caseType,
         intakeFlow: ticket.intakeFlow,
+        payload: ticket.formPayload as Record<string, string> | null,
         status: ticket.status,
         clerkApprovalStatus: ticket.clerkApprovalStatus,
         clerkReceiptUrl: ticket.clerkReceiptUrl,

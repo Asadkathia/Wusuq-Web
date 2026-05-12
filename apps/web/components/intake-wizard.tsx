@@ -2,7 +2,9 @@
 'use client';
 
 import { useMemo, useEffect, useState, useCallback, useRef } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
+import { buildFutureTicketsPayload } from '@/lib/future-tickets';
 import { PanelCard } from '@/components/ui/panel-card';
 import { ChevronRight, CheckCircle2, FolderOpen, Sparkles, X } from 'lucide-react';
 import type { IntakeFlow, IntakeStep, CourtTier } from '@/lib/intake-flows';
@@ -12,6 +14,7 @@ import type { YearBand } from '@/lib/intake-flows';
 
 import type { IntakeWizardProps, TicketDraft, ServiceHit, LocalUser, CityCourtGroup } from './intake-wizard/types';
 import { StepRail } from './intake-wizard/step-rail';
+import { FutureTicketsBanner } from './intake-wizard/future-tickets-banner';
 import { renderField, colSpan } from './intake-wizard/field-renderer';
 import { FileUpload } from './intake-wizard/file-upload';
 import {
@@ -679,11 +682,73 @@ export function IntakeWizard({
     } catch {}
   }, []);
 
+  // ── Future-tickets prefill (PDF #2) ──────────────────────────────────────
+  // When the wizard mounts with ?futureFromTicketId=<id>, fetch the source
+  // ticket and pre-populate the draft via buildFutureTicketsPayload (FT-T1),
+  // then jump to the wizard's final step. This short-circuits the active-
+  // draft hydration below: the prefill is the source of truth, not whatever
+  // stale draft happens to exist for the active consumer + flow.
+  const searchParams = useSearchParams();
+  const futureFromTicketId = searchParams?.get('futureFromTicketId') ?? null;
+  const futurePrefillAppliedRef = useRef(false);
+  const [futureSourceLabel, setFutureSourceLabel] = useState<string>('');
+
+  useEffect(() => {
+    if (!futureFromTicketId) return;
+    if (futurePrefillAppliedRef.current) return;
+    futurePrefillAppliedRef.current = true;
+    // No cancelled flag: the ref guard already ensures exactly-once
+    // execution per component instance. A `cancelled` boolean closed over
+    // by the effect's cleanup would be set to true on the next render
+    // (selectedFlow / other captured deps re-derive) and would silently
+    // discard our resolved fetch.
+    apiClient
+      .get<{
+        id: string;
+        batchNo?: string;
+        formPayload?: Record<string, string>;
+        intakeFlow?: string;
+      }>(`/tickets/${encodeURIComponent(futureFromTicketId)}`)
+      .then((source) => {
+        if (!source?.formPayload) return;
+        const nextPayload = buildFutureTicketsPayload({
+          sourceTicketId: source.id,
+          sourcePayload: source.formPayload,
+        });
+        // draft.step is 1-indexed (activeStep = displaySteps[draft.step - 1]).
+        // For judicial flows, displaySteps.length === selectedFlow.steps.length
+        // (one step is replaced, not added), so the last step number equals the
+        // flow's step count. Future-tickets only triggers for judicial flows.
+        const flowSteps = selectedFlow?.steps ?? [];
+        const finalStepNum = Math.max(flowSteps.length, 1);
+        setDraft((current) => ({
+          ...current,
+          // Drop the previous draftId so the next autosave creates a fresh
+          // row rather than mutating whatever active draft was loaded.
+          draftId: undefined,
+          flow: (source.intakeFlow as typeof current.flow) ?? current.flow,
+          step: finalStepNum,
+          payload: nextPayload,
+        }));
+        // Mark hydration as done so the autosave effect doesn't immediately
+        // trample the prefilled state.
+        didHydrateRef.current = true;
+        setFutureSourceLabel(source.batchNo ?? source.id);
+      })
+      .catch(() => {
+        // Silent failure: leave the wizard in its default empty state. The
+        // contextual banner (FT-T4) will still render and the user can
+        // adjust fields manually.
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [futureFromTicketId]);
+
   // Resume from server-side draft. The server is the source of truth; the
   // localStorage id is only a fast-path cache. Always ask the API for the
   // active draft for (consumer, flow) so a cleared localStorage / different
   // browser / re-login still resumes where the user left off.
   useEffect(() => {
+    if (futureFromTicketId) return; // FT-T3: prefill takes priority
     const flowKey = flows[0]?.key;
     if (!flowKey) return;
     if (!draft.consumerId) return; // wait until the consumer id is known
@@ -740,7 +805,7 @@ export function IntakeWizard({
     };
   // We intentionally only run this once per (consumerId, first-flow) pairing.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draft.consumerId, flows[0]?.key]);
+  }, [draft.consumerId, flows[0]?.key, futureFromTicketId]);
 
   useEffect(() => {
     if (!apiError) return;
@@ -1269,6 +1334,10 @@ export function IntakeWizard({
 
       <div className="flex flex-col gap-8 lg:flex-row lg:items-start">
         <div className="min-w-0 flex-1 space-y-8">
+
+      {futureFromTicketId && futureSourceLabel ? (
+        <FutureTicketsBanner sourceTicketLabel={futureSourceLabel} />
+      ) : null}
 
       {displayFlow && (
         <StepRail
