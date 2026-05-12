@@ -14,6 +14,7 @@ import type { YearBand } from '@/lib/intake-flows';
 
 import type { IntakeWizardProps, TicketDraft, ServiceHit, LocalUser, CityCourtGroup } from './intake-wizard/types';
 import { StepRail } from './intake-wizard/step-rail';
+import { FutureTicketsBanner } from './intake-wizard/future-tickets-banner';
 import { renderField, colSpan } from './intake-wizard/field-renderer';
 import { FileUpload } from './intake-wizard/file-upload';
 import {
@@ -690,6 +691,7 @@ export function IntakeWizard({
   const searchParams = useSearchParams();
   const futureFromTicketId = searchParams?.get('futureFromTicketId') ?? null;
   const futurePrefillAppliedRef = useRef(false);
+  const [futureSourceLabel, setFutureSourceLabel] = useState<string>('');
 
   useEffect(() => {
     if (!futureFromTicketId) return;
@@ -723,6 +725,7 @@ export function IntakeWizard({
         // Mark hydration as done so the autosave effect doesn't immediately
         // trample the prefilled state.
         didHydrateRef.current = true;
+        setFutureSourceLabel(source.batchNo ?? source.id);
       })
       .catch(() => {
         // Silent failure: leave the wizard in its default empty state. The
@@ -1326,6 +1329,10 @@ export function IntakeWizard({
 
       <div className="flex flex-col gap-8 lg:flex-row lg:items-start">
         <div className="min-w-0 flex-1 space-y-8">
+
+      {futureFromTicketId && futureSourceLabel ? (
+        <FutureTicketsBanner sourceTicketLabel={futureSourceLabel} />
+      ) : null}
 
       {displayFlow && (
         <StepRail
