@@ -544,8 +544,9 @@ const caseFilesSteps: IntakeStep[] = [
         type: 'select',
         required: true,
         options: [],
-        // Per PDF #23-27: case_type is optional across every court tier.
-        requiredByCourtTier: { lower: false, high: false, special: false, shariat: false, supreme: false, fcc: false },
+        // PDF #23-#27 literal matrix (case-files step 2).
+        // Special Court (#25) is the only tier that flags case_type as required.
+        requiredByCourtTier: { lower: false, high: false, special: true, shariat: false, supreme: false, fcc: false },
       },
       {
         key: 'case_type_other',
@@ -561,15 +562,17 @@ const caseFilesSteps: IntakeStep[] = [
         type: 'text',
         required: true,
         hint: 'Enter the exact number as it appears on the petition or order sheet.',
-        // Per PDF #23-27: case_no is optional across every court tier for Case Files.
-        requiredByCourtTier: { lower: false, high: false, special: false, shariat: false, supreme: false, fcc: false },
+        // PDF #23-#27: High / Shariat / Supreme / FCC mark case_no required;
+        // Lower (#23) and Special (#25) mark it optional with a red ✗.
+        requiredByCourtTier: { lower: false, high: true, special: false, shariat: true, supreme: true, fcc: true },
       },
       {
         key: 'year',
         label: 'Year',
         type: 'year_select',
         required: true,
-        requiredByCourtTier: { lower: false, high: false, special: false, shariat: false, supreme: false, fcc: false },
+        // PDF #23-#27: year is required only for Special Court (#25).
+        requiredByCourtTier: { lower: false, high: false, special: true, shariat: false, supreme: false, fcc: false },
       },
       {
         key: 'case_title',
@@ -577,21 +580,30 @@ const caseFilesSteps: IntakeStep[] = [
         type: 'text',
         required: true,
         hint: 'Use the party names exactly as written in the court record.',
-        requiredByCourtTier: { lower: false, high: false, special: false, shariat: false, supreme: false, fcc: false },
+        // PDF #23-#27: Lower (#23), Special (#25), and FSC (#26 — unmarked,
+        // treated as keep-required) mark case_title required. High (#24) and
+        // Supreme/FCC (#27) mark it optional.
+        requiredByCourtTier: { lower: true, high: false, special: true, shariat: true, supreme: false, fcc: false },
       },
       {
         key: 'bench',
         label: 'Bench',
         type: 'bench',
-        requiredByCourtTier: { lower: false, high: false, special: false, shariat: false, supreme: false, fcc: false },
+        required: true,
+        // PDF #23-#27: judge_name carries a green ✓ in every tier except
+        // High Court (#24).
+        requiredByCourtTier: { lower: true, high: false, special: true, shariat: true, supreme: true, fcc: true },
         hint: 'For multi-judge benches, name each judge in seniority order.',
       },
       {
         key: 'judge_designation',
         label: 'Judge Designation',
         type: 'select',
+        required: true,
         options: [],
-        requiredByCourtTier: { lower: false, high: false, special: false, shariat: false, supreme: false, fcc: false },
+        // PDF #23-#27: judge_designation required for Special / Shariat /
+        // Supreme / FCC; optional for Lower (#23) and High (#24).
+        requiredByCourtTier: { lower: false, high: false, special: true, shariat: true, supreme: true, fcc: true },
       },
       {
         key: 'case_date_status',
@@ -675,7 +687,10 @@ const caseInformationSteps: IntakeStep[] = [
         type: 'select',
         required: true,
         options: [],
-        requiredByCourtTier: { lower: false, high: false, special: false, shariat: false, supreme: false, fcc: false },
+        // PDF #34 marks case_type optional for Lower Case Info. Higher tiers
+        // aren't separately annotated; mirror the Case-Files Special-Court
+        // rule (PDF #25) so Special keeps it required, others optional.
+        requiredByCourtTier: { lower: false, high: false, special: true, shariat: false, supreme: false, fcc: false },
       },
       {
         key: 'case_type_other',
@@ -690,8 +705,8 @@ const caseInformationSteps: IntakeStep[] = [
         label: 'Case No',
         type: 'text',
         required: true,
-        // Per PDF #34: for Case Information, case_no remains the lookup key for
-        // higher courts but is optional in Lower Court.
+        // Per PDF #34: case_no is optional in Lower Case Info; higher tiers
+        // need it as the lookup key.
         requiredByCourtTier: { lower: false, high: true, special: true, shariat: true, supreme: true, fcc: true },
       },
       {
@@ -699,28 +714,39 @@ const caseInformationSteps: IntakeStep[] = [
         label: 'Year',
         type: 'year_select',
         required: true,
-        requiredByCourtTier: { lower: false, high: false, special: false, shariat: false, supreme: false, fcc: false },
+        // PDF #34 marks year optional for Lower Case Info. Mirror Case-Files
+        // Special-Court (#25) so Special keeps it required.
+        requiredByCourtTier: { lower: false, high: false, special: true, shariat: false, supreme: false, fcc: false },
       },
       {
         key: 'case_title',
         label: 'Case Title',
         type: 'text',
         required: true,
-        requiredByCourtTier: { lower: false, high: false, special: false, shariat: false, supreme: false, fcc: false },
+        // PDF #34 marks case_title required for Lower Case Info. Mirror
+        // Case-Files for higher tiers (PDF #23-#27 matrix).
+        requiredByCourtTier: { lower: true, high: false, special: true, shariat: true, supreme: false, fcc: false },
       },
       {
         key: 'bench',
         label: 'Bench',
         type: 'bench',
-        requiredByCourtTier: { lower: false, high: false, special: false, shariat: false, supreme: false, fcc: false },
+        required: true,
+        // PDF #34 marks judge_name required for Lower Case Info. Same matrix
+        // as Case-Files (#23-#27): only High Court is optional.
+        requiredByCourtTier: { lower: true, high: false, special: true, shariat: true, supreme: true, fcc: true },
         hint: 'For multi-judge benches, name each judge in seniority order.',
       },
       {
         key: 'judge_designation',
         label: 'Judge Designation',
         type: 'select',
+        required: true,
         options: [],
-        requiredByCourtTier: { lower: false, high: false, special: false, shariat: false, supreme: false, fcc: false },
+        // PDF #34 marks judge_designation required for Lower Case Info. Same
+        // matrix as Case-Files (#23-#27): Lower + High optional, the rest
+        // required.
+        requiredByCourtTier: { lower: true, high: false, special: true, shariat: true, supreme: true, fcc: true },
       },
       { key: 'case_date', label: 'Case Date', type: 'date' },
     ],
