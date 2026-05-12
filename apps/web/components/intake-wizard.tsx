@@ -697,7 +697,11 @@ export function IntakeWizard({
     if (!futureFromTicketId) return;
     if (futurePrefillAppliedRef.current) return;
     futurePrefillAppliedRef.current = true;
-    let cancelled = false;
+    // No cancelled flag: the ref guard already ensures exactly-once
+    // execution per component instance. A `cancelled` boolean closed over
+    // by the effect's cleanup would be set to true on the next render
+    // (selectedFlow / other captured deps re-derive) and would silently
+    // discard our resolved fetch.
     apiClient
       .get<{
         id: string;
@@ -706,20 +710,24 @@ export function IntakeWizard({
         intakeFlow?: string;
       }>(`/tickets/${encodeURIComponent(futureFromTicketId)}`)
       .then((source) => {
-        if (cancelled || !source?.formPayload) return;
+        if (!source?.formPayload) return;
         const nextPayload = buildFutureTicketsPayload({
           sourceTicketId: source.id,
           sourcePayload: source.formPayload,
         });
+        // draft.step is 1-indexed (activeStep = displaySteps[draft.step - 1]).
+        // For judicial flows, displaySteps.length === selectedFlow.steps.length
+        // (one step is replaced, not added), so the last step number equals the
+        // flow's step count. Future-tickets only triggers for judicial flows.
         const flowSteps = selectedFlow?.steps ?? [];
-        const finalStepIdx = Math.max(flowSteps.length - 1, 0);
+        const finalStepNum = Math.max(flowSteps.length, 1);
         setDraft((current) => ({
           ...current,
           // Drop the previous draftId so the next autosave creates a fresh
           // row rather than mutating whatever active draft was loaded.
           draftId: undefined,
           flow: (source.intakeFlow as typeof current.flow) ?? current.flow,
-          step: finalStepIdx,
+          step: finalStepNum,
           payload: nextPayload,
         }));
         // Mark hydration as done so the autosave effect doesn't immediately
@@ -732,11 +740,8 @@ export function IntakeWizard({
         // contextual banner (FT-T4) will still render and the user can
         // adjust fields manually.
       });
-    return () => {
-      cancelled = true;
-    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [futureFromTicketId, selectedFlow]);
+  }, [futureFromTicketId]);
 
   // Resume from server-side draft. The server is the source of truth; the
   // localStorage id is only a fast-path cache. Always ask the API for the
