@@ -468,6 +468,28 @@ function ConsumerTicketDrawer({
                   {ticket.status === 'COMPLETED' && 'All done — you can download the final documents above.'}
                 </p>
               </section>
+
+              {ticket?.status === 'COMPLETED' ? (
+                <PanelCard className="mt-4 border border-brand-200 bg-gradient-to-br from-brand-50 to-violet-50">
+                  <div className="flex items-start gap-3">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-500 text-white">
+                      <ArrowRight className="h-4 w-4" />
+                    </span>
+                    <div className="flex-1">
+                      <h3 className="text-sm font-semibold text-slate-900">What&rsquo;s next?</h3>
+                      <p className="mt-1 text-sm text-slate-600">
+                        Need another paralegal service? Browse judicial and non-judicial services to
+                        start a new request.
+                      </p>
+                      <Link href="/consumer/paralegal-services" className="mt-3 inline-block">
+                        <Button variant="brand" size="sm" rightIcon={<ArrowRight className="h-4 w-4" />}>
+                          Order another service
+                        </Button>
+                      </Link>
+                    </div>
+                  </div>
+                </PanelCard>
+              ) : null}
             </div>
           )}
         </DrawerBody>
