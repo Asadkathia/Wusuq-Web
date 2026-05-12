@@ -476,10 +476,9 @@ function ConsumerTicketDrawer({
                       <ArrowRight className="h-4 w-4" />
                     </span>
                     <div className="flex-1">
-                      <h3 className="text-sm font-semibold text-slate-900">What&rsquo;s next?</h3>
+                      <h3 className="text-sm font-semibold text-slate-900">Need another service?</h3>
                       <p className="mt-1 text-sm text-slate-600">
-                        Need another paralegal service? Browse judicial and non-judicial services to
-                        start a new request.
+                        Browse judicial and non-judicial services to start a new request.
                       </p>
                       <Link href="/consumer/paralegal-services" className="mt-3 inline-block">
                         <Button variant="brand" size="sm" rightIcon={<ArrowRight className="h-4 w-4" />}>
