@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { startTransition, useCallback, useEffect, useMemo, useState } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { CityBlock, JudicialServiceBlock } from '@/components/intake-wizard/service-geo-blocks';
 import { ServiceCardGrid } from '@/components/intake-wizard';
@@ -53,7 +53,7 @@ export function CohortPicker({ value, onChange }: Props) {
   // controlled-reset from the parent).
   useEffect(() => {
     if (!value.cityId) {
-      setCityCourtGroups([]);
+      startTransition(() => setCityCourtGroups([]));
       return;
     }
     let cancelled = false;
@@ -61,11 +61,11 @@ export function CohortPicker({ value, onChange }: Props) {
       .get<CityCourtGroup[]>(`/geo/cities/${value.cityId}/courts`)
       .then((r) => {
         if (cancelled) return;
-        setCityCourtGroups(r ?? []);
+        startTransition(() => setCityCourtGroups(r ?? []));
       })
       .catch(() => {
         if (cancelled) return;
-        setCityCourtGroups([]);
+        startTransition(() => setCityCourtGroups([]));
       });
     return () => {
       cancelled = true;
