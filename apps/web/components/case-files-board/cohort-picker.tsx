@@ -102,9 +102,16 @@ export function CohortPicker({ value, onChange }: Props) {
 
   const handleCityChange = useCallback(
     (cityId: string, cityName: string) => {
+      // Reset service + court when the city changes — the previously
+      // selected service may not be offered in the new city's tier list,
+      // and any court name from the previous city is meaningless here.
       onChange({
         cityId,
         cityName,
+        serviceId: undefined,
+        serviceName: undefined,
+        courtName: undefined,
+        courtType: undefined,
       });
     },
     [onChange],
