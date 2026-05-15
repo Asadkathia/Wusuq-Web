@@ -1286,19 +1286,31 @@ export function IntakeWizard({
       // consumers (pricing, dispatch, reporting) can rely on it.
       const flowDefaults =
         draft.flow === 'judicial_case_information' ? { case_status: 'Pending Case' } : {};
-      const ticket = await apiClient.post<any>(selectedFlow.endpoint, {
+      // 5-14-26 addendum: the Copy-of-FIR landing tile now hosts both the
+      // "I have an FIR number" and "Search by CNIC" modes (see
+      // `copyOfFirSteps` in lib/intake-flows.ts). When the user picks
+      // search_by_cnic we override endpoint + service + flow to the
+      // criminal-record-search variants so the backend's REQUIRED_FIELDS_BY_FLOW
+      // validation and downstream reporting keep the two cohorts separated.
+      const isCriminalRecordSearch =
+        draft.flow === 'non_judicial_copy_of_fir' && p.fir_mode === 'search_by_cnic';
+      const submitEndpoint = isCriminalRecordSearch
+        ? '/tickets/intake/non-judicial/criminal-record-search'
+        : selectedFlow.endpoint;
+      const submitServiceId = isCriminalRecordSearch
+        ? 'svc_non_judicial_criminal_record'
+        : draft.serviceId;
+      const ticket = await apiClient.post<any>(submitEndpoint, {
         consumerId: draft.consumerId,
-        serviceId: draft.serviceId,
+        serviceId: submitServiceId,
         serviceCity:
           p.city ??
           p.select_court_city ??
           p.district_name ??
           '',
-        caseType:
-          p.case_type ??
-          p.offence ??
-          p.case_title ??
-          '',
+        caseType: isCriminalRecordSearch
+          ? (p.subject_full_name ?? p.subject_cnic ?? '')
+          : (p.case_type ?? p.offence ?? p.case_title ?? ''),
         payload: { ...p, ...flowDefaults, sets, source: 'next-web-intake' },
         // Atomic case linkage when the wizard is launched from a case page.
         ...(caseId ? { caseId } : {}),

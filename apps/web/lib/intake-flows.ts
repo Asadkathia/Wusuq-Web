@@ -1187,10 +1187,33 @@ const powerOfAttorneySteps: IntakeStep[] = [
 // ─────────────────────────────────────────────
 // 6) Copy of FIR
 // ─────────────────────────────────────────────
+// 5-14-26 addendum: "copy of fir is not only copy of fir its also search
+// criminal record by cnic." The FIR flow now handles two modes via a
+// top-of-flow `fir_mode` radio:
+//   - `have_fir_number` (default): the original Copy-of-FIR fields
+//     (fir_no / year / offence / case_title / …).
+//   - `search_by_cnic`: the Search Criminal Record fields (subject_cnic /
+//     subject_full_name / requestor_relationship / purpose).
+// The shared steps (police-station geo + delivery) apply to both modes.
+// On submit, `intake-wizard.tsx` reroutes search_by_cnic submissions to
+// the criminal-record-search endpoint with the matching service/flow so
+// backend validation + reporting keep the two cohorts cleanly separated.
 const copyOfFirSteps: IntakeStep[] = [
   {
     title: 'Service Selection',
     fields: [
+      {
+        key: 'fir_mode',
+        label: 'What are you looking for?',
+        type: 'radio',
+        required: true,
+        defaultValue: 'have_fir_number',
+        options: ['have_fir_number', 'search_by_cnic'],
+        optionsLabel: (opt) =>
+          opt === 'have_fir_number'
+            ? 'I have an FIR number'
+            : 'Search criminal records by CNIC',
+      },
       // province/district/police station handled by dedicated wizard geo block
       { key: 'province', label: 'Province', type: 'text', required: true },
       { key: 'district_id', label: 'District', type: 'text', required: true },
@@ -1205,29 +1228,89 @@ const copyOfFirSteps: IntakeStep[] = [
     ],
   },
   {
-    title: 'Case Particulars',
+    title: 'Request Details',
     fields: [
-      { key: 'fir_no', label: 'FIR No', type: 'text', required: true },
+      // have_fir_number mode — the original Copy of FIR fields.
+      {
+        key: 'fir_no',
+        label: 'FIR No',
+        type: 'text',
+        required: true,
+        showWhen: { field: 'fir_mode', value: 'have_fir_number' },
+      },
       {
         key: 'year',
         label: 'Year',
         type: 'year_select',
         required: true,
         hint: 'Year the case was filed (per the order sheet or petition heading).',
+        showWhen: { field: 'fir_mode', value: 'have_fir_number' },
       },
-      { key: 'offence', label: 'Offence', type: 'text', required: true },
-      { key: 'case_title', label: 'Case Title', type: 'text', required: true },
+      {
+        key: 'offence',
+        label: 'Offence',
+        type: 'text',
+        required: true,
+        showWhen: { field: 'fir_mode', value: 'have_fir_number' },
+      },
+      {
+        key: 'case_title',
+        label: 'Case Title',
+        type: 'text',
+        required: true,
+        showWhen: { field: 'fir_mode', value: 'have_fir_number' },
+      },
       {
         key: 'case_date',
         label: 'Case Date',
         type: 'date',
         hint: 'Date of the last hearing or order on this case.',
+        showWhen: { field: 'fir_mode', value: 'have_fir_number' },
       },
       {
         key: 'date_unknow',
         label: 'Date Unknown',
         type: 'radio',
         options: ['No', 'Yes'],
+        showWhen: { field: 'fir_mode', value: 'have_fir_number' },
+      },
+      // search_by_cnic mode — the Search Criminal Record fields.
+      {
+        key: 'subject_cnic',
+        label: 'Subject CNIC',
+        type: 'text',
+        required: true,
+        hint: 'Format: 12345-1234567-1',
+        pattern: {
+          regex: '^\\d{5}-\\d{7}-\\d$',
+          message: 'CNIC must be in the format 12345-1234567-1',
+        },
+        showWhen: { field: 'fir_mode', value: 'search_by_cnic' },
+      },
+      {
+        key: 'subject_full_name',
+        label: 'Subject full name',
+        type: 'text',
+        required: true,
+        hint: 'Full name as it appears on the CNIC.',
+        showWhen: { field: 'fir_mode', value: 'search_by_cnic' },
+      },
+      {
+        key: 'requestor_relationship',
+        label: 'Your relationship to the subject',
+        type: 'radio',
+        required: true,
+        options: ['Self', 'Family', 'Legal Representative', 'Other'],
+        hint: 'Your relationship to the subject — helps the police station validate the request.',
+        showWhen: { field: 'fir_mode', value: 'search_by_cnic' },
+      },
+      {
+        key: 'purpose',
+        label: 'Purpose of request',
+        type: 'textarea',
+        required: true,
+        hint: "We use this to validate the request against the police station's records.",
+        showWhen: { field: 'fir_mode', value: 'search_by_cnic' },
       },
     ],
   },
