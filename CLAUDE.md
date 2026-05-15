@@ -74,6 +74,27 @@ pnpm prisma:seed            # Seed default super admin (local only)
 cd apps/api && npx ts-node --esm scripts/seed-geo.ts
 ```
 
+### Catalogue & pricing seeds
+```bash
+# Pricing — re-run after editing apps/api/data/pricing-sheet.xlsx (the
+# canonical price list). Wipes PricingRule + re-inserts ~390 rules.
+cd apps/api && npx tsx scripts/seed-pricing.ts
+npx tsx scripts/smoke-pricing.ts   # 5 worked examples from the xlsx
+
+# Case-type catalogue — re-run after a scraper update. Wipes
+# CourtCaseType + re-inserts ~3,500 rows from JSON sources + the
+# hardcoded snapshot, then appends an "Other" row per cohort.
+cd apps/api && npx tsx scripts/seed-case-types.ts
+
+# Scrapers (each writes JSON to apps/api/data/case-types/<source>.json).
+# Each carries a count-floor validator that refuses to overwrite when
+# the row count drops below a sanity threshold.
+cd apps/api && npx tsx scripts/scrape-case-types/scrape-scp.ts
+# Also: scrape-fcc, scrape-ihc, scrape-shc, scrape-dsj-lahore,
+# scrape-phc, scrape-bhc (LHC has no public source; script exists but
+# documents the failed probe trail).
+```
+
 ## Architecture
 
 ### Authentication Flow
@@ -111,6 +132,27 @@ Helmet → CORS → Body parser (10 MB) → ValidationPipe (whitelist, transform
 ### Adding a New API Module
 NestJS convention: create `src/<domain>/<domain>.module.ts`, `.controller.ts`, `.service.ts`, and register in `AppModule`. Follow the existing pattern of injecting `PrismaService` directly (no repository layer).
 
+### Pricing engine v2
+`PricingRule` is keyed on 5 dimensions: `(region, courtLevel, flow, yearBand, setType)`. The resolver in `apps/api/src/pricing/pricing.service.ts` returns a line-item breakdown — `base, pdfSurcharge, deliveryFee, titleSurcharge, searchBothSurcharge, attestedCharge, nonAttestedCharge, total` — plus an `availability: boolean` flag. When `availability=false`, the wizard hides the combination (e.g. Lower-Court Non-Attested for decided cases — the "Can't Get" sentinel from the xlsx). `apps/api/data/pricing-sheet.xlsx` is the canonical price list; edit there and re-run `seed-pricing.ts`. Some surcharges live as constants in the resolver, not as rule rows:
+- `STATE_VS_SURCHARGE = 1000` — applied when `caseTitle` matches `/^state vs/i` (PDF #14).
+- `SEARCH_BOTH_SURCHARGE = 1000` — applied per city when `flow === 'judicial_case_search'` and `searchMethod === 'both'` (PDF #37). Combined with the cityCount multiplier, this yields the linear N × Rs 3,000 case-search pricing.
+
+Set-type rules in the xlsx only cover Case Files. Information / Filing / PoA flow through the resolver with `setType=null` — don't render the Set Type picker for those services.
+
+### Case-type catalogue
+`CourtCaseType` is the DB-backed case-type dropdown source, seeded from 8 JSON files in `apps/api/data/case-types/` (7 scraped sources + a hardcoded snapshot fallback). The `GET /case-types` endpoint in `apps/api/src/case-types/case-types.service.ts` implements a specificity-fallback chain: try `(courtLevel, subCourt, district, highCourtCode)` first, then drop dimensions one at a time until a non-empty cohort is found. Each cohort ends with a `code='OTHER'` row that triggers the wizard's `case_type_other` free-text input.
+
+Adding a new scraper: write `scripts/scrape-case-types/scrape-<x>.ts` using `shared.ts` (Playwright bootstrap + count-floor validator), add the output filename to `SOURCES` in `seed-case-types.ts`, re-seed. Don't use the "largest <select>" heuristic for finding the case-type dropdown — several govt sites have larger unrelated selects (e.g. SCP's Advocates list with 4,639 entries). Target the case-type select by id or by `<label>` text association.
+
+### Intake wizard
+`apps/web/components/intake-wizard.tsx` renders all 8 consumer flows. Flow definitions live in `apps/web/lib/intake-flows.ts`. Key invariants:
+
+- **`draft.step` is 1-indexed** — `activeStep = displaySteps[draft.step - 1]`. Off-by-one when jumping to a specific step is a common mistake.
+- **Required-field rules are per-court-tier.** Use `IntakeField.requiredByCourtTier?: Partial<Record<CourtTier, boolean>>`. Resolve at render time via `resolveRequired(field, activeCourtTier)`. The `*` asterisk and validation gate both consult the same resolver. Active tier comes from `payload.select_court_type`.
+- **Click-style fields commit synchronously via onBlur(key, newValue).** Radio, checkbox-tile, and tab fields call `onBlur(field.key, newValue)` after `onChange(field.key, newValue)`. `draft.payload` is stale in the click handler because setState is async; pass the new value explicitly or the validator runs against the previous value (PDF #22 root cause).
+- **Case types come from the API**, never from in-code constants. The wizard fetches `/case-types?courtLevel=…&subCourt=…&district=…&highCourtCode=…` and stores the row's `label` in `payload.case_type`.
+- **Payload field aliases** — the API normalises incoming intake payloads via `PAYLOAD_FIELD_ALIASES` in `packages/shared/src/index.ts`. Frontend can send either the canonical name or any alias (e.g. `case_no` ⇔ `case_petition_no`, `year` ⇔ `case_year`). When adding a required field, add it to `REQUIRED_FIELDS_BY_FLOW` in `tickets.service.ts` using the **canonical** name.
+
 ## Environment Variables
 
 **API** (`.env`):
@@ -139,52 +181,14 @@ Default super admin created by `pnpm prisma:seed`:
 - Email: `superadmin@wusuq.com`
 - Password: `password`
 
-## Deferred work (Wusuq Edits 5-10-26 backlog)
+## Deferred work
 
-Items from the `Wusuq Edits 5-10-26.pdf` feedback that are intentionally deferred. Pick these up in future batches.
+Items deliberately not shipped. Full backlog with rationale in `DOcs/superpowers/specs/`. Items that affect day-to-day code decisions:
 
-### Onboarding
-- **PDF #3** — Phone country/region selector instead of hardcoded `+92`. Paired with the deferred OTP/SMS provider.
-
-### Catalogue scraping — still uncovered
-- **LHC scraper** — `scrape-lhc.ts` exists with a documented probe trail in its header but the Lahore High Court doesn't publish a public case-type catalogue today (every plausible portal returns 404/500/blocked). Falls back to `hardcoded_fallback` in `CourtCaseType`. Update the `URL` constant if LHC ever publishes a search form.
-- Non-Punjab Lower Court scrapers (Sindh, KPK, Balochistan district-court portals).
-- Special Court scraping.
-- Federal Shariat Court scraping.
-
-### Admin / staff
-- Admin UI to edit `CourtCaseType` rows (today: CLI / SQL only).
-- Admin UI to edit `PricingRule` rows (today: re-run the xlsx-driven seed).
-- Migration of historical ticket `case_type` display strings to canonical codes (currently forward-only).
-
-### Consumer-friendly case-type dropdown (post-shipped catalogue)
-The `CourtCaseType` catalogue (3,493 rows across 8 sources) is shipped end-to-end but the wizard renders it as a flat dropdown ordered by scrape-emission order (`priority = 1000 − optionIndex`). With 36–87 options per cohort this is friction. Five layers of improvement, roughly ordered by effort:
-- **Layer 1 — type-ahead search + `Long form (CODE)` display.** Pure renderer change in a new `apps/web/components/intake-wizard/case-type-select.tsx`. Filter by case-insensitive substring against both `code` and `label`. Render `"Writ Petition (W.P.)"` when `code !== label`, else just `label`. No data work, no editorial.
-- **Garbage cleanup.** One-off `isActive=false` sweep for obvious scraper-produced garbage (e.g. IHC's `code: "Cr"`, blank labels, duplicate placeholders). Maintenance, no UX change.
-- **Layer 2 — curated "Most common" pinned subset.** New `pinned BOOLEAN` column on `CourtCaseType` + a seed file `apps/api/data/case-types/pinned.json` keyed `"courtLevel|highCourtCode|subCourt"` listing ~6 codes per cohort. Renderer shows a "─ Most common ─" section above the alphabetical full list. Editorial cost ≈ 75 entries (13 cohorts × ~6). Best done with a Pakistani litigator's input, otherwise commit a best-guess and iterate via PR.
-- **Layer 3 — category grouping** (Civil / Criminal / Constitutional / Tax / Family / Commercial / …). Adds a `category` column; bulk-assigning categories to ~3,500 rows is the editorial cost. Cleaner long-form scan, but Layer 2 likely covers 80% of the pain.
-- **Layer 4 — plain-language descriptions.** Per-row `description` column. On hover/expand the option reveals a one-sentence non-lawyer explanation ("Writ Petition (W.P.) — a petition asking the High Court to enforce a fundamental right …"). ~250 unique case types across cohorts; significant editorial work. Most valuable to PDF #4's Non-Lawyer / Corporate user types.
-- **Layer 5 — self-tuning by analytics.** `usage_count` increment on every wizard submit + a scheduled job that rewrites `priority` based on running counts. Most ergonomic long-term, but blocked on having an analytics hook. Eliminates the editorial cost of Layer 2 once enough traffic accumulates.
-
-Recommended near-term path: ship Layer 1 + garbage cleanup unconditionally; layer 2/3/4 are editorial-heavy and best deferred until either you have a curator or analytics tell us what to prioritise.
-
-### Infrastructure
-- **OTP / SMS provider** integration (Twilio / Vonage / local SMSC selection).
-- Scraper scheduling — currently manual quarterly run; consider a low-priority cron when the catalogue stabilises.
-
-### Minor UI follow-ups
-- Live `apps/api/data/pricing-sheet.xlsx` reload on seed re-run (today: copy + re-run).
-- Per-flow "Case Filing" remote workflow scaffolding (PDF #42 / #43) is shipped at the wizard level; backend-side dispatch routing to the clerk's court office is still placeholder text in the UI.
-
-### Lint hygiene (CI-passing warnings, 2026-05-12)
-The Next 16 / React 19 dependency bump introduced stricter hooks rules and surfaced legacy warnings. CI is green (0 errors) but **15 warnings remain** that should be cleaned up opportunistically:
-- **Unused `_icon` destructure** in 4 paralegal-service `[flowKey]/page.tsx` files (consumer + portal × judicial + non-judicial). Icon is read from the flow definition but never rendered — decide whether to render it or drop the destructure.
-- **Unused imports / identifiers** — `SectionHeader` (case-detail), `Button` (consumer-cases-board), `useEffect` + `Check` (create-representative-form), `consumerLabel` (intake-wizard L229), `StatusPill` (pricing-rules-board).
-- **`react-hooks/exhaustive-deps`** missing deps:
-  - `case-drift-banner.tsx:46` — missing `reload`.
-  - `intake-wizard.tsx:576, 629` — missing `draft.payload` (intentional? verify before adding — autosave loops are easy to introduce here).
-  - `intake-wizard.tsx:952` — missing `saveDraft`.
-- **`jsx-a11y/role-has-required-aria-props`** — `ui/select.tsx:150` combobox is missing `aria-controls` (currently only sets `aria-expanded`); needs an id-linked listbox.
+- **OTP / SMS not wired.** Phone-based signup paths fail in prod. Use email login for local testing: `/consumer/login/email` with `testconsumer@wusuq.com` / `password123`. Staff: `superadmin@wusuq.com` / `password`. Don't add runtime checks for SMS — assume it's absent.
+- **LHC case-type catalogue** has no public source. Falls back to `hardcoded_fallback` rows in `CourtCaseType`. `scrape-lhc.ts` is checked in with a documented probe trail; update its `URL` constant if LHC ever publishes a search form.
+- **Pricing for non-Case-Files services** — `pricing-sheet.xlsx` Sheet 2 only carries set-type rules for Case Files. Information / Filing / PoA fall back to the headline rate with `setType=null`. Don't render the Set Type picker for those services.
+- **Case Search year-band mapping** — xlsx uses bespoke bands (`2023-2022`, `2021-2019`, …); seed maps onto canonical bands by best-fit overlap (last-write-wins). Two source rows can collapse into one band — verify before changing.
 
 ### React 19 / Next 16 hook-rule conventions (enforced by lint)
 The `react-hooks/set-state-in-effect` rule (new in React 19) flags synchronous `setState(...)` directly inside `useEffect` bodies. **Don't disable it.** Established patterns in this codebase:
