@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  Body,
   Controller,
   Delete,
   ForbiddenException,
@@ -18,6 +19,8 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { JwtUser } from '../auth/types/jwt-user.type';
 import { PersonalFilesService } from './personal-files.service';
 import { ListPersonalFilesDto } from './dto/list-personal-files.dto';
+import { UploadCaseFileDto } from './dto/upload-case-file.dto';
+import { ListCaseFilesDto } from './dto/list-case-files.dto';
 
 function assertConsumer(user: JwtUser): void {
   if (user.role !== 'consumer') {
@@ -78,5 +81,50 @@ export class PersonalFilesController {
   restore(@CurrentUser() user: JwtUser, @Param('id') id: string) {
     assertConsumer(user);
     return this.service.restore(user.sub, user.email ?? null, id);
+  }
+
+  @Post('case-files')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 11 * 1024 * 1024 } }))
+  uploadCaseFile(
+    @CurrentUser() user: JwtUser,
+    @UploadedFile() file: { buffer: Buffer; originalname: string; mimetype: string } | undefined,
+    @Body() dto: UploadCaseFileDto,
+  ) {
+    assertConsumer(user);
+    if (!file) throw new BadRequestException({ error: 'no_file' });
+    return this.service.uploadCaseFile(
+      user.sub,
+      user.email ?? null,
+      {
+        buffer: file.buffer,
+        originalName: file.originalname,
+        declaredMime: file.mimetype,
+      },
+      {
+        serviceId: dto.serviceId,
+        cityId: dto.cityId,
+        cityName: dto.cityName,
+        courtName: dto.courtName,
+        courtType: dto.courtType,
+        attachedTicketId: dto.attachedTicketId,
+        caption: dto.caption,
+      },
+    );
+  }
+
+  @Get('case-files')
+  listCaseFiles(@CurrentUser() user: JwtUser, @Query() query: ListCaseFilesDto) {
+    assertConsumer(user);
+    return this.service.listCaseFiles(user.sub, {
+      serviceId: query.serviceId,
+      cityId: query.cityId,
+      courtName: query.courtName,
+    });
+  }
+
+  @Get('case-files/cohorts')
+  cohortAggregates(@CurrentUser() user: JwtUser) {
+    assertConsumer(user);
+    return this.service.cohortAggregates(user.sub);
   }
 }
