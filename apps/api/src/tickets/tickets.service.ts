@@ -532,6 +532,13 @@ export class TicketsService {
     });
   }
 
+  async listConsumerDrafts(consumerId: string) {
+    return this.prisma.ticketIntakeDraft.findMany({
+      where: { consumerId },
+      orderBy: { updatedAt: 'desc' },
+    });
+  }
+
   async updateStatus(
     id: string,
     status: TicketStatus,

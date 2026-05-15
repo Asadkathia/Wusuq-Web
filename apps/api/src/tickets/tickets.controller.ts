@@ -237,6 +237,15 @@ export class TicketsController {
   }
 
   @RequirePermissions('tickets.read')
+  @Get('intake-drafts')
+  listIntakeDrafts(@CurrentUser() actor: JwtUser | undefined) {
+    if (!actor?.sub) {
+      throw new BadRequestException('Authenticated user required');
+    }
+    return this.ticketsService.listConsumerDrafts(actor.sub);
+  }
+
+  @RequirePermissions('tickets.read')
   @Get('intake-drafts/active')
   getActiveDraft(
     @Query('flow') flow: string,

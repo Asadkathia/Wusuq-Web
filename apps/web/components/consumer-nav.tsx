@@ -2,6 +2,7 @@
 
 import {
   BriefcaseBusiness,
+  FileEdit,
   FileText,
   FolderOpen,
   HardDrive,
@@ -15,6 +16,7 @@ import { ShellNav, type NavItem } from './ui/shell-nav';
 export const consumerNavItems: NavItem[] = [
   { label: 'Dashboard', href: '/consumer/dashboard', icon: LayoutDashboard },
   { label: 'My Tickets', href: '/consumer/my-tickets', icon: Ticket },
+  { label: 'Drafts', href: '/consumer/drafts', icon: FileEdit },
   { label: 'My Cases', href: '/consumer/my-cases', icon: FolderOpen },
   { label: 'My Wallet', href: '/consumer/my-wallet', icon: Wallet },
   {
