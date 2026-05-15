@@ -97,7 +97,7 @@ const BENCH_TYPES_BY_TIER: Record<CourtTier, Array<{ value: string; label: strin
 export { BENCH_TYPES_BY_TIER };
 
 
-function ServiceCardGrid({
+export function ServiceCardGrid({
   services,
   value,
   onSelect,
