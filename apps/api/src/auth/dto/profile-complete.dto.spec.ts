@@ -1,3 +1,4 @@
+import { jest } from '@jest/globals';
 import 'reflect-metadata';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';

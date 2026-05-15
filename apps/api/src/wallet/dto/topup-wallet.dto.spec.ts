@@ -1,3 +1,4 @@
+import { jest } from '@jest/globals';
 import { plainToInstance } from 'class-transformer';
 import { validateSync } from 'class-validator';
 import { TopupWalletDto } from './topup-wallet.dto';

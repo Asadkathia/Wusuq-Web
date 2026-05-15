@@ -1,3 +1,4 @@
+import { jest } from '@jest/globals';
 // apps/api/src/auth/otp.service.spec.ts
 import { Test, TestingModule } from '@nestjs/testing';
 import { HttpStatus, UnauthorizedException } from '@nestjs/common';

@@ -1,3 +1,4 @@
+import { jest } from '@jest/globals';
 // The @wusuq/shared package ships ESM in dist; ts-jest can't transform it.
 // Stub the constants we need so the DTO's class-validator decorators load.
 jest.mock('@wusuq/shared', () => ({

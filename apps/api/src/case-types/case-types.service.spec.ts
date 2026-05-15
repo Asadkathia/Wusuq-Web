@@ -1,3 +1,4 @@
+import { jest } from '@jest/globals';
 import { CaseTypesService } from './case-types.service';
 import type { PrismaService } from '../prisma/prisma.service';
 

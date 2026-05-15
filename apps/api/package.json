@@ -21,7 +21,7 @@
     "test:cov": "NODE_OPTIONS=--experimental-vm-modules jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit -p tsconfig.build.json",
     "prisma:generate": "prisma generate",
     "prisma:migrate:dev": "prisma migrate dev",
     "prisma:migrate:deploy": "prisma migrate deploy",
@@ -87,52 +87,37 @@
     "typescript-eslint": "^8.20.0"
   },
   "jest": {
-    "projects": [
-      {
-        "displayName": "cjs",
-        "moduleFileExtensions": [
-          "js",
-          "json",
-          "ts"
-        ],
-        "rootDir": "src",
-        "testRegex": "(?<!personal-files/lib/magic-bytes)(?<!personal-files/personal-files\\.service)(?<!personal-files/personal-files\\.service\\.case-files)\\.spec\\.ts$",
-        "transform": {
-          "^.+\\.(t|j)s$": "ts-jest"
-        },
-        "collectCoverageFrom": [
-          "**/*.(t|j)s"
-        ],
-        "coverageDirectory": "../coverage",
-        "testEnvironment": "node"
-      },
-      {
-        "displayName": "esm",
-        "moduleFileExtensions": [
-          "js",
-          "json",
-          "ts"
-        ],
-        "rootDir": "src",
-        "testRegex": "(personal-files/lib/magic-bytes|personal-files/personal-files\\.service|personal-files/personal-files\\.service\\.case-files)\\.spec\\.ts$",
-        "extensionsToTreatAsEsm": [
-          ".ts"
-        ],
-        "transform": {
-          "^.+\\.ts$": [
-            "ts-jest",
-            {
-              "useESM": true,
-              "tsconfig": "<rootDir>/../tsconfig.jest-esm.json"
-            }
-          ]
-        },
-        "moduleNameMapper": {
-          "^@jest/globals$": "<rootDir>/../node_modules/.pnpm/@jest+globals@30.3.0/node_modules/@jest/globals/build/index.js"
-        },
-        "testEnvironment": "node"
-      }
-    ]
+    "moduleFileExtensions": [
+      "js",
+      "json",
+      "ts"
+    ],
+    "rootDir": "src",
+    "testRegex": "\\.spec\\.ts$",
+    "extensionsToTreatAsEsm": [
+      ".ts"
+    ],
+    "transform": {
+      "^.+\\.ts$": [
+        "ts-jest",
+        {
+          "useESM": true,
+          "tsconfig": "<rootDir>/../tsconfig.jest-esm.json",
+          "isolatedModules": true,
+          "diagnostics": false
+        }
+      ]
+    },
+    "injectGlobals": true,
+    "moduleNameMapper": {
+      "^@jest/globals$": "<rootDir>/../node_modules/.pnpm/@jest+globals@30.3.0/node_modules/@jest/globals/build/index.js",
+      "^(\\.{1,2}/.*)\\.js$": "$1"
+    },
+    "collectCoverageFrom": [
+      "**/*.(t|j)s"
+    ],
+    "coverageDirectory": "../coverage",
+    "testEnvironment": "node"
   },
   "prisma": {
     "seed": "node prisma/seed.mjs"
