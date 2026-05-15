@@ -860,10 +860,13 @@ export function IntakeWizard({
         judge_designation: '',
       },
     }));
-    if (!cityId) {
-      setCityCourtGroups([]);
-      return;
-    }
+    // Clear the previous city's court groups synchronously. Without this,
+    // the wizard keeps rendering the old city's JudicialServiceBlock
+    // (e.g. "Islamabad High Court · Selected" while the chip shows Karachi)
+    // for the duration of the /geo/cities/<id>/courts fetch — the bug
+    // reported in the 5-14-26 addendum (#8 / N6).
+    setCityCourtGroups([]);
+    if (!cityId) return;
     apiClient
       .get<CityCourtGroup[]>(`/geo/cities/${cityId}/courts`)
       .then((r) => setCityCourtGroups(r ?? []))
