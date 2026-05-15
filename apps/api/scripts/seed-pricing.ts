@@ -192,11 +192,16 @@ function parseHeadlineBlock(
         : flow === 'judicial_case_search'
         ? 'current'
         : 'current';
+    // Per 5-14-26 addendum: case record is an extension of case files when
+    // case_status=Decided. Fold the headline "current year" rate onto
+    // svc_judicial_case_files (yearBand=current) so a single service covers
+    // the full pending → current → backward-band pricing arc.
+    const targetFlow = flow === 'judicial_case_record' ? 'judicial_case_files' : flow;
     void label;
     for (const t of tiers) {
       const base = parseCell(row[t.wusuqCol]);
       const clerk = parseCell(row[t.clerkCol]);
-      pushHeadline(flow, t.courtLevel, region, yearBand, base, clerk);
+      pushHeadline(targetFlow, t.courtLevel, region, yearBand, base, clerk);
     }
   }
 }
@@ -225,7 +230,11 @@ function parseCaseRecordBands(
     for (const t of tiers) {
       const base = parseCell(row[t.wusuqCol]);
       const clerk = parseCell(row[t.clerkCol]);
-      pushHeadline('judicial_case_record', t.courtLevel, region, yearBand, base, clerk);
+      // Per 5-14-26 addendum: "The case record is an extension of the case
+      // files when the case status is decided." Year-band rates flow onto
+      // svc_judicial_case_files (yearBand ∈ y2025…y2016_back) so consumers
+      // pick Case Files and set case_status=Decided to land on these rules.
+      pushHeadline('judicial_case_files', t.courtLevel, region, yearBand, base, clerk);
     }
   }
 }
