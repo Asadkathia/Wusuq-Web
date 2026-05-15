@@ -13,6 +13,7 @@
     "start:dev": "pnpm run build && node --watch dist/main.js",
     "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/main.js",
+    "postinstall": "prisma generate",
     "lint": "eslint \"{src,test}/**/*.ts\"",
     "lint:fix": "eslint \"{src,test}/**/*.ts\" --fix",
     "test": "NODE_OPTIONS=--experimental-vm-modules jest",
