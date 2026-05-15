@@ -198,6 +198,7 @@ model Ticket {
   caseDocuments   CaseDocument[]
   invoice         Invoice?
   clerkReport     TicketClerkReport?
+  personalFiles  PersonalFile[]
 
   @@index([consumerId])
   @@index([status])
@@ -618,7 +619,19 @@ model PersonalFile {
   createdAt    DateTime  @default(now())
   user         User      @relation(fields: [userId], references: [id])
 
+  // Cohort metadata — captured by the wizard-style case-files upload page.
+  // Files uploaded via /consumer/files (the generic personal storage view)
+  // leave all five fields null. Files uploaded via /consumer/case-files
+  // set serviceId + cityId at minimum.
+  serviceId        String?
+  cityId           String?
+  courtName        String?
+  courtType        String?
+  attachedTicketId String?
+  attachedTicket   Ticket? @relation(fields: [attachedTicketId], references: [id], onDelete: SetNull)
+
   @@index([userId, deletedAt, createdAt])
+  @@index([userId, serviceId])
 }
 
 model UserStorageUsage {

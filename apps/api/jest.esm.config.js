@@ -2,7 +2,7 @@
 module.exports = {
   moduleFileExtensions: ['js', 'json', 'ts'],
   rootDir: 'src',
-  testRegex: '(personal-files/lib/magic-bytes|personal-files/personal-files\\.service)\\.spec\\.ts$',
+  testRegex: '(personal-files/lib/magic-bytes|personal-files/personal-files\\.service|personal-files/personal-files\\.service\\.case-files)\\.spec\\.ts$',
   extensionsToTreatAsEsm: ['.ts'],
   transform: {
     '^.+\\.ts$': [
