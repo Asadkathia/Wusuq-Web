@@ -55,7 +55,7 @@ export class LocalDiskFileStorage implements FileStorageProvider {
       expiresAt: Date.now() + ttl * 1000,
     });
     this.gcTokens();
-    return `/files/personal/${token}`;
+    return `/api/files/personal/${token}`;
   }
 
   async delete(key: string): Promise<void> {

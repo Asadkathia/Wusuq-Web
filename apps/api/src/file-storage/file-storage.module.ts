@@ -42,7 +42,16 @@ function buildProvider(): FileStorageProvider {
     LocalDiskFileStorage,
     {
       provide: FILE_STORAGE_PROVIDER,
-      useFactory: buildProvider,
+      useFactory: (localDisk: LocalDiskFileStorage) => {
+        // Reuse the same LocalDiskFileStorage instance the
+        // LocalFilesController consumes — otherwise the token map used
+        // to sign download URLs is on a different instance from the one
+        // that resolves them, and every download 404s.
+        const r2Bucket = process.env.R2_BUCKET?.trim();
+        if (!r2Bucket) return localDisk;
+        return buildProvider();
+      },
+      inject: [LocalDiskFileStorage],
     },
   ],
   exports: [FILE_STORAGE_PROVIDER, LocalDiskFileStorage],
