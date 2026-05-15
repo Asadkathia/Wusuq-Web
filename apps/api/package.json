@@ -95,7 +95,7 @@
           "ts"
         ],
         "rootDir": "src",
-        "testRegex": "(?<!personal-files/lib/magic-bytes)(?<!personal-files/personal-files\\.service)\\.spec\\.ts$",
+        "testRegex": "(?<!personal-files/lib/magic-bytes)(?<!personal-files/personal-files\\.service)(?<!personal-files/personal-files\\.service\\.case-files)\\.spec\\.ts$",
         "transform": {
           "^.+\\.(t|j)s$": "ts-jest"
         },
@@ -113,7 +113,7 @@
           "ts"
         ],
         "rootDir": "src",
-        "testRegex": "(personal-files/lib/magic-bytes|personal-files/personal-files\\.service)\\.spec\\.ts$",
+        "testRegex": "(personal-files/lib/magic-bytes|personal-files/personal-files\\.service|personal-files/personal-files\\.service\\.case-files)\\.spec\\.ts$",
         "extensionsToTreatAsEsm": [
           ".ts"
         ],

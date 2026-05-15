@@ -260,6 +260,78 @@ export class PersonalFilesService {
     };
   }
 
+  // ─── Case-files (cohort-scoped) ────────────────────────────────────────────
+
+  async listCaseFiles(
+    userId: string,
+    filters: { serviceId?: string; cityId?: string; courtName?: string },
+  ) {
+    const rows = await this.prisma.personalFile.findMany({
+      where: {
+        userId,
+        deletedAt: null,
+        serviceId: filters.serviceId ?? { not: null },
+        ...(filters.cityId ? { cityId: filters.cityId } : {}),
+        ...(filters.courtName ? { courtName: filters.courtName } : {}),
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+    });
+    return { files: rows.map(toPersonalFileDto) };
+  }
+
+  async cohortAggregates(userId: string) {
+    const groups = await this.prisma.personalFile.groupBy({
+      by: ['serviceId', 'cityId', 'courtName', 'courtType'],
+      where: { userId, deletedAt: null, serviceId: { not: null } },
+      _count: { _all: true },
+    });
+    return groups.map((g) => ({
+      serviceId: g.serviceId as string,
+      cityId: g.cityId ?? null,
+      courtName: g.courtName ?? null,
+      courtType: g.courtType ?? null,
+      count: g._count._all,
+    }));
+  }
+
+  async uploadCaseFile(
+    userId: string,
+    actorEmail: string | null,
+    file: { buffer: Buffer; originalName: string; declaredMime: string },
+    cohort: {
+      serviceId: string;
+      cityId: string;
+      cityName?: string;
+      courtName?: string;
+      courtType?: string;
+      attachedTicketId?: string;
+      caption?: string;
+    },
+  ) {
+    if (cohort.attachedTicketId) {
+      const ticket = await this.prisma.ticket.findFirst({
+        where: { id: cohort.attachedTicketId, consumerId: userId },
+        select: { id: true },
+      });
+      if (!ticket) {
+        throw new BadRequestException({ error: 'attached_ticket_not_owned' });
+      }
+    }
+    const result = await this.upload(userId, actorEmail, file);
+    const updated = await this.prisma.personalFile.update({
+      where: { id: result.id },
+      data: {
+        serviceId: cohort.serviceId,
+        cityId: cohort.cityId,
+        courtName: cohort.courtName ?? null,
+        courtType: cohort.courtType ?? null,
+        attachedTicketId: cohort.attachedTicketId ?? null,
+      },
+    });
+    return toPersonalFileDto(updated);
+  }
+
   // ─── Internal ──────────────────────────────────────────────────────────────
 
   private async getUsageRow(userId: string) {
