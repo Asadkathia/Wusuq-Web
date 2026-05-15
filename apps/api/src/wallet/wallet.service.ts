@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import type { PaymentMode, Prisma } from '@prisma/client';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -117,7 +121,11 @@ export class WalletService {
         throw new NotFoundException('Transaction not found');
       }
       if (locked.status !== 'PENDING_VERIFICATION') {
-        return { alreadyProcessed: true, transaction: locked, userId: locked.userId };
+        return {
+          alreadyProcessed: true,
+          transaction: locked,
+          userId: locked.userId,
+        };
       }
 
       // Conditional update: only flip PENDING → VERIFIED, never re-verify.
@@ -135,7 +143,11 @@ export class WalletService {
         const fresh = await tx.walletTransaction.findUniqueOrThrow({
           where: { id: transactionId },
         });
-        return { alreadyProcessed: true, transaction: fresh, userId: fresh.userId };
+        return {
+          alreadyProcessed: true,
+          transaction: fresh,
+          userId: fresh.userId,
+        };
       }
 
       // Lock the user row before crediting.

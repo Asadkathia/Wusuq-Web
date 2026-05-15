@@ -10,4 +10,3 @@ import { SseService } from './sse.service';
   exports: [NotificationsService],
 })
 export class NotificationsModule {}
-

@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CastVoteDto } from './dto/cast-vote.dto';
@@ -250,7 +254,9 @@ export class ElectionsService {
     }
 
     if (election.status !== 'ACTIVE') {
-      throw new BadRequestException('Voting is only allowed on active elections');
+      throw new BadRequestException(
+        'Voting is only allowed on active elections',
+      );
     }
 
     const candidate = await this.prisma.candidate.findFirst({
@@ -259,7 +265,9 @@ export class ElectionsService {
     });
 
     if (!candidate) {
-      throw new NotFoundException('Candidate not found for this election and position');
+      throw new NotFoundException(
+        'Candidate not found for this election and position',
+      );
     }
 
     const existingVote = await this.prisma.vote.findUnique({

@@ -91,7 +91,8 @@ export class WalletController {
   @UseInterceptors(
     FileInterceptor('file', {
       storage: diskStorage({
-        destination: (_req, _file, cb) => cb(null, getUploadsBucketDir(UPLOADS_BUCKETS.walletReceipts)),
+        destination: (_req, _file, cb) =>
+          cb(null, getUploadsBucketDir(UPLOADS_BUCKETS.walletReceipts)),
         filename: (_req, file, callback) => {
           const sanitized = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
           const ext = extname(sanitized);
@@ -109,7 +110,9 @@ export class WalletController {
           !RECEIPT_ALLOWED_EXTS.has(ext)
         ) {
           callback(
-            new BadRequestException('Allowed formats: JPG, PNG, PDF · max 10MB'),
+            new BadRequestException(
+              'Allowed formats: JPG, PNG, PDF · max 10MB',
+            ),
             false,
           );
           return;
@@ -144,7 +147,8 @@ export class WalletController {
     if (!actor) throw new UnauthorizedException();
 
     // Defensive path resolution: only allow files inside the receipts dir.
-    const baseDir = getUploadsBucketAbsoluteDir(UPLOADS_BUCKETS.walletReceipts) + sep;
+    const baseDir =
+      getUploadsBucketAbsoluteDir(UPLOADS_BUCKETS.walletReceipts) + sep;
     const target = resolve(join(baseDir, normalize(filename)));
     if (!target.startsWith(baseDir)) {
       throw new BadRequestException('Invalid filename');
@@ -171,17 +175,21 @@ export class WalletController {
             : 'application/octet-stream';
 
     return new Promise<void>((resolveFn, rejectFn) => {
-      res.sendFile(target, { headers: { 'Content-Type': contentType } }, (err) => {
-        if (err) {
-          if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
-            rejectFn(new NotFoundException('Receipt not found'));
+      res.sendFile(
+        target,
+        { headers: { 'Content-Type': contentType } },
+        (err) => {
+          if (err) {
+            if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+              rejectFn(new NotFoundException('Receipt not found'));
+              return;
+            }
+            rejectFn(err);
             return;
           }
-          rejectFn(err);
-          return;
-        }
-        resolveFn();
-      });
+          resolveFn();
+        },
+      );
     });
   }
 
@@ -247,12 +255,15 @@ export class WalletController {
     if (!isAdminWalletRole(actor.role)) {
       throw new ForbiddenException('Admin role required to export wallets');
     }
-    const data = await this.walletService.list({ page: 1, limit: 5000 } as any);
-    const rows = (data as any).items ?? [];
+    const data = await this.walletService.list({
+      page: 1,
+      limit: 5000,
+    } as PaginationQueryDto);
+    const rows = data.items;
 
     if (format === 'csv') {
       const header = 'User,Balance,Transactions,CreatedAt';
-      const lines = rows.map((r: any) =>
+      const lines = rows.map((r) =>
         [
           r.consumerName ?? '',
           r.accountBalance ?? 0,
@@ -264,7 +275,10 @@ export class WalletController {
       );
       const csv = [header, ...lines].join('\n');
       res.setHeader('Content-Type', 'text/csv');
-      res.setHeader('Content-Disposition', 'attachment; filename="wallet-export.csv"');
+      res.setHeader(
+        'Content-Disposition',
+        'attachment; filename="wallet-export.csv"',
+      );
       return res.send(csv);
     }
 

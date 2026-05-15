@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 
@@ -9,16 +10,16 @@ export class DocumentsService {
   async list(query: PaginationQueryDto) {
     const skip = (query.page - 1) * query.limit;
 
-    const where = query.search
+    const where: Prisma.TicketDocumentWhereInput = query.search
       ? {
           OR: [
-            { name: { contains: query.search, mode: 'insensitive' as const } },
-            { type: { contains: query.search, mode: 'insensitive' as const } },
+            { name: { contains: query.search, mode: 'insensitive' } },
+            { type: { contains: query.search, mode: 'insensitive' } },
             {
               ticket: {
                 batchNo: {
                   contains: query.search,
-                  mode: 'insensitive' as const,
+                  mode: 'insensitive',
                 },
               },
             },
@@ -26,12 +27,12 @@ export class DocumentsService {
         }
       : {};
 
-    const scopedWhere = {
+    const scopedWhere: Prisma.TicketDocumentWhereInput = {
       ...where,
       ...(query.consumerId
         ? {
             ticket: {
-              ...(where as any).ticket,
+              ...(where.ticket as Prisma.TicketWhereInput | undefined),
               consumerId: query.consumerId,
             },
           }

@@ -8,7 +8,9 @@
  *
  * Returns `null` if the number cannot be normalised.
  */
-export function formatPakistaniPhone(raw: string | null | undefined): string | null {
+export function formatPakistaniPhone(
+  raw: string | null | undefined,
+): string | null {
   if (!raw) return null;
 
   const digits = raw.replace(/[\s\-().+]/g, '');

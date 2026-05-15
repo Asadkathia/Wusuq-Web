@@ -24,14 +24,22 @@ export class CurrencyService {
   async upsertRate(from: string, to: string, rate: number, effectiveAt?: Date) {
     const at = effectiveAt ?? new Date();
     return this.prisma.exchangeRate.upsert({
-      where: { fromCurrency_toCurrency_effectiveAt: { fromCurrency: from, toCurrency: to, effectiveAt: at } },
+      where: {
+        fromCurrency_toCurrency_effectiveAt: {
+          fromCurrency: from,
+          toCurrency: to,
+          effectiveAt: at,
+        },
+      },
       update: { rate },
       create: { fromCurrency: from, toCurrency: to, rate, effectiveAt: at },
     });
   }
 
   async listRates() {
-    return this.prisma.exchangeRate.findMany({ orderBy: { effectiveAt: 'desc' } });
+    return this.prisma.exchangeRate.findMany({
+      orderBy: { effectiveAt: 'desc' },
+    });
   }
 
   async getLatestRate(from: string, to: string) {

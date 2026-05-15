@@ -18,10 +18,7 @@ function buildService(overrides: Record<string, unknown> = {}) {
     $transaction: jest.fn(),
   };
 
-  const service = new WalletService(
-    prisma as never,
-    auditLogsService as never,
-  );
+  const service = new WalletService(prisma as never, auditLogsService as never);
   return { service, prisma, auditLogsService };
 }
 
@@ -80,15 +77,13 @@ describe('WalletService.verifyTopup double-credit guard', () => {
       $executeRaw: jest.fn(),
       walletTransaction: {
         // Lock-time read sees PENDING — race not yet observable.
-        findUnique: jest
-          .fn()
-          .mockResolvedValue({
-            id: 'wtx-1',
-            userId: 'u-1',
-            amount: 100,
-            paymentMode: 'BANK_TRANSFER',
-            status: 'PENDING_VERIFICATION',
-          }),
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'wtx-1',
+          userId: 'u-1',
+          amount: 100,
+          paymentMode: 'BANK_TRANSFER',
+          status: 'PENDING_VERIFICATION',
+        }),
         // But by the time we attempt to flip the row another caller already
         // verified it — the conditional updateMany matches 0 rows.
         updateMany: jest.fn().mockResolvedValue({ count: 0 }),
@@ -106,7 +101,10 @@ describe('WalletService.verifyTopup double-credit guard', () => {
       $transaction: jest.fn(async (fn: (t: any) => unknown) => fn(tx)),
     };
     const auditLogsService = { create: jest.fn() };
-    const service = new WalletService(prisma as never, auditLogsService as never);
+    const service = new WalletService(
+      prisma as never,
+      auditLogsService as never,
+    );
 
     const result: any = await service.verifyTopup('wtx-1', {});
 
@@ -131,25 +129,34 @@ describe('WalletService.verifyTopup auto-deduction', () => {
   }) {
     // After lock, re-read each ticket from a stable map keyed by id so the
     // service's `findUnique` returns the current state of the test fixture.
-    const ticketState = new Map(opts.tickets.map((t) => [t.id, { ...t, paymentStatus: 'UNPAID' as const }]));
+    const ticketState = new Map(
+      opts.tickets.map((t) => [
+        t.id,
+        { ...t, paymentStatus: 'UNPAID' as const },
+      ]),
+    );
     const tx: any = {
       $executeRaw: jest.fn(),
       ticket: {
         findMany: jest
           .fn()
           .mockResolvedValue(opts.tickets.map((t) => ({ id: t.id }))),
-        findUnique: jest.fn().mockImplementation(async ({ where: { id } }: { where: { id: string } }) => {
-          const t = ticketState.get(id);
-          return t
-            ? {
-                id: t.id,
-                batchNo: t.batchNo,
-                totalAmount: t.totalAmount,
-                amountPaid: t.amountPaid,
-                paymentStatus: t.paymentStatus,
-              }
-            : null;
-        }),
+        findUnique: jest
+          .fn()
+          .mockImplementation(
+            async ({ where: { id } }: { where: { id: string } }) => {
+              const t = ticketState.get(id);
+              return t
+                ? {
+                    id: t.id,
+                    batchNo: t.batchNo,
+                    totalAmount: t.totalAmount,
+                    amountPaid: t.amountPaid,
+                    paymentStatus: t.paymentStatus,
+                  }
+                : null;
+            },
+          ),
         update: jest.fn().mockResolvedValue({}),
       },
       walletTransaction: {
@@ -170,7 +177,10 @@ describe('WalletService.verifyTopup auto-deduction', () => {
       user: {
         update: jest
           .fn()
-          .mockResolvedValueOnce({ id: 'u-1', walletBalance: opts.initialBalance })
+          .mockResolvedValueOnce({
+            id: 'u-1',
+            walletBalance: opts.initialBalance,
+          })
           .mockResolvedValue({}),
       },
     };
@@ -179,9 +189,12 @@ describe('WalletService.verifyTopup auto-deduction', () => {
       $transaction: jest.fn(async (fn: (t: any) => unknown) => fn(tx)),
     };
 
-    const service = new WalletService(prisma as never, {
-      create: jest.fn(),
-    } as never);
+    const service = new WalletService(
+      prisma as never,
+      {
+        create: jest.fn(),
+      } as never,
+    );
 
     return { service, prisma, tx };
   }

@@ -22,16 +22,20 @@ function makeService(rows: Row[]): PersonalFilesService {
     personalFile: {
       findMany: jest.fn(async (args: any) => {
         return rows.filter((r) => {
-          if (args.where?.deletedAt === null && r.deletedAt !== null) return false;
-          if (args.where?.userId && r.userId !== args.where.userId) return false;
+          if (args.where?.deletedAt === null && r.deletedAt !== null)
+            return false;
+          if (args.where?.userId && r.userId !== args.where.userId)
+            return false;
           const sid = args.where?.serviceId;
           if (sid && typeof sid === 'object' && sid.not === null) {
             if (r.serviceId == null) return false;
           } else if (typeof sid === 'string') {
             if (r.serviceId !== sid) return false;
           }
-          if (args.where?.cityId && r.cityId !== args.where.cityId) return false;
-          if (args.where?.courtName && r.courtName !== args.where.courtName) return false;
+          if (args.where?.cityId && r.cityId !== args.where.cityId)
+            return false;
+          if (args.where?.courtName && r.courtName !== args.where.courtName)
+            return false;
           return true;
         });
       }),
@@ -45,11 +49,19 @@ function makeService(rows: Row[]): PersonalFilesService {
           if (g) g.count++;
           else
             groups.set(k, {
-              key: { serviceId: r.serviceId, cityId: r.cityId, courtName: r.courtName, courtType: r.courtType },
+              key: {
+                serviceId: r.serviceId,
+                cityId: r.cityId,
+                courtName: r.courtName,
+                courtType: r.courtType,
+              },
               count: 1,
             });
         }
-        return [...groups.values()].map((g) => ({ ...g.key, _count: { _all: g.count } }));
+        return [...groups.values()].map((g) => ({
+          ...g.key,
+          _count: { _all: g.count },
+        }));
       }),
     },
   } as any;
@@ -61,8 +73,36 @@ describe('PersonalFilesService — case-files', () => {
   const NOW = new Date('2026-05-16T00:00:00Z');
   it('listCaseFiles returns only rows with serviceId set', async () => {
     const svc = makeService([
-      { id: '1', userId: 'u', serviceId: 'svc_judicial_case_files', cityId: 'c1', courtName: 'LHC', courtType: 'High Court', displayName: 'a', sizeBytes: 100, createdAt: NOW, deletedAt: null, storageKey: 'k1', originalName: 'a', mimeType: 'application/pdf' },
-      { id: '2', userId: 'u', serviceId: null, cityId: null, courtName: null, courtType: null, displayName: 'b', sizeBytes: 200, createdAt: NOW, deletedAt: null, storageKey: 'k2', originalName: 'b', mimeType: 'application/pdf' },
+      {
+        id: '1',
+        userId: 'u',
+        serviceId: 'svc_judicial_case_files',
+        cityId: 'c1',
+        courtName: 'LHC',
+        courtType: 'High Court',
+        displayName: 'a',
+        sizeBytes: 100,
+        createdAt: NOW,
+        deletedAt: null,
+        storageKey: 'k1',
+        originalName: 'a',
+        mimeType: 'application/pdf',
+      },
+      {
+        id: '2',
+        userId: 'u',
+        serviceId: null,
+        cityId: null,
+        courtName: null,
+        courtType: null,
+        displayName: 'b',
+        sizeBytes: 200,
+        createdAt: NOW,
+        deletedAt: null,
+        storageKey: 'k2',
+        originalName: 'b',
+        mimeType: 'application/pdf',
+      },
     ]);
     const out = await svc.listCaseFiles('u', {});
     expect(out.files.map((f) => f.id)).toEqual(['1']);
@@ -70,8 +110,36 @@ describe('PersonalFilesService — case-files', () => {
 
   it('listCaseFiles honors serviceId / cityId / courtName filters', async () => {
     const svc = makeService([
-      { id: '1', userId: 'u', serviceId: 'svc_a', cityId: 'c1', courtName: 'LHC', courtType: 'High Court', displayName: 'a', sizeBytes: 100, createdAt: NOW, deletedAt: null, storageKey: 'k1', originalName: 'a', mimeType: 'application/pdf' },
-      { id: '2', userId: 'u', serviceId: 'svc_b', cityId: 'c1', courtName: 'LHC', courtType: 'High Court', displayName: 'b', sizeBytes: 100, createdAt: NOW, deletedAt: null, storageKey: 'k2', originalName: 'b', mimeType: 'application/pdf' },
+      {
+        id: '1',
+        userId: 'u',
+        serviceId: 'svc_a',
+        cityId: 'c1',
+        courtName: 'LHC',
+        courtType: 'High Court',
+        displayName: 'a',
+        sizeBytes: 100,
+        createdAt: NOW,
+        deletedAt: null,
+        storageKey: 'k1',
+        originalName: 'a',
+        mimeType: 'application/pdf',
+      },
+      {
+        id: '2',
+        userId: 'u',
+        serviceId: 'svc_b',
+        cityId: 'c1',
+        courtName: 'LHC',
+        courtType: 'High Court',
+        displayName: 'b',
+        sizeBytes: 100,
+        createdAt: NOW,
+        deletedAt: null,
+        storageKey: 'k2',
+        originalName: 'b',
+        mimeType: 'application/pdf',
+      },
     ]);
     const out = await svc.listCaseFiles('u', { serviceId: 'svc_b' });
     expect(out.files.map((f) => f.id)).toEqual(['2']);
@@ -79,15 +147,67 @@ describe('PersonalFilesService — case-files', () => {
 
   it('cohortAggregates groups by (serviceId, cityId, courtName, courtType) with counts', async () => {
     const svc = makeService([
-      { id: '1', userId: 'u', serviceId: 'svc_a', cityId: 'c1', courtName: 'LHC', courtType: 'High Court', displayName: 'a', sizeBytes: 100, createdAt: NOW, deletedAt: null, storageKey: 'k1', originalName: 'a', mimeType: 'application/pdf' },
-      { id: '2', userId: 'u', serviceId: 'svc_a', cityId: 'c1', courtName: 'LHC', courtType: 'High Court', displayName: 'b', sizeBytes: 100, createdAt: NOW, deletedAt: null, storageKey: 'k2', originalName: 'b', mimeType: 'application/pdf' },
-      { id: '3', userId: 'u', serviceId: 'svc_b', cityId: 'c2', courtName: 'SHC', courtType: 'High Court', displayName: 'c', sizeBytes: 100, createdAt: NOW, deletedAt: null, storageKey: 'k3', originalName: 'c', mimeType: 'application/pdf' },
+      {
+        id: '1',
+        userId: 'u',
+        serviceId: 'svc_a',
+        cityId: 'c1',
+        courtName: 'LHC',
+        courtType: 'High Court',
+        displayName: 'a',
+        sizeBytes: 100,
+        createdAt: NOW,
+        deletedAt: null,
+        storageKey: 'k1',
+        originalName: 'a',
+        mimeType: 'application/pdf',
+      },
+      {
+        id: '2',
+        userId: 'u',
+        serviceId: 'svc_a',
+        cityId: 'c1',
+        courtName: 'LHC',
+        courtType: 'High Court',
+        displayName: 'b',
+        sizeBytes: 100,
+        createdAt: NOW,
+        deletedAt: null,
+        storageKey: 'k2',
+        originalName: 'b',
+        mimeType: 'application/pdf',
+      },
+      {
+        id: '3',
+        userId: 'u',
+        serviceId: 'svc_b',
+        cityId: 'c2',
+        courtName: 'SHC',
+        courtType: 'High Court',
+        displayName: 'c',
+        sizeBytes: 100,
+        createdAt: NOW,
+        deletedAt: null,
+        storageKey: 'k3',
+        originalName: 'c',
+        mimeType: 'application/pdf',
+      },
     ]);
     const out = await svc.cohortAggregates('u');
     expect(out).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ serviceId: 'svc_a', cityId: 'c1', courtName: 'LHC', count: 2 }),
-        expect.objectContaining({ serviceId: 'svc_b', cityId: 'c2', courtName: 'SHC', count: 1 }),
+        expect.objectContaining({
+          serviceId: 'svc_a',
+          cityId: 'c1',
+          courtName: 'LHC',
+          count: 2,
+        }),
+        expect.objectContaining({
+          serviceId: 'svc_b',
+          cityId: 'c2',
+          courtName: 'SHC',
+          count: 1,
+        }),
       ]),
     );
     expect(out).toHaveLength(2);

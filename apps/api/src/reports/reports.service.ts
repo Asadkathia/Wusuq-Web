@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { subDays, startOfDay } from 'date-fns';
 
@@ -18,7 +19,7 @@ export class ReportsService {
   }
 
   async run(type: string, filters?: { dateRange?: string; status?: string }) {
-    const where: any = {};
+    const where: Prisma.TicketWhereInput = {};
     if (filters?.dateRange && filters.dateRange !== 'all') {
       const days = parseInt(filters.dateRange.replace('d', ''), 10);
       if (!isNaN(days)) {
@@ -26,12 +27,14 @@ export class ReportsService {
       }
     }
     if (filters?.status && filters.status !== 'all') {
-      where.status = filters.status;
+      where.status = filters.status as Prisma.TicketWhereInput['status'];
     }
 
     if (type === 'logs') {
-      const logsWhere: any = {};
-      if (where.createdAt) logsWhere.createdAt = where.createdAt;
+      const logsWhere: Prisma.AuditLogWhereInput = {};
+      if (where.createdAt)
+        logsWhere.createdAt =
+          where.createdAt as Prisma.AuditLogWhereInput['createdAt'];
       return {
         type,
         data: await this.prisma.auditLog.findMany({

@@ -13,4 +13,3 @@ describe('BulkTicketActionDto', () => {
     expect(errors.length).toBeGreaterThan(0);
   });
 });
-

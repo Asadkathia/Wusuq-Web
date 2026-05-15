@@ -1,9 +1,9 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import {
-  InvoiceStatus,
-  Prisma,
-  TicketPaymentStatus,
-} from '@prisma/client';
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { InvoiceStatus, Prisma, TicketPaymentStatus } from '@prisma/client';
 import PDFDocument from 'pdfkit';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -33,8 +33,11 @@ export class FinanceService {
         { consumer: { name: { contains: query.search, mode: 'insensitive' } } },
       ];
     }
-    if (query.paymentStatus) where.paymentStatus = query.paymentStatus as any;
-    if (query.ticketStatus) where.status = query.ticketStatus as any;
+    if (query.paymentStatus)
+      where.paymentStatus =
+        query.paymentStatus as Prisma.TicketWhereInput['paymentStatus'];
+    if (query.ticketStatus)
+      where.status = query.ticketStatus as Prisma.TicketWhereInput['status'];
     if (query.serviceId) where.serviceId = query.serviceId;
     if (query.consumerId) where.consumerId = query.consumerId;
     if (query.dateFrom || query.dateTo) {
@@ -201,25 +204,39 @@ export class FinanceService {
     dto: UpdateChargeDto,
     actor?: { actorUserId?: string; actorEmail?: string },
   ) {
-    const ticket = await this.prisma.ticket.findUnique({ where: { id: ticketId } });
+    const ticket = await this.prisma.ticket.findUnique({
+      where: { id: ticketId },
+    });
     if (!ticket) {
       throw new NotFoundException('Ticket not found');
     }
 
     // Merge incoming charge fields with existing values
     const serviceCost = dto.serviceCost ?? toNumber(ticket.serviceCost);
-    const deliveryCharges = dto.deliveryCharges ?? toNumber(ticket.deliveryCharges);
-    const printingCharges = dto.printingCharges ?? toNumber(ticket.printingCharges);
-    const attestedCharges = dto.attestedCharges ?? toNumber(ticket.attestedCharges);
-    const nonAttestedCharges = dto.nonAttestedCharges ?? toNumber(ticket.nonAttestedCharges);
-    const additionalCharges = dto.additionalCharges ?? toNumber(ticket.additionalCharges);
-    const additionalServiceCost = dto.additionalServiceCost ?? toNumber(ticket.additionalServiceCost);
+    const deliveryCharges =
+      dto.deliveryCharges ?? toNumber(ticket.deliveryCharges);
+    const printingCharges =
+      dto.printingCharges ?? toNumber(ticket.printingCharges);
+    const attestedCharges =
+      dto.attestedCharges ?? toNumber(ticket.attestedCharges);
+    const nonAttestedCharges =
+      dto.nonAttestedCharges ?? toNumber(ticket.nonAttestedCharges);
+    const additionalCharges =
+      dto.additionalCharges ?? toNumber(ticket.additionalCharges);
+    const additionalServiceCost =
+      dto.additionalServiceCost ?? toNumber(ticket.additionalServiceCost);
     const discountPrice = dto.discountPrice ?? toNumber(ticket.discountPrice);
 
     // Auto-compute totalAmount from formula; explicit `amount` overrides formula
     const computedTotal =
-      serviceCost + deliveryCharges + printingCharges + attestedCharges +
-      nonAttestedCharges + additionalCharges + additionalServiceCost - discountPrice;
+      serviceCost +
+      deliveryCharges +
+      printingCharges +
+      attestedCharges +
+      nonAttestedCharges +
+      additionalCharges +
+      additionalServiceCost -
+      discountPrice;
     const totalAmount = dto.amount ?? Math.max(computedTotal, 0);
     if (totalAmount < Number(serviceCost ?? 0)) {
       throw new BadRequestException(
@@ -349,7 +366,10 @@ export class FinanceService {
       throw new NotFoundException('Invoice not found');
     }
 
-    const pdfBase64 = await this.buildInvoicePdf(invoice, ticketCharges ?? undefined);
+    const pdfBase64 = await this.buildInvoicePdf(
+      invoice,
+      ticketCharges ?? undefined,
+    );
 
     return {
       ticketId,
@@ -395,19 +415,31 @@ export class FinanceService {
       doc.on('error', reject);
 
       // Header
-      doc.fontSize(20).font('Helvetica-Bold').text('WUSUQ', { align: 'center' });
-      doc.fontSize(12).font('Helvetica').text('Paralegal Services Portal', { align: 'center' });
+      doc
+        .fontSize(20)
+        .font('Helvetica-Bold')
+        .text('WUSUQ', { align: 'center' });
+      doc
+        .fontSize(12)
+        .font('Helvetica')
+        .text('Paralegal Services Portal', { align: 'center' });
       doc.moveDown(0.5);
       doc.moveTo(50, doc.y).lineTo(545, doc.y).stroke();
       doc.moveDown(0.5);
 
       // Invoice title
-      doc.fontSize(16).font('Helvetica-Bold').text(`INVOICE`, { align: 'center' });
+      doc
+        .fontSize(16)
+        .font('Helvetica-Bold')
+        .text(`INVOICE`, { align: 'center' });
       doc.moveDown(0.5);
 
       // Info grid
       const row = (label: string, value: string) => {
-        doc.fontSize(10).font('Helvetica-Bold').text(label, { continued: true });
+        doc
+          .fontSize(10)
+          .font('Helvetica-Bold')
+          .text(label, { continued: true });
         doc.font('Helvetica').text(`  ${value}`);
       };
 
@@ -422,22 +454,45 @@ export class FinanceService {
 
       // Consumer & service
       doc.fontSize(11).font('Helvetica-Bold').text('Bill To:');
-      doc.fontSize(10).font('Helvetica').text(invoice.ticket.consumer.name ?? '');
+      doc
+        .fontSize(10)
+        .font('Helvetica')
+        .text(invoice.ticket.consumer.name ?? '');
       doc.text(invoice.ticket.consumer.email ?? '');
       doc.moveDown(0.5);
 
       doc.fontSize(11).font('Helvetica-Bold').text('Service:');
-      doc.fontSize(10).font('Helvetica').text(`${invoice.ticket.service.name} (${invoice.ticket.service.category})`);
+      doc
+        .fontSize(10)
+        .font('Helvetica')
+        .text(
+          `${invoice.ticket.service.name} (${invoice.ticket.service.category})`,
+        );
       doc.moveDown(1);
 
       // Charges breakdown table
       doc.moveTo(50, doc.y).lineTo(545, doc.y).stroke();
       doc.moveDown(0.5);
 
-      const amtRow = (label: string, value: number, bold = false, color = 'black') => {
+      const amtRow = (
+        label: string,
+        value: number,
+        bold = false,
+        color = 'black',
+      ) => {
         const font = bold ? 'Helvetica-Bold' : 'Helvetica';
-        doc.fontSize(10).font(font).fillColor(color).text(label, 50, doc.y, { width: 400, continued: true });
-        doc.font(font).fillColor(color).text(`PKR ${value.toLocaleString('en-PK', { minimumFractionDigits: 2 })}`, { align: 'right' });
+        doc
+          .fontSize(10)
+          .font(font)
+          .fillColor(color)
+          .text(label, 50, doc.y, { width: 400, continued: true });
+        doc
+          .font(font)
+          .fillColor(color)
+          .text(
+            `PKR ${value.toLocaleString('en-PK', { minimumFractionDigits: 2 })}`,
+            { align: 'right' },
+          );
         doc.fillColor('black');
       };
 
@@ -470,10 +525,21 @@ export class FinanceService {
       doc.moveDown(0.25);
       doc.moveTo(50, doc.y).lineTo(545, doc.y).stroke();
       doc.moveDown(0.25);
-      amtRow('Due Amount', toNumber(invoice.dueAmount), true, toNumber(invoice.dueAmount) > 0 ? 'red' : 'green');
+      amtRow(
+        'Due Amount',
+        toNumber(invoice.dueAmount),
+        true,
+        toNumber(invoice.dueAmount) > 0 ? 'red' : 'green',
+      );
 
       doc.moveDown(2);
-      doc.fontSize(9).font('Helvetica').fillColor('grey').text('This is a computer-generated invoice. No signature required.', { align: 'center' });
+      doc
+        .fontSize(9)
+        .font('Helvetica')
+        .fillColor('grey')
+        .text('This is a computer-generated invoice. No signature required.', {
+          align: 'center',
+        });
 
       doc.end();
     });

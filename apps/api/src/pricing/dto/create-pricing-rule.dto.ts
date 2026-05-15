@@ -1,4 +1,11 @@
-import { IsString, IsOptional, IsInt, IsBoolean, IsNumber, Min } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsInt,
+  IsBoolean,
+  IsNumber,
+  Min,
+} from 'class-validator';
 
 export class CreatePricingRuleDto {
   @IsString() name!: string;

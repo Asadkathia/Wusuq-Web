@@ -72,7 +72,9 @@ describe('OtpService', () => {
     });
 
     it('429s when called within 30s of last request', async () => {
-      prisma.otpCode.findFirst.mockResolvedValue({ createdAt: new Date(Date.now() - 5000) });
+      prisma.otpCode.findFirst.mockResolvedValue({
+        createdAt: new Date(Date.now() - 5000),
+      });
       try {
         await service.request('+923001234567');
         throw new Error('should have thrown');
@@ -98,12 +100,17 @@ describe('OtpService', () => {
   describe('verify', () => {
     it('401s when no open OTP exists', async () => {
       prisma.otpCode.findFirst.mockResolvedValue(null);
-      await expect(service.verify('+923001234567', '1234')).rejects.toThrow(UnauthorizedException);
+      await expect(service.verify('+923001234567', '1234')).rejects.toThrow(
+        UnauthorizedException,
+      );
     });
 
     it('410s when OTP expired', async () => {
       prisma.otpCode.findFirst.mockResolvedValue({
-        id: 'o1', code: '1234', expiresAt: new Date(Date.now() - 1000), attempts: 0,
+        id: 'o1',
+        code: '1234',
+        expiresAt: new Date(Date.now() - 1000),
+        attempts: 0,
       });
       try {
         await service.verify('+923001234567', '1234');
@@ -116,18 +123,28 @@ describe('OtpService', () => {
 
     it('locks out after MAX_ATTEMPTS', async () => {
       prisma.otpCode.findFirst.mockResolvedValue({
-        id: 'o1', code: '1234', expiresAt: new Date(Date.now() + 60000), attempts: 3,
+        id: 'o1',
+        code: '1234',
+        expiresAt: new Date(Date.now() + 60000),
+        attempts: 3,
       });
-      await expect(service.verify('+923001234567', '0000')).rejects.toMatchObject({
+      await expect(
+        service.verify('+923001234567', '0000'),
+      ).rejects.toMatchObject({
         response: { error: 'too_many_attempts' },
       });
     });
 
     it('increments attempts on wrong code', async () => {
       prisma.otpCode.findFirst.mockResolvedValue({
-        id: 'o1', code: '1234', expiresAt: new Date(Date.now() + 60000), attempts: 0,
+        id: 'o1',
+        code: '1234',
+        expiresAt: new Date(Date.now() + 60000),
+        attempts: 0,
       });
-      await expect(service.verify('+923001234567', '0000')).rejects.toThrow(UnauthorizedException);
+      await expect(service.verify('+923001234567', '0000')).rejects.toThrow(
+        UnauthorizedException,
+      );
       expect(prisma.otpCode.update).toHaveBeenCalledWith({
         where: { id: 'o1' },
         data: { attempts: { increment: 1 } },
@@ -136,25 +153,46 @@ describe('OtpService', () => {
 
     it('creates a new user with phoneVerified=true on first successful verify', async () => {
       prisma.otpCode.findFirst.mockResolvedValue({
-        id: 'o1', code: '1234', expiresAt: new Date(Date.now() + 60000), attempts: 0,
+        id: 'o1',
+        code: '1234',
+        expiresAt: new Date(Date.now() + 60000),
+        attempts: 0,
       });
       prisma.user.findFirst.mockResolvedValue(null);
       prisma.user.create.mockResolvedValue({
-        id: 'u1', phone: '+923001234567', phoneVerified: true, role: 'consumer', name: null, email: null,
+        id: 'u1',
+        phone: '+923001234567',
+        phoneVerified: true,
+        role: 'consumer',
+        name: null,
+        email: null,
       });
       const r = await service.verify('+923001234567', '1234');
       expect(prisma.user.create).toHaveBeenCalledWith({
-        data: { phone: '+923001234567', phoneVerified: true, role: 'consumer', isActive: true },
+        data: {
+          phone: '+923001234567',
+          phoneVerified: true,
+          role: 'consumer',
+          isActive: true,
+        },
       });
       expect(r.isNewUser).toBe(true);
     });
 
     it('returns isNewUser=false for an already-registered user', async () => {
       prisma.otpCode.findFirst.mockResolvedValue({
-        id: 'o1', code: '1234', expiresAt: new Date(Date.now() + 60000), attempts: 0,
+        id: 'o1',
+        code: '1234',
+        expiresAt: new Date(Date.now() + 60000),
+        attempts: 0,
       });
       prisma.user.findFirst.mockResolvedValue({
-        id: 'u1', phone: '+923001234567', phoneVerified: true, role: 'consumer', name: 'Ali', email: null,
+        id: 'u1',
+        phone: '+923001234567',
+        phoneVerified: true,
+        role: 'consumer',
+        name: 'Ali',
+        email: null,
       });
       const r = await service.verify('+923001234567', '1234');
       expect(prisma.user.create).not.toHaveBeenCalled();

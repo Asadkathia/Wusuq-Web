@@ -60,7 +60,11 @@ export class PricingService {
 
   list() {
     return this.prisma.pricingRule.findMany({
-      orderBy: [{ isLegacy: 'desc' }, { priority: 'desc' }, { updatedAt: 'desc' }],
+      orderBy: [
+        { isLegacy: 'desc' },
+        { priority: 'desc' },
+        { updatedAt: 'desc' },
+      ],
     });
   }
 
@@ -99,7 +103,12 @@ export class PricingService {
   async getSettings() {
     return this.prisma.pricingSettings.upsert({
       where: { id: 'singleton' },
-      create: { id: 'singleton', pricingMode: 'legacy', attestedPricePerSet: 0, nonAttestedPricePerSet: 0 },
+      create: {
+        id: 'singleton',
+        pricingMode: 'legacy',
+        attestedPricePerSet: 0,
+        nonAttestedPricePerSet: 0,
+      },
       update: {},
     });
   }
@@ -114,9 +123,15 @@ export class PricingService {
         nonAttestedPricePerSet: dto.nonAttestedPricePerSet ?? 0,
       },
       update: {
-        ...(dto.pricingMode !== undefined ? { pricingMode: dto.pricingMode } : {}),
-        ...(dto.attestedPricePerSet !== undefined ? { attestedPricePerSet: dto.attestedPricePerSet } : {}),
-        ...(dto.nonAttestedPricePerSet !== undefined ? { nonAttestedPricePerSet: dto.nonAttestedPricePerSet } : {}),
+        ...(dto.pricingMode !== undefined
+          ? { pricingMode: dto.pricingMode }
+          : {}),
+        ...(dto.attestedPricePerSet !== undefined
+          ? { attestedPricePerSet: dto.attestedPricePerSet }
+          : {}),
+        ...(dto.nonAttestedPricePerSet !== undefined
+          ? { nonAttestedPricePerSet: dto.nonAttestedPricePerSet }
+          : {}),
       },
     });
   }
@@ -153,9 +168,13 @@ export class PricingService {
     const effectiveCourtLevel = normalizeCourtLevel(args.courtLevel);
     const requestedYearBand = args.yearBand ?? 'current';
 
-    const allRules = await this.prisma.pricingRule.findMany({ where: { isActive: true } });
+    const allRules = await this.prisma.pricingRule.findMany({
+      where: { isActive: true },
+    });
     const modeRules = allRules.filter((r) =>
-      settings.pricingMode === 'legacy' ? r.isLegacy === true : r.isLegacy === false,
+      settings.pricingMode === 'legacy'
+        ? r.isLegacy === true
+        : r.isLegacy === false,
     );
     const flowRules = modeRules.filter((r) => r.flow === args.flow);
 
@@ -175,7 +194,9 @@ export class PricingService {
         result[opt] = false;
         continue;
       }
-      const best = candidates.reduce((a, b) => (a.priority >= b.priority ? a : b));
+      const best = candidates.reduce((a, b) =>
+        a.priority >= b.priority ? a : b,
+      );
       result[opt] = best.availability !== false;
     }
     return result;
@@ -232,11 +253,15 @@ export class PricingService {
     const requestedSetType = dto.setType ?? null;
     const requestedYearBand = dto.yearBand ?? deriveYearBand(dto.caseYear);
 
-    const allRules = await this.prisma.pricingRule.findMany({ where: { isActive: true } });
+    const allRules = await this.prisma.pricingRule.findMany({
+      where: { isActive: true },
+    });
 
     // Filter by pricingMode: legacy mode uses isLegacy=true rules, custom uses isLegacy=false
     const modeRules = allRules.filter((r) =>
-      settings.pricingMode === 'legacy' ? r.isLegacy === true : r.isLegacy === false,
+      settings.pricingMode === 'legacy'
+        ? r.isLegacy === true
+        : r.isLegacy === false,
     );
 
     const flowRules = modeRules.filter((r) => r.flow === dto.flow);
@@ -291,7 +316,9 @@ export class PricingService {
       };
     }
 
-    const best = candidates.reduce((a, b) => (a.priority >= b.priority ? a : b));
+    const best = candidates.reduce((a, b) =>
+      a.priority >= b.priority ? a : b,
+    );
 
     if (best.availability === false) {
       return {
@@ -334,11 +361,17 @@ export class PricingService {
       });
       if (report?.perPageRateAttested != null) {
         effectiveAttestedRate = Number(report.perPageRateAttested);
-        clerkOverride = { ...(clerkOverride ?? {}), attested: effectiveAttestedRate };
+        clerkOverride = {
+          ...(clerkOverride ?? {}),
+          attested: effectiveAttestedRate,
+        };
       }
       if (report?.perPageRateNonAttested != null) {
         effectiveNonAttestedRate = Number(report.perPageRateNonAttested);
-        clerkOverride = { ...(clerkOverride ?? {}), nonAttested: effectiveNonAttestedRate };
+        clerkOverride = {
+          ...(clerkOverride ?? {}),
+          nonAttested: effectiveNonAttestedRate,
+        };
       }
     }
 
@@ -358,7 +391,9 @@ export class PricingService {
     // Universal — doesn't depend on court tier or year band, so it lives in
     // the resolver as a constant rather than as a PricingRule row.
     const titleSurcharge =
-      dto.caseTitle && STATE_VS_PATTERN.test(dto.caseTitle) ? STATE_VS_SURCHARGE : 0;
+      dto.caseTitle && STATE_VS_PATTERN.test(dto.caseTitle)
+        ? STATE_VS_SURCHARGE
+        : 0;
 
     // PDF #36 / #37 — Case Search-specific multipliers. Other flows ignore
     // both: cityCount stays 1 and searchBothSurcharge stays 0.
@@ -369,16 +404,27 @@ export class PricingService {
 
     const deliveryCharge = Number(best.deliveryCharge) + deliveryFee;
     const serviceCost =
-      basePrice + attestedCharge + nonAttestedCharge + pdfSurcharge + titleSurcharge;
+      basePrice +
+      attestedCharge +
+      nonAttestedCharge +
+      pdfSurcharge +
+      titleSurcharge;
     // For Case Search the per-city block (base + searchBoth + title + pdf +
     // deliveryFee) is multiplied by the city count. Per-set rates and the
     // rule's flat deliveryCharge are NOT multiplied — they're already
     // per-ticket. Other flows degenerate to the original formula (cityCount=1,
     // searchBothSurcharge=0).
     const perCityBlock =
-      basePrice + searchBothSurcharge + titleSurcharge + pdfSurcharge + deliveryFee;
+      basePrice +
+      searchBothSurcharge +
+      titleSurcharge +
+      pdfSurcharge +
+      deliveryFee;
     const total =
-      perCityBlock * cityCount + attestedCharge + nonAttestedCharge + Number(best.deliveryCharge);
+      perCityBlock * cityCount +
+      attestedCharge +
+      nonAttestedCharge +
+      Number(best.deliveryCharge);
 
     return {
       matched: true,

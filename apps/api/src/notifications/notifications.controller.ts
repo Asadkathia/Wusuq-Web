@@ -1,4 +1,12 @@
-import { Controller, Get, Param, Patch, Post, Query, Res } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  Res,
+} from '@nestjs/common';
 import type { Response } from 'express';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { JwtUser } from '../auth/types/jwt-user.type';
@@ -22,11 +30,11 @@ export class NotificationsController {
   }
 
   @Get()
-  findAll(
-    @CurrentUser() user: JwtUser,
-    @Query('limit') limit?: string,
-  ) {
-    return this.notificationsService.findAll(user.sub, limit ? Number(limit) : 20);
+  findAll(@CurrentUser() user: JwtUser, @Query('limit') limit?: string) {
+    return this.notificationsService.findAll(
+      user.sub,
+      limit ? Number(limit) : 20,
+    );
   }
 
   @Get('unread-count')

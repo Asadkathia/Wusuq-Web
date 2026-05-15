@@ -13,13 +13,16 @@ export class PersonalFilesGc {
 
   constructor(
     private readonly prisma: PrismaService,
-    @Inject(FILE_STORAGE_PROVIDER) private readonly storage: FileStorageProvider,
+    @Inject(FILE_STORAGE_PROVIDER)
+    private readonly storage: FileStorageProvider,
     private readonly service: PersonalFilesService,
   ) {}
 
   @Cron(CronExpression.EVERY_DAY_AT_3AM)
   async hardDeleteExpired() {
-    const cutoff = new Date(Date.now() - RESTORE_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+    const cutoff = new Date(
+      Date.now() - RESTORE_WINDOW_DAYS * 24 * 60 * 60 * 1000,
+    );
     const expired = await this.prisma.personalFile.findMany({
       where: { deletedAt: { lt: cutoff } },
       select: { id: true, storageKey: true, displayName: true },

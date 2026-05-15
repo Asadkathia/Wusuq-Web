@@ -81,10 +81,7 @@ export class CasesController {
 
   @RequirePermissions('cases.write')
   @Delete(':id')
-  delete(
-    @Param('id') id: string,
-    @CurrentUser() actor: JwtUser | undefined,
-  ) {
+  delete(@Param('id') id: string, @CurrentUser() actor: JwtUser | undefined) {
     return this.casesService.deleteCase(id, {
       actorUserId: actor?.sub,
       actorEmail: actor?.email,

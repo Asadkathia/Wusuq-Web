@@ -20,7 +20,8 @@ export const UPLOADS_BUCKETS = {
   personalFiles: 'personal-files',
 } as const;
 
-export type UploadsBucket = (typeof UPLOADS_BUCKETS)[keyof typeof UPLOADS_BUCKETS];
+export type UploadsBucket =
+  (typeof UPLOADS_BUCKETS)[keyof typeof UPLOADS_BUCKETS];
 
 export function getUploadsDir(): string {
   const raw = process.env.UPLOADS_DIR?.trim();

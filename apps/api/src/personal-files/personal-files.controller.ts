@@ -24,7 +24,9 @@ import { ListCaseFilesDto } from './dto/list-case-files.dto';
 
 function assertConsumer(user: JwtUser): void {
   if (user.role !== 'consumer') {
-    throw new ForbiddenException({ error: 'staff_cannot_access_personal_files' });
+    throw new ForbiddenException({
+      error: 'staff_cannot_access_personal_files',
+    });
   }
 }
 
@@ -33,10 +35,15 @@ export class PersonalFilesController {
   constructor(private readonly service: PersonalFilesService) {}
 
   @Post()
-  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 11 * 1024 * 1024 } }))
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: 11 * 1024 * 1024 } }),
+  )
   upload(
     @CurrentUser() user: JwtUser,
-    @UploadedFile() file: { buffer: Buffer; originalname: string; mimetype: string } | undefined,
+    @UploadedFile()
+    file:
+      | { buffer: Buffer; originalname: string; mimetype: string }
+      | undefined,
   ) {
     assertConsumer(user);
     if (!file) throw new BadRequestException({ error: 'no_file' });
@@ -64,9 +71,17 @@ export class PersonalFilesController {
   }
 
   @Get(':id/download')
-  async download(@CurrentUser() user: JwtUser, @Param('id') id: string, @Res() res: Response) {
+  async download(
+    @CurrentUser() user: JwtUser,
+    @Param('id') id: string,
+    @Res() res: Response,
+  ) {
     assertConsumer(user);
-    const url = await this.service.signDownload(user.sub, user.email ?? null, id);
+    const url = await this.service.signDownload(
+      user.sub,
+      user.email ?? null,
+      id,
+    );
     res.redirect(302, url);
   }
 
@@ -84,10 +99,15 @@ export class PersonalFilesController {
   }
 
   @Post('case-files')
-  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 11 * 1024 * 1024 } }))
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: 11 * 1024 * 1024 } }),
+  )
   uploadCaseFile(
     @CurrentUser() user: JwtUser,
-    @UploadedFile() file: { buffer: Buffer; originalname: string; mimetype: string } | undefined,
+    @UploadedFile()
+    file:
+      | { buffer: Buffer; originalname: string; mimetype: string }
+      | undefined,
     @Body() dto: UploadCaseFileDto,
   ) {
     assertConsumer(user);
@@ -113,7 +133,10 @@ export class PersonalFilesController {
   }
 
   @Get('case-files')
-  listCaseFiles(@CurrentUser() user: JwtUser, @Query() query: ListCaseFilesDto) {
+  listCaseFiles(
+    @CurrentUser() user: JwtUser,
+    @Query() query: ListCaseFilesDto,
+  ) {
     assertConsumer(user);
     return this.service.listCaseFiles(user.sub, {
       serviceId: query.serviceId,

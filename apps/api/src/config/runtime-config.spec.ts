@@ -44,4 +44,3 @@ describe('runtime-config', () => {
     expect(config.corsAllowedOrigins).toEqual(['https://example.com']);
   });
 });
-

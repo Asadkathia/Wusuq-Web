@@ -21,7 +21,9 @@ export class EmailService {
 
   async send(to: string, subject: string, html: string): Promise<void> {
     if (!this.config.get('SMTP_HOST')) {
-      this.logger.warn(`Email skipped (SMTP not configured): ${subject} -> ${to}`);
+      this.logger.warn(
+        `Email skipped (SMTP not configured): ${subject} -> ${to}`,
+      );
       return;
     }
 

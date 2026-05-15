@@ -86,7 +86,9 @@ describe('WalletController scope guards', () => {
   });
 
   it('allows consumer to read own transactions', () => {
-    const history = jest.fn().mockResolvedValue({ userId: 'consumer-1', items: [] });
+    const history = jest
+      .fn()
+      .mockResolvedValue({ userId: 'consumer-1', items: [] });
     const controller = makeController({ history });
     void controller.history(consumerUser.sub, consumerUser);
     expect(history).toHaveBeenCalledWith(consumerUser.sub);
@@ -103,12 +105,12 @@ describe('WalletController scope guards', () => {
     const verifyTopup = jest.fn();
     const rejectTopup = jest.fn();
     const controller = makeController({ verifyTopup, rejectTopup });
-    expect(() =>
-      controller.verify('tx-1', { note: '' }, consumerUser),
-    ).toThrow(ForbiddenException);
-    expect(() =>
-      controller.reject('tx-1', { note: '' }, consumerUser),
-    ).toThrow(ForbiddenException);
+    expect(() => controller.verify('tx-1', { note: '' }, consumerUser)).toThrow(
+      ForbiddenException,
+    );
+    expect(() => controller.reject('tx-1', { note: '' }, consumerUser)).toThrow(
+      ForbiddenException,
+    );
     expect(verifyTopup).not.toHaveBeenCalled();
     expect(rejectTopup).not.toHaveBeenCalled();
   });

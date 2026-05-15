@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { hash } from 'bcryptjs';
+import type { User } from '@prisma/client';
 import { USER_ROLES } from '@wusuq/shared';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -69,11 +70,11 @@ export class UsersService {
         name: dto.name,
         email: dto.email,
         phone: formatPakistaniPhone(dto.phone) ?? dto.phone,
-        cnic: (dto as any).cnic,
-        address: (dto as any).address,
-        province: (dto as any).province,
-        district: (dto as any).district,
-        city: (dto as any).city,
+        cnic: dto.cnic,
+        address: dto.address,
+        province: dto.province,
+        district: dto.district,
+        city: dto.city,
         passwordHash: await hash(dto.password, 10),
         role: mapSharedRoleToPrisma(dto.role),
       },
@@ -132,7 +133,9 @@ export class UsersService {
       data: {
         name: dto.name,
         email: dto.email,
-        phone: dto.phone ? formatPakistaniPhone(dto.phone) ?? dto.phone : undefined,
+        phone: dto.phone
+          ? (formatPakistaniPhone(dto.phone) ?? dto.phone)
+          : undefined,
         passwordHash: dto.password ? await hash(dto.password, 10) : undefined,
         role: dto.role ? mapSharedRoleToPrisma(dto.role) : undefined,
         verified: dto.verified,
@@ -214,7 +217,7 @@ export class UsersService {
     }
   }
 
-  private serializeUser(user: Record<string, any>) {
+  private serializeUser(user: User) {
     return {
       id: user.id,
       name: user.name,

@@ -13,7 +13,10 @@ describe('ElectionsService', () => {
       },
     };
     const auditLogsService = { create: jest.fn() };
-    const service = new ElectionsService(prisma as never, auditLogsService as never);
+    const service = new ElectionsService(
+      prisma as never,
+      auditLogsService as never,
+    );
 
     await expect(
       service.updateCandidate(
@@ -27,4 +30,3 @@ describe('ElectionsService', () => {
     expect(prisma.candidate.update).not.toHaveBeenCalled();
   });
 });
-

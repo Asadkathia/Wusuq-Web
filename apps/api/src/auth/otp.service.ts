@@ -1,4 +1,10 @@
-import { BadRequestException, Injectable, UnauthorizedException, HttpException, HttpStatus } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  UnauthorizedException,
+  HttpException,
+  HttpStatus,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthService } from './auth.service';
 
@@ -34,12 +40,17 @@ export class OtpService {
     const phone = normalizePhone(rawPhone);
 
     const lastRecent = await this.prisma.otpCode.findFirst({
-      where: { phone, createdAt: { gte: new Date(Date.now() - PER_PHONE_COOLDOWN_MS) } },
+      where: {
+        phone,
+        createdAt: { gte: new Date(Date.now() - PER_PHONE_COOLDOWN_MS) },
+      },
       orderBy: { createdAt: 'desc' },
     });
     if (lastRecent) {
       const retryAfterSec = Math.ceil(
-        (PER_PHONE_COOLDOWN_MS - (Date.now() - lastRecent.createdAt.getTime())) / 1000,
+        (PER_PHONE_COOLDOWN_MS -
+          (Date.now() - lastRecent.createdAt.getTime())) /
+          1000,
       );
       throw new HttpException(
         { error: 'too_many_requests', retryAfterSec },
@@ -132,7 +143,7 @@ export class OtpService {
   private dispatchSms(phone: string, code: string) {
     // MOCK: replace with Twilio (or chosen provider) call when wiring real SMS.
     // The single function that needs to swap.
-    // eslint-disable-next-line no-console
+
     console.log('[OTP MOCK] phone=%s code=%s', phone, code);
   }
 }

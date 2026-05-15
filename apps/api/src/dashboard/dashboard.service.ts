@@ -1,11 +1,7 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { subDays, startOfDay, endOfDay, format } from 'date-fns';
-import {
-  recommendationsForCase,
-  isFlowKey,
-  type FlowKey,
-} from '@wusuq/shared';
+import { recommendationsForCase, isFlowKey, type FlowKey } from '@wusuq/shared';
 
 @Injectable()
 export class DashboardService {
@@ -26,78 +22,77 @@ export class DashboardService {
       myActiveCases,
       myRecentTickets,
       myNextHearing,
-    ] =
-      await this.prisma.$transaction([
-        this.prisma.ticket.count({
-          where: {
-            consumerId: userId,
-          },
-        }),
-        this.prisma.ticket.count({
-          where: {
-            consumerId: userId,
-            status: 'PENDING',
-          },
-        }),
-        this.prisma.ticket.count({
-          where: {
-            consumerId: userId,
-            status: { in: ['ASSIGNED', 'IN_PROGRESS'] },
-          },
-        }),
-        this.prisma.ticket.count({
-          where: {
-            consumerId: userId,
-            status: 'COMPLETED',
-          },
-        }),
-        this.prisma.user.findUnique({
-          where: { id: userId },
-          select: { walletBalance: true },
-        }),
-        this.prisma.ticket.aggregate({
-          where: {
-            consumerId: userId,
-            paymentStatus: { not: 'PAID' },
-          },
-          _sum: {
-            totalAmount: true,
-            amountPaid: true,
-          },
-        }),
-        this.prisma.case.count({
-          where: {
-            consumerId: userId,
-            status: 'OPEN',
-          },
-        }),
-        this.prisma.ticket.findMany({
-          where: { consumerId: userId },
-          orderBy: { createdAt: 'desc' },
-          take: 5,
-          select: {
-            id: true,
-            batchNo: true,
-            status: true,
-            totalAmount: true,
-            createdAt: true,
-            service: { select: { name: true } },
-          },
-        }),
-        this.prisma.ticket.findFirst({
-          where: {
-            scheduledDate: { gte: now },
-            consumerId: userId,
-            caseId: { not: null },
-          },
-          orderBy: { scheduledDate: 'asc' },
-          select: {
-            scheduledDate: true,
-            hearingType: true,
-            case: { select: { title: true } },
-          },
-        }),
-      ]);
+    ] = await this.prisma.$transaction([
+      this.prisma.ticket.count({
+        where: {
+          consumerId: userId,
+        },
+      }),
+      this.prisma.ticket.count({
+        where: {
+          consumerId: userId,
+          status: 'PENDING',
+        },
+      }),
+      this.prisma.ticket.count({
+        where: {
+          consumerId: userId,
+          status: { in: ['ASSIGNED', 'IN_PROGRESS'] },
+        },
+      }),
+      this.prisma.ticket.count({
+        where: {
+          consumerId: userId,
+          status: 'COMPLETED',
+        },
+      }),
+      this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { walletBalance: true },
+      }),
+      this.prisma.ticket.aggregate({
+        where: {
+          consumerId: userId,
+          paymentStatus: { not: 'PAID' },
+        },
+        _sum: {
+          totalAmount: true,
+          amountPaid: true,
+        },
+      }),
+      this.prisma.case.count({
+        where: {
+          consumerId: userId,
+          status: 'OPEN',
+        },
+      }),
+      this.prisma.ticket.findMany({
+        where: { consumerId: userId },
+        orderBy: { createdAt: 'desc' },
+        take: 5,
+        select: {
+          id: true,
+          batchNo: true,
+          status: true,
+          totalAmount: true,
+          createdAt: true,
+          service: { select: { name: true } },
+        },
+      }),
+      this.prisma.ticket.findFirst({
+        where: {
+          scheduledDate: { gte: now },
+          consumerId: userId,
+          caseId: { not: null },
+        },
+        orderBy: { scheduledDate: 'asc' },
+        select: {
+          scheduledDate: true,
+          hearingType: true,
+          case: { select: { title: true } },
+        },
+      }),
+    ]);
 
     const myTickets = {
       total: totalTickets,
@@ -107,7 +102,8 @@ export class DashboardService {
     };
 
     const myOutstanding =
-      Number(outstandingAgg._sum.totalAmount || 0) - Number(outstandingAgg._sum.amountPaid || 0);
+      Number(outstandingAgg._sum.totalAmount || 0) -
+      Number(outstandingAgg._sum.amountPaid || 0);
 
     return {
       myTickets,
@@ -136,9 +132,11 @@ export class DashboardService {
   private async computeSummary(range: string) {
     const daysStr = range.replace('d', '');
     const days = parseInt(daysStr, 10);
-    
+
     if (isNaN(days) || ![7, 30, 90].includes(days)) {
-      throw new BadRequestException('Invalid range. Supported values: 7d, 30d, 90d');
+      throw new BadRequestException(
+        'Invalid range. Supported values: 7d, 30d, 90d',
+      );
     }
 
     const startDate = startOfDay(subDays(new Date(), days - 1));
@@ -154,7 +152,8 @@ export class DashboardService {
       _sum: { amountPaid: true, totalAmount: true },
     });
     const totalRevenue = Number(revenueResult._sum.amountPaid || 0);
-    const totalOutstanding = Number(revenueResult._sum.totalAmount || 0) - totalRevenue;
+    const totalOutstanding =
+      Number(revenueResult._sum.totalAmount || 0) - totalRevenue;
 
     const kpis = {
       totalTickets,
@@ -217,7 +216,7 @@ export class DashboardService {
       by: ['status'],
       _count: { _all: true },
     });
-    const ticketsByStatus = statusGroups.map(g => ({
+    const ticketsByStatus = statusGroups.map((g) => ({
       name: g.status,
       value: g._count._all,
     }));
@@ -235,10 +234,10 @@ export class DashboardService {
     // Compute Ticket Trend
     const ticketTrendMap = new Map<string, number>();
     for (let i = 0; i < days; i++) {
-        ticketTrendMap.set(format(subDays(new Date(), i), 'MMM dd'), 0);
+      ticketTrendMap.set(format(subDays(new Date(), i), 'MMM dd'), 0);
     }
-    
-    recentTickets.forEach(t => {
+
+    recentTickets.forEach((t) => {
       const day = format(t.createdAt, 'MMM dd');
       if (ticketTrendMap.has(day)) {
         ticketTrendMap.set(day, ticketTrendMap.get(day)! + 1);
@@ -272,7 +271,7 @@ export class DashboardService {
     const serviceMixMap = new Map<string, number>();
     const cityMixMap = new Map<string, number>();
 
-    recentTickets.forEach(t => {
+    recentTickets.forEach((t) => {
       // Service Mix
       const cat = t.service?.category || 'Unknown';
       serviceMixMap.set(cat, (serviceMixMap.get(cat) || 0) + 1);
@@ -282,8 +281,13 @@ export class DashboardService {
       cityMixMap.set(city, (cityMixMap.get(city) || 0) + 1);
     });
 
-    const serviceMix = Array.from(serviceMixMap.entries()).map(([name, value]) => ({ name, value }));
-    const cityMix = Array.from(cityMixMap.entries()).map(([name, value]) => ({ name, value }));
+    const serviceMix = Array.from(serviceMixMap.entries()).map(
+      ([name, value]) => ({ name, value }),
+    );
+    const cityMix = Array.from(cityMixMap.entries()).map(([name, value]) => ({
+      name,
+      value,
+    }));
 
     // Finance Trend (simplified: based on ticket creation date for simplicity, mapping to their amountPaid)
     // In a real scenario, we'd query WalletTransaction verifiedAt or Invoice paidAt.
@@ -294,14 +298,14 @@ export class DashboardService {
 
     const financeTrendMap = new Map<string, number>();
     for (let i = 0; i < days; i++) {
-        financeTrendMap.set(format(subDays(new Date(), i), 'MMM dd'), 0);
+      financeTrendMap.set(format(subDays(new Date(), i), 'MMM dd'), 0);
     }
-    recentTransactions.forEach(tx => {
-       if (!tx.verifiedAt) return;
-       const day = format(tx.verifiedAt, 'MMM dd');
-       if (financeTrendMap.has(day)) {
-           financeTrendMap.set(day, financeTrendMap.get(day)! + Number(tx.amount));
-       }
+    recentTransactions.forEach((tx) => {
+      if (!tx.verifiedAt) return;
+      const day = format(tx.verifiedAt, 'MMM dd');
+      if (financeTrendMap.has(day)) {
+        financeTrendMap.set(day, financeTrendMap.get(day)! + Number(tx.amount));
+      }
     });
     const financeTrend = Array.from(financeTrendMap.entries())
       .reverse()
@@ -450,7 +454,10 @@ export class DashboardService {
       const recs = recommendationsForCase({ triggerFlows, blockingFlows });
       if (recs.length > 0) {
         casesWithRecommendations++;
-        if (!oldestRecommendationCaseAt || c.createdAt < oldestRecommendationCaseAt) {
+        if (
+          !oldestRecommendationCaseAt ||
+          c.createdAt < oldestRecommendationCaseAt
+        ) {
           oldestRecommendationCaseAt = c.createdAt;
         }
       }

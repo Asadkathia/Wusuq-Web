@@ -1,4 +1,13 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, Res } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  Res,
+} from '@nestjs/common';
 import type { Response } from 'express';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { JwtUser } from '../auth/types/jwt-user.type';
@@ -77,12 +86,16 @@ export class FinanceController {
   @RequirePermissions('finance.read')
   @Get('export')
   async export(@Query('format') format: string, @Res() res: Response) {
-    const data = await this.financeService.findAll({ page: 1, limit: 5000 } as any);
-    const rows = data.items as any[];
+    const data = await this.financeService.findAll({
+      page: 1,
+      limit: 5000,
+    } as FinanceQueryDto);
+    const rows = data.items;
 
     if (format === 'csv') {
-      const header = 'Batch No,Consumer,Service,Service City,Case Type,Total,Paid,Remaining,Status';
-      const lines = rows.map((r: any) =>
+      const header =
+        'Batch No,Consumer,Service,Service City,Case Type,Total,Paid,Remaining,Status';
+      const lines = rows.map((r) =>
         [
           r.batchNo ?? '',
           r.consumer?.name ?? '',
@@ -99,7 +112,10 @@ export class FinanceController {
       );
       const csv = [header, ...lines].join('\n');
       res.setHeader('Content-Type', 'text/csv');
-      res.setHeader('Content-Disposition', 'attachment; filename="finance-export.csv"');
+      res.setHeader(
+        'Content-Disposition',
+        'attachment; filename="finance-export.csv"',
+      );
       return res.send(csv);
     }
 

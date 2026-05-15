@@ -122,7 +122,10 @@ export class PersonalFilesService {
 
   // ─── List ──────────────────────────────────────────────────────────────────
 
-  async list(userId: string, opts: ListOptions): Promise<{
+  async list(
+    userId: string,
+    opts: ListOptions,
+  ): Promise<{
     files: PersonalFileDto[];
     usage: { bytesUsed: number; fileCount: number; quotaBytes: number };
   }> {

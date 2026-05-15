@@ -2,11 +2,11 @@ import { promises as fs } from 'node:fs';
 import { dirname, resolve, normalize } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { Injectable, Logger } from '@nestjs/common';
+import { FileStorageProvider, SignedUrlOptions } from './file-storage-provider';
 import {
-  FileStorageProvider,
-  SignedUrlOptions,
-} from './file-storage-provider';
-import { UPLOADS_BUCKETS, getUploadsBucketAbsoluteDir } from '../config/uploads';
+  UPLOADS_BUCKETS,
+  getUploadsBucketAbsoluteDir,
+} from '../config/uploads';
 
 type Token = {
   key: string;
@@ -32,7 +32,9 @@ export class LocalDiskFileStorage implements FileStorageProvider {
   private readonly bucketRoot: string;
 
   constructor() {
-    this.bucketRoot = getUploadsBucketAbsoluteDir(UPLOADS_BUCKETS.personalFiles);
+    this.bucketRoot = getUploadsBucketAbsoluteDir(
+      UPLOADS_BUCKETS.personalFiles,
+    );
   }
 
   async put(key: string, bytes: Buffer, _mimeType: string): Promise<void> {
@@ -41,7 +43,7 @@ export class LocalDiskFileStorage implements FileStorageProvider {
     await fs.writeFile(fullPath, bytes);
   }
 
-  async getSignedDownloadUrl(
+  getSignedDownloadUrl(
     key: string,
     ttlSeconds: number,
     opts?: SignedUrlOptions,
@@ -55,7 +57,7 @@ export class LocalDiskFileStorage implements FileStorageProvider {
       expiresAt: Date.now() + ttl * 1000,
     });
     this.gcTokens();
-    return `/api/files/personal/${token}`;
+    return Promise.resolve(`/api/files/personal/${token}`);
   }
 
   async delete(key: string): Promise<void> {

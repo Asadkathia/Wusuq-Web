@@ -2,7 +2,10 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PAKISTAN_GEO, RAW_POLICE_STATIONS_BY_PROVINCE } from './pakistan-seed';
 import courtsJson from './pakistan-courts.json';
-import { LOWER_COURT_SUBCOURTS, SPECIAL_COURT_SUBCOURTS } from './court-expansion';
+import {
+  LOWER_COURT_SUBCOURTS,
+  SPECIAL_COURT_SUBCOURTS,
+} from './court-expansion';
 import { CITY_ALIAS, PROVINCE_ALIAS } from './court-alias';
 
 type CourtCityEntry = { city: string; is_principal_seat: boolean };
@@ -55,7 +58,10 @@ export class GeoService {
     // the same physical place (a known issue with the historical seed expansion
     // where district fallbacks could re-insert names already allocated). When a
     // name legitimately recurs across districts/provinces it is preserved.
-    const seen = new Map<string, { id: string; name: string; district: string; province: string }>();
+    const seen = new Map<
+      string,
+      { id: string; name: string; district: string; province: string }
+    >();
     for (const c of rows) {
       const province = c.district.province.name;
       const district = c.district.name;
@@ -88,10 +94,16 @@ export class GeoService {
 
     const groups = new Map<
       string,
-      { type: string; courts: { id: string; name: string; isPrincipalSeat: boolean }[] }
+      {
+        type: string;
+        courts: { id: string; name: string; isPrincipalSeat: boolean }[];
+      }
     >();
     for (const seat of seats) {
-      const group = groups.get(seat.court.type) ?? { type: seat.court.type, courts: [] };
+      const group = groups.get(seat.court.type) ?? {
+        type: seat.court.type,
+        courts: [],
+      };
       group.courts.push({
         id: seat.court.id,
         name: seat.court.name,
@@ -197,7 +209,10 @@ export class GeoService {
 
   private async runGeoSeedJob<T>(job: () => Promise<T>): Promise<T> {
     const run = this.geoSeedQueue.then(job, job);
-    this.geoSeedQueue = run.then(() => undefined, () => undefined);
+    this.geoSeedQueue = run.then(
+      () => undefined,
+      () => undefined,
+    );
     return run;
   }
 
@@ -206,22 +221,116 @@ export class GeoService {
    * source only provides stations district-wise, seeded district-wide below).
    */
   private static readonly POLICE_STATION_SEED: Record<string, string[]> = {
-    Lahore: ['Cantt Police Station', 'Civil Lines Police Station', 'Defence Police Station', 'Garden Town Police Station', 'Gulberg Police Station', 'Model Town Police Station', 'Raiwind Police Station', 'Sadar Police Station', 'Shadman Police Station'],
-    Karachi: ['Clifton Police Station', 'Defence Police Station', 'Gulshan-e-Iqbal Police Station', 'Korangi Police Station', 'Landhi Police Station', 'Malir Police Station', 'North Nazimabad Police Station', 'Sadar Police Station', 'SITE Police Station'],
-    Rawalpindi: ['Cantt Police Station', 'Chaklala Police Station', 'Civil Lines Police Station', 'Saddar Police Station', 'Wah Cantt Police Station'],
-    Faisalabad: ['Civil Lines Police Station', 'Gulberg Police Station', 'Madina Town Police Station', 'Sadar Police Station'],
-    Multan: ['City Police Station', 'Civil Lines Police Station', 'Gulgasht Police Station', 'Sadar Police Station'],
-    Peshawar: ['Cantt Police Station', 'City Police Station', 'Hayatabad Police Station', 'Kohat Road Police Station', 'Saddar Police Station'],
-    Quetta: ['Airport Police Station', 'City Police Station', 'Civil Lines Police Station', 'Saddar Police Station', 'Sariab Police Station'],
-    Islamabad: ['Aabpara Police Station', 'Bhara Kahu Police Station', 'Golra Police Station', 'Karachi Company Police Station', 'Margalla Police Station', 'Noon Police Station', 'Ramna Police Station', 'Secretariat Police Station', 'Tarnol Police Station'],
-    Gujranwala: ['City Police Station', 'Gondlanwala Police Station', 'Qila Didar Singh Police Station', 'Saddar Police Station'],
-    Sialkot: ['Civil Lines Police Station', 'Daska Police Station', 'Pasrur Police Station', 'Saddar Police Station'],
-    Hyderabad: ['City Police Station', 'Latifabad Police Station', 'Qasimabad Police Station', 'Saddar Police Station'],
-    Sukkur: ['City Police Station', 'Rohri Police Station', 'Saddar Police Station'],
-    Abbottabad: ['City Police Station', 'Havelian Police Station', 'Mirpur Police Station', 'Saddar Police Station'],
-    Mardan: ['City Police Station', 'Gulberg Police Station', 'Saddar Police Station'],
-    Muzaffarabad: ['City Police Station', 'Garhi Dupatta Police Station', 'Saddar Police Station'],
-    Mirpur: ['City Police Station', 'Dadyal Police Station', 'Saddar Police Station'],
+    Lahore: [
+      'Cantt Police Station',
+      'Civil Lines Police Station',
+      'Defence Police Station',
+      'Garden Town Police Station',
+      'Gulberg Police Station',
+      'Model Town Police Station',
+      'Raiwind Police Station',
+      'Sadar Police Station',
+      'Shadman Police Station',
+    ],
+    Karachi: [
+      'Clifton Police Station',
+      'Defence Police Station',
+      'Gulshan-e-Iqbal Police Station',
+      'Korangi Police Station',
+      'Landhi Police Station',
+      'Malir Police Station',
+      'North Nazimabad Police Station',
+      'Sadar Police Station',
+      'SITE Police Station',
+    ],
+    Rawalpindi: [
+      'Cantt Police Station',
+      'Chaklala Police Station',
+      'Civil Lines Police Station',
+      'Saddar Police Station',
+      'Wah Cantt Police Station',
+    ],
+    Faisalabad: [
+      'Civil Lines Police Station',
+      'Gulberg Police Station',
+      'Madina Town Police Station',
+      'Sadar Police Station',
+    ],
+    Multan: [
+      'City Police Station',
+      'Civil Lines Police Station',
+      'Gulgasht Police Station',
+      'Sadar Police Station',
+    ],
+    Peshawar: [
+      'Cantt Police Station',
+      'City Police Station',
+      'Hayatabad Police Station',
+      'Kohat Road Police Station',
+      'Saddar Police Station',
+    ],
+    Quetta: [
+      'Airport Police Station',
+      'City Police Station',
+      'Civil Lines Police Station',
+      'Saddar Police Station',
+      'Sariab Police Station',
+    ],
+    Islamabad: [
+      'Aabpara Police Station',
+      'Bhara Kahu Police Station',
+      'Golra Police Station',
+      'Karachi Company Police Station',
+      'Margalla Police Station',
+      'Noon Police Station',
+      'Ramna Police Station',
+      'Secretariat Police Station',
+      'Tarnol Police Station',
+    ],
+    Gujranwala: [
+      'City Police Station',
+      'Gondlanwala Police Station',
+      'Qila Didar Singh Police Station',
+      'Saddar Police Station',
+    ],
+    Sialkot: [
+      'Civil Lines Police Station',
+      'Daska Police Station',
+      'Pasrur Police Station',
+      'Saddar Police Station',
+    ],
+    Hyderabad: [
+      'City Police Station',
+      'Latifabad Police Station',
+      'Qasimabad Police Station',
+      'Saddar Police Station',
+    ],
+    Sukkur: [
+      'City Police Station',
+      'Rohri Police Station',
+      'Saddar Police Station',
+    ],
+    Abbottabad: [
+      'City Police Station',
+      'Havelian Police Station',
+      'Mirpur Police Station',
+      'Saddar Police Station',
+    ],
+    Mardan: [
+      'City Police Station',
+      'Gulberg Police Station',
+      'Saddar Police Station',
+    ],
+    Muzaffarabad: [
+      'City Police Station',
+      'Garhi Dupatta Police Station',
+      'Saddar Police Station',
+    ],
+    Mirpur: [
+      'City Police Station',
+      'Dadyal Police Station',
+      'Saddar Police Station',
+    ],
   };
 
   private async seedUnsafe() {
@@ -237,9 +346,13 @@ export class GeoService {
 
     // 1. Provinces / districts / cities / police-stations (existing pakistan-seed tree).
     for (const prov of PAKISTAN_GEO) {
-      let province = await this.prisma.geoProvince.findFirst({ where: { name: prov.name } });
+      let province = await this.prisma.geoProvince.findFirst({
+        where: { name: prov.name },
+      });
       if (!province) {
-        province = await this.prisma.geoProvince.create({ data: { name: prov.name } });
+        province = await this.prisma.geoProvince.create({
+          data: { name: prov.name },
+        });
         created.provinces++;
       }
       for (const dist of prov.districts) {
@@ -314,7 +427,9 @@ export class GeoService {
     const cityByProvince = new Map<string, Map<string, string>>();
     const provinces = await this.prisma.geoProvince.findMany({
       include: {
-        districts: { include: { cities: { select: { id: true, name: true } } } },
+        districts: {
+          include: { cities: { select: { id: true, name: true } } },
+        },
       },
     });
     for (const prov of provinces) {
@@ -348,7 +463,11 @@ export class GeoService {
       return court;
     };
 
-    const upsertSeat = async (courtId: string, cityId: string, isPrincipal: boolean) => {
+    const upsertSeat = async (
+      courtId: string,
+      cityId: string,
+      isPrincipal: boolean,
+    ) => {
       const existing = await this.prisma.courtSeat.findUnique({
         where: { courtId_cityId: { courtId, cityId } },
       });
@@ -368,15 +487,18 @@ export class GeoService {
     for (const [courtType, subCourts] of Object.entries(COURTS_NESTED)) {
       for (const [jsonSubCourtName, provinceMap] of Object.entries(subCourts)) {
         for (const [jsonProvince, cityEntries] of Object.entries(provinceMap)) {
-          const canonicalProvince = PROVINCE_ALIAS[jsonProvince] ?? jsonProvince;
+          const canonicalProvince =
+            PROVINCE_ALIAS[jsonProvince] ?? jsonProvince;
           const provinceCities = cityByProvince.get(canonicalProvince);
 
           for (const entry of cityEntries) {
             const aliased = CITY_ALIAS[entry.city] ?? entry.city;
             const key = aliased.toLowerCase();
-            const cityId = provinceCities?.get(key) ?? globalCityByName.get(key);
+            const cityId =
+              provinceCities?.get(key) ?? globalCityByName.get(key);
             if (!cityId) {
-              const set = unresolved.get(canonicalProvince) ?? new Set<string>();
+              const set =
+                unresolved.get(canonicalProvince) ?? new Set<string>();
               set.add(entry.city);
               unresolved.set(canonicalProvince, set);
               continue;
@@ -393,8 +515,15 @@ export class GeoService {
                 await upsertSeat(court.id, cityId, false);
               }
             } else if (courtType === 'Special Court') {
-              for (const [subName, cities] of Object.entries(SPECIAL_COURT_SUBCOURTS)) {
-                if (!cities.some((c) => c.toLowerCase() === entry.city.toLowerCase())) continue;
+              for (const [subName, cities] of Object.entries(
+                SPECIAL_COURT_SUBCOURTS,
+              )) {
+                if (
+                  !cities.some(
+                    (c) => c.toLowerCase() === entry.city.toLowerCase(),
+                  )
+                )
+                  continue;
                 const court = await getOrCreateCourt(courtType, subName);
                 await upsertSeat(court.id, cityId, false);
               }

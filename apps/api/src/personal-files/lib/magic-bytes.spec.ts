@@ -37,10 +37,7 @@ describe('sniffAllowedType', () => {
   });
 
   it('rejects executables (ELF)', async () => {
-    const elf = Buffer.from([
-      0x7f, 0x45, 0x4c, 0x46,
-      ...new Array(64).fill(0),
-    ]);
+    const elf = Buffer.from([0x7f, 0x45, 0x4c, 0x46, ...new Array(64).fill(0)]);
     expect(await sniffAllowedType(elf)).toBeNull();
   });
 });

@@ -276,8 +276,15 @@ export class TicketsService {
       include: {
         consumer: {
           select: {
-            id: true, name: true, email: true, phone: true,
-            cnic: true, address: true, province: true, district: true, city: true,
+            id: true,
+            name: true,
+            email: true,
+            phone: true,
+            cnic: true,
+            address: true,
+            province: true,
+            district: true,
+            city: true,
           },
         },
         service: {
@@ -287,7 +294,14 @@ export class TicketsService {
           orderBy: { createdAt: 'desc' },
           include: {
             representative: {
-              select: { id: true, name: true, phone: true, city: true, district: true, court: true },
+              select: {
+                id: true,
+                name: true,
+                phone: true,
+                city: true,
+                district: true,
+                court: true,
+              },
             },
           },
         },
@@ -322,14 +336,13 @@ export class TicketsService {
       entityId: ticket.id,
       actorUserId: actor?.actorUserId,
       actorEmail: actor?.actorEmail,
-      metadata: { updates: dto as any },
+      metadata: { updates: { ...dto } },
     });
 
     return ticket;
   }
 
   async createIntakeTicket(
-
     dto: CreateTicketIntakeDto,
     actor?: { actorUserId?: string; actorEmail?: string },
   ) {
@@ -372,7 +385,7 @@ export class TicketsService {
     const courtLevel = payload['select_court_type'];
     const caseStatus = payload['case_status'];
     const rawYear = payload['case_year'] ?? payload['year'];
-    const caseYear = rawYear ? (parseInt(rawYear, 10) || undefined) : undefined;
+    const caseYear = rawYear ? parseInt(rawYear, 10) || undefined : undefined;
     const setType = payload['set_type'];
     let attestedQty = 0;
     let nonAttestedQty = 0;
@@ -382,11 +395,16 @@ export class TicketsService {
       nonAttestedQty = parseInt(payload['non_attested_qty'] ?? '0', 10) || 0;
     } else if (setType === 'both') {
       attestedQty = parseInt(payload['both_attested_qty'] ?? '0', 10) || 0;
-      nonAttestedQty = parseInt(payload['both_non_attested_qty'] ?? '0', 10) || 0;
+      nonAttestedQty =
+        parseInt(payload['both_non_attested_qty'] ?? '0', 10) || 0;
     }
 
     const province = payload['province'] ?? payload['province_capital'] ?? '';
-    const city = payload['select_court_city'] ?? payload['city'] ?? payload['select_city'] ?? '';
+    const city =
+      payload['select_court_city'] ??
+      payload['city'] ??
+      payload['select_city'] ??
+      '';
     const pricing = await this.pricingService.resolve({
       flow: dto.flow,
       courtLevel,
@@ -426,7 +444,9 @@ export class TicketsService {
         // Atomic case linkage + scheduling. Replaces the prior two-step
         // pattern in cases.service.ts (create then update).
         caseId: dto.caseId,
-        scheduledDate: dto.scheduledDate ? new Date(dto.scheduledDate) : undefined,
+        scheduledDate: dto.scheduledDate
+          ? new Date(dto.scheduledDate)
+          : undefined,
         hearingType: dto.hearingType,
       },
     });
@@ -564,7 +584,9 @@ export class TicketsService {
         ...(status === 'COMPLETED' ? { paymentStatus: 'PAID' } : {}),
       },
       include: {
-        consumer: { select: { id: true, name: true, phone: true, email: true } },
+        consumer: {
+          select: { id: true, name: true, phone: true, email: true },
+        },
         service: { select: { id: true, name: true } },
       },
     });
@@ -580,7 +602,9 @@ export class TicketsService {
         },
       });
 
-      const docs = await this.prisma.ticketDocument.findMany({ where: { ticketId: id } });
+      const docs = await this.prisma.ticketDocument.findMany({
+        where: { ticketId: id },
+      });
       for (const doc of docs) {
         await this.prisma.caseDocument.create({
           data: {
@@ -652,7 +676,10 @@ export class TicketsService {
         blockingFlows.push(flow);
         if (t.status === 'COMPLETED') triggerFlows.push(flow);
       }
-      caseRecommendations = recommendationsForCase({ triggerFlows, blockingFlows });
+      caseRecommendations = recommendationsForCase({
+        triggerFlows,
+        blockingFlows,
+      });
     }
 
     return { ...updated, caseRecommendations };
@@ -786,7 +813,12 @@ export class TicketsService {
     if (dto.action === 'complete') {
       for (const ticketId of dto.ticketIds) {
         try {
-          await this.updateStatus(ticketId, 'COMPLETED', 'Bulk completion', actor);
+          await this.updateStatus(
+            ticketId,
+            'COMPLETED',
+            'Bulk completion',
+            actor,
+          );
           succeeded.push(ticketId);
         } catch (err) {
           failed.push({
@@ -841,7 +873,8 @@ export class TicketsService {
         name: file.filename,
         type: file.mimetype,
         fileUrl: file.path,
-        caption: trimmedCaption && trimmedCaption.length > 0 ? trimmedCaption : null,
+        caption:
+          trimmedCaption && trimmedCaption.length > 0 ? trimmedCaption : null,
       },
     });
 
@@ -950,7 +983,9 @@ export class TicketsService {
     receiptUrl: string,
     actor?: { actorUserId?: string; actorEmail?: string },
   ) {
-    const ticket = await this.prisma.ticket.findUnique({ where: { id: ticketId } });
+    const ticket = await this.prisma.ticket.findUnique({
+      where: { id: ticketId },
+    });
     if (!ticket) throw new NotFoundException('Ticket not found');
 
     const updated = await this.prisma.ticket.update({
@@ -975,7 +1010,9 @@ export class TicketsService {
     reason?: string,
     actor?: { actorUserId?: string; actorEmail?: string },
   ) {
-    const ticket = await this.prisma.ticket.findUnique({ where: { id: ticketId } });
+    const ticket = await this.prisma.ticket.findUnique({
+      where: { id: ticketId },
+    });
     if (!ticket) throw new NotFoundException('Ticket not found');
     if (ticket.clerkApprovalStatus !== 'SUBMITTED') {
       throw new BadRequestException('No submitted receipt to verify');
@@ -1018,23 +1055,30 @@ export class TicketsService {
     dto: SubmitClerkCostsDto,
     actor?: { actorUserId?: string; actorEmail?: string },
   ) {
-    const ticket = await this.prisma.ticket.findUnique({ where: { id: ticketId } });
+    const ticket = await this.prisma.ticket.findUnique({
+      where: { id: ticketId },
+    });
     if (!ticket) {
       throw new NotFoundException('Ticket not found');
     }
 
-    if (ticket.status !== 'IN_PROGRESS' && ticket.status !== 'WAITING_APPROVAL') {
+    if (
+      ticket.status !== 'IN_PROGRESS' &&
+      ticket.status !== 'WAITING_APPROVAL'
+    ) {
       throw new BadRequestException(
         'Ticket must be in progress or waiting approval',
       );
     }
 
-    const deliveryCharges = dto.deliveryCharges ?? Number(ticket.deliveryCharges);
+    const deliveryCharges =
+      dto.deliveryCharges ?? Number(ticket.deliveryCharges);
     const printingCharges =
       dto.printingCharges ??
       this.computePrintingCharges(dto.noOfPages, dto.costPerPage) ??
       Number(ticket.printingCharges);
-    const attestedCharges = dto.attestedCharges ?? Number(ticket.attestedCharges);
+    const attestedCharges =
+      dto.attestedCharges ?? Number(ticket.attestedCharges);
     const nonAttestedCharges =
       dto.nonAttestedCharges ?? Number(ticket.nonAttestedCharges);
     const additionalCharges =
@@ -1088,8 +1132,12 @@ export class TicketsService {
           partialCompletion: dto.partialCompletion ?? false,
         },
         update: {
-          ...(fa.attested !== undefined ? { attestedAvailable: fa.attested } : {}),
-          ...(fa.nonAttested !== undefined ? { nonAttestedAvailable: fa.nonAttested } : {}),
+          ...(fa.attested !== undefined
+            ? { attestedAvailable: fa.attested }
+            : {}),
+          ...(fa.nonAttested !== undefined
+            ? { nonAttestedAvailable: fa.nonAttested }
+            : {}),
           ...(fa.both !== undefined ? { bothAvailable: fa.both } : {}),
           ...(dto.perPageRateAttested !== undefined
             ? { perPageRateAttested: dto.perPageRateAttested }
@@ -1131,7 +1179,9 @@ export class TicketsService {
         noOfPages: dto.noOfPages,
         costPerPage: dto.costPerPage,
         rejectionReason: dto.rejectionReason,
-        filesAvailable: dto.filesAvailable ? { ...dto.filesAvailable } : undefined,
+        filesAvailable: dto.filesAvailable
+          ? { ...dto.filesAvailable }
+          : undefined,
         perPageRateAttested: dto.perPageRateAttested,
         perPageRateNonAttested: dto.perPageRateNonAttested,
         unavailableReason: dto.unavailableReason,
@@ -1149,7 +1199,9 @@ export class TicketsService {
     reason: string,
     actor?: { actorUserId?: string; actorEmail?: string },
   ) {
-    const ticket = await this.prisma.ticket.findUnique({ where: { id: ticketId } });
+    const ticket = await this.prisma.ticket.findUnique({
+      where: { id: ticketId },
+    });
     if (!ticket) {
       throw new NotFoundException('Ticket not found');
     }
@@ -1206,7 +1258,11 @@ export class TicketsService {
     }
 
     const missing = required.find(
-      (key) => !this.hasPayloadStringValue(payload, [key, ...(PAYLOAD_FIELD_ALIASES[key] ?? [])]),
+      (key) =>
+        !this.hasPayloadStringValue(payload, [
+          key,
+          ...(PAYLOAD_FIELD_ALIASES[key] ?? []),
+        ]),
     );
 
     if (missing) {
@@ -1255,7 +1311,13 @@ export class TicketsService {
   private async ensureActiveRepresentativeExists(id: string) {
     const user = await this.prisma.user.findUnique({
       where: { id },
-      select: { id: true, role: true, isActive: true, city: true, courtCity: true },
+      select: {
+        id: true,
+        role: true,
+        isActive: true,
+        city: true,
+        courtCity: true,
+      },
     });
 
     if (!user) {
@@ -1337,11 +1399,20 @@ export class TicketsService {
     };
     const mappings: Mapping[] = [
       { column: 'caseNo', canonical: 'case_petition_no' },
-      { column: 'caseYear', canonical: 'case_year', parse: (v) => {
-        const s = String(v ?? '').trim();
-        const n = parseInt(s, 10);
-        return Number.isFinite(n) ? n : null;
-      } },
+      {
+        column: 'caseYear',
+        canonical: 'case_year',
+        parse: (v) => {
+          const s =
+            typeof v === 'string'
+              ? v.trim()
+              : typeof v === 'number'
+                ? String(v)
+                : '';
+          const n = parseInt(s, 10);
+          return Number.isFinite(n) ? n : null;
+        },
+      },
       { column: 'court', canonical: 'select_court' },
       { column: 'courtCity', canonical: 'select_court_city' },
       { column: 'caseCategory', canonical: 'case_type' },
@@ -1364,7 +1435,13 @@ export class TicketsService {
     for (const m of mappings) {
       const raw = readAliased(payload, m.canonical);
       if (raw === undefined) continue;
-      const parsed = m.parse ? m.parse(raw) : String(raw).trim();
+      const parsed = m.parse
+        ? m.parse(raw)
+        : typeof raw === 'string'
+          ? raw.trim()
+          : typeof raw === 'number'
+            ? String(raw)
+            : '';
       if (parsed === null || parsed === '') continue;
 
       const existing = caseAsRecord[m.column];
@@ -1373,8 +1450,14 @@ export class TicketsService {
         continue;
       }
       // Normalised compare (string-form, case-insensitive for free text).
-      const a = typeof existing === 'number' ? String(existing) : String(existing).trim();
-      const b = typeof parsed === 'number' ? String(parsed) : String(parsed).trim();
+      const a =
+        typeof existing === 'number'
+          ? String(existing)
+          : typeof existing === 'string'
+            ? existing.trim()
+            : '';
+      const b =
+        typeof parsed === 'number' ? String(parsed) : String(parsed).trim();
       if (a.toLowerCase() === b.toLowerCase()) continue;
       drifts.push({ field: m.column, caseValue: a, ticketValue: b });
     }

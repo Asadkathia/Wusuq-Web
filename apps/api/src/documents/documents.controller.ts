@@ -26,18 +26,21 @@ export class DocumentsController {
   @RequirePermissions('documents.read')
   @Get('export')
   async export(@Query('format') format: string, @Res() res: Response) {
-    const data = await this.documentsService.list({ page: 1, limit: 5000 } as any);
-    const rows = data.items as any[];
+    const data = await this.documentsService.list({
+      page: 1,
+      limit: 5000,
+    } as PaginationQueryDto);
+    const rows = data.items;
 
     if (format === 'csv') {
       const header = 'Name,Type,Batch No,Consumer,Date Logged,File URL';
-      const lines = rows.map((r: any) =>
+      const lines = rows.map((r) =>
         [
           r.name ?? '',
           r.type ?? '',
           r.ticket?.batchNo ?? '',
           r.ticket?.consumer?.name ?? '',
-          r.createdAt ?? '',
+          r.createdAt instanceof Date ? r.createdAt.toISOString() : '',
           r.fileUrl ?? '',
         ]
           .map((v) => `"${String(v).replace(/"/g, '""')}"`)
@@ -45,7 +48,10 @@ export class DocumentsController {
       );
       const csv = [header, ...lines].join('\n');
       res.setHeader('Content-Type', 'text/csv');
-      res.setHeader('Content-Disposition', 'attachment; filename="documents-export.csv"');
+      res.setHeader(
+        'Content-Disposition',
+        'attachment; filename="documents-export.csv"',
+      );
       return res.send(csv);
     }
 

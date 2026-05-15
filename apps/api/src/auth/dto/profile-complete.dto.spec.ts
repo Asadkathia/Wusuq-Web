@@ -22,14 +22,20 @@ describe('ProfileCompleteDto', () => {
 
   it('accepts each valid consumerKind', async () => {
     for (const kind of ['LAWYER', 'NON_LAWYER', 'CORPORATE']) {
-      const dto = plainToInstance(ProfileCompleteDto, { name: 'Ali', consumerKind: kind });
+      const dto = plainToInstance(ProfileCompleteDto, {
+        name: 'Ali',
+        consumerKind: kind,
+      });
       const errors = await validate(dto, { whitelist: true });
       expect(errors).toEqual([]);
     }
   });
 
   it('rejects an unknown consumerKind value', async () => {
-    const dto = plainToInstance(ProfileCompleteDto, { name: 'Ali', consumerKind: 'STUDENT' });
+    const dto = plainToInstance(ProfileCompleteDto, {
+      name: 'Ali',
+      consumerKind: 'STUDENT',
+    });
     const errors = await validate(dto, { whitelist: true });
     expect(errors.some((e) => e.property === 'consumerKind')).toBe(true);
   });

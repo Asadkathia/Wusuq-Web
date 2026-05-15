@@ -90,10 +90,7 @@ export class UsersController {
 
   @RequirePermissions('users.write')
   @Post(':id/activate')
-  activate(
-    @Param('id') id: string,
-    @CurrentUser() actor: JwtUser | undefined,
-  ) {
+  activate(@Param('id') id: string, @CurrentUser() actor: JwtUser | undefined) {
     return this.usersService.activate(id, {
       actorUserId: actor?.sub,
       actorEmail: actor?.email,

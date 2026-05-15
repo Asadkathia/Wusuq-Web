@@ -19,7 +19,10 @@ describe('FinanceService', () => {
       $transaction: jest.fn(async (cb) => cb(tx)),
     };
     const auditLogsService = { create: jest.fn() };
-    const service = new FinanceService(prisma as never, auditLogsService as never);
+    const service = new FinanceService(
+      prisma as never,
+      auditLogsService as never,
+    );
 
     await expect(
       service.reconcilePayment('ticket-1', {

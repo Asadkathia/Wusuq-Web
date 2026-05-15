@@ -351,7 +351,8 @@ export class TicketsController {
   @UseInterceptors(
     FileInterceptor('file', {
       storage: diskStorage({
-        destination: (_req, _file, cb) => cb(null, getUploadsBucketDir(UPLOADS_BUCKETS.ticketDocuments)),
+        destination: (_req, _file, cb) =>
+          cb(null, getUploadsBucketDir(UPLOADS_BUCKETS.ticketDocuments)),
         filename: (_req, file, callback) => {
           const sanitized = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
           const ext = extname(sanitized);
@@ -420,7 +421,8 @@ export class TicketsController {
   @UseInterceptors(
     FileInterceptor('file', {
       storage: diskStorage({
-        destination: (_req, _file, cb) => cb(null, getUploadsBucketDir(UPLOADS_BUCKETS.clerkReceipts)),
+        destination: (_req, _file, cb) =>
+          cb(null, getUploadsBucketDir(UPLOADS_BUCKETS.clerkReceipts)),
         filename: (_req, file, callback) => {
           const sanitized = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
           const ext = extname(sanitized);
@@ -433,10 +435,17 @@ export class TicketsController {
       limits: { fileSize: MAX_UPLOAD_SIZE_BYTES },
       fileFilter: (_req, file, callback) => {
         const allowed = new Set(['.jpg', '.jpeg', '.png', '.pdf']);
-        const allowedMime = new Set(['image/jpeg', 'image/png', 'application/pdf']);
+        const allowedMime = new Set([
+          'image/jpeg',
+          'image/png',
+          'application/pdf',
+        ]);
         const ext = extname(file.originalname).toLowerCase();
         if (!allowedMime.has(file.mimetype) || !allowed.has(ext)) {
-          callback(new BadRequestException('Allowed formats: JPG, PNG, PDF'), false);
+          callback(
+            new BadRequestException('Allowed formats: JPG, PNG, PDF'),
+            false,
+          );
           return;
         }
         callback(null, true);
@@ -445,7 +454,8 @@ export class TicketsController {
   )
   submitClerkReceipt(
     @Param('id') id: string,
-    @UploadedFile() file: { filename: string; mimetype: string; path: string } | undefined,
+    @UploadedFile()
+    file: { filename: string; mimetype: string; path: string } | undefined,
     @CurrentUser() actor: JwtUser | undefined,
   ) {
     if (!file) throw new BadRequestException('Receipt image is required');

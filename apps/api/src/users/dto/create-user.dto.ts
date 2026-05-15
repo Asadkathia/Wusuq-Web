@@ -24,4 +24,24 @@ export class CreateUserDto {
 
   @IsIn(USER_ROLES)
   role!: (typeof USER_ROLES)[number];
+
+  @IsOptional()
+  @IsString()
+  cnic?: string;
+
+  @IsOptional()
+  @IsString()
+  address?: string;
+
+  @IsOptional()
+  @IsString()
+  province?: string;
+
+  @IsOptional()
+  @IsString()
+  district?: string;
+
+  @IsOptional()
+  @IsString()
+  city?: string;
 }

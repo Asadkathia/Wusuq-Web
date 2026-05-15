@@ -33,7 +33,17 @@ describe('TicketsService', () => {
       },
     };
     const auditLogsService = { create: jest.fn().mockResolvedValue({}) };
-    const pricingService = { resolve: jest.fn().mockResolvedValue({ matched: false, basePrice: 0, attestedCharge: 0, nonAttestedCharge: 0, deliveryCharge: 0, serviceCost: 0, total: 0 }) };
+    const pricingService = {
+      resolve: jest.fn().mockResolvedValue({
+        matched: false,
+        basePrice: 0,
+        attestedCharge: 0,
+        nonAttestedCharge: 0,
+        deliveryCharge: 0,
+        serviceCost: 0,
+        total: 0,
+      }),
+    };
     const geoService = { resolveProvinceByCity: jest.fn() };
     const notificationsService = { create: jest.fn().mockResolvedValue({}) };
     const service = new TicketsService(
@@ -88,7 +98,17 @@ describe('TicketsService', () => {
       $transaction: jest.fn(),
     };
     const auditLogsService = { create: jest.fn() };
-    const pricingService = { resolve: jest.fn().mockResolvedValue({ matched: false, basePrice: 0, attestedCharge: 0, nonAttestedCharge: 0, deliveryCharge: 0, serviceCost: 0, total: 0 }) };
+    const pricingService = {
+      resolve: jest.fn().mockResolvedValue({
+        matched: false,
+        basePrice: 0,
+        attestedCharge: 0,
+        nonAttestedCharge: 0,
+        deliveryCharge: 0,
+        serviceCost: 0,
+        total: 0,
+      }),
+    };
     const geoService = { resolveProvinceByCity: jest.fn() };
     const notificationsService = { create: jest.fn() };
     const service = new TicketsService(

@@ -8,7 +8,13 @@ import { TicketsController } from './tickets.controller';
 import { TicketsService } from './tickets.service';
 
 @Module({
-  imports: [PrismaModule, AuditLogsModule, PricingModule, GeoModule, NotificationsModule],
+  imports: [
+    PrismaModule,
+    AuditLogsModule,
+    PricingModule,
+    GeoModule,
+    NotificationsModule,
+  ],
   controllers: [TicketsController],
   providers: [TicketsService],
   exports: [TicketsService],

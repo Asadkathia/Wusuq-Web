@@ -1,4 +1,8 @@
-import { ConflictException, Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { UserRole } from '@prisma/client';
@@ -209,7 +213,11 @@ export class AuthService {
 
   async completeProfile(
     userId: string,
-    dto: { name: string; cityName?: string; consumerKind?: 'LAWYER' | 'NON_LAWYER' | 'CORPORATE' },
+    dto: {
+      name: string;
+      cityName?: string;
+      consumerKind?: 'LAWYER' | 'NON_LAWYER' | 'CORPORATE';
+    },
   ) {
     const user = await this.prisma.user.update({
       where: { id: userId },
@@ -244,7 +252,12 @@ export class AuthService {
     return { success: true };
   }
 
-  async issueTokensForUser(user: { id: string; email: string | null; role: UserRole; name: string | null }) {
+  async issueTokensForUser(user: {
+    id: string;
+    email: string | null;
+    role: UserRole;
+    name: string | null;
+  }) {
     const payload: JwtUser = {
       sub: user.id,
       email: user.email ?? '',

@@ -1,4 +1,10 @@
-import { Body, Controller, Post, Param, ForbiddenException } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Post,
+  Param,
+  ForbiddenException,
+} from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { CurrentUser } from './decorators/current-user.decorator';
 import { Public } from './decorators/public.decorator';
