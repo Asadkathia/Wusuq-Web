@@ -28,6 +28,9 @@ jobs:
       - name: Generate Prisma client
         run: pnpm --filter @wusuq/api prisma:generate
 
+      - name: Build shared package
+        run: pnpm --filter @wusuq/shared build
+
       - name: Lint
         run: pnpm lint
 
