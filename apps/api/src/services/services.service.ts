@@ -418,6 +418,12 @@ const DEFAULT_SERVICE_CATALOG = [
     courtLevel: null,
     description: 'Year-banded case record retrieval across court tiers.',
     courts: [],
+    // Per 5-14-26 addendum: case record is an extension of case files when
+    // case_status='Decided'. The service tile is hidden from consumers; the
+    // row stays in the catalogue so historical tickets (serviceId=
+    // 'svc_judicial_case_record') still resolve to a display name. Year-band
+    // pricing now lives on svc_judicial_case_files rules.
+    hidden: true,
   },
   {
     id: 'svc_non_judicial_registry_deed',
@@ -493,7 +499,15 @@ export class ServicesService {
       orderBy: { name: 'asc' },
     });
 
-    return services.map((service) => {
+    return services
+      .filter((service) => {
+        const catalog = this.catalogById.get(service.id);
+        // Hide catalogue entries flagged hidden (e.g. svc_judicial_case_record
+        // — folded into svc_judicial_case_files per the 5-14-26 addendum).
+        // The DB row stays so historical tickets still resolve a service name.
+        return !(catalog && 'hidden' in catalog && catalog.hidden === true);
+      })
+      .map((service) => {
       const catalog = this.catalogById.get(service.id);
       const courts = catalog?.courts ? [...catalog.courts] : [];
       // Only include court→city entries for courts that belong to this service

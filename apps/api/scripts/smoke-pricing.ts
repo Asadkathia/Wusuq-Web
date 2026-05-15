@@ -40,6 +40,15 @@ async function main() {
       expectAvailability: true,
       expectTotal: 900,
     },
+    {
+      // 5-14-26 addendum: decided Case Files (year-banded) must now resolve
+      // against svc_judicial_case_files rules (previously these rows lived on
+      // svc_judicial_case_record). No setType — exercises the headline band
+      // path, not the Sheet 2 set-type matrix.
+      label: 'Punjab + Lower + Case Files + 2022-2020 (decided band, no setType)',
+      body: { flow: 'judicial_case_files', courtLevel: 'Lower Court', region: 'Punjab', yearBand: 'y2022_2020' },
+      expectAvailability: true,
+    },
   ];
 
   for (const c of cases) {

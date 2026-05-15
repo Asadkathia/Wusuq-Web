@@ -1,6 +1,6 @@
 {
   "metadata": {
-    "total_records": 726,
+    "total_records": 723,
     "court_types": [
       "Federal Constitutional Court",
       "Federal Shariat Court",
@@ -290,6 +290,10 @@
             "is_principal_seat": false
           },
           {
+            "city": "garhi dopatta\u00a0(Garhi Dopatta)",
+            "is_principal_seat": false
+          },
+          {
             "city": "Hajeera",
             "is_principal_seat": false
           },
@@ -367,10 +371,6 @@
           },
           {
             "city": "Thorar",
-            "is_principal_seat": false
-          },
-          {
-            "city": "garhi dopatta\u00a0(Garhi Dopatta)",
             "is_principal_seat": false
           }
         ],
@@ -1618,6 +1618,10 @@
             "is_principal_seat": false
           },
           {
+            "city": "koh-e-Suleman",
+            "is_principal_seat": false
+          },
+          {
             "city": "Kot Addu",
             "is_principal_seat": false
           },
@@ -1912,10 +1916,6 @@
           {
             "city": "Zafarwal",
             "is_principal_seat": false
-          },
-          {
-            "city": "koh-e-Suleman",
-            "is_principal_seat": false
           }
         ],
         "Sindh": [
@@ -2064,19 +2064,7 @@
             "is_principal_seat": false
           },
           {
-            "city": "Karachi Centeral",
-            "is_principal_seat": false
-          },
-          {
-            "city": "Karachi East",
-            "is_principal_seat": false
-          },
-          {
-            "city": "Karachi South",
-            "is_principal_seat": false
-          },
-          {
-            "city": "Karachi West",
+            "city": "Karachi",
             "is_principal_seat": false
           },
           {
@@ -6435,28 +6423,7 @@
       "court_type": "Lower Court",
       "court_name": "Lower Court",
       "province_region": "Sindh",
-      "city": "Karachi Centeral",
-      "is_principal_seat": false
-    },
-    {
-      "court_type": "Lower Court",
-      "court_name": "Lower Court",
-      "province_region": "Sindh",
-      "city": "Karachi East",
-      "is_principal_seat": false
-    },
-    {
-      "court_type": "Lower Court",
-      "court_name": "Lower Court",
-      "province_region": "Sindh",
-      "city": "Karachi South",
-      "is_principal_seat": false
-    },
-    {
-      "court_type": "Lower Court",
-      "court_name": "Lower Court",
-      "province_region": "Sindh",
-      "city": "Karachi West",
+      "city": "Karachi",
       "is_principal_seat": false
     },
     {

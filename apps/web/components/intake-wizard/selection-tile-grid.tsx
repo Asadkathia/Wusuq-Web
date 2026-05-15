@@ -22,6 +22,13 @@ type SelectionTileGridProps = {
   emptyPlaceholder?: string;
   /** Whether the grid should be non-interactive (e.g. upstream cascade not yet resolved) */
   disabled?: boolean;
+  /**
+   * Optional custom predicate used to decide whether an option matches the
+   * current search query. Defaults to a case-insensitive substring match
+   * against `label`. Pickers with domain-specific aliases (e.g. the city
+   * picker recognising "rwp" → Rawalpindi) pass their own implementation.
+   */
+  matchPredicate?: (option: TileOption, query: string) => boolean;
 };
 
 export function SelectionTileGrid({
@@ -33,6 +40,7 @@ export function SelectionTileGrid({
   ariaLabel,
   emptyPlaceholder,
   disabled,
+  matchPredicate,
 }: SelectionTileGridProps) {
   const [query, setQuery] = useState('');
 
@@ -44,7 +52,9 @@ export function SelectionTileGrid({
     trimmedQuery === ''
       ? options
       : options.filter((o) =>
-          o.label.toLowerCase().includes(trimmedQuery.toLowerCase()),
+          matchPredicate
+            ? matchPredicate(o, trimmedQuery)
+            : o.label.toLowerCase().includes(trimmedQuery.toLowerCase()),
         );
 
   // When the list is huge AND the user hasn't searched yet, only render the

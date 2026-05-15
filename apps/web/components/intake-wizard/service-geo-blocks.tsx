@@ -2,7 +2,52 @@
 
 import { startTransition, useEffect, useRef, useState } from 'react';
 import { Building2, CalendarDays, HelpCircle, MapPin, MapPinned, Pencil, ShieldAlert } from 'lucide-react';
-import { SelectionTileGrid } from './selection-tile-grid';
+import { SelectionTileGrid, type TileOption } from './selection-tile-grid';
+
+/**
+ * Common Pakistani city abbreviations consumers type into the search box.
+ * Keys are lowercase tokens; values are the canonical city name substrings to
+ * also match against. Drives the city-picker filter so typing `rwp` finds
+ * Rawalpindi etc. without polluting the GeoCity table with aliases.
+ *
+ * Keep this list short — only well-established abbreviations. Spelling
+ * variants of full city names belong in the seed, not here.
+ */
+const CITY_SEARCH_ALIASES: Record<string, string[]> = {
+  rwp: ['rawalpindi'],
+  pindi: ['rawalpindi'],
+  khi: ['karachi'],
+  isb: ['islamabad'],
+  lhr: ['lahore'],
+  pwr: ['peshawar'],
+  pesh: ['peshawar'],
+  qta: ['quetta'],
+  fsd: ['faisalabad'],
+  fbd: ['faisalabad'],
+  mlt: ['multan'],
+  multan: ['multan'], // identity to keep the data flow consistent
+  // Add more carefully — bias toward only the truly common ones.
+};
+
+/**
+ * Returns true if the tile option should match the search query. Matches
+ * against the option label directly OR against any alias resolution. Both
+ * sides are lowercased before comparison.
+ */
+function matchesCitySearch(option: TileOption, query: string): boolean {
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+  const name = option.label.toLowerCase();
+  if (name.includes(q)) return true;
+  // Alias check: any of the alias targets for the query token must appear in
+  // the city name. We split the query on whitespace so the user can type
+  // "rwp courts" and still match Rawalpindi-courts entries.
+  for (const token of q.split(/\s+/)) {
+    const targets = CITY_SEARCH_ALIASES[token];
+    if (targets && targets.some((t) => name.includes(t))) return true;
+  }
+  return false;
+}
 
 type GeoState = {
   provinces: { id: string; name: string }[];
@@ -195,6 +240,7 @@ export function CityBlock({
             value={''}
             onChange={(v) => toggle(v)}
             ariaLabel="Cities"
+            matchPredicate={matchesCitySearch}
           />
         </div>
       </div>
@@ -234,6 +280,7 @@ export function CityBlock({
             value={cityId}
             onChange={(v) => onCityChange(v, findName(cities, v))}
             ariaLabel="City"
+            matchPredicate={matchesCitySearch}
           />
         )}
       </div>
@@ -302,6 +349,7 @@ export function LocationBlock({
           ariaLabel="City"
           disabled={!geoIds.districtId}
           emptyPlaceholder="Select a district above to see cities."
+          matchPredicate={matchesCitySearch}
         />
       </div>
     </div>
