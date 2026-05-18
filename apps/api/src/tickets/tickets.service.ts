@@ -574,6 +574,43 @@ export class TicketsService {
     });
   }
 
+  // QA cosmetic: "Start Fresh" in the wizard needs to remove the server-side
+  // draft so a subsequent page reload doesn't restore it. Returns
+  // { deleted: boolean } so the client can distinguish "removed something"
+  // from "nothing to remove" without surfacing 404s as errors.
+  async deleteActiveDraft({
+    consumerId,
+    flow,
+    actorUserId,
+    actorEmail,
+  }: {
+    consumerId: string;
+    flow: string;
+    actorUserId?: string;
+    actorEmail?: string;
+  }): Promise<{ deleted: boolean }> {
+    this.ensureFlowSupported(flow);
+    const existing = await this.prisma.ticketIntakeDraft.findUnique({
+      where: { consumerId_flow: { consumerId, flow } },
+      select: { id: true },
+    });
+    if (!existing) {
+      return { deleted: false };
+    }
+    await this.prisma.ticketIntakeDraft.delete({
+      where: { id: existing.id },
+    });
+    await this.auditLogsService.create({
+      action: 'TICKET_DRAFT_DELETED',
+      entity: 'TICKET_DRAFT',
+      entityId: existing.id,
+      actorUserId,
+      actorEmail,
+      metadata: { flow, trigger: 'start_fresh' },
+    });
+    return { deleted: true };
+  }
+
   async updateStatus(
     id: string,
     status: TicketStatus,

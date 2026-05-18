@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -267,6 +268,26 @@ export class TicketsController {
   @Get('intake-drafts/:id')
   getDraft(@Param('id') id: string) {
     return this.ticketsService.getIntakeDraft(id);
+  }
+
+  @RequirePermissions('tickets.write')
+  @Delete('intake-drafts/active')
+  deleteActiveDraft(
+    @Query('flow') flow: string,
+    @CurrentUser() actor: JwtUser | undefined,
+  ) {
+    if (!flow) {
+      throw new BadRequestException('flow query parameter is required');
+    }
+    if (!actor?.sub) {
+      throw new BadRequestException('Authenticated user required');
+    }
+    return this.ticketsService.deleteActiveDraft({
+      consumerId: actor.sub,
+      flow,
+      actorUserId: actor.sub,
+      actorEmail: actor.email,
+    });
   }
 
   @RequirePermissions('tickets.read')
