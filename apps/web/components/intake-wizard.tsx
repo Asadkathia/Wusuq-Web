@@ -324,6 +324,19 @@ export function IntakeWizard({
   // fetched yet" from "fetched, result was empty" so the UI can render a
   // loading state instead of a misleading "No courts available" message.
   const [cityCourtsLoading, setCityCourtsLoading] = useState(false);
+  // QA: autosave/submit race guard. The 5s debounced autosave fires from a
+  // closure that captures the pre-submit draft. If it lands at the server
+  // AFTER the submit-side draft delete, it upserts a phantom draft with the
+  // old payload — which the wizard happily restores on the next visit,
+  // pre-filling the previous ticket's title/etc. Setting this ref ahead of
+  // the submit POST blocks the autosave from firing during and after the
+  // submit; resetForm() clears it so the next intake can autosave normally.
+  const submittingRef = useRef(false);
+  // QA: when the wizard hydrates an existing server draft on mount we surface
+  // a "Resumed your previous draft" banner so the restore behaviour is
+  // explicit. Dismissed automatically as soon as the user opens Start Fresh
+  // or successfully submits.
+  const [resumedDraftAt, setResumedDraftAt] = useState<string | null>(null);
 
   const geo = useGeo();
   const [geoIds, setGeoIds] = useState({ provinceId: '', districtId: '', cityId: '' });
@@ -763,6 +776,7 @@ export function IntakeWizard({
           `/tickets/intake-drafts/active?flow=${encodeURIComponent(flowKey)}`,
         );
         if (cancelled || !r || !r.id) return;
+        setResumedDraftAt(typeof r.updatedAt === 'string' ? r.updatedAt : new Date().toISOString());
         setDraft((current) => ({
           ...current,
           draftId: r.id,
@@ -1006,6 +1020,10 @@ export function IntakeWizard({
 
   const canAutosaveDraft = useCallback(() => {
     if (!selectedFlow) return false;
+    // QA: never autosave while a submit is in flight — the autosave timer
+    // would otherwise upsert a phantom draft on the just-deleted server row
+    // and the wizard would restore it on the next visit (prefill bug).
+    if (submittingRef.current) return false;
     return Boolean(
       draft.flow &&
       draft.consumerId &&
@@ -1174,6 +1192,10 @@ export function IntakeWizard({
 
   const saveDraft = async (mode: 'manual' | 'auto' = 'manual') => {
     if (!selectedFlow) return;
+    // QA: extra belt — even if an autosave timer slipped past the guard
+    // above (e.g. fired after submittingRef flipped), bail out here so we
+    // never re-create the server draft mid-/post-submit.
+    if (mode === 'auto' && submittingRef.current) return;
     if (mode === 'manual') setLoading(true);
     setInfoMsg(mode === 'auto' ? 'Saving…' : 'Saving draft...');
     setApiError('');
@@ -1233,6 +1255,10 @@ export function IntakeWizard({
   };
 
   const resetForm = () => {
+    // Clear the submission guard so the next intake's autosave can fire.
+    submittingRef.current = false;
+    // Tear down the "Resumed draft" banner — the user is on a fresh form now.
+    setResumedDraftAt(null);
     setDraft({
       flow: flows[0]?.key ?? '',
       consumerId: isConsumer || isAdminTestingMode ? (currentUser?.id ?? '') : '',
@@ -1322,6 +1348,14 @@ export function IntakeWizard({
 
   const submitTicket = async () => {
     if (!selectedFlow || !validateCurrentStep()) return;
+    // QA: flip the submission guard BEFORE any await, and clear any pending
+    // autosave timer. Both are required to prevent the autosave from
+    // resurrecting the draft we're about to delete server-side.
+    submittingRef.current = true;
+    if (autosaveTimerRef.current) {
+      clearTimeout(autosaveTimerRef.current);
+      autosaveTimerRef.current = null;
+    }
     setLoading(true); setApiError('');
     try {
       const p = draft.payload;
@@ -1381,7 +1415,12 @@ export function IntakeWizard({
       } catch {}
       setInfoMsg('✅ Ticket created successfully! Batch No: ' + ticket.batchNo);
       resetForm();
-    } catch (e: any) { setApiError(e.message || 'Submission failed'); }
+    } catch (e: any) {
+      setApiError(e.message || 'Submission failed');
+      // Re-enable autosave only on failure — on success resetForm() clears
+      // the flag (so the next intake starts clean).
+      submittingRef.current = false;
+    }
     setLoading(false);
   };
 
@@ -1407,6 +1446,29 @@ export function IntakeWizard({
 
       {futureFromTicketId && futureSourceLabel ? (
         <FutureTicketsBanner sourceTicketLabel={futureSourceLabel} />
+      ) : null}
+
+      {resumedDraftAt && !futureFromTicketId ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-brand-200 bg-brand-50/60 px-4 py-3 text-sm text-brand-800">
+          <div className="flex items-start gap-2">
+            <FolderOpen className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>
+              <span className="font-semibold">Resumed your previous draft</span>
+              {(() => {
+                const rel = formatRelativeTime(new Date(resumedDraftAt).getTime());
+                return rel ? <span className="ml-1 text-brand-700/80">· last saved {rel}</span> : null;
+              })()}
+              . Continue where you left off, or start a fresh ticket.
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={startFresh}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-brand-300 bg-surface px-3 py-1.5 text-xs font-semibold text-brand-700 transition-colors hover:bg-brand-100"
+          >
+            Start fresh
+          </button>
+        </div>
       ) : null}
 
       {displayFlow && (

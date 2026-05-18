@@ -507,6 +507,38 @@ export class TicketsService {
   ) {
     this.ensureFlowSupported(dto.flow);
 
+    // QA: belt-and-suspenders against the autosave/submit race. If a ticket
+    // for this (consumerId, flow) was just created (within the last 30s),
+    // refuse the draft upsert — the autosave POST is almost certainly a
+    // stale closure firing after the user already submitted, and accepting
+    // it would resurrect the just-deleted draft and pre-fill the next
+    // intake with the previous ticket's payload.
+    const recentTicketCutoff = new Date(Date.now() - 30_000);
+    const recentTicket = await this.prisma.ticket.findFirst({
+      where: {
+        consumerId: dto.consumerId,
+        intakeFlow: dto.flow,
+        createdAt: { gte: recentTicketCutoff },
+      },
+      select: { id: true },
+    });
+    if (recentTicket) {
+      this.logger.debug(
+        `Suppressed draft autosave for consumer ${dto.consumerId} / flow ${dto.flow}: ticket ${recentTicket.id} was just created.`,
+      );
+      // Return a stable shape mirroring a draft so callers don't crash; the
+      // wizard's autosave only reads the id off the response.
+      return {
+        id: '',
+        flow: dto.flow,
+        consumerId: dto.consumerId,
+        serviceId: dto.serviceId ?? null,
+        step: dto.step ?? 1,
+        payload: dto.payload ?? null,
+        suppressed: true,
+      };
+    }
+
     // Upsert by (consumerId, flow) so a consumer always has at most one active
     // draft per flow. This is the server-side source of truth for resume —
     // the client only caches the draft id in localStorage as a fast path.

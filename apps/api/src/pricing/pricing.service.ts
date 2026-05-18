@@ -199,19 +199,35 @@ export class PricingService {
     );
     const flowRules = modeRules.filter((r) => r.flow === args.flow);
 
-    const result: Record<string, boolean> = {};
-    for (const opt of args.options) {
-      const candidates = flowRules.filter((r) => {
+    // QA fix: the wizard sends yearBand='pending' for any Pending Case, but
+    // the seed only carries `pending` rows for region='Punjab' — outside
+    // Punjab there are no pending-band set-type rules, only `current` and
+    // the historical bands. Without a fallback the consumer sees all 3
+    // set-type options flagged "unavailable at this court tier" and is
+    // stuck on a required field they can't satisfy. We retry the lookup
+    // with yearBand='current' when the requested band yields zero candidates,
+    // which mirrors the resolver's `deriveYearBand(undefined) === 'current'`
+    // contract for pending cases that have no decided year.
+    const lookup = (opt: string, yearBand: string) =>
+      flowRules.filter((r) => {
         if (r.courtLevel && r.courtLevel !== effectiveCourtLevel) return false;
         if (r.caseStatus && r.caseStatus !== args.caseStatus) return false;
         if (r.region && r.region !== region) return false;
-        if (r.yearBand && r.yearBand !== requestedYearBand) return false;
+        if (r.yearBand && r.yearBand !== yearBand) return false;
         if (r.setType !== opt) return false;
         return true;
       });
+
+    const result: Record<string, boolean> = {};
+    for (const opt of args.options) {
+      let candidates = lookup(opt, requestedYearBand);
+      if (!candidates.length && requestedYearBand !== 'current') {
+        candidates = lookup(opt, 'current');
+      }
       if (!candidates.length) {
-        // No matching rule — treat as unavailable so the wizard surfaces a clear
-        // signal instead of letting the user pick a combo that resolves to 0.
+        // No matching rule even after the fallback — treat as unavailable so
+        // the wizard surfaces a clear signal instead of letting the user
+        // pick a combo that resolves to 0.
         result[opt] = false;
         continue;
       }
@@ -306,6 +322,27 @@ export class PricingService {
       }
       return true;
     });
+
+    // QA fix: the seed only carries `pending` yearBand rows for region='Punjab'.
+    // For Pending Cases outside Punjab the strict match above finds nothing,
+    // which would block the wizard with a misleading "unavailable" message.
+    // Fall back to the `current` band, which mirrors the wizard's implicit
+    // contract for cases without a decided year. Keep this BEFORE the legacy
+    // yearFrom/yearTo fallback so the v2 dimensions still take priority.
+    if (!candidates.length && requestedYearBand !== 'current') {
+      candidates = flowRules.filter((r) => {
+        if (r.courtLevel && r.courtLevel !== effectiveCourtLevel) return false;
+        if (r.caseStatus && r.caseStatus !== dto.caseStatus) return false;
+        if (r.region && r.region !== region) return false;
+        if (r.yearBand && r.yearBand !== 'current') return false;
+        if (requestedSetType) {
+          if (r.setType !== requestedSetType) return false;
+        } else {
+          if (r.setType) return false;
+        }
+        return true;
+      });
+    }
 
     // Backwards-compat fallback: if no candidates and the rule set still uses
     // legacy yearFrom/yearTo only, retry without yearBand match.
