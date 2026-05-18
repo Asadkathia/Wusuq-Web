@@ -20,6 +20,27 @@ export const STATE_VS_PATTERN = /^\s*state\s+vs\b/i;
 // number of cities (PDF #36).
 export const SEARCH_BOTH_SURCHARGE = 1000;
 
+// PDF #7 / QA 5-10-26: decided cases older than 10 years pick up Rs 1,000 per
+// extra year on top of the rule-based price. Example: in 2026 a 2016 case
+// resolves to its banded base; 2015 = base + 1,000; 2014 = base + 2,000.
+// Applies only when caseStatus === 'Decided Case'. Pending and current-year
+// cases get no surcharge.
+export const DECIDED_AGE_SURCHARGE_PER_YEAR = 1000;
+export const DECIDED_AGE_THRESHOLD_YEARS = 10;
+
+function computeAgeSurcharge(
+  caseStatus: string | undefined,
+  caseYear: number | undefined,
+  currentYear = new Date().getFullYear(),
+): number {
+  if (caseStatus !== 'Decided Case') return 0;
+  if (!caseYear || caseYear >= currentYear) return 0;
+  const age = currentYear - caseYear;
+  const extra = age - DECIDED_AGE_THRESHOLD_YEARS;
+  if (extra <= 0) return 0;
+  return extra * DECIDED_AGE_SURCHARGE_PER_YEAR;
+}
+
 function deriveRegion(province?: string): 'Punjab' | 'other' | undefined {
   if (!province) return undefined;
   return PUNJAB_NAMES.has(province) ? 'Punjab' : 'other';
@@ -220,6 +241,9 @@ export class PricingService {
     pdfSurcharge: number;
     deliveryFee: number;
     titleSurcharge: number;
+    // PDF #7 / QA 5-10-26: Rs 1,000/year surcharge on Decided cases beyond
+    // 10 years old. Zero for pending and current-year cases.
+    ageSurcharge: number;
     // PDF #37: Rs 1,000 surcharge added per city when search_method === 'both'
     // for `judicial_case_search`. Zero for every other flow.
     searchBothSurcharge: number;
@@ -306,6 +330,7 @@ export class PricingService {
         pdfSurcharge: 0,
         deliveryFee: 0,
         titleSurcharge: 0,
+        ageSurcharge: 0,
         searchBothSurcharge: 0,
         cityCount: 1,
         attestedCharge: 0,
@@ -334,6 +359,7 @@ export class PricingService {
         pdfSurcharge: 0,
         deliveryFee: 0,
         titleSurcharge: 0,
+        ageSurcharge: 0,
         searchBothSurcharge: 0,
         cityCount: 1,
         attestedCharge: 0,
@@ -395,6 +421,11 @@ export class PricingService {
         ? STATE_VS_SURCHARGE
         : 0;
 
+    // PDF #7: Decided cases beyond 10 years old accrue Rs 1,000/year on top
+    // of the banded rule. Lives in the resolver as a derived surcharge so the
+    // pricing sheet only needs the banded rules — no per-year rows.
+    const ageSurcharge = computeAgeSurcharge(dto.caseStatus, dto.caseYear);
+
     // PDF #36 / #37 — Case Search-specific multipliers. Other flows ignore
     // both: cityCount stays 1 and searchBothSurcharge stays 0.
     const isCaseSearch = dto.flow === 'judicial_case_search';
@@ -408,16 +439,18 @@ export class PricingService {
       attestedCharge +
       nonAttestedCharge +
       pdfSurcharge +
-      titleSurcharge;
+      titleSurcharge +
+      ageSurcharge;
     // For Case Search the per-city block (base + searchBoth + title + pdf +
-    // deliveryFee) is multiplied by the city count. Per-set rates and the
-    // rule's flat deliveryCharge are NOT multiplied — they're already
-    // per-ticket. Other flows degenerate to the original formula (cityCount=1,
-    // searchBothSurcharge=0).
+    // deliveryFee + ageSurcharge) is multiplied by the city count. Per-set
+    // rates and the rule's flat deliveryCharge are NOT multiplied — they're
+    // already per-ticket. Other flows degenerate to the original formula
+    // (cityCount=1, searchBothSurcharge=0).
     const perCityBlock =
       basePrice +
       searchBothSurcharge +
       titleSurcharge +
+      ageSurcharge +
       pdfSurcharge +
       deliveryFee;
     const total =
@@ -438,6 +471,7 @@ export class PricingService {
       pdfSurcharge,
       deliveryFee,
       titleSurcharge,
+      ageSurcharge,
       searchBothSurcharge,
       cityCount,
       clerkRateOverride: clerkOverride,

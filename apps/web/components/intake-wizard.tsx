@@ -6,7 +6,7 @@ import { useSearchParams } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { buildFutureTicketsPayload } from '@/lib/future-tickets';
 import { PanelCard } from '@/components/ui/panel-card';
-import { ChevronRight, CheckCircle2, FolderOpen, Sparkles, X } from 'lucide-react';
+import { ChevronRight, CheckCircle2, FolderOpen, Pencil, Sparkles, X } from 'lucide-react';
 import type { IntakeFlow, IntakeStep, CourtTier } from '@/lib/intake-flows';
 import { courtTierFromCourtType, resolveRequired, docBundleLabel, normalizeDraftPayload, isStructuredAddressComplete, computeYearBand, parseBench, showWhenSatisfied, parseCities, stringifyCities } from '@/lib/intake-flows';
 import { BENCH_TYPE_LABELS } from '@/lib/bench-types';
@@ -192,7 +192,7 @@ const SERVICE_DESCRIPTIONS: Record<string, string> = {
   'Case Files': 'Request copies of the file, order sheets, or paperbook from court.',
   'Case Information': 'Get up-to-date information about a matter already in court.',
   'Case Search': 'Search for a case when you have only partial details available.',
-  'Case Filling': 'Start a new filing request and share the core case particulars.',
+  'Case Filing': 'Start a new filing request and share the core case particulars.',
   'Power of Attorney': 'Request certified power-of-attorney related court handling.',
   'Copy of FIR': 'Request a copy of the FIR from the relevant police station.',
   'Registry/Deed': 'Request a registry or deed copy from the sub-registrar office.',
@@ -1177,10 +1177,34 @@ export function IntakeWizard({
       setLastSavedAt(Date.now());
       setInfoMsg('Saved · just now');
       localStorage.setItem(`wusuq_intake_draft_id:${variant}:${draft.flow}`, r.id);
+      // QA 5-14-26 #1: manual Save Draft should park the current draft in the
+      // Drafts folder and hand the user a fresh, empty wizard so they can
+      // start the next ticket without manually reloading. Auto-save keeps the
+      // user on the current step.
+      if (mode === 'manual') {
+        localStorage.removeItem(`wusuq_intake_draft_id:${variant}:${draft.flow}`);
+        resetForm();
+        setInfoMsg('Draft saved — start a new ticket below.');
+      }
     } catch (e: any) {
       setApiError(e.message || 'Save failed');
     }
     if (mode === 'manual') setLoading(false);
+  };
+
+  // QA P1: "Start Fresh" — explicit affordance for the consumer to abandon
+  // the restored draft and begin a brand-new ticket without first saving.
+  // Confirms before discarding so an accidental click doesn't nuke work in
+  // progress. Mirrors Save Draft's reset path minus the server save.
+  const startFresh = () => {
+    if (!window.confirm('Discard the current draft and start a new ticket? This cannot be undone.')) return;
+    try {
+      localStorage.removeItem(`wusuq_intake_draft_id:${variant}:${draft.flow}`);
+    } catch {
+      /* localStorage unavailable */
+    }
+    resetForm();
+    setInfoMsg('Started a fresh ticket.');
   };
 
   const resetForm = () => {
@@ -1324,6 +1348,12 @@ export function IntakeWizard({
         if (caption) fd.append('caption', caption);
         await apiClient.post(`/tickets/${ticket.id}/documents/upload`, fd);
       }
+      // The backend deletes the (consumerId, flow) draft after a ticket is
+      // created. Clear the matching localStorage pointer so the next intake
+      // doesn't try to hydrate from a stale id.
+      try {
+        localStorage.removeItem(`wusuq_intake_draft_id:${variant}:${draft.flow}`);
+      } catch {}
       setInfoMsg('✅ Ticket created successfully! Batch No: ' + ticket.batchNo);
       resetForm();
     } catch (e: any) { setApiError(e.message || 'Submission failed'); }
@@ -1413,6 +1443,13 @@ export function IntakeWizard({
                         city_id: primaryId,
                         city: primaryName,
                         select_court_city: primaryName,
+                        // QA MC-1: when the consumer moves from 1 → multi
+                        // city while search_method='both', downgrade to
+                        // 'cnic' so the price stays resolvable. Single-city
+                        // states leave search_method untouched.
+                        ...(ids.length > 1 && c.payload.search_method === 'both'
+                          ? { search_method: 'cnic' }
+                          : {}),
                         ...(primaryId !== previousPrimary
                           ? {
                               select_service: '',
@@ -1448,6 +1485,24 @@ export function IntakeWizard({
                     <p className="mt-1 rounded-xl bg-amber-50 p-3 text-sm text-amber-700 ring-1 ring-inset ring-amber-100">
                       No courts are available in {draft.payload.city}. Pick a different city.
                     </p>
+                  ) : selectedService ? (
+                    // Once a court is selected, collapse the grid to a chip
+                    // with a Change button — mirrors the City field pattern
+                    // and removes the visual noise of unavailable options.
+                    <div className="mt-1 flex flex-wrap items-center gap-3">
+                      <span className="inline-flex items-center gap-2 rounded-full border border-brand-200 bg-brand-50 px-4 py-2 text-sm font-medium text-brand-700">
+                        <Sparkles className="h-3.5 w-3.5" />
+                        <span className="font-semibold">{selectedService.name}</span>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => applySelectedService('', '', [])}
+                        className="inline-flex items-center gap-1.5 rounded-xl border border-border-soft bg-surface px-3 py-1.5 text-xs font-semibold text-slate-700 transition-colors hover:bg-surface-muted"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                        Change
+                      </button>
+                    </div>
                   ) : (
                     <ServiceCardGrid
                       services={availableServices}
@@ -1482,7 +1537,7 @@ export function IntakeWizard({
                 )
               )}
 
-              {isJudicial && draft.serviceId && (
+              {isJudicial && draft.serviceId && selectedCourtList.length > 1 && (
                 <JudicialServiceBlock
                   courtTierId={draft.serviceId}
                   cityName={draft.payload.city ?? ''}
@@ -1503,6 +1558,40 @@ export function IntakeWizard({
                   }}
                 />
               )}
+
+              {/* QA #2 (5-10-26): surface the delivery mode pick on Step 1
+                  so the consumer commits to TCS / Uber / Self Collection
+                  before drilling into case details. The field def is
+                  hoisted from the flow's later step so each flow keeps its
+                  own option list (TCS/Uber/Self for Case Files, courier/
+                  self_collection for Filing & PoA, portal/whatsapp/other_no
+                  for Case Information). Address / coordinate fields stay on
+                  their original step with the same `showWhen` condition. */}
+              {selectedFlow && (() => {
+                for (const step of selectedFlow.steps) {
+                  for (const f of step.fields) {
+                    if (f.key === 'delivery_mode') {
+                      return (
+                        <div className="md:col-span-2 space-y-1">
+                          <label className="text-sm font-medium text-slate-700">
+                            {f.label ?? 'Delivery Method'}
+                            {f.required ? <span className="text-rose-500 ml-0.5">*</span> : null}
+                          </label>
+                          {renderField(
+                            f,
+                            draft.payload.delivery_mode ?? '',
+                            draft.payload as Record<string, string>,
+                            (key, value) => setPayloadField(key, value),
+                            undefined,
+                            (key, newValue) => setPayloadField(key, newValue ?? draft.payload[key] ?? ''),
+                          )}
+                        </div>
+                      );
+                    }
+                  }
+                }
+                return null;
+              })()}
             </>
           )}
 
@@ -1602,9 +1691,22 @@ export function IntakeWizard({
               // Petition / Paperbook based on the active court tier while
               // keeping the canonical DocBundle key as the stored value.
               if (field.key === 'required_documentations') {
+                // QA P2: Case Information has two priced tiers — Rs 750 for
+                // "Only Last Order", Rs 1,500 for "Only Complete Order
+                // Sheet". Surface the difference next to the label so the
+                // consumer doesn't pick blind. Other flows render plain
+                // labels (no priced tiers).
+                const showPriceHint = draft.flow === 'judicial_case_information';
+                const priceHint: Record<string, string> = {
+                  doc_only_last_order: ' — Rs 750',
+                  doc_only_complete_order_sheet: ' — Rs 1,500',
+                };
                 field = {
                   ...field,
-                  optionsLabel: (opt: string) => docBundleLabel(opt, activeCourtTier),
+                  optionsLabel: (opt: string) => {
+                    const base = docBundleLabel(opt, activeCourtTier);
+                    return showPriceHint && priceHint[opt] ? base + priceHint[opt] : base;
+                  },
                 };
               }
               const dynamicOpts =
@@ -1734,18 +1836,36 @@ export function IntakeWizard({
                 Save draft
               </button>
             </div>
+            <button
+              type="button"
+              disabled={loading}
+              onClick={startFresh}
+              className="min-h-[44px] rounded-xl px-4 py-2.5 text-xs font-medium text-slate-500 underline-offset-2 transition-colors hover:text-rose-600 hover:underline disabled:opacity-50"
+            >
+              Start fresh
+            </button>
           </div>
 
           {/* Desktop */}
           <div className="hidden sm:flex items-center justify-between">
-            <button
-              type="button"
-              disabled={loading || draft.step === 1}
-              className="min-h-[44px] rounded-xl bg-surface px-4 py-2.5 text-sm font-semibold text-slate-700 ring-1 ring-inset ring-border-soft transition-colors hover:bg-surface-hover disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40"
-              onClick={() => setField('step', Math.max(1, draft.step - 1))}
-            >
-              Back
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                disabled={loading || draft.step === 1}
+                className="min-h-[44px] rounded-xl bg-surface px-4 py-2.5 text-sm font-semibold text-slate-700 ring-1 ring-inset ring-border-soft transition-colors hover:bg-surface-hover disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40"
+                onClick={() => setField('step', Math.max(1, draft.step - 1))}
+              >
+                Back
+              </button>
+              <button
+                type="button"
+                disabled={loading}
+                onClick={startFresh}
+                className="min-h-[44px] rounded-xl px-3 py-2.5 text-xs font-medium text-slate-500 underline-offset-2 transition-colors hover:text-rose-600 hover:underline disabled:opacity-50"
+              >
+                Start fresh
+              </button>
+            </div>
 
             <div className="flex gap-3">
               <button

@@ -650,7 +650,17 @@ export function CaseDateBlock({
         </label>
       ) : (
         <label className="block">
-          <FieldLabel>{caseStatus === 'Unknown Case' ? 'Institution Date' : 'Case date'}</FieldLabel>
+          {/* QA R4: Case Filing's "New Case" path labels this as the Date of
+              Institution (when the case is being filed). Unknown Case keeps
+              its long-standing "Institution Date" label. Other case-status
+              values fall through to a generic "Case date". */}
+          <FieldLabel>
+            {caseStatus === 'New Case'
+              ? 'Date of Institution'
+              : caseStatus === 'Unknown Case'
+                ? 'Institution Date'
+                : 'Case date'}
+          </FieldLabel>
           <input
             className={inputClass}
             type="date"

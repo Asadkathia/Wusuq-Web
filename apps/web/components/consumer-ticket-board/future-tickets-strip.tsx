@@ -11,6 +11,11 @@ type Props = {
   flow: 'judicial_case_files' | 'judicial_case_information';
   /** ISO-format next-hearing date from the source ticket's payload.future_date. */
   nextHearingDate: string;
+  /** Workflow status of the source ticket. Drives subtext copy: completed
+   *  tickets prompt "Order Future Tickets" (reorder for the next hearing);
+   *  in-flight tickets prompt "Notify me on next hearing" (the consumer
+   *  can pre-queue without waiting for the current ticket to close). */
+  ticketStatus?: string;
 };
 
 function formatHearingDate(iso: string): string {
@@ -21,9 +26,11 @@ function formatHearingDate(iso: string): string {
   return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
-export function FutureTicketsStrip({ ticketId, flow, nextHearingDate }: Props) {
+export function FutureTicketsStrip({ ticketId, flow, nextHearingDate, ticketStatus }: Props) {
   const slug = flowKeyToSlug(flow);
   const href = `/consumer/paralegal-services/judicial/${slug}?futureFromTicketId=${encodeURIComponent(ticketId)}`;
+  const isCompleted = ticketStatus === 'COMPLETED';
+  const subtext = isCompleted ? 'Order Future Tickets' : 'Notify me on next hearing';
   return (
     <Link
       href={href}
@@ -33,7 +40,7 @@ export function FutureTicketsStrip({ ticketId, flow, nextHearingDate }: Props) {
         <CalendarClock className="h-4 w-4 shrink-0" />
         <div className="leading-tight">
           <p className="font-semibold">Next hearing {formatHearingDate(nextHearingDate)}</p>
-          <p className="text-xs text-brand-700/80">Order Future Tickets</p>
+          <p className="text-xs text-brand-700/80">{subtext}</p>
         </div>
       </div>
       <ArrowUpRight className="h-4 w-4 shrink-0" />

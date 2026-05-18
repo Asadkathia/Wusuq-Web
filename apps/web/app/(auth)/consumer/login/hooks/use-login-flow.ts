@@ -3,12 +3,18 @@ import { useCallback, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { requestOtp, verifyOtp, completeProfile, type OtpVerifyResponse } from '../api';
 import type { ConsumerKind } from '@wusuq/shared';
+import { DEFAULT_COUNTRY_CODE, findCountry } from '@/lib/countries';
 
 export type LoginStep = 'phone' | 'otp' | 'profile';
 
 export function useLoginFlow() {
   const router = useRouter();
   const [step, setStep] = useState<LoginStep>('phone');
+  // QA B9/B10: region picked alongside the phone input (McDonald's-style),
+  // not locked to +92. The local phone digits are stored without the dial
+  // prefix; the prefix is composed at request time from the selected
+  // country's dial code.
+  const [countryCode, setCountryCode] = useState<string>(DEFAULT_COUNTRY_CODE);
   const [phone, setPhone] = useState('');
   const [otp, setOtp] = useState('');
   const [name, setName] = useState('');
@@ -28,11 +34,23 @@ export function useLoginFlow() {
     }
   }
 
+  const composedPhone = useCallback(() => {
+    // Strip whitespace, dashes, parens, leading + and leading zero. Compose
+    // an E.164-ish "+<dial><local>" so the backend OTP requester always sees
+    // a fully-qualified number regardless of how the user typed it.
+    const digits = phone.replace(/[\s\-()]/g, '').replace(/^\+/, '').replace(/^0+/, '');
+    const dial = findCountry(countryCode).dial;
+    // If the user already typed the dial code (e.g. "923001234567"), don't
+    // double it up. Otherwise prepend.
+    const local = digits.startsWith(dial) ? digits : `${dial}${digits}`;
+    return `+${local}`;
+  }, [phone, countryCode]);
+
   const sendOtp = useCallback(async () => {
     setError(null);
     setLoading(true);
     try {
-      const r = await requestOtp(phone);
+      const r = await requestOtp(composedPhone());
       setDevCode(r.devCode);
       setOtp(r.devCode ?? '');
       setStep('otp');
@@ -44,13 +62,13 @@ export function useLoginFlow() {
     } finally {
       setLoading(false);
     }
-  }, [phone]);
+  }, [composedPhone]);
 
   const submitOtp = useCallback(async () => {
     setError(null);
     setLoading(true);
     try {
-      const r = await verifyOtp(phone, otp);
+      const r = await verifyOtp(composedPhone(), otp);
       persist(r);
       if (r.isNewUser) {
         setStep('profile');
@@ -65,7 +83,7 @@ export function useLoginFlow() {
     } finally {
       setLoading(false);
     }
-  }, [phone, otp, router]);
+  }, [composedPhone, otp, router]);
 
   const submitProfile = useCallback(async () => {
     setError(null);
@@ -103,7 +121,9 @@ export function useLoginFlow() {
   }, []);
 
   return {
-    step, phone, setPhone, otp, setOtp, name, setName, cityName, setCityName,
+    step,
+    countryCode, setCountryCode,
+    phone, setPhone, otp, setOtp, name, setName, cityName, setCityName,
     consumerKind, setConsumerKind,
     error, loading, devCode,
     sendOtp, submitOtp, submitProfile, skipProfile, changePhone,

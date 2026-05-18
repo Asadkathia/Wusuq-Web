@@ -247,11 +247,16 @@ function TicketList({
       {tickets.map((t) => {
         const payload = (t as { payload?: Record<string, string> | null }).payload ?? {};
         const futureDate = payload.future_date ?? '';
-        const showStrip =
-          t.status === 'COMPLETED' &&
+        // QA P6: the next-hearing CTA used to render only for COMPLETED
+        // tickets ("Order Future Tickets"). Consumers also want a hint on
+        // in-flight pending tickets so they can queue the next hearing's
+        // service without waiting for the current ticket to close. Same
+        // strip; the copy adapts to the workflow state inside the strip.
+        const isPendingFlow =
           payload.case_status === 'Pending Case' &&
           futureDate !== '' &&
           (t.intakeFlow === 'judicial_case_files' || t.intakeFlow === 'judicial_case_information');
+        const showStrip = isPendingFlow;
         return (
           <div key={t.id}>
             <TicketCard ticket={t} onOpen={() => onOpen(t.id)} />
@@ -260,6 +265,7 @@ function TicketList({
                 ticketId={t.id}
                 flow={t.intakeFlow as 'judicial_case_files' | 'judicial_case_information'}
                 nextHearingDate={futureDate}
+                ticketStatus={t.status}
               />
             )}
           </div>

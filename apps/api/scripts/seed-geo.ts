@@ -12,7 +12,7 @@ import {
 } from '../src/geo/pakistan-seed';
 import courtsJson from '../src/geo/pakistan-courts.json';
 import { LOWER_COURT_SUBCOURTS, SPECIAL_COURT_SUBCOURTS } from '../src/geo/court-expansion';
-import { CITY_ALIAS, PROVINCE_ALIAS } from '../src/geo/court-alias';
+import { CITY_ALIAS, CITY_FANOUT, PROVINCE_ALIAS } from '../src/geo/court-alias';
 
 const prisma = new PrismaClient();
 
@@ -159,36 +159,57 @@ async function main() {
         const canonical = PROVINCE_ALIAS[jsonProvince] ?? jsonProvince;
         const provinceCities = cityByProvince.get(canonical);
         for (const entry of cityEntries) {
-          const aliased = CITY_ALIAS[entry.city] ?? entry.city;
-          const key = aliased.toLowerCase();
-          const cityId = provinceCities?.get(key) ?? globalCityByName.get(key);
-          if (!cityId) {
+          // Fan-out: a metro JSON name like "Karachi" maps to multiple geo
+          // sub-cities. When fan-out applies, every resolved sub-city gets
+          // its own seat row.
+          const fanoutNames = CITY_FANOUT[entry.city];
+          const cityIds: string[] = [];
+          if (fanoutNames) {
+            for (const name of fanoutNames) {
+              const id =
+                provinceCities?.get(name.toLowerCase()) ??
+                globalCityByName.get(name.toLowerCase());
+              if (id) cityIds.push(id);
+            }
+          } else {
+            const literalKey = entry.city.toLowerCase();
+            const aliased = CITY_ALIAS[entry.city] ?? entry.city;
+            const aliasedKey = aliased.toLowerCase();
+            const id =
+              provinceCities?.get(literalKey) ??
+              provinceCities?.get(aliasedKey) ??
+              globalCityByName.get(aliasedKey);
+            if (id) cityIds.push(id);
+          }
+          if (cityIds.length === 0) {
             const set = unresolved.get(canonical) ?? new Set<string>();
             set.add(entry.city);
             unresolved.set(canonical, set);
             continue;
           }
 
-          if (courtType === 'Lower Court') {
-            for (const sc of LOWER_COURT_SUBCOURTS) {
-              const courtId = await getOrCreateCourt(courtType, sc.name);
-              seatRows.push({ courtId, cityId, isPrincipalSeat: false });
+          for (const cityId of cityIds) {
+            if (courtType === 'Lower Court') {
+              for (const sc of LOWER_COURT_SUBCOURTS) {
+                const courtId = await getOrCreateCourt(courtType, sc.name);
+                seatRows.push({ courtId, cityId, isPrincipalSeat: false });
+              }
+            } else if (courtType === 'Special Court') {
+              let matched = false;
+              for (const [subName, cities] of Object.entries(SPECIAL_COURT_SUBCOURTS)) {
+                if (!cities.some((c) => c.toLowerCase() === entry.city.toLowerCase())) continue;
+                const courtId = await getOrCreateCourt(courtType, subName);
+                seatRows.push({ courtId, cityId, isPrincipalSeat: false });
+                matched = true;
+              }
+              if (!matched) {
+                const courtId = await getOrCreateCourt(courtType, 'Special Court');
+                seatRows.push({ courtId, cityId, isPrincipalSeat: false });
+              }
+            } else {
+              const courtId = await getOrCreateCourt(courtType, jsonSubCourtName);
+              seatRows.push({ courtId, cityId, isPrincipalSeat: entry.is_principal_seat });
             }
-          } else if (courtType === 'Special Court') {
-            let matched = false;
-            for (const [subName, cities] of Object.entries(SPECIAL_COURT_SUBCOURTS)) {
-              if (!cities.some((c) => c.toLowerCase() === entry.city.toLowerCase())) continue;
-              const courtId = await getOrCreateCourt(courtType, subName);
-              seatRows.push({ courtId, cityId, isPrincipalSeat: false });
-              matched = true;
-            }
-            if (!matched) {
-              const courtId = await getOrCreateCourt(courtType, 'Special Court');
-              seatRows.push({ courtId, cityId, isPrincipalSeat: false });
-            }
-          } else {
-            const courtId = await getOrCreateCourt(courtType, jsonSubCourtName);
-            seatRows.push({ courtId, cityId, isPrincipalSeat: entry.is_principal_seat });
           }
         }
       }

@@ -286,11 +286,11 @@
             "is_principal_seat": false
           },
           {
-            "city": "Fateh Pur Thakiala\u00a0(Nakial)",
+            "city": "Fateh Pur Thakiala (Nakial)",
             "is_principal_seat": false
           },
           {
-            "city": "garhi dopatta\u00a0(Garhi Dopatta)",
+            "city": "garhi dopatta (Garhi Dopatta)",
             "is_principal_seat": false
           },
           {
@@ -346,7 +346,7 @@
             "is_principal_seat": false
           },
           {
-            "city": "Patehka\u00a0(Nasirabad)",
+            "city": "Patehka (Nasirabad)",
             "is_principal_seat": false
           },
           {
@@ -836,7 +836,7 @@
             "is_principal_seat": false
           },
           {
-            "city": "Sonmiani\u00a0(Winder)",
+            "city": "Sonmiani (Winder)",
             "is_principal_seat": false
           },
           {
@@ -1056,7 +1056,7 @@
             "is_principal_seat": false
           },
           {
-            "city": "Babuzai\u00a0(Swat)",
+            "city": "Babuzai (Swat)",
             "is_principal_seat": false
           },
           {
@@ -1076,7 +1076,7 @@
             "is_principal_seat": false
           },
           {
-            "city": "Batagram\u00a0(Banna)",
+            "city": "Batagram (Banna)",
             "is_principal_seat": false
           },
           {
@@ -1104,7 +1104,7 @@
             "is_principal_seat": false
           },
           {
-            "city": "Daggar\u00a0(Buner)",
+            "city": "Daggar (Buner)",
             "is_principal_seat": false
           },
           {
@@ -1284,7 +1284,7 @@
             "is_principal_seat": false
           },
           {
-            "city": "Samarbagh\u00a0(Barwa)",
+            "city": "Samarbagh (Barwa)",
             "is_principal_seat": false
           },
           {
@@ -1952,7 +1952,7 @@
             "is_principal_seat": false
           },
           {
-            "city": "Daulatpur\u00a0(Qazi Ahmed)",
+            "city": "Daulatpur (Qazi Ahmed)",
             "is_principal_seat": false
           },
           {
@@ -2084,7 +2084,7 @@
             "is_principal_seat": false
           },
           {
-            "city": "Khangarh\u00a0(Khanpur)",
+            "city": "Khangarh (Khanpur)",
             "is_principal_seat": false
           },
           {
@@ -3329,7 +3329,7 @@
       "court_type": "Lower Court",
       "court_name": "Lower Court",
       "province_region": "AJK",
-      "city": "Fateh Pur Thakiala\u00a0(Nakial)",
+      "city": "Fateh Pur Thakiala (Nakial)",
       "is_principal_seat": false
     },
     {
@@ -3427,7 +3427,7 @@
       "court_type": "Lower Court",
       "court_name": "Lower Court",
       "province_region": "AJK",
-      "city": "Patehka\u00a0(Nasirabad)",
+      "city": "Patehka (Nasirabad)",
       "is_principal_seat": false
     },
     {
@@ -3476,7 +3476,7 @@
       "court_type": "Lower Court",
       "court_name": "Lower Court",
       "province_region": "AJK",
-      "city": "garhi dopatta\u00a0(Garhi Dopatta)",
+      "city": "garhi dopatta (Garhi Dopatta)",
       "is_principal_seat": false
     },
     {
@@ -4288,7 +4288,7 @@
       "court_type": "Lower Court",
       "court_name": "Lower Court",
       "province_region": "Balochistan",
-      "city": "Sonmiani\u00a0(Winder)",
+      "city": "Sonmiani (Winder)",
       "is_principal_seat": false
     },
     {
@@ -4666,7 +4666,7 @@
       "court_type": "Lower Court",
       "court_name": "Lower Court",
       "province_region": "KPK",
-      "city": "Babuzai\u00a0(Swat)",
+      "city": "Babuzai (Swat)",
       "is_principal_seat": false
     },
     {
@@ -4701,7 +4701,7 @@
       "court_type": "Lower Court",
       "court_name": "Lower Court",
       "province_region": "KPK",
-      "city": "Batagram\u00a0(Banna)",
+      "city": "Batagram (Banna)",
       "is_principal_seat": false
     },
     {
@@ -4750,7 +4750,7 @@
       "court_type": "Lower Court",
       "court_name": "Lower Court",
       "province_region": "KPK",
-      "city": "Daggar\u00a0(Buner)",
+      "city": "Daggar (Buner)",
       "is_principal_seat": false
     },
     {
@@ -5065,7 +5065,7 @@
       "court_type": "Lower Court",
       "court_name": "Lower Court",
       "province_region": "KPK",
-      "city": "Samarbagh\u00a0(Barwa)",
+      "city": "Samarbagh (Barwa)",
       "is_principal_seat": false
     },
     {
@@ -6227,7 +6227,7 @@
       "court_type": "Lower Court",
       "court_name": "Lower Court",
       "province_region": "Sindh",
-      "city": "Daulatpur\u00a0(Qazi Ahmed)",
+      "city": "Daulatpur (Qazi Ahmed)",
       "is_principal_seat": false
     },
     {
@@ -6458,7 +6458,7 @@
       "court_type": "Lower Court",
       "court_name": "Lower Court",
       "province_region": "Sindh",
-      "city": "Khangarh\u00a0(Khanpur)",
+      "city": "Khangarh (Khanpur)",
       "is_principal_seat": false
     },
     {

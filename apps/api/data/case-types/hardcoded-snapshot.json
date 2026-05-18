@@ -910,5 +910,17 @@
     "subCourt": null,
     "code": "S.M.R.P.",
     "label": "S.M.R.P."
+  },
+  {
+    "courtLevel": "Lower Court",
+    "subCourt": "Sessions Court",
+    "code": "Trial File",
+    "label": "Trial File"
+  },
+  {
+    "courtLevel": "Lower Court",
+    "subCourt": "Magisterial Court",
+    "code": "Trial File",
+    "label": "Trial File"
   }
 ]

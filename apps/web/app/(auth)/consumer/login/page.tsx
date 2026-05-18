@@ -22,6 +22,8 @@ export default function ConsumerLoginPage() {
       <LoginShell step={STEP_INDEX[f.step]} totalSteps={3}>
         {f.step === 'phone' ? (
           <PhoneStep
+            countryCode={f.countryCode}
+            onCountryChange={f.setCountryCode}
             phone={f.phone}
             onPhoneChange={f.setPhone}
             onSubmit={f.sendOtp}

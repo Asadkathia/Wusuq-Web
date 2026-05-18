@@ -344,7 +344,28 @@ export function TicketDetailPanel({ ticketId, onClose }: Props) {
               )}
 
               {/* Status History */}
-              {ticket.history?.length > 0 && (
+              {ticket.history?.length > 0 && (() => {
+                // QA R5: surface the consumer's intake details (special
+                // note + delivery mode/method) as a synthetic "Intake"
+                // entry at the BOTTOM of the timeline so the timeline tells
+                // the full ticket story end-to-end, not just the workflow
+                // transitions. The separate Consumer Notes & Delivery
+                // card above remains as the primary surface; this
+                // duplication is intentional — operators reading the
+                // timeline shouldn't have to scroll back up to find what
+                // the consumer originally asked for.
+                const p = (ticket.formPayload ?? {}) as Record<string, unknown>;
+                const intakeNote = typeof p.notes === 'string' ? p.notes.trim() : '';
+                const intakeMode = p.delivery_mode ? String(p.delivery_mode) : '';
+                const intakeMethod = p.delivery_method ? String(p.delivery_method) : '';
+                const intakeBits = [
+                  intakeMode || intakeMethod
+                    ? `Delivery: ${[intakeMode, intakeMethod].filter(Boolean).join(' · ')}`
+                    : '',
+                  intakeNote ? `Special Note: ${intakeNote}` : '',
+                ].filter(Boolean);
+                const intakeSummary = intakeBits.join(' · ');
+                return (
                 <PanelCard className="p-4">
                   <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2"><Clock className="h-4 w-4 text-primary-500" />Status Timeline</h3>
                   <ol className="relative border-l border-slate-200 space-y-4 pl-4">
@@ -361,9 +382,22 @@ export function TicketDetailPanel({ ticketId, onClose }: Props) {
                         </div>
                       </li>
                     ))}
+                    {intakeSummary && (
+                      <li className="relative">
+                        <span className="absolute -left-[19px] flex h-4 w-4 items-center justify-center rounded-full bg-amber-100 ring-4 ring-white">
+                          <span className="h-1.5 w-1.5 rounded-full bg-amber-600" />
+                        </span>
+                        <div className="text-sm">
+                          <span className="font-medium text-slate-900">Intake</span>
+                          <p className="text-xs text-slate-500 mt-0.5 whitespace-pre-wrap">{intakeSummary}</p>
+                          <p className="text-xs text-slate-400 mt-0.5">{new Date(ticket.createdAt).toLocaleString('en-PK')}</p>
+                        </div>
+                      </li>
+                    )}
                   </ol>
                 </PanelCard>
-              )}
+                );
+              })()}
             </>
           )}
         </div>

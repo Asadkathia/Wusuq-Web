@@ -6,7 +6,7 @@ import {
   LOWER_COURT_SUBCOURTS,
   SPECIAL_COURT_SUBCOURTS,
 } from './court-expansion';
-import { CITY_ALIAS, PROVINCE_ALIAS } from './court-alias';
+import { CITY_ALIAS, CITY_FANOUT, PROVINCE_ALIAS } from './court-alias';
 
 type CourtCityEntry = { city: string; is_principal_seat: boolean };
 type CourtsByProvince = Record<string, CourtCityEntry[]>;
@@ -492,11 +492,29 @@ export class GeoService {
           const provinceCities = cityByProvince.get(canonicalProvince);
 
           for (const entry of cityEntries) {
-            const aliased = CITY_ALIAS[entry.city] ?? entry.city;
-            const key = aliased.toLowerCase();
-            const cityId =
-              provinceCities?.get(key) ?? globalCityByName.get(key);
-            if (!cityId) {
+            // Fan-out: a metro JSON name like "Karachi" maps to multiple geo
+            // sub-cities. When fan-out applies, every resolved sub-city
+            // receives its own CourtSeat row.
+            const fanoutNames = CITY_FANOUT[entry.city];
+            const cityIds: string[] = [];
+            if (fanoutNames) {
+              for (const name of fanoutNames) {
+                const id =
+                  provinceCities?.get(name.toLowerCase()) ??
+                  globalCityByName.get(name.toLowerCase());
+                if (id) cityIds.push(id);
+              }
+            } else {
+              const literalKey = entry.city.toLowerCase();
+              const aliased = CITY_ALIAS[entry.city] ?? entry.city;
+              const aliasedKey = aliased.toLowerCase();
+              const id =
+                provinceCities?.get(literalKey) ??
+                provinceCities?.get(aliasedKey) ??
+                globalCityByName.get(aliasedKey);
+              if (id) cityIds.push(id);
+            }
+            if (cityIds.length === 0) {
               const set =
                 unresolved.get(canonicalProvince) ?? new Set<string>();
               set.add(entry.city);
@@ -504,32 +522,34 @@ export class GeoService {
               continue;
             }
 
-            // Expansion rules:
-            //   • Lower Court  → 4 standard sub-courts per city.
-            //   • Special Court → legacy specialized list, but only those
-            //     whose legacy city-presence table matches this city.
-            //   • All other types → use the JSON sub-court name as-is.
-            if (courtType === 'Lower Court') {
-              for (const sc of LOWER_COURT_SUBCOURTS) {
-                const court = await getOrCreateCourt(courtType, sc.name);
-                await upsertSeat(court.id, cityId, false);
-              }
-            } else if (courtType === 'Special Court') {
-              for (const [subName, cities] of Object.entries(
-                SPECIAL_COURT_SUBCOURTS,
-              )) {
-                if (
-                  !cities.some(
-                    (c) => c.toLowerCase() === entry.city.toLowerCase(),
+            for (const cityId of cityIds) {
+              // Expansion rules:
+              //   • Lower Court  → 4 standard sub-courts per city.
+              //   • Special Court → legacy specialized list, but only those
+              //     whose legacy city-presence table matches this city.
+              //   • All other types → use the JSON sub-court name as-is.
+              if (courtType === 'Lower Court') {
+                for (const sc of LOWER_COURT_SUBCOURTS) {
+                  const court = await getOrCreateCourt(courtType, sc.name);
+                  await upsertSeat(court.id, cityId, false);
+                }
+              } else if (courtType === 'Special Court') {
+                for (const [subName, cities] of Object.entries(
+                  SPECIAL_COURT_SUBCOURTS,
+                )) {
+                  if (
+                    !cities.some(
+                      (c) => c.toLowerCase() === entry.city.toLowerCase(),
+                    )
                   )
-                )
-                  continue;
-                const court = await getOrCreateCourt(courtType, subName);
-                await upsertSeat(court.id, cityId, false);
+                    continue;
+                  const court = await getOrCreateCourt(courtType, subName);
+                  await upsertSeat(court.id, cityId, false);
+                }
+              } else {
+                const court = await getOrCreateCourt(courtType, jsonSubCourtName);
+                await upsertSeat(court.id, cityId, entry.is_principal_seat);
               }
-            } else {
-              const court = await getOrCreateCourt(courtType, jsonSubCourtName);
-              await upsertSeat(court.id, cityId, entry.is_principal_seat);
             }
           }
         }

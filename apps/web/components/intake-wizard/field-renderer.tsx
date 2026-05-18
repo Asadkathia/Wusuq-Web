@@ -1,7 +1,7 @@
 'use client';
 
 import type { IntakeField } from '@/lib/intake-flows';
-import { parseDeliveryAddress, parseBench, formatBenchJudgeName, showWhenSatisfied } from '@/lib/intake-flows';
+import { parseDeliveryAddress, parseBench, formatBenchJudgeName, showWhenSatisfied, parseCities } from '@/lib/intake-flows';
 import { Select } from '@/components/ui/select';
 
 export type BenchTypeOption = { value: string; label: string; count: number };
@@ -88,11 +88,21 @@ export function renderField(
     const current = value ?? '';
     const cnicOn = current === 'cnic' || current === 'both';
     const detailsOn = current === 'details' || current === 'both';
+    // QA MC-1: "both" is unavailable for multi-city Case Search — the
+    // pricing sheet has no rule rows for that combination and the resolver
+    // would return availability:false. Block client-side so the user gets a
+    // clear hint instead of a silent unavailable price.
+    const multiCity = parseCities(payload.cities).length > 1;
     const toggle = (which: 'cnic' | 'details') => {
       const nextCnic = which === 'cnic' ? !cnicOn : cnicOn;
       const nextDetails = which === 'details' ? !detailsOn : detailsOn;
-      const next =
+      let next =
         nextCnic && nextDetails ? 'both' : nextCnic ? 'cnic' : nextDetails ? 'details' : '';
+      if (multiCity && next === 'both') {
+        // Force-flip the other tab off so the user keeps only the tab they
+        // just clicked. Prevents an invalid "both" being committed.
+        next = which;
+      }
       onChange(field.key, next);
       onBlur?.(field.key, next);
     };
@@ -149,7 +159,9 @@ export function renderField(
           </button>
         </div>
         <p className="text-xs text-slate-500">
-          Pick either method or both. Selecting both adds a Rs 1,000 surcharge per city.
+          {multiCity
+            ? 'Multi-city searches accept one method at a time — switching tabs replaces the previous selection.'
+            : 'Pick either method or both. Selecting both adds a Rs 1,000 surcharge per city.'}
         </p>
         {hasError && <p className="mt-1 text-xs text-rose-600">{errorMsg}</p>}
       </div>

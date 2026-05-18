@@ -24,9 +24,9 @@ const FLOWS = [
   },
   {
     key: 'judicial_case_filing',
-    label: 'Case Filling',
+    label: 'Case Filing',
     type: 'judicial',
-    route: '/create/judicialService/case-filling',
+    route: '/create/judicialService/case-filing',
   },
   {
     key: 'judicial_power_of_attorney',

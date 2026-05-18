@@ -117,6 +117,33 @@ export const ROLE_PERMISSIONS: Record<UserRole, readonly Permission[]> = {
 };
 
 /**
+ * Court tier hierarchy used by intake flows + pricing. Lives in shared so
+ * the per-tier required-field overrides below can be type-checked on both
+ * the frontend (intake-flows.ts uses the same union under the
+ * `requiredByCourtTier` field flag) and the API (validateFlowPayload).
+ */
+export const COURT_TIERS = ['lower', 'high', 'special', 'shariat', 'supreme', 'fcc'] as const;
+export type CourtTier = (typeof COURT_TIERS)[number];
+
+/**
+ * Map a payload's `select_court_type` string to a canonical {@link CourtTier}.
+ * Returns null for unknown values so callers default to "no tier override".
+ * Kept in shared so the API validator and the frontend wizard agree on the
+ * mapping.
+ */
+export function courtTierFromCourtType(courtType?: string | null): CourtTier | null {
+  if (!courtType) return null;
+  const t = courtType.toLowerCase();
+  if (t.includes('federal constitutional')) return 'fcc';
+  if (t.includes('supreme')) return 'supreme';
+  if (t.includes('shariat')) return 'shariat';
+  if (t.includes('special')) return 'special';
+  if (t.includes('high')) return 'high';
+  if (t.includes('lower') || t.includes('district') || t.includes('sessions') || t.includes('civil') || t.includes('magisterial') || t.includes('family')) return 'lower';
+  return null;
+}
+
+/**
  * Centralised payload field aliases — the API normalises incoming intake
  * payloads by treating each key + its aliases as the same field. Lives in
  * shared so frontend and API stay in lock-step.
@@ -136,6 +163,77 @@ export const PAYLOAD_FIELD_ALIASES: Record<string, readonly string[]> = {
   case_petition_no: ['case_no'],
   case_year: ['year'],
 };
+
+/**
+ * Per-flow + per-court-tier required-field overrides.
+ *
+ * The API's `REQUIRED_FIELDS_BY_FLOW` lists the canonical fields that are
+ * required *unconditionally* for a flow. Some flows have per-court-tier
+ * exceptions ("red cross" fields in the QA matrix — optional for some tiers,
+ * required for others). Those exceptions live here so the wizard's
+ * `requiredByCourtTier` flags and the API's `validateFlowPayload` stay in
+ * lock-step. Drift between the two manifests as "validation passes on the
+ * page but fails at submit" (QA B6 / B7).
+ *
+ * Each entry lists fields to DROP from the base required list when the
+ * payload's court tier matches. Add overrides per-tier as needed.
+ */
+export const REQUIRED_FIELDS_OPTIONAL_BY_TIER: Record<string, Partial<Record<CourtTier, string[]>>> = {
+  judicial_case_files: {
+    // QA PDF #23-#27 + B6/B7: per-tier optional fields (red ✗ in the matrix).
+    lower:   ['case_petition_no', 'case_year', 'case_type'],
+    high:    ['case_year', 'case_type'],
+    special: ['case_petition_no'],
+    shariat: ['case_year', 'case_type'],
+    supreme: ['case_year', 'case_type', 'case_title'],
+    fcc:     ['case_year', 'case_type', 'case_title'],
+  },
+  judicial_case_information: {
+    lower:   ['case_petition_no', 'case_year', 'case_type'],
+    high:    ['case_year', 'case_type'],
+    special: ['case_petition_no'],
+    shariat: ['case_year', 'case_type'],
+    supreme: ['case_year', 'case_type'],
+    fcc:     ['case_year', 'case_type'],
+  },
+  judicial_power_of_attorney: {
+    lower:   ['case_petition_no', 'case_year', 'case_type'],
+    high:    ['case_year', 'case_type'],
+    special: ['case_petition_no'],
+    shariat: ['case_year', 'case_type'],
+    supreme: ['case_year', 'case_type'],
+    fcc:     ['case_year', 'case_type'],
+  },
+  judicial_case_search: {
+    // Search is a lookup — the consumer typically doesn't have the case
+    // number or year (that's why they're searching). All but city/method
+    // are optional regardless of tier.
+    lower:   ['case_petition_no', 'case_year', 'case_type', 'case_title'],
+    high:    ['case_petition_no', 'case_year', 'case_type', 'case_title'],
+    special: ['case_petition_no', 'case_year', 'case_type', 'case_title'],
+    shariat: ['case_petition_no', 'case_year', 'case_type', 'case_title'],
+    supreme: ['case_petition_no', 'case_year', 'case_type', 'case_title'],
+    fcc:     ['case_petition_no', 'case_year', 'case_type', 'case_title'],
+  },
+};
+
+/**
+ * Resolve the effective required canonical field list for `flow` given the
+ * payload's court tier. Subtracts {@link REQUIRED_FIELDS_OPTIONAL_BY_TIER}
+ * entries from `base`. Pass `base` from the caller (the API owns the base
+ * list; the frontend does not need to mirror it).
+ */
+export function requiredFieldsFor(
+  flow: string,
+  baseRequired: readonly string[],
+  tier: CourtTier | null,
+): string[] {
+  if (!tier) return [...baseRequired];
+  const drops = REQUIRED_FIELDS_OPTIONAL_BY_TIER[flow]?.[tier];
+  if (!drops || drops.length === 0) return [...baseRequired];
+  const dropSet = new Set(drops);
+  return baseRequired.filter((f) => !dropSet.has(f));
+}
 
 // ─────────────────────────────────────────────────────────────────────
 // Intake flow keys, recommendations, and slug mapping (cases workflow)
@@ -277,5 +375,5 @@ export const FLOW_LABELS: Record<FlowKey, string> = {
   judicial_power_of_attorney: 'Power of Attorney',
   non_judicial_copy_of_fir: 'Copy of FIR',
   non_judicial_registry_deed: 'Registry / Deed',
-  non_judicial_criminal_record_search: 'Search Criminal Record',
+  non_judicial_criminal_record_search: 'Search Criminal Record by CNIC by Police Station',
 };

@@ -83,8 +83,13 @@ async function main() {
           alreadyCovered++;
           continue;
         }
+        const literalKey = entry.city.toLowerCase();
         const aliased = CITY_ALIAS[entry.city] ?? entry.city;
-        const cityId = provCities?.get(aliased.toLowerCase()) ?? globalCityByName.get(aliased.toLowerCase());
+        const aliasedKey = aliased.toLowerCase();
+        const cityId =
+          provCities?.get(literalKey) ??
+          provCities?.get(aliasedKey) ??
+          globalCityByName.get(aliasedKey);
         if (!cityId) {
           unresolved.push({ city: entry.city, province: canonicalProv });
           continue;

@@ -25,27 +25,27 @@ export const PROVINCE_ALIAS: Record<string, string> = {
 // Keep this list flat (one entry per JSON city) and de-duplicated; duplicate
 // keys silently shadow each other and break TS in strict mode.
 export const CITY_ALIAS: Record<string, string> = {
-  Karachi: 'Karachi',
-  'Karachi Centeral': 'Karachi',
-  'Karachi South': 'Karachi',
-  'Karachi East': 'Karachi',
-  'Karachi West': 'Karachi',
-  'Lahore Cantt': 'Lahore',
-  'Lahore Model Town': 'Lahore',
   'Shaheed Benazir Abad': 'Nawabshah',
   'Tando Muhammad Khan': 'Tando Mohammad Khan',
   'Qambar-Shahdadkot': 'Kambar',
   Swat: 'Mingora',
   'Babuzai (Swat)': 'Mingora',
-  Buner: 'Daggar (Buner)',
+  Buner: 'Daggar',
+  'Daggar (Buner)': 'Daggar',
+  Batagram: 'Batagram',
+  'Batagram (Banna)': 'Batagram',
   Malakand: 'Sam Ranizai',
+  'Samarbagh (Barwa)': 'Samarbagh',
   'Lower Dir': 'Temergara',
   'Upper Dir': 'Dir',
   'Daulatpur (Qazi Ahmed)': 'Daulatpur',
-  'garhi dopatta (Garhi Dopatta)': 'Garhi Dupatta',
+  'Khangarh (Khanpur)': 'Khangarh',
+  'garhi dopatta (Garhi Dopatta)': 'garhi dopatta',
   Tharparkar: 'Mithi',
   Lasbela: 'Uthal',
   Jafarabad: 'Dera Murad Jamali',
+  Nasirabad: 'Dera Murad Jamali',
+  'Sonmiani (Winder)': 'Sonmiani',
   Kachi: 'Dhadar',
   Kech: 'Turbat',
   Diamir: 'Chilas',
@@ -57,10 +57,38 @@ export const CITY_ALIAS: Record<string, string> = {
   Neelum: 'Sharda',
   Poonch: 'Rawalakot',
   Sudhnoti: 'Pallandari',
+  'Fateh Pur Thakiala (Nakial)': 'Fateh Pur Thakiala',
+  'Patehka (Nasirabad)': 'Patehka',
   'Gupis-Yasin': 'Gupis',
-  Batagram: 'Batagram (Banna)',
   'Lower Kohistan': 'Pattan',
   Shangla: 'Alpuri',
   Torghar: 'Tor Ghar',
   'Upper Kohistan': 'Dassu',
+  // Punjab tehsils — court JSON appends "Town"/"Sharif"; sheet uses bare names.
+  'Jaranwala Town': 'Jaranwala',
+  'Sammundri Town': 'Sammundri',
+  'Tandlianwala Town': 'Tandlianwala',
+  'Sharaqpur Sharif': 'Sharaqpur',
+};
+
+// One-to-many fan-out: a single JSON city name should seat courts across
+// multiple geo cities. Use for metros where the court JSON treats the whole
+// city as a single seat ("Karachi") but the geo tree splits it into multiple
+// administrative sub-cities the consumer needs to pick between.
+//
+// When a JSON city matches a CITY_FANOUT key, seeders create one CourtSeat
+// row per target sub-city (instead of consulting CITY_ALIAS).
+export const CITY_FANOUT: Record<string, string[]> = {
+  Karachi: [
+    'Karachi South',
+    'Karachi East',
+    'Karachi West',
+    'Karachi North',
+    'Karachi Central',
+  ],
+  // Lahore courts in pakistan-courts.json that name just "Lahore" should also
+  // seat in the Cantt / Model Town sub-cities — consumers picking those see
+  // all main courts, not just the few entries that explicitly named the
+  // sub-city. Includes plain "Lahore" so the parent city keeps its full set.
+  Lahore: ['Lahore', 'Lahore Cantt', 'Lahore Model Town'],
 };

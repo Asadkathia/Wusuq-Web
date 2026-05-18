@@ -13,6 +13,8 @@ import {
   recommendationsForCase,
   isFlowKey,
   type FlowKey,
+  requiredFieldsFor,
+  courtTierFromCourtType,
 } from '@wusuq/shared';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { PricingService } from '../pricing/pricing.service';
@@ -474,6 +476,19 @@ export class TicketsService {
       actorEmail: actor?.actorEmail,
       metadata: { flow: dto.flow },
     });
+
+    // Drafts are auto-saved every 5s while the consumer fills out the wizard
+    // (TicketIntakeDraft is upserted on the unique (consumerId, flow) key).
+    // Once a ticket is created from that draft the draft is stale — delete it
+    // so it doesn't reappear in the consumer's drafts list as a phantom
+    // duplicate of the just-submitted ticket.
+    await this.prisma.ticketIntakeDraft
+      .delete({
+        where: {
+          consumerId_flow: { consumerId: dto.consumerId, flow: dto.flow },
+        },
+      })
+      .catch(() => undefined);
 
     return ticket;
   }
@@ -1248,14 +1263,24 @@ export class TicketsService {
   }
 
   private validateFlowPayload(flow: string, payload?: Record<string, unknown>) {
-    const required = REQUIRED_FIELDS_BY_FLOW[flow] ?? [];
-    if (required.length === 0) {
+    const baseRequired = REQUIRED_FIELDS_BY_FLOW[flow] ?? [];
+    if (baseRequired.length === 0) {
       return;
     }
 
     if (!payload) {
       throw new BadRequestException('Payload is required for selected flow');
     }
+
+    // QA B6/B7: required-field FE/BE drift fix — apply per-tier overrides
+    // from shared so fields the wizard marks optional (red ✗ in the PDF
+    // matrix) don't fail the API validator with a generic "missing
+    // required field" error on submit.
+    const courtType = typeof payload['select_court_type'] === 'string'
+      ? (payload['select_court_type'] as string)
+      : undefined;
+    const tier = courtTierFromCourtType(courtType);
+    const required = requiredFieldsFor(flow, baseRequired, tier);
 
     const missing = required.find(
       (key) =>

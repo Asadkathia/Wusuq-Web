@@ -607,9 +607,10 @@ const caseFilesSteps: IntakeStep[] = [
         type: 'select',
         required: true,
         options: [],
-        // PDF #23-#27: judge_designation required for Special / Shariat /
-        // Supreme / FCC; optional for Lower (#23) and High (#24).
-        requiredByCourtTier: { lower: false, high: false, special: true, shariat: true, supreme: true, fcc: true },
+        // PDF #23-#27 + QA 5-14-26 #34: judge_designation required for Lower
+        // (parity with Case Information) / Special / Shariat / Supreme / FCC.
+        // Optional for High Court only.
+        requiredByCourtTier: { lower: true, high: false, special: true, shariat: true, supreme: true, fcc: true },
         hint: 'Title of the presiding judge — match the most recent order sheet.',
       },
       {
@@ -999,11 +1000,18 @@ const caseFilingSteps: IntakeStep[] = [
         options: ['New Case', 'Pending Case'],
       },
       {
+        // QA R3: for NEW filings the consumer is always the filer (no
+        // opposing party yet), so we hide the picker and let the wizard
+        // auto-fill Plaintiff/Petitioner on submit. The picker stays
+        // visible — and required — for replies on PENDING cases where
+        // either side could be filing.
         key: 'party_type',
         label: 'Party Type',
         type: 'select',
         required: true,
+        defaultValue: 'Plaintiff/Petitioner',
         options: ['Plaintiff/Petitioner', 'Defendant/Respondent'],
+        showWhen: { field: 'case_status', value: 'Pending Case' },
       },
       {
         key: 'case_type',
@@ -1063,6 +1071,17 @@ const caseFilingSteps: IntakeStep[] = [
         type: 'date',
         showWhen: { field: 'case_status', value: 'Pending Case' },
         hint: 'Date of the last hearing or order on this case.',
+      },
+      {
+        // QA R4: for new filings, the clerk needs the Date of Institution
+        // (i.e. when the case will be / has been filed). Same canonical
+        // payload key (`case_date`) so the API normalises identically; the
+        // label and helper text change based on case_status.
+        key: 'case_date',
+        label: 'Date of Institution',
+        type: 'date',
+        showWhen: { field: 'case_status', value: 'New Case' },
+        hint: 'Date the case is being filed (or has just been filed) at the court registry.',
       },
       {
         key: 'future_date',
@@ -1520,7 +1539,7 @@ export const judicialFlows: IntakeFlow[] = [
   },
   {
     key: 'judicial_case_filing',
-    label: 'Case Filling',
+    label: 'Case Filing',
     endpoint: '/tickets/intake/judicial/case-filing',
     steps: caseFilingSteps,
     description: 'File a new petition or matter at the selected court seat.',
@@ -1557,7 +1576,7 @@ export const nonJudicialFlows: IntakeFlow[] = [
   },
   {
     key: 'non_judicial_criminal_record_search',
-    label: 'Search Criminal Record',
+    label: 'Search Criminal Record by CNIC by Police Station',
     endpoint: '/tickets/intake/non-judicial/criminal-record-search',
     steps: criminalRecordSearchSteps,
     description: 'Lookup records by CNIC at the relevant Police Station.',
