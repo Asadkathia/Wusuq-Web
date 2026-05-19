@@ -8,11 +8,14 @@ import {
   Patch,
   Post,
   Query,
+  Res,
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Throttle } from '@nestjs/throttler';
+import type { Response } from 'express';
+import { createReadStream } from 'node:fs';
 import { diskStorage } from 'multer';
 import { extname } from 'node:path';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -23,8 +26,10 @@ import { AssignTicketDto } from './dto/assign-ticket.dto';
 import { BulkTicketActionDto } from './dto/bulk-ticket-action.dto';
 import { CreateTicketIntakeDto } from './dto/create-ticket-intake.dto';
 import { FilterTicketsDto } from './dto/filter-tickets.dto';
+import { PatchDocumentDto } from './dto/patch-document.dto';
 import { SaveTicketIntakeDraftDto } from './dto/save-ticket-intake-draft.dto';
 import { SubmitClerkCostsDto } from './dto/submit-clerk-costs.dto';
+import { RejectAssignmentDto } from './dto/reject-assignment.dto';
 import { UpdateTicketStatusDto } from './dto/update-ticket-status.dto';
 import { UpdateTicketDto } from './dto/update-ticket.dto';
 import { TicketsService } from './tickets.service';
@@ -292,8 +297,11 @@ export class TicketsController {
 
   @RequirePermissions('tickets.read')
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.ticketsService.findOne(id);
+  findOne(@Param('id') id: string, @CurrentUser() user: JwtUser | undefined) {
+    return this.ticketsService.findOne(
+      id,
+      user ? { role: user.role, userId: user.sub } : undefined,
+    );
   }
 
   @RequirePermissions('tickets.read')
@@ -342,13 +350,25 @@ export class TicketsController {
   }
 
   @RequirePermissions('tickets.write')
+  @Post(':id/accept-assignment')
+  acceptAssignment(
+    @Param('id') id: string,
+    @CurrentUser() actor: JwtUser | undefined,
+  ) {
+    return this.ticketsService.acceptAssignment(id, {
+      actorUserId: actor?.sub,
+      actorEmail: actor?.email,
+    });
+  }
+
+  @RequirePermissions('tickets.write')
   @Post(':id/reject-assignment')
   rejectAssignment(
     @Param('id') id: string,
-    @Body('reason') reason: string,
+    @Body() dto: RejectAssignmentDto,
     @CurrentUser() actor: JwtUser | undefined,
   ) {
-    return this.ticketsService.rejectAssignment(id, reason, {
+    return this.ticketsService.rejectAssignment(id, dto.reason, {
       actorUserId: actor?.sub,
       actorEmail: actor?.email,
     });
@@ -408,6 +428,7 @@ export class TicketsController {
     @UploadedFile()
     file: { filename: string; mimetype: string; path: string },
     @Body('caption') caption: string | undefined,
+    @Body('visibleToConsumer') visibleToConsumer: string | undefined,
     @CurrentUser() actor: JwtUser | undefined,
   ) {
     if (!file) {
@@ -421,7 +442,47 @@ export class TicketsController {
         actorEmail: actor?.email,
       },
       typeof caption === 'string' ? caption.slice(0, 200) : undefined,
+      visibleToConsumer === 'true',
     );
+  }
+
+  @RequirePermissions('tickets.read')
+  @Get(':id/documents/:docId/download')
+  async downloadDocument(
+    @Param('id') id: string,
+    @Param('docId') docId: string,
+    @CurrentUser() user: JwtUser | undefined,
+    @Res() res: Response,
+  ) {
+    if (!user?.sub) {
+      throw new BadRequestException('Authenticated user required');
+    }
+    const { filePath, name, type } =
+      await this.ticketsService.resolveDocumentDownload(id, docId, {
+        userId: user.sub,
+        role: user.role,
+        consumerId: user.sub,
+      });
+    res.setHeader('Content-Type', type);
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${encodeURIComponent(name)}"`,
+    );
+    return createReadStream(filePath).pipe(res);
+  }
+
+  @RequirePermissions('tickets.write')
+  @Patch(':id/documents/:docId')
+  patchDocument(
+    @Param('id') id: string,
+    @Param('docId') docId: string,
+    @Body() dto: PatchDocumentDto,
+    @CurrentUser() actor: JwtUser | undefined,
+  ) {
+    return this.ticketsService.patchDocument(id, docId, dto, {
+      actorUserId: actor?.sub,
+      actorEmail: actor?.email,
+    });
   }
 
   @RequirePermissions('tickets.write')

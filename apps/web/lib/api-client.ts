@@ -166,10 +166,11 @@ export const apiClient = {
     return this.fetch<T>(endpoint, { ...options, method: 'DELETE' });
   },
 
-  // Authenticated GET that returns the raw Blob (e.g. CSV / file download).
-  // Mirrors the 401 → refresh → retry flow of `fetch()` so a click after
-  // access-token expiry still succeeds when the refresh token is valid.
-  async getBlob(endpoint: string, retryOnAuthFailure = true): Promise<Blob> {
+  // Authenticated GET that returns the raw Blob plus the filename parsed
+  // from `Content-Disposition` (falls back to `'download'`). Mirrors the
+  // 401 → refresh → retry flow of `fetch()` so a click after access-token
+  // expiry still succeeds when the refresh token is valid.
+  async getBlob(endpoint: string, retryOnAuthFailure = true): Promise<{ blob: Blob; filename: string }> {
     const headers = new Headers();
     if (typeof window !== 'undefined') {
       const token = localStorage.getItem('wusuq_access_token');
@@ -189,6 +190,10 @@ export const apiClient = {
       }
       throw new ApiError(response.status, response.statusText, null);
     }
-    return response.blob();
+    const cd = response.headers.get('Content-Disposition') ?? '';
+    const match = /filename="?([^"]+)"?/.exec(cd);
+    const filename = match && match[1] ? decodeURIComponent(match[1]) : 'download';
+    const blob = await response.blob();
+    return { blob, filename };
   },
 };

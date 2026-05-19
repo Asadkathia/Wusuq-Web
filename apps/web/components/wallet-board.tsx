@@ -271,11 +271,11 @@ export function WalletBoard() {
               type="button"
               onClick={async () => {
                 try {
-                  const blob = await apiClient.getBlob('/wallet/export?format=csv');
+                  const { blob, filename } = await apiClient.getBlob('/wallet/export?format=csv');
                   const url = URL.createObjectURL(blob);
                   const a = document.createElement('a');
                   a.href = url;
-                  a.download = 'wallet-export.csv';
+                  a.download = filename || 'wallet-export.csv';
                   document.body.appendChild(a);
                   a.click();
                   document.body.removeChild(a);
@@ -362,7 +362,7 @@ export function WalletBoard() {
                                   setMessage('Invalid receipt URL');
                                   return;
                                 }
-                                const blob = await apiClient.getBlob(`/wallet/receipt/${m[1]}`);
+                                const { blob } = await apiClient.getBlob(`/wallet/receipt/${m[1]}`);
                                 const objectUrl = URL.createObjectURL(blob);
                                 window.open(objectUrl, '_blank', 'noopener');
                                 // Revoke shortly after open so the new tab can render it.

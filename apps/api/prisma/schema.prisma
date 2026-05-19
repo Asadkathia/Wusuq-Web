@@ -98,6 +98,13 @@ enum ConsumerKind {
   CORPORATE
 }
 
+enum AssignmentStatus {
+  ACTIVE
+  ACCEPTED
+  REJECTED
+  SUPERSEDED
+}
+
 model User {
   id                 String      @id @default(cuid())
   name               String?
@@ -308,23 +315,31 @@ model TicketStatusHistory {
 }
 
 model Assignment {
-  id               String   @id @default(cuid())
+  id               String           @id @default(cuid())
   ticketId         String
   representativeId String
-  createdAt        DateTime @default(now())
-  ticket           Ticket   @relation(fields: [ticketId], references: [id])
-  representative   User     @relation(fields: [representativeId], references: [id])
+  status           AssignmentStatus @default(ACTIVE)
+  acceptedAt       DateTime?
+  rejectedAt       DateTime?
+  rejectionReason  String?
+  createdAt        DateTime         @default(now())
+  ticket           Ticket           @relation(fields: [ticketId], references: [id])
+  representative   User             @relation(fields: [representativeId], references: [id])
+
+  @@index([ticketId, status])
 }
 
 model TicketDocument {
-  id        String   @id @default(cuid())
-  ticketId  String
-  name      String
-  type      String
-  fileUrl   String
-  caption   String?
-  createdAt DateTime @default(now())
-  ticket    Ticket   @relation(fields: [ticketId], references: [id])
+  id                 String   @id @default(cuid())
+  ticketId           String
+  name               String
+  type               String
+  fileUrl            String
+  caption            String?
+  visibleToConsumer  Boolean  @default(false)
+  uploadedByUserId   String?
+  createdAt          DateTime @default(now())
+  ticket             Ticket   @relation(fields: [ticketId], references: [id])
 }
 
 model WalletTransaction {

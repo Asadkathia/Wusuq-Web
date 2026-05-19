@@ -35,6 +35,7 @@ export function DocumentsBoard() {
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [uploadTicketId, setUploadTicketId] = useState('');
   const [uploadFiles, setUploadFiles] = useState<File[]>([]);
+  const [uploadVisibleToConsumer, setUploadVisibleToConsumer] = useState(false);
   const [uploadLoading, setUploadLoading] = useState(false);
   const [isConsumer, setIsConsumer] = useState(false);
   const [userId, setUserId] = useState('');
@@ -85,12 +86,14 @@ export function DocumentsBoard() {
       for (const file of uploadFiles) {
         const formData = new FormData();
         formData.append('file', file);
+        formData.append('visibleToConsumer', String(uploadVisibleToConsumer));
         await apiClient.post(`/tickets/${uploadTicketId}/documents/upload`, formData);
       }
       setMessage('Documents uploaded successfully');
       setIsUploadOpen(false);
       setUploadTicketId('');
       setUploadFiles([]);
+      setUploadVisibleToConsumer(false);
       load();
     } catch (error: any) {
       setMessage(error.message || 'Upload failed. Check if Ticket ID is valid.');
@@ -244,6 +247,15 @@ export function DocumentsBoard() {
                   </div>
                 )}
               </div>
+
+              <label className="flex items-center gap-2 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={uploadVisibleToConsumer}
+                  onChange={(e) => setUploadVisibleToConsumer(e.target.checked)}
+                />
+                Visible to consumer
+              </label>
 
               <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
                 <button type="button" onClick={() => setIsUploadOpen(false)} className="rounded-lg bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm border border-slate-200 hover:bg-slate-50 transition-colors">
