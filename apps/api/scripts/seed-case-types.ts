@@ -7,6 +7,7 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { PrismaClient } from '@prisma/client';
+import { inferDsjSubCourts } from './scrape-case-types/dsj-subcourt-map';
 
 const prisma = new PrismaClient();
 
@@ -41,13 +42,52 @@ function loadJsonOrEmpty(filename: string): ScrapedRow[] {
   return JSON.parse(readFileSync(path, 'utf8'));
 }
 
+/**
+ * Expand DSJ Lahore rows with subcourt tags inferred from the case-type
+ * label. The DSJ form ships a flat 83-entry vocabulary shared across all
+ * districts and never categorizes by subcourt; we map labels to one or more
+ * of (Sessions/Civil/Magisterial/Family) via `inferDsjSubCourts` so the
+ * wizard's subcourt-specific picker has real choices instead of falling back
+ * to the ~50-row hardcoded snapshot.
+ *
+ * Rows the mapping can't classify (e.g. "Labour Cases") are kept with
+ * subCourt=null so they remain visible in the "all Lower Court" view.
+ */
+function expandDsjBySubCourt(rows: ScrapedRow[]): ScrapedRow[] {
+  const out: ScrapedRow[] = [];
+  for (const r of rows) {
+    if (
+      r.courtLevel === 'Lower Court' &&
+      !r.subCourt &&
+      r.source === 'dsjlahore.punjab.gov.pk'
+    ) {
+      const subs = inferDsjSubCourts(r.label);
+      if (subs.length === 0) {
+        out.push(r);
+      } else {
+        for (const sub of subs) {
+          out.push({ ...r, subCourt: sub });
+        }
+      }
+    } else {
+      out.push(r);
+    }
+  }
+  return out;
+}
+
 async function main() {
   // 1. Load all sources.
-  const scraped: ScrapedRow[] = [];
+  const scrapedRaw: ScrapedRow[] = [];
   for (const src of SOURCES) {
     const rows = loadJsonOrEmpty(src);
     console.log(`  ${src}: ${rows.length} rows`);
-    scraped.push(...rows);
+    scrapedRaw.push(...rows);
+  }
+  const scraped = expandDsjBySubCourt(scrapedRaw);
+  const expansionDelta = scraped.length - scrapedRaw.length;
+  if (expansionDelta) {
+    console.log(`  → DSJ subcourt expansion: +${expansionDelta} rows`);
   }
   const hardcoded = loadJsonOrEmpty('hardcoded-snapshot.json').map((row) => ({
     ...row,
