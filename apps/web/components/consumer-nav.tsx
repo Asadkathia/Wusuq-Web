@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  AlertCircle,
   BriefcaseBusiness,
   FileEdit,
   FileText,
@@ -17,6 +18,7 @@ import { ShellNav, type NavItem } from './ui/shell-nav';
 export const consumerNavItems: NavItem[] = [
   { label: 'Dashboard', href: '/consumer/dashboard', icon: LayoutDashboard },
   { label: 'My Tickets', href: '/consumer/my-tickets', icon: Ticket },
+  { label: 'Unpaid', href: '/consumer/my-tickets?filter=unpaid', icon: AlertCircle },
   { label: 'Drafts', href: '/consumer/drafts', icon: FileEdit },
   { label: 'Case Files', href: '/consumer/case-files', icon: Folders },
   { label: 'My Cases', href: '/consumer/my-cases', icon: FolderOpen },

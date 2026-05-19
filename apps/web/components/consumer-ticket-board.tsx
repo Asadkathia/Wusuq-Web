@@ -2,6 +2,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { startTransition, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ArrowRight,
@@ -93,13 +94,16 @@ function relativeTime(iso?: string) {
   return new Date(iso).toLocaleDateString();
 }
 
-type FilterTab = 'all' | 'active' | 'completed';
+type FilterTab = 'all' | 'active' | 'completed' | 'unpaid';
 
 export function ConsumerTicketBoard() {
   const [tickets, setTickets] = useState<TicketRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
-  const [tab, setTab] = useState<FilterTab>('all');
+  const searchParams = useSearchParams();
+  const initialTab: FilterTab =
+    searchParams?.get('filter') === 'unpaid' ? 'unpaid' : 'all';
+  const [tab, setTab] = useState<FilterTab>(initialTab);
   const [viewTicketId, setViewTicketId] = useState<string | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const toast = useToast();
@@ -132,6 +136,7 @@ export function ConsumerTicketBoard() {
     return tickets.filter((t) => {
       if (tab === 'active' && t.status === 'COMPLETED') return false;
       if (tab === 'completed' && t.status !== 'COMPLETED') return false;
+      if (tab === 'unpaid' && (t.paymentStatus ?? 'PAID') === 'PAID') return false;
       if (!s) return true;
       return (
         t.batchNo.toLowerCase().includes(s) ||
@@ -146,6 +151,7 @@ export function ConsumerTicketBoard() {
     all: tickets.length,
     active: tickets.filter((t) => t.status !== 'COMPLETED').length,
     completed: tickets.filter((t) => t.status === 'COMPLETED').length,
+    unpaid: tickets.filter((t) => (t.paymentStatus ?? 'PAID') !== 'PAID').length,
   }), [tickets]);
 
   return (
@@ -172,6 +178,7 @@ export function ConsumerTicketBoard() {
             <TabsTrigger value="all">All <span className="ml-2 text-slate-400 tabular-nums">{counts.all}</span></TabsTrigger>
             <TabsTrigger value="active">Active <span className="ml-2 text-slate-400 tabular-nums">{counts.active}</span></TabsTrigger>
             <TabsTrigger value="completed">Completed <span className="ml-2 text-slate-400 tabular-nums">{counts.completed}</span></TabsTrigger>
+            <TabsTrigger value="unpaid">Unpaid <span className="ml-2 text-slate-400 tabular-nums">{counts.unpaid}</span></TabsTrigger>
           </TabsList>
 
           <div className="flex items-center gap-2">
