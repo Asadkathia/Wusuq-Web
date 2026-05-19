@@ -44,6 +44,25 @@ enum TicketPaymentStatus {
   PAID
 }
 
+enum TicketOrigin {
+  CONSUMER
+  ADMIN_STAFF
+}
+
+enum PaymentProviderName {
+  MOCK
+  JAZZCASH
+  EASYPAISA
+  HBL_PAY
+}
+
+enum PaymentStatus {
+  INITIATED
+  SUCCESS
+  FAILED
+  CANCELLED
+}
+
 enum WalletTransactionStatus {
   PENDING_VERIFICATION
   VERIFIED
@@ -183,6 +202,7 @@ model Ticket {
   totalAmount           Decimal             @default(0)
   amountPaid      Decimal             @default(0)
   paymentStatus   TicketPaymentStatus @default(UNPAID)
+  createdBy       TicketOrigin        @default(ADMIN_STAFF)
   serviceCost     Decimal             @default(0)
   caseId          String?
   // Scheduling / outcome fields (replaces deleted Hearing model — see
@@ -206,10 +226,12 @@ model Ticket {
   invoice         Invoice?
   clerkReport     TicketClerkReport?
   personalFiles  PersonalFile[]
+  payments        Payment[]
 
   @@index([consumerId])
   @@index([status])
   @@index([paymentStatus])
+  @@index([createdBy])
 }
 
 // Structured clerk-side "what files can this court actually produce" report,
@@ -376,6 +398,25 @@ model Invoice {
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
   ticket      Ticket      @relation(fields: [ticketId], references: [id])
+}
+
+model Payment {
+  id              String              @id @default(cuid())
+  ticketId        String
+  provider        PaymentProviderName
+  providerTxnId   String              @unique
+  status          PaymentStatus       @default(INITIATED)
+  amount          Decimal
+  currency        String              @default("PKR")
+  rawRequest      Json?
+  rawCallback     Json?
+  failureReason   String?
+  createdAt       DateTime            @default(now())
+  completedAt     DateTime?
+  ticket          Ticket              @relation(fields: [ticketId], references: [id])
+
+  @@index([ticketId])
+  @@index([status])
 }
 
 model PricingRule {
