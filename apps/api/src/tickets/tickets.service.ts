@@ -28,7 +28,7 @@ import { FilterTicketsDto } from './dto/filter-tickets.dto';
 import { SaveTicketIntakeDraftDto } from './dto/save-ticket-intake-draft.dto';
 import { SubmitClerkCostsDto } from './dto/submit-clerk-costs.dto';
 import { UpdateTicketDto } from './dto/update-ticket.dto';
-import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationDispatcher } from '../notifications/notification-dispatcher.service';
 
 const INTAKE_FLOWS = new Set([
   'judicial_case_files',
@@ -157,7 +157,7 @@ export class TicketsService {
     private readonly auditLogsService: AuditLogsService,
     private readonly pricingService: PricingService,
     private readonly geoService: GeoService,
-    private readonly notificationsService: NotificationsService,
+    private readonly dispatcher: NotificationDispatcher,
   ) {}
 
   async findAll(query: FilterTicketsDto) {
@@ -505,6 +505,8 @@ export class TicketsService {
       })
       .catch(() => undefined);
 
+    await this.dispatcher.ticketCreated(ticket.id).catch(() => undefined);
+
     return ticket;
   }
 
@@ -725,21 +727,6 @@ export class TicketsService {
       await this.applyTicketCompletionToCase(updated.caseId, id, actor);
     }
 
-    if (status === 'COMPLETED') {
-      await this.notificationsService.create({
-        userId: updated.consumer.id,
-        title: 'Service completed',
-        body: `${updated.service.name} has been completed`,
-      });
-      if (updated.consumer.email) {
-        await this.notificationsService.sendEmail(
-          updated.consumer.email,
-          `Your ticket ${updated.batchNo} is complete`,
-          `<p>Your paralegal request <strong>${updated.batchNo}</strong> has been completed. Log in to download your documents.</p>`,
-        );
-      }
-    }
-
     await this.prisma.ticketStatusHistory.create({
       data: {
         ticketId: id,
@@ -757,6 +744,10 @@ export class TicketsService {
       actorEmail: actor?.actorEmail,
       metadata: { from: ticket.status, to: status, note },
     });
+
+    await this.dispatcher
+      .ticketStatusChanged(id, ticket.status, status)
+      .catch(() => undefined);
 
     // When marking COMPLETED on a case-linked ticket, surface case
     // recommendations in the response so the admin's UI can show a toast.
@@ -839,6 +830,11 @@ export class TicketsService {
       Number(ticket.additionalServiceCost) +
       clerkCost -
       Number(ticket.discountPrice);
+    const priorAssignment = await this.prisma.assignment.findFirst({
+      where: { ticketId: id, status: 'ACTIVE' },
+      orderBy: { createdAt: 'desc' },
+      select: { representativeId: true },
+    });
     await this.prisma.$transaction([
       this.prisma.ticket.update({
         where: { id },
@@ -880,6 +876,23 @@ export class TicketsService {
         warning: assignmentWarning,
       },
     });
+
+    if (
+      priorAssignment &&
+      priorAssignment.representativeId !== dto.representativeId
+    ) {
+      await this.dispatcher
+        .ticketReassigned(
+          id,
+          priorAssignment.representativeId,
+          dto.representativeId,
+        )
+        .catch(() => undefined);
+    } else {
+      await this.dispatcher
+        .ticketAssigned(id, dto.representativeId)
+        .catch(() => undefined);
+    }
 
     return { id, representativeId: dto.representativeId, assigned: true };
   }
@@ -997,6 +1010,12 @@ export class TicketsService {
       actorEmail: actor?.actorEmail,
       metadata: { ticketId, visibleToConsumer },
     });
+
+    if (visibleToConsumer) {
+      await this.dispatcher
+        .ticketDocumentUploaded(ticketId)
+        .catch(() => undefined);
+    }
 
     return document;
   }
@@ -1144,6 +1163,8 @@ export class TicketsService {
       },
     });
 
+    await this.dispatcher.ticketRegenerated(cloned.id).catch(() => undefined);
+
     return cloned;
   }
 
@@ -1169,6 +1190,10 @@ export class TicketsService {
       actorUserId: actor?.actorUserId,
       actorEmail: actor?.actorEmail,
     });
+
+    await this.dispatcher
+      .ticketClerkReceiptSubmitted(ticketId)
+      .catch(() => undefined);
 
     return updated;
   }
@@ -1215,6 +1240,10 @@ export class TicketsService {
       actorEmail: actor?.actorEmail,
       metadata: { reason, from: ticket.status, to: nextStatus },
     });
+
+    await this.dispatcher
+      .ticketClerkReceiptDecided(ticketId, decision)
+      .catch(() => undefined);
 
     return updated;
   }
@@ -1360,6 +1389,10 @@ export class TicketsService {
       },
     });
 
+    await this.dispatcher
+      .ticketClerkCostsSubmitted(ticketId)
+      .catch(() => undefined);
+
     return updated;
   }
 
@@ -1422,6 +1455,10 @@ export class TicketsService {
       metadata: { from: 'ASSIGNED', to: 'IN_PROGRESS' },
     });
 
+    await this.dispatcher
+      .ticketAssignmentAccepted(ticketId)
+      .catch(() => undefined);
+
     return updated;
   }
 
@@ -1483,18 +1520,6 @@ export class TicketsService {
     const txResult = await this.prisma.$transaction(txOps);
     const updated = txResult[0];
 
-    if (activeAssignment) {
-      const assigningAdminId = await this.findAssigningAdminId(ticketId);
-      if (assigningAdminId) {
-        await this.notificationsService.create({
-          userId: assigningAdminId,
-          title: 'Assignment rejected',
-          body: `Ticket ${ticket.batchNo} rejected by clerk: ${trimmedReason}`,
-          metadata: { ticketId, reason: trimmedReason },
-        });
-      }
-    }
-
     await this.auditLogsService.create({
       action: 'TICKET_ASSIGNMENT_REJECTED',
       entity: 'TICKET',
@@ -1504,19 +1529,13 @@ export class TicketsService {
       metadata: { reason: trimmedReason, from: 'ASSIGNED', to: 'PENDING' },
     });
 
-    return updated;
-  }
+    if (activeAssignment) {
+      await this.dispatcher
+        .ticketAssignmentRejected(ticketId, trimmedReason)
+        .catch(() => undefined);
+    }
 
-  private async findAssigningAdminId(ticketId: string): Promise<string | null> {
-    const log = await this.prisma.auditLog.findFirst({
-      where: {
-        entity: 'TICKET',
-        entityId: ticketId,
-        action: 'TICKET_ASSIGNED',
-      },
-      orderBy: { createdAt: 'desc' },
-    });
-    return log?.actorUserId ?? null;
+    return updated;
   }
 
   private generateBatchNo() {
@@ -1795,6 +1814,10 @@ export class TicketsService {
           },
         },
       });
+    }
+
+    if (drifts.length > 0) {
+      await this.dispatcher.caseDriftDetected(caseId).catch(() => undefined);
     }
   }
 }
