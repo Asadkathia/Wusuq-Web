@@ -104,3 +104,84 @@ describe('NotificationDispatcher — tickets', () => {
     expect(notifications.sendEmail).toHaveBeenCalled();
   });
 });
+
+describe('NotificationDispatcher — payments/wallet/case/auth', () => {
+  it('paymentCompleted notifies consumer (email) + finance', async () => {
+    const { dispatcher, prisma, notifications } = build();
+    prisma.ticket.findUnique.mockResolvedValue({
+      id: 't1',
+      batchNo: 'TKT-1',
+      consumerId: 'c1',
+      consumer: { id: 'c1', email: 'c@x.com' },
+      service: { name: 'Case Files' },
+    });
+    prisma.user.findMany.mockResolvedValue([{ id: 'f1' }]);
+
+    await dispatcher.paymentCompleted('t1');
+
+    expect(notifications.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: 'c1',
+        type: NOTIFICATION_TYPES.PAYMENT_COMPLETED,
+      }),
+    );
+    expect(notifications.create).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: 'f1' }),
+    );
+    expect(notifications.sendEmail).toHaveBeenCalledWith(
+      'c@x.com',
+      expect.any(String),
+      expect.any(String),
+    );
+  });
+
+  it('walletTopupDecided VERIFIED notifies owner with email', async () => {
+    const { dispatcher, prisma, notifications } = build();
+    prisma.walletTransaction.findUnique.mockResolvedValue({
+      id: 'w1',
+      userId: 'c1',
+      amount: 5000,
+      user: { id: 'c1', email: 'c@x.com' },
+    });
+
+    await dispatcher.walletTopupDecided('w1', 'VERIFIED');
+
+    expect(notifications.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: 'c1',
+        type: NOTIFICATION_TYPES.WALLET_TOPUP_VERIFIED,
+      }),
+    );
+    expect(notifications.sendEmail).toHaveBeenCalled();
+  });
+
+  it('caseDriftDetected notifies admins', async () => {
+    const { dispatcher, prisma, notifications } = build();
+    prisma.case.findUnique.mockResolvedValue({
+      id: 'k1',
+      caseRef: 'CASE-1',
+      consumerId: 'c1',
+    });
+    prisma.user.findMany.mockResolvedValue([{ id: 'a1' }]);
+
+    await dispatcher.caseDriftDetected('k1');
+
+    expect(notifications.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: 'a1',
+        type: NOTIFICATION_TYPES.CASE_DRIFT_DETECTED,
+      }),
+    );
+  });
+
+  it('authPasswordChanged notifies the user', async () => {
+    const { dispatcher, notifications } = build();
+    await dispatcher.authPasswordChanged('u1');
+    expect(notifications.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: 'u1',
+        type: NOTIFICATION_TYPES.AUTH_PASSWORD_CHANGED,
+      }),
+    );
+  });
+});

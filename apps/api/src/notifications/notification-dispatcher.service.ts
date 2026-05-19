@@ -290,4 +290,171 @@ export class NotificationDispatcher {
       metadata: { ticketId: t.id, batchNo: t.batchNo },
     });
   }
+
+  // ─── payment / wallet ───
+  async paymentCompleted(ticketId: string): Promise<void> {
+    const t = await this.loadTicket(ticketId);
+    if (!t) return;
+    const consumerCopy = T.paymentCompletedForConsumer(t.batchNo);
+    await this.notifications.create({
+      userId: t.consumerId,
+      ...consumerCopy,
+      type: NOTIFICATION_TYPES.PAYMENT_COMPLETED,
+      metadata: { ticketId: t.id, batchNo: t.batchNo },
+    });
+    if (t.consumer.email) {
+      await this.notifications.sendEmail(
+        t.consumer.email,
+        consumerCopy.title,
+        `<p>${consumerCopy.body}</p>`,
+      );
+    }
+    const financeCopy = T.paymentCompletedForFinance(t.batchNo);
+    for (const id of await this.financeIds()) {
+      if (id === t.consumerId) continue;
+      await this.notifications.create({
+        userId: id,
+        ...financeCopy,
+        type: NOTIFICATION_TYPES.PAYMENT_COMPLETED,
+        metadata: { ticketId: t.id, batchNo: t.batchNo },
+      });
+    }
+  }
+
+  private async loadTxn(transactionId: string) {
+    return this.prisma.walletTransaction.findUnique({
+      where: { id: transactionId },
+      include: { user: { select: { id: true, email: true } } },
+    });
+  }
+
+  async walletTopupCreated(transactionId: string): Promise<void> {
+    const tx = await this.loadTxn(transactionId);
+    if (!tx) return;
+    const amount = Number(tx.amount);
+    await this.notifications.create({
+      userId: tx.userId,
+      ...T.walletTopupCreatedForConsumer(amount),
+      type: NOTIFICATION_TYPES.WALLET_TOPUP_CREATED,
+      metadata: { transactionId: tx.id },
+    });
+    const financeCopy = T.walletTopupCreatedForFinance(amount);
+    for (const id of await this.financeIds()) {
+      if (id === tx.userId) continue;
+      await this.notifications.create({
+        userId: id,
+        ...financeCopy,
+        type: NOTIFICATION_TYPES.WALLET_TOPUP_CREATED,
+        metadata: { transactionId: tx.id },
+      });
+    }
+  }
+
+  async walletTopupDecided(
+    transactionId: string,
+    decision: 'VERIFIED' | 'REJECTED',
+  ): Promise<void> {
+    const tx = await this.loadTxn(transactionId);
+    if (!tx) return;
+    const copy = T.walletTopupDecidedForConsumer(Number(tx.amount), decision);
+    await this.notifications.create({
+      userId: tx.userId,
+      ...copy,
+      type:
+        decision === 'VERIFIED'
+          ? NOTIFICATION_TYPES.WALLET_TOPUP_VERIFIED
+          : NOTIFICATION_TYPES.WALLET_TOPUP_REJECTED,
+      metadata: { transactionId: tx.id },
+    });
+    if (tx.user.email) {
+      await this.notifications.sendEmail(
+        tx.user.email,
+        copy.title,
+        `<p>${copy.body}</p>`,
+      );
+    }
+  }
+
+  async walletReceiptUploaded(): Promise<void> {
+    const copy = T.walletReceiptUploadedForFinance();
+    for (const id of await this.financeIds()) {
+      await this.notifications.create({
+        userId: id,
+        ...copy,
+        type: NOTIFICATION_TYPES.WALLET_RECEIPT_UPLOADED,
+      });
+    }
+  }
+
+  // ─── case ───
+  private async loadCase(caseId: string) {
+    return this.prisma.case.findUnique({
+      where: { id: caseId },
+      select: { id: true, caseRef: true, consumerId: true },
+    });
+  }
+
+  async caseCreated(caseId: string): Promise<void> {
+    const k = await this.loadCase(caseId);
+    if (!k) return;
+    await this.notifications.create({
+      userId: k.consumerId,
+      ...T.caseCreatedForConsumer(k.caseRef),
+      type: NOTIFICATION_TYPES.CASE_CREATED,
+      metadata: { caseId: k.id, caseRef: k.caseRef },
+    });
+  }
+
+  async caseStatusChanged(
+    caseId: string,
+    from: string,
+    to: string,
+  ): Promise<void> {
+    const k = await this.loadCase(caseId);
+    if (!k) return;
+    await this.notifications.create({
+      userId: k.consumerId,
+      ...T.caseStatusForConsumer(k.caseRef, to),
+      type: NOTIFICATION_TYPES.CASE_STATUS_CHANGED,
+      metadata: { caseId: k.id, caseRef: k.caseRef, from, to },
+    });
+  }
+
+  async caseDriftDetected(caseId: string): Promise<void> {
+    const k = await this.loadCase(caseId);
+    if (!k) return;
+    const copy = T.caseDriftForAdmin(k.caseRef);
+    for (const id of await this.adminIds()) {
+      await this.notifications.create({
+        userId: id,
+        ...copy,
+        type: NOTIFICATION_TYPES.CASE_DRIFT_DETECTED,
+        metadata: { caseId: k.id, caseRef: k.caseRef },
+      });
+    }
+  }
+
+  // ─── auth ───
+  async authPasswordChanged(userId: string): Promise<void> {
+    const copy = T.authPasswordChanged();
+    await this.notifications.create({
+      userId,
+      ...copy,
+      type: NOTIFICATION_TYPES.AUTH_PASSWORD_CHANGED,
+    });
+    await this.emailUser(userId, copy.title, copy.body);
+  }
+
+  async authImpersonationStarted(
+    targetUserId: string,
+    adminEmail: string,
+  ): Promise<void> {
+    const copy = T.authImpersonationStarted(adminEmail);
+    await this.notifications.create({
+      userId: targetUserId,
+      ...copy,
+      type: NOTIFICATION_TYPES.AUTH_IMPERSONATION_STARTED,
+    });
+    await this.emailUser(targetUserId, copy.title, copy.body);
+  }
 }
