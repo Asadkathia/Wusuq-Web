@@ -3,6 +3,7 @@ import { hash } from 'bcryptjs';
 import type { User } from '@prisma/client';
 import { USER_ROLES } from '@wusuq/shared';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import { NotificationDispatcher } from '../notifications/notification-dispatcher.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { formatPakistaniPhone } from '../common/utils/phone.util';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
@@ -19,6 +20,7 @@ export class UsersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService,
+    private readonly dispatcher: NotificationDispatcher,
   ) {}
 
   async findAll(query: PaginationQueryDto) {
@@ -149,6 +151,10 @@ export class UsersService {
       actorUserId: actor?.actorUserId,
       actorEmail: actor?.actorEmail,
     });
+
+    if (dto.password) {
+      await this.dispatcher.authPasswordChanged(id).catch(() => undefined);
+    }
 
     return this.serializeUser(user);
   }
