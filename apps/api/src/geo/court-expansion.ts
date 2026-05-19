@@ -21,6 +21,31 @@ export const LOWER_COURT_SUBCOURTS: SubCourt[] = [
 ];
 
 /**
+ * Baseline specialized special courts that operate in every divisional /
+ * district HQ in Pakistan. Applied to every city that pakistan-courts.json
+ * lists under "Special Court" — even if the city-specific list in
+ * SPECIAL_COURT_SUBCOURTS doesn't cover it.
+ *
+ * 5-19-26 CF#1a: before this, cities like Abbottabad / Sialkot / Hyderabad /
+ * Sukkur / Mardan / Muzaffarabad only saw the generic "Special Court"
+ * placeholder. These five tribunals are district-level by statute and exist
+ * across the country — Accountability Court (NAB), Anti-Terrorism Court (ATC,
+ * 1997 Act), Labour Court (Industrial Relations Acts), Drug Court (Drugs
+ * Act), Consumer Court (Consumer Protection Acts).
+ *
+ * Cities that already get specialized SPECIAL_COURT_SUBCOURTS coverage
+ * (Lahore, Karachi, etc.) will get these via that map too — the seeder
+ * de-dupes on (courtId, cityId).
+ */
+export const BASELINE_SPECIAL_COURTS: string[] = [
+  'Accountability Court',
+  'Anti-Terrorism Court',
+  'Labour Court',
+  'Drug Court',
+  'Consumer Court',
+];
+
+/**
  * Special Courts and tribunals do NOT exist in every city the way Lower Courts
  * do. This map lists the cities where each specialized court/tribunal is
  * seated. We seed a CourtSeat only when the JSON also has "Special Court"

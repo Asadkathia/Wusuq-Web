@@ -73,12 +73,30 @@ export const CITY_ALIAS: Record<string, string> = {
 
 // One-to-many fan-out: a single JSON city name should seat courts across
 // multiple geo cities. Use for metros where the court JSON treats the whole
-// city as a single seat ("Karachi") but the geo tree splits it into multiple
+// city as a single seat but the geo tree splits it into multiple
 // administrative sub-cities the consumer needs to pick between.
 //
 // When a JSON city matches a CITY_FANOUT key, seeders create one CourtSeat
 // row per target sub-city (instead of consulting CITY_ALIAS).
-export const CITY_FANOUT: Record<string, string[]> = {
+//
+// Currently empty — 5-19-26 CF#2 reverted the Karachi / Lahore fan-outs.
+// The metro hub city (e.g. "Karachi", "Lahore") receives all courts via
+// direct JSON entry; sub-tehsils receive only Lower Court via
+// LOWER_COURT_ONLY_TEHSILS below.
+export const CITY_FANOUT: Record<string, string[]> = {};
+
+// Per 5-19-26 CF#2: tehsils of metro hubs ("Lahore Cantt" / "Lahore Model
+// Town" under Lahore; "Karachi South" / "East" / "West" / "North" /
+// "Central" under Karachi) should expose Lower Court only. The metro hub
+// itself (Lahore / Karachi) keeps the full court set via its direct JSON
+// entries.
+//
+// Seeders post-process this map: for each tehsil listed, seat the canonical
+// Lower Court sub-courts (from LOWER_COURT_SUBCOURTS) on that GeoCity row.
+// Sub-cities that already have a Lower Court entry in pakistan-courts.json
+// (e.g. Lahore Cantt) are seated either way — this map covers the rest.
+export const LOWER_COURT_ONLY_TEHSILS: Record<string, string[]> = {
+  Lahore: ['Lahore Cantt', 'Lahore Model Town'],
   Karachi: [
     'Karachi South',
     'Karachi East',
@@ -86,9 +104,4 @@ export const CITY_FANOUT: Record<string, string[]> = {
     'Karachi North',
     'Karachi Central',
   ],
-  // Lahore courts in pakistan-courts.json that name just "Lahore" should also
-  // seat in the Cantt / Model Town sub-cities — consumers picking those see
-  // all main courts, not just the few entries that explicitly named the
-  // sub-city. Includes plain "Lahore" so the parent city keeps its full set.
-  Lahore: ['Lahore', 'Lahore Cantt', 'Lahore Model Town'],
 };

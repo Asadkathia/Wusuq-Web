@@ -68,6 +68,13 @@ function normalizeYearBand(label: string | null | undefined): YearBand | null {
   if (!label) return null;
   const l = label.toString().trim().toUpperCase();
   if (l === 'PENDING' || l.startsWith('PENDING') || l.includes('PENDING')) return 'pending';
+  // The Punjab block labels its pending row "CASE FILES (Pending Cases)" but the
+  // Other-than-Punjab block uses bare "CASE FILES". In the set-type matrix
+  // context this row is always the pending case — without this branch the 6
+  // tiers × 3 set-types of Other/pending rules silently fall off the seed and
+  // outside-Punjab pending falls through to the current band (overcharging by
+  // Rs 1,000-3,000).
+  if (l === 'CASE FILES') return 'pending';
   if (l.startsWith('CASE RECORD (CURRENT YEAR)') || l.startsWith('CURRENT YEAR') || l === 'CURRENT')
     return 'current';
   if (l.startsWith('2025')) return 'y2025';
@@ -142,6 +149,11 @@ function pushHeadline(
   base: ReturnType<typeof parseCell>,
   clerk: ReturnType<typeof parseCell>,
 ) {
+  // 5-19-26 CI#3: Case Information has no physical file to dispatch, so the
+  // delivery guy line item (Rs 100) shouldn't fire. Same applies to Case
+  // Search — the "result" is a digital info packet. PDF surcharge stays.
+  const flowHasPhysicalDispatch =
+    flow !== 'judicial_case_information' && flow !== 'judicial_case_search';
   DRAFTS.push({
     flow,
     courtLevel,
@@ -152,7 +164,7 @@ function pushHeadline(
     availability: base.available && base.amount != null,
     clerkBaseCost: clerk.amount,
     pdfSurchargeAmount: 300,
-    deliveryGuyFee: 100,
+    deliveryGuyFee: flowHasPhysicalDispatch ? 100 : 0,
   });
 }
 
@@ -341,6 +353,48 @@ function parseSetTypeBlock(
   }
 }
 
+// ── Sheet 5 parser: per-set-type clerk rates ────────────────────────────────
+//
+// Sheet5 mirrors Sheet 2's set-type matrix but interleaves a "Clerk Rates"
+// block after each tier's Wusuq block: each court tier occupies 12 columns —
+// 5 wusuq (atte / non / both / pdf / delivery) + 1 separator + 5 clerk
+// (same shape) + 1 separator. So Lower clerk attested = wusuq attested + 6.
+//
+// Result: clerkRateMap keyed by `${region}|${courtLevel}|${yearBand}|${setType}`
+// → number, then merged into DRAFTS before insert.
+
+type ClerkKey = string;
+const clerkRateMap = new Map<ClerkKey, number>();
+
+function parseClerkSetTypeBlock(
+  grid: Grid,
+  region: Region,
+  tierHeaderRow: number,
+  bandRows: number[],
+) {
+  const tiers: { courtLevel: string; wusuqCol: number }[] = [];
+  const headers = grid[tierHeaderRow] ?? [];
+  for (let c = 0; c < headers.length; c++) {
+    const ch = normalizeCourtHeader(headers[c]);
+    if (ch) tiers.push({ courtLevel: ch, wusuqCol: c });
+  }
+  for (const r of bandRows) {
+    const row = grid[r];
+    if (!row) continue;
+    const yearBand = normalizeYearBand(row[0]);
+    if (!yearBand) continue;
+    for (const t of tiers) {
+      const clerkBase = t.wusuqCol + 6; // 5 wusuq cols + 1 separator → clerk attested
+      for (const st of SET_TYPE_COLUMNS) {
+        const cell = parseCell(row[clerkBase + st.offset]);
+        if (cell.amount == null) continue;
+        const k = `${region}|${t.courtLevel}|${yearBand}|${st.setType}`;
+        clerkRateMap.set(k, cell.amount);
+      }
+    }
+  }
+}
+
 // ── Main ─────────────────────────────────────────────────────────────────────
 
 async function main() {
@@ -370,12 +424,34 @@ async function main() {
   parseSetTypeBlock(s2, 'Punjab', /*tierHeaderRow*/ 2, /*bandRows*/ [4, 5, 6, 7, 8, 9, 10]);
   parseSetTypeBlock(s2, 'other', /*tierHeaderRow*/ 13, /*bandRows*/ [15, 16, 17, 18, 19, 20, 21]);
 
+  // Sheet 5 — clerk rates for set-type rules. Punjab block layout: tier
+  // header row 1, data rows 3-9 (pending, current, 2025, 2024-23, 2022-20,
+  // 2019-17, 2016-back). Each tier occupies 12 cols (5 wusuq + sep + 5 clerk
+  // + sep). The canonical file's Sheet5 has no Other-than-Punjab block, so
+  // clerk rates for `region='other'` fall back to null.
+  // Tab is optional — older xlsx versions don't carry it; skip silently.
+  if (wb.SheetNames.includes('Sheet5')) {
+    const s5 = sheetGrid(wb, 'Sheet5');
+    parseClerkSetTypeBlock(s5, 'Punjab', /*tierHeaderRow*/ 1, /*bandRows*/ [3, 4, 5, 6, 7, 8, 9]);
+  }
+
   // De-dupe on the unique key (region, courtLevel, flow, yearBand, setType).
   const byKey = new Map<string, RuleDraft>();
   for (const d of DRAFTS) {
     const k = `${d.region}|${d.courtLevel}|${d.flow}|${d.yearBand}|${d.setType ?? ''}`;
     // Last-write wins; the order above is deterministic.
     byKey.set(k, d);
+  }
+
+  // Apply Sheet 5 clerk rates onto set-type drafts (judicial_case_files only —
+  // Sheet 5's matrix only covers that flow). Headline-table drafts already
+  // carry their own clerkBaseCost from Sheet 1, so leave them alone.
+  for (const d of byKey.values()) {
+    if (d.setType == null) continue;
+    if (d.flow !== 'judicial_case_files') continue;
+    const k = `${d.region}|${d.courtLevel}|${d.yearBand}|${d.setType}`;
+    const clerk = clerkRateMap.get(k);
+    if (clerk != null) d.clerkBaseCost = clerk;
   }
 
   const drafts = [...byKey.values()];

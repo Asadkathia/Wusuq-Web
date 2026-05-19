@@ -3,10 +3,16 @@ import { PrismaService } from '../prisma/prisma.service';
 import { PAKISTAN_GEO, RAW_POLICE_STATIONS_BY_PROVINCE } from './pakistan-seed';
 import courtsJson from './pakistan-courts.json';
 import {
+  BASELINE_SPECIAL_COURTS,
   LOWER_COURT_SUBCOURTS,
   SPECIAL_COURT_SUBCOURTS,
 } from './court-expansion';
-import { CITY_ALIAS, CITY_FANOUT, PROVINCE_ALIAS } from './court-alias';
+import {
+  CITY_ALIAS,
+  CITY_FANOUT,
+  LOWER_COURT_ONLY_TEHSILS,
+  PROVINCE_ALIAS,
+} from './court-alias';
 
 type CourtCityEntry = { city: string; is_principal_seat: boolean };
 type CourtsByProvince = Record<string, CourtCityEntry[]>;
@@ -534,6 +540,13 @@ export class GeoService {
                   await upsertSeat(court.id, cityId, false);
                 }
               } else if (courtType === 'Special Court') {
+                // Baseline tribunals (Accountability/ATC/Labour/Drug/Consumer)
+                // operate in every district HQ — seat them whenever the JSON
+                // has any Special Court coverage for this city.
+                for (const subName of BASELINE_SPECIAL_COURTS) {
+                  const court = await getOrCreateCourt(courtType, subName);
+                  await upsertSeat(court.id, cityId, false);
+                }
                 for (const [subName, cities] of Object.entries(
                   SPECIAL_COURT_SUBCOURTS,
                 )) {
@@ -552,6 +565,22 @@ export class GeoService {
               }
             }
           }
+        }
+      }
+    }
+
+    // 5-19-26 CF#2: seat the canonical Lower Court sub-courts on metro
+    // tehsils that don't already carry them via a direct JSON entry. Keeps
+    // the metro hub city's full court set intact while exposing the sub-
+    // tehsils as Lower-Court-only options.
+    for (const [parentCity, tehsils] of Object.entries(LOWER_COURT_ONLY_TEHSILS)) {
+      void parentCity;
+      for (const tehsil of tehsils) {
+        const cityId = globalCityByName.get(tehsil.toLowerCase());
+        if (!cityId) continue;
+        for (const sc of LOWER_COURT_SUBCOURTS) {
+          const court = await getOrCreateCourt('Lower Court', sc.name);
+          await upsertSeat(court.id, cityId, false);
         }
       }
     }

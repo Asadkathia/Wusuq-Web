@@ -361,6 +361,23 @@ export function IntakeWizard({
     }
   }, [draft.payload.case_status, draft.payload.set_type]);
 
+  // 5-19-26 #6: for Decided cases, decided_date is the canonical year source
+  // (drives the pricing band). The `year` input is hidden for Decided cases
+  // (see intake-flows.ts). `withDerivedYear` derives `payload.year` from
+  // `decided_date` at submit/save time so backend validators in
+  // REQUIRED_FIELDS_BY_FLOW (case_year) and the pricing resolver (caseYear)
+  // still see a value. No effect-based mirroring — derive on use.
+  const withDerivedYear = useCallback(
+    (p: Record<string, string | undefined>): Record<string, string | undefined> => {
+      if (p.case_status !== 'Decided Case') return p;
+      if (p.year) return p;
+      const m = /^(\d{4})/.exec(p.decided_date ?? '');
+      if (!m) return p;
+      return { ...p, year: m[1] };
+    },
+    [],
+  );
+
   // Apply any per-field `defaultValue` declared in the flow to the payload
   // when the flow changes, so radios/selects start preselected.
   useEffect(() => {
@@ -1206,7 +1223,7 @@ export function IntakeWizard({
         consumerId: draft.consumerId,
         serviceId: draft.serviceId,
         step: draft.step,
-        payload: draft.payload,
+        payload: withDerivedYear(draft.payload),
       });
       setDraft((c) => (c.draftId === r.id ? c : { ...c, draftId: r.id }));
       setLastSavedAt(Date.now());
@@ -1358,7 +1375,7 @@ export function IntakeWizard({
     }
     setLoading(true); setApiError('');
     try {
-      const p = draft.payload;
+      const p = withDerivedYear(draft.payload);
       const sets =
         p.set_type === 'attested' ? (p.attested_qty ?? '') :
         p.set_type === 'non_attested' ? (p.non_attested_qty ?? '') :
@@ -1662,39 +1679,13 @@ export function IntakeWizard({
                 />
               )}
 
-              {/* QA #2 (5-10-26): surface the delivery mode pick on Step 1
-                  so the consumer commits to TCS / Uber / Self Collection
-                  before drilling into case details. The field def is
-                  hoisted from the flow's later step so each flow keeps its
-                  own option list (TCS/Uber/Self for Case Files, courier/
-                  self_collection for Filing & PoA, portal/whatsapp/other_no
-                  for Case Information). Address / coordinate fields stay on
-                  their original step with the same `showWhen` condition. */}
-              {selectedFlow && (() => {
-                for (const step of selectedFlow.steps) {
-                  for (const f of step.fields) {
-                    if (f.key === 'delivery_mode') {
-                      return (
-                        <div className="md:col-span-2 space-y-1">
-                          <label className="text-sm font-medium text-slate-700">
-                            {f.label ?? 'Delivery Method'}
-                            {f.required ? <span className="text-rose-500 ml-0.5">*</span> : null}
-                          </label>
-                          {renderField(
-                            f,
-                            draft.payload.delivery_mode ?? '',
-                            draft.payload as Record<string, string>,
-                            (key, value) => setPayloadField(key, value),
-                            undefined,
-                            (key, newValue) => setPayloadField(key, newValue ?? draft.payload[key] ?? ''),
-                          )}
-                        </div>
-                      );
-                    }
-                  }
-                }
-                return null;
-              })()}
+              {/* 5-19-26 CF#1b: delivery method was previously hoisted to
+                  Page 1 (per 5-10-26 QA #2) so consumers committed early.
+                  Owner reversed this — delivery is now too far upstream of
+                  the case-details + document choices that influence it.
+                  Leaving the field on its native later step (Documents &
+                  Delivery for Case Files; Information Delivery for Case
+                  Info; Others & Delivery for Filing/PoA). */}
             </>
           )}
 
@@ -1781,7 +1772,12 @@ export function IntakeWizard({
           )}
 
           {!isCityCourtStep && activeStep?.fields
-            .filter((f) => !GEO_HANDLED_KEYS.has(f.key) && !DATE_HANDLED_KEYS.has(f.key))
+            // DATE_HANDLED_KEYS are owned by CaseDateBlock — but only when
+            // stepHasCaseDate (the full case_status + future_date triad is
+            // present). For flows like Case Information and Case Search
+            // that expose case_date / decided_date without the full triad,
+            // render them via the default loop. 5-19-26 CI#1 / CS#4.
+            .filter((f) => !GEO_HANDLED_KEYS.has(f.key) && !(stepHasCaseDate && DATE_HANDLED_KEYS.has(f.key)))
             .map((rawField) => {
               // A decided case has, by definition, been attested by the court — so the
               // "Non Attested" set type is invalid. Filter it out of the options when

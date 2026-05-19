@@ -133,9 +133,12 @@ Helmet → CORS → Body parser (10 MB) → ValidationPipe (whitelist, transform
 NestJS convention: create `src/<domain>/<domain>.module.ts`, `.controller.ts`, `.service.ts`, and register in `AppModule`. Follow the existing pattern of injecting `PrismaService` directly (no repository layer).
 
 ### Pricing engine v2
-`PricingRule` is keyed on 5 dimensions: `(region, courtLevel, flow, yearBand, setType)`. The resolver in `apps/api/src/pricing/pricing.service.ts` returns a line-item breakdown — `base, pdfSurcharge, deliveryFee, titleSurcharge, searchBothSurcharge, attestedCharge, nonAttestedCharge, total` — plus an `availability: boolean` flag. When `availability=false`, the wizard hides the combination (e.g. Lower-Court Non-Attested for decided cases — the "Can't Get" sentinel from the xlsx). `apps/api/data/pricing-sheet.xlsx` is the canonical price list; edit there and re-run `seed-pricing.ts`. Some surcharges live as constants in the resolver, not as rule rows:
+`PricingRule` is keyed on 5 dimensions: `(region, courtLevel, flow, yearBand, setType)`. The resolver in `apps/api/src/pricing/pricing.service.ts` returns a line-item breakdown — `base, pdfSurcharge, deliveryFee, titleSurcharge, ageSurcharge, searchBothSurcharge, attestedCharge, nonAttestedCharge, total` — plus an `availability: boolean` flag. When `availability=false`, the wizard hides the combination (e.g. Lower-Court Non-Attested for decided cases — the "Can't Get" sentinel from the xlsx). `apps/api/data/pricing-sheet.xlsx` is the canonical price list; edit there and re-run `seed-pricing.ts`. Some surcharges live as constants in the resolver, not as rule rows:
 - `STATE_VS_SURCHARGE = 1000` — applied when `caseTitle` matches `/^state vs/i` (PDF #14).
 - `SEARCH_BOTH_SURCHARGE = 1000` — applied per city when `flow === 'judicial_case_search'` and `searchMethod === 'both'` (PDF #37). Combined with the cityCount multiplier, this yields the linear N × Rs 3,000 case-search pricing.
+- `DECIDED_AGE_SURCHARGE_PER_YEAR = 1000` — derived, not rule-backed. For Decided Case Files older than 10 years, the resolver adds `(age - 10) * 1000` on top of the banded price (e.g. in 2026, a 2016 case = banded base; 2015 = base + 1,000; 2014 = base + 2,000). Lives on the per-city block so Case Search scales correctly.
+
+**yearBand `pending` fallback.** The seed only carries `pending` set-type rules for `region='Punjab'`. For Pending Cases outside Punjab, both `availabilityFor` and `resolve` fall back to `yearBand='current'` when the requested band yields zero matches. This mirrors the wizard's implicit "pending means no decided year → use current rate" contract. Don't add ad-hoc `pending` rules for `region='other'` — fix the xlsx if the rate should genuinely differ.
 
 Set-type rules in the xlsx only cover Case Files. Information / Filing / PoA flow through the resolver with `setType=null` — don't render the Set Type picker for those services.
 
@@ -148,10 +151,25 @@ Adding a new scraper: write `scripts/scrape-case-types/scrape-<x>.ts` using `sha
 `apps/web/components/intake-wizard.tsx` renders all 8 consumer flows. Flow definitions live in `apps/web/lib/intake-flows.ts`. Key invariants:
 
 - **`draft.step` is 1-indexed** — `activeStep = displaySteps[draft.step - 1]`. Off-by-one when jumping to a specific step is a common mistake.
-- **Required-field rules are per-court-tier.** Use `IntakeField.requiredByCourtTier?: Partial<Record<CourtTier, boolean>>`. Resolve at render time via `resolveRequired(field, activeCourtTier)`. The `*` asterisk and validation gate both consult the same resolver. Active tier comes from `payload.select_court_type`.
+- **Required-field rules are per-court-tier — single source of truth lives in `packages/shared`.** Two sides must agree or the validator rejects on submit while the wizard happily lets the user proceed:
+  - **Frontend** sets `IntakeField.requiredByCourtTier?: Partial<Record<CourtTier, boolean>>` on each field, resolved via `resolveRequired(field, activeCourtTier)` (drives the `*` asterisk and the per-step validator).
+  - **Backend** consults `requiredFieldsFor(flow, baseRequired, tier)` from `@wusuq/shared`, which subtracts `REQUIRED_FIELDS_OPTIONAL_BY_TIER[flow][tier]` from the flat `REQUIRED_FIELDS_BY_FLOW[flow]` list. The tier is derived from `payload.select_court_type` via `courtTierFromCourtType`.
+  - When changing a per-tier required rule: update **both** `requiredByCourtTier` (wizard) **and** `REQUIRED_FIELDS_OPTIONAL_BY_TIER` (shared) in the same change. FE marks "red ✗" optional / BE still requires → submit fails on the last page with no field-level error (QA B6/B7).
 - **Click-style fields commit synchronously via onBlur(key, newValue).** Radio, checkbox-tile, and tab fields call `onBlur(field.key, newValue)` after `onChange(field.key, newValue)`. `draft.payload` is stale in the click handler because setState is async; pass the new value explicitly or the validator runs against the previous value (PDF #22 root cause).
 - **Case types come from the API**, never from in-code constants. The wizard fetches `/case-types?courtLevel=…&subCourt=…&district=…&highCourtCode=…` and stores the row's `label` in `payload.case_type`.
 - **Payload field aliases** — the API normalises incoming intake payloads via `PAYLOAD_FIELD_ALIASES` in `packages/shared/src/index.ts`. Frontend can send either the canonical name or any alias (e.g. `case_no` ⇔ `case_petition_no`, `year` ⇔ `case_year`). When adding a required field, add it to `REQUIRED_FIELDS_BY_FLOW` in `tickets.service.ts` using the **canonical** name.
+
+### Intake-draft lifecycle (autosave / Start Fresh / submit)
+The wizard keeps at most one active server draft per `(consumerId, flow)`. Three lifecycle events need to stay in lock-step or the consumer sees phantom drafts:
+
+- **Autosave** debounces 5 s after the last field change. Guarded by `submittingRef` — set BEFORE any `await` in `submitTicket`, cleared by `resetForm` (success) or the catch (failure). Any pending timer is also explicitly cleared at submit. Without both, the autosave fires from a stale closure and resurrects the draft the submit just deleted (QA "prefill bug" root cause).
+- **Server-side belt** lives in `TicketsService.saveIntakeDraft`: refuses the upsert when a ticket for that `(consumerId, flow)` was created in the last 30 s, returning `{ suppressed: true }`. Catches races from mobile / older sessions that don't have the FE guard.
+- **Submit** (`createIntakeTicket`) deletes the `(consumerId, flow)` draft on success via `prisma.ticketIntakeDraft.delete().catch(() => undefined)` — best-effort, don't add error handling around it.
+- **Start Fresh** in the wizard (`startFresh()` in `intake-wizard.tsx`) calls `DELETE /tickets/intake-drafts/active?flow=…` before calling `resetForm()`, so a subsequent reload doesn't restore the discarded payload. The DELETE is best-effort — local reset still happens if the server call fails.
+- **Resumed-draft banner** renders above the step rail when `resumedDraftAt` is set by the hydration effect, with an inline Start Fresh CTA. This makes the restore behaviour explicit (consumers used to think the wizard was pre-filling from a previous ticket).
+
+### Consumer auth — country picker + composed phone
+Both `/consumer/login` and `/consumer/signup` use the shared `CountryPicker` (`components/ui/country-picker.tsx`) backed by `apps/web/lib/countries.ts`. The phone input stores **local digits only**; the dial prefix is composed at request time via `composedPhone()` in `use-login-flow.ts` (login) or inline in `signup/page.tsx` (signup): strip whitespace / `+` / leading zeros, then prepend `+<dial>` unless the user already typed it. PK uses the strict `PK_PHONE_REGEX`; other countries use a permissive 7–15 digit `GENERIC_PHONE_REGEX`. Never re-introduce a hard-coded `+92` span.
 
 ## Environment Variables
 

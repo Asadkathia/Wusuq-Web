@@ -11,8 +11,17 @@ import {
   PAKISTAN_GEO,
 } from '../src/geo/pakistan-seed';
 import courtsJson from '../src/geo/pakistan-courts.json';
-import { LOWER_COURT_SUBCOURTS, SPECIAL_COURT_SUBCOURTS } from '../src/geo/court-expansion';
-import { CITY_ALIAS, CITY_FANOUT, PROVINCE_ALIAS } from '../src/geo/court-alias';
+import {
+  BASELINE_SPECIAL_COURTS,
+  LOWER_COURT_SUBCOURTS,
+  SPECIAL_COURT_SUBCOURTS,
+} from '../src/geo/court-expansion';
+import {
+  CITY_ALIAS,
+  CITY_FANOUT,
+  LOWER_COURT_ONLY_TEHSILS,
+  PROVINCE_ALIAS,
+} from '../src/geo/court-alias';
 
 const prisma = new PrismaClient();
 
@@ -195,23 +204,44 @@ async function main() {
                 seatRows.push({ courtId, cityId, isPrincipalSeat: false });
               }
             } else if (courtType === 'Special Court') {
-              let matched = false;
+              // Baseline tribunals exist in every district HQ — seat them
+              // unconditionally when the JSON has any Special Court coverage
+              // for this city.
+              for (const subName of BASELINE_SPECIAL_COURTS) {
+                const courtId = await getOrCreateCourt(courtType, subName);
+                seatRows.push({ courtId, cityId, isPrincipalSeat: false });
+              }
+              // City-specific specialized tribunals from the legacy table.
+              let specializedMatched = false;
               for (const [subName, cities] of Object.entries(SPECIAL_COURT_SUBCOURTS)) {
                 if (!cities.some((c) => c.toLowerCase() === entry.city.toLowerCase())) continue;
                 const courtId = await getOrCreateCourt(courtType, subName);
                 seatRows.push({ courtId, cityId, isPrincipalSeat: false });
-                matched = true;
+                specializedMatched = true;
               }
-              if (!matched) {
-                const courtId = await getOrCreateCourt(courtType, 'Special Court');
-                seatRows.push({ courtId, cityId, isPrincipalSeat: false });
-              }
+              void specializedMatched;
             } else {
               const courtId = await getOrCreateCourt(courtType, jsonSubCourtName);
               seatRows.push({ courtId, cityId, isPrincipalSeat: entry.is_principal_seat });
             }
           }
         }
+      }
+    }
+  }
+
+  // Tehsil Lower-Court-only fan-out. Metro tehsils (Lahore Cantt/Model Town;
+  // Karachi South/East/West/North/Central) get the 4 canonical Lower Court
+  // sub-courts seated on them so consumers picking those tehsils see Lower
+  // Court only — the metro hub city retains the full court set.
+  for (const [parentCity, tehsils] of Object.entries(LOWER_COURT_ONLY_TEHSILS)) {
+    void parentCity;
+    for (const tehsil of tehsils) {
+      const cityId = globalCityByName.get(tehsil.toLowerCase());
+      if (!cityId) continue;
+      for (const sc of LOWER_COURT_SUBCOURTS) {
+        const courtId = await getOrCreateCourt('Lower Court', sc.name);
+        seatRows.push({ courtId, cityId, isPrincipalSeat: false });
       }
     }
   }

@@ -200,7 +200,7 @@ export type IntakeField = {
    * `valueIn` is used by the Case Search search-method tabs (PDF #37) where a
    * field is visible for both the "CNIC" and "both" states.
    */
-  showWhen?: { field: string; value?: string; valueIn?: string[] };
+  showWhen?: { field: string; value?: string; valueIn?: string[]; valueNotIn?: string[] };
   /** Shown below the label in consumer variant only */
   hint?: string;
   /** Optional placeholder for text/textarea inputs */
@@ -386,6 +386,10 @@ export function showWhenSatisfied(
   const sw = field.showWhen;
   if (!sw) return true;
   const current = payload[sw.field] ?? '';
+  // `valueNotIn` is a blacklist: the field is hidden when the referenced
+  // value matches any entry, otherwise visible. Used independently of
+  // value / valueIn (e.g. "show bench for everything EXCEPT Lower / Special").
+  if (sw.valueNotIn) return !sw.valueNotIn.includes(current);
   if (sw.value !== undefined && current === sw.value) return true;
   if (sw.valueIn && sw.valueIn.includes(current)) return true;
   return false;
@@ -579,6 +583,13 @@ const caseFilesSteps: IntakeStep[] = [
         // PDF #23-#27: year is required only for Special Court (#25).
         requiredByCourtTier: { lower: false, high: false, special: true, shariat: false, supreme: false, fcc: false },
         hint: 'Year the case was filed (per the order sheet or petition heading).',
+        // 5-19-26 #6: for Decided cases the year that drives pricing is
+        // `decided_date`, not this filing-year input. Two inputs on the same
+        // step produced silent disagreement (year=2025 + decided_date=2024-XX
+        // → pricing used 2024 → wrong band). Hide for Decided; the wizard
+        // syncs payload.year = decided_date.slice(0,4) so backend validators
+        // (REQUIRED_FIELDS_BY_FLOW) still see a year.
+        showWhen: { field: 'case_status', valueIn: ['Pending Case', 'Unknown Case'] },
       },
       {
         key: 'case_title',
@@ -596,9 +607,11 @@ const caseFilesSteps: IntakeStep[] = [
         label: 'Bench',
         type: 'bench',
         required: true,
-        // PDF #23-#27: judge_name carries a green ✓ in every tier except
-        // High Court (#24).
-        requiredByCourtTier: { lower: true, high: false, special: true, shariat: true, supreme: true, fcc: true },
+        // 5-19-26 CF#3: bench is hidden for Lower & Special — those tiers
+        // are single-judge by default, so the picker is redundant with
+        // judge_designation.
+        requiredByCourtTier: { high: false, shariat: true, supreme: true, fcc: true },
+        showWhen: { field: 'select_court_type', valueNotIn: ['Lower Court', 'Special Court'] },
         hint: 'For multi-judge benches, name each judge in seniority order.',
       },
       {
@@ -755,9 +768,10 @@ const caseInformationSteps: IntakeStep[] = [
         label: 'Bench',
         type: 'bench',
         required: true,
-        // PDF #34 marks judge_name required for Lower Case Info. Same matrix
-        // as Case-Files (#23-#27): only High Court is optional.
-        requiredByCourtTier: { lower: true, high: false, special: true, shariat: true, supreme: true, fcc: true },
+        // 5-19-26 CF#3: bench hidden for Lower & Special in Case Info too —
+        // single-judge by default, redundant with judge_designation.
+        requiredByCourtTier: { high: false, shariat: true, supreme: true, fcc: true },
+        showWhen: { field: 'select_court_type', valueNotIn: ['Lower Court', 'Special Court'] },
         hint: 'For multi-judge benches, name each judge in seniority order.',
       },
       {
@@ -918,6 +932,16 @@ const caseSearchSteps: IntakeStep[] = [
         showWhen: { field: 'case_status', value: 'Decided Case' },
         hint: 'Date the case was decided, per the final court order.',
       },
+      // 5-19-26 CS#4 + 5-16-26 Case Search Page 2: capture a date for
+      // Pending / Unknown cases too — drives the years-since pricing the
+      // owner wants (Rs 2,000 per year-back). decided_date covers Decided.
+      {
+        key: 'case_date',
+        label: 'Case Date',
+        type: 'date',
+        showWhen: { field: 'case_status', valueIn: ['Pending Case', 'Unknown Case'] },
+        hint: 'Date of the last hearing or order, if known.',
+      },
     ],
   },
   {
@@ -937,7 +961,15 @@ const caseSearchSteps: IntakeStep[] = [
         type: 'textarea',
         showWhen: { field: 'delivery_mode', value: 'courier' },
       },
-      ...SET_TYPE_WITH_QUANTITIES,
+      // 5-19-26 CS set-type unblock: case_search pricing isn't keyed on
+      // set_type (the DB only carries `current`-band, set-type-null rules),
+      // so /pricing-rules/availability returns all options as unavailable
+      // and the consumer can't pick anything. Drop `required` on set_type
+      // here so the wizard treats an unset value as "no preference" —
+      // quantity sub-fields stay required only when a set type IS chosen.
+      ...SET_TYPE_WITH_QUANTITIES.map((f) =>
+        f.key === 'set_type' ? { ...f, required: false } : f,
+      ),
       { key: 'notes', label: 'Notes', type: 'textarea' },
     ],
   },
