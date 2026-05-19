@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Decimal } from '@prisma/client/runtime/library';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import {
@@ -24,7 +25,9 @@ export class PaymentsService {
   ) {}
 
   async initiate(ticketId: string, consumerId: string) {
-    const ticket = await this.prisma.ticket.findUnique({ where: { id: ticketId } });
+    const ticket = await this.prisma.ticket.findUnique({
+      where: { id: ticketId },
+    });
     if (!ticket) throw new NotFoundException('Ticket not found');
     if (ticket.consumerId !== consumerId) {
       throw new ForbiddenException('Forbidden: ticket not owned by consumer');
@@ -51,17 +54,23 @@ export class PaymentsService {
         providerTxnId: result.providerTxnId,
         status: 'INITIATED',
         amount: new Decimal(ticket.totalAmount),
-        rawRequest: result.rawRequest as any,
+        rawRequest: result.rawRequest as Prisma.InputJsonValue,
       },
     });
 
-    return { paymentId: payment.id, providerTxnId: result.providerTxnId, redirectUrl: result.redirectUrl };
+    return {
+      paymentId: payment.id,
+      providerTxnId: result.providerTxnId,
+      redirectUrl: result.redirectUrl,
+    };
   }
 
   async getById(paymentId: string, consumerId: string) {
     const payment = await this.prisma.payment.findUnique({
       where: { id: paymentId },
-      include: { ticket: { select: { consumerId: true, paymentStatus: true } } },
+      include: {
+        ticket: { select: { consumerId: true, paymentStatus: true } },
+      },
     });
     if (!payment) throw new NotFoundException('Payment not found');
     if (payment.ticket.consumerId !== consumerId) {
@@ -112,7 +121,11 @@ export class PaymentsService {
     }
 
     if (verified.status === 'SUCCESS') {
-      if (new Decimal(verified.amount).comparedTo(new Decimal(payment.ticket.totalAmount)) !== 0) {
+      if (
+        new Decimal(verified.amount).comparedTo(
+          new Decimal(payment.ticket.totalAmount),
+        ) !== 0
+      ) {
         throw new BadRequestException('Webhook amount mismatch');
       }
 
@@ -122,7 +135,7 @@ export class PaymentsService {
           data: {
             status: 'SUCCESS',
             completedAt: new Date(),
-            rawCallback: body as any,
+            rawCallback: body as Prisma.InputJsonValue,
           },
         });
         await tx.ticket.update({
@@ -156,7 +169,10 @@ export class PaymentsService {
         action: 'PAYMENT_COMPLETED',
         entity: 'TICKET',
         entityId: payment.ticket.id,
-        metadata: { paymentId: payment.id, providerTxnId: verified.providerTxnId },
+        metadata: {
+          paymentId: payment.id,
+          providerTxnId: verified.providerTxnId,
+        },
       });
       return { ok: true };
     }
@@ -166,7 +182,7 @@ export class PaymentsService {
       data: {
         status: verified.status,
         completedAt: new Date(),
-        rawCallback: body as any,
+        rawCallback: body as Prisma.InputJsonValue,
         failureReason: verified.status,
       },
     });
@@ -176,7 +192,10 @@ export class PaymentsService {
   // Mock-only helper called by the dev mock-checkout page. Synthesises a webhook
   // body + signed header and routes through handleWebhook so the integration is
   // exercised identically in dev and prod.
-  async devResolveMock(providerTxnId: string, outcome: 'SUCCESS' | 'FAILED' | 'CANCELLED') {
+  async devResolveMock(
+    providerTxnId: string,
+    outcome: 'SUCCESS' | 'FAILED' | 'CANCELLED',
+  ) {
     if (this.provider.name !== 'MOCK') {
       throw new ForbiddenException('Mock-resolve disabled');
     }

@@ -14,9 +14,9 @@ const MOCK_SIGNATURE = 'mock-signed';
 export class MockProvider implements PaymentProvider {
   readonly name: PaymentProviderName = 'MOCK';
 
-  async initiate(input: InitiatePaymentInput): Promise<InitiatePaymentResult> {
+  initiate(input: InitiatePaymentInput): Promise<InitiatePaymentResult> {
     const providerTxnId = `MOCK-${randomUUID()}`;
-    return {
+    return Promise.resolve({
       providerTxnId,
       redirectUrl: `/consumer/payments/mock/${providerTxnId}`,
       rawRequest: {
@@ -27,7 +27,7 @@ export class MockProvider implements PaymentProvider {
         returnUrl: input.returnUrl,
         notifyUrl: input.notifyUrl,
       },
-    };
+    });
   }
 
   verifyCallback(
@@ -36,13 +36,16 @@ export class MockProvider implements PaymentProvider {
   ): VerifyCallbackResult {
     const body = (rawBody ?? {}) as Record<string, unknown>;
     const signatureValid = headers['x-mock-signature'] === MOCK_SIGNATURE;
-    const rawStatus = String(body.status ?? '');
+    const rawStatus = typeof body.status === 'string' ? body.status : '';
     const status: VerifyCallbackResult['status'] =
-      rawStatus === 'SUCCESS' || rawStatus === 'FAILED' || rawStatus === 'CANCELLED'
+      rawStatus === 'SUCCESS' ||
+      rawStatus === 'FAILED' ||
+      rawStatus === 'CANCELLED'
         ? rawStatus
         : 'FAILED';
     return {
-      providerTxnId: String(body.providerTxnId ?? ''),
+      providerTxnId:
+        typeof body.providerTxnId === 'string' ? body.providerTxnId : '',
       status,
       amount: Number(body.amount ?? 0),
       signatureValid,

@@ -16,7 +16,10 @@ describe('MockProvider', () => {
       });
       expect(result.providerTxnId).toMatch(/^MOCK-/);
       expect(result.redirectUrl).toContain('/consumer/payments/mock/');
-      expect(result.rawRequest).toMatchObject({ ticketId: 'tkt_123', amount: '500' });
+      expect(result.rawRequest).toMatchObject({
+        ticketId: 'tkt_123',
+        amount: '500',
+      });
     });
   });
 

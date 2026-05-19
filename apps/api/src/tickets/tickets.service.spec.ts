@@ -896,22 +896,20 @@ describe('TicketsService', () => {
 
     it('stamps createdBy=ADMIN_STAFF when no actor is supplied', async () => {
       const { service, created } = buildIntakeHarness();
-      await service.createIntakeTicket(
-        {
-          consumerId: 'consumer-1',
-          serviceId: 'svc-1',
-          flow: 'judicial_case_information',
-          payload: {
-            select_service: 'x',
-            select_court: 'x',
-            select_court_city: 'x',
-            case_petition_no: '1',
-            case_year: '2024',
-            case_type: 'civil',
-            case_title: 'A vs B',
-          },
-        } as never,
-      );
+      await service.createIntakeTicket({
+        consumerId: 'consumer-1',
+        serviceId: 'svc-1',
+        flow: 'judicial_case_information',
+        payload: {
+          select_service: 'x',
+          select_court: 'x',
+          select_court_city: 'x',
+          case_petition_no: '1',
+          case_year: '2024',
+          case_type: 'civil',
+          case_title: 'A vs B',
+        },
+      } as never);
       expect(created[0]?.data.createdBy).toBe('ADMIN_STAFF');
     });
   });

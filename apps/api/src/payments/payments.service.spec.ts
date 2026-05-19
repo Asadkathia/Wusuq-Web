@@ -52,7 +52,10 @@ describe('PaymentsService', () => {
         totalAmount: new Decimal('500'),
         paymentStatus: 'UNPAID',
       });
-      prisma.payment.create.mockResolvedValue({ id: 'pay_1', providerTxnId: 'MOCK-x' });
+      prisma.payment.create.mockResolvedValue({
+        id: 'pay_1',
+        providerTxnId: 'MOCK-x',
+      });
 
       const result = await service.initiate('tkt_1', 'usr_1');
 
@@ -75,7 +78,9 @@ describe('PaymentsService', () => {
         totalAmount: new Decimal('500'),
         paymentStatus: 'UNPAID',
       });
-      await expect(service.initiate('tkt_1', 'usr_1')).rejects.toThrow(/forbidden/i);
+      await expect(service.initiate('tkt_1', 'usr_1')).rejects.toThrow(
+        /forbidden/i,
+      );
     });
 
     it('rejects when ticket is already paid', async () => {
@@ -85,14 +90,20 @@ describe('PaymentsService', () => {
         totalAmount: new Decimal('500'),
         paymentStatus: 'PAID',
       });
-      await expect(service.initiate('tkt_1', 'usr_1')).rejects.toThrow(/already paid/i);
+      await expect(service.initiate('tkt_1', 'usr_1')).rejects.toThrow(
+        /already paid/i,
+      );
     });
   });
 
   describe('handleWebhook', () => {
     it('rejects payloads with invalid signature', async () => {
       await expect(
-        service.handleWebhook('mock', { providerTxnId: 'MOCK-x', status: 'SUCCESS', amount: 500 }, {}),
+        service.handleWebhook(
+          'mock',
+          { providerTxnId: 'MOCK-x', status: 'SUCCESS', amount: 500 },
+          {},
+        ),
       ).rejects.toThrow(/signature/i);
     });
 

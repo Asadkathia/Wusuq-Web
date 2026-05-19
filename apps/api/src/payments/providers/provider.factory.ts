@@ -7,7 +7,9 @@ export const PaymentProviderFactory: Provider = {
   provide: PAYMENT_PROVIDER,
   inject: [ConfigService],
   useFactory: (config: ConfigService) => {
-    const name = (config.get<string>('PAYMENT_PROVIDER') ?? 'mock').toLowerCase();
+    const name = (
+      config.get<string>('PAYMENT_PROVIDER') ?? 'mock'
+    ).toLowerCase();
     switch (name) {
       case 'mock':
         return new MockProvider();
