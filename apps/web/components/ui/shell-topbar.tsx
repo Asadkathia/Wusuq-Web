@@ -9,6 +9,9 @@ import { IconButton } from './icon-button';
 import { Menu, MenuContent, MenuItem, MenuLabel, MenuSeparator, MenuTrigger } from './menu';
 import { ShellNavBody, type NavItem } from './shell-nav';
 
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:4000/api';
+
 type Notification = {
   id: string;
   title: string;
@@ -51,6 +54,28 @@ export function ShellTopbar({ variant, walletHref, profileHref = '/profile', onS
         .catch(() => {});
     }
   }, [variant]);
+
+  useEffect(() => {
+    const token =
+      typeof window !== 'undefined'
+        ? localStorage.getItem('wusuq_access_token')
+        : null;
+    if (!token) return;
+
+    const es = new EventSource(
+      `${API_BASE_URL}/notifications/stream?token=${encodeURIComponent(token)}`,
+    );
+
+    es.onmessage = (evt) => {
+      try {
+        const n = JSON.parse(evt.data) as Notification;
+        setNotifications((prev) => [{ ...n, isRead: false }, ...prev].slice(0, 15));
+        setUnread((c) => c + 1);
+      } catch {}
+    };
+
+    return () => es.close();
+  }, []);
 
   const loadNotifications = () => {
     apiClient
