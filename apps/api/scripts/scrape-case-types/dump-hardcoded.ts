@@ -28,7 +28,7 @@ const SERVICE_CASE_TYPES: Record<string, string[]> = {
     'Narcotics Cases (M)', 'Other Cases (M)', 'Section 30 Case',
   ],
   svc_judicial_special_court: [
-    'Pre-Arrest Bail Petition', 'Post-Arrest Bail Petition', 'Trail File', 'Miscellaneous',
+    'Pre-Arrest Bail Petition', 'Post-Arrest Bail Petition', 'Trial File', 'Miscellaneous',
   ],
   svc_judicial_high_court: [
     'Writ Petition', 'Criminal Miscellaneous', 'Civil Revision', 'Regular First Appeal',

@@ -394,7 +394,7 @@ const CASE_TYPES: Record<string, string[]> = {
   svc_judicial_special_court: [
     'Pre-Arrest Bail Petition',
     'Post-Arrest Bail Petition',
-    'Trail File',
+    'Trial File',
     'Miscellaneous',
   ],
   svc_judicial_high_court: [
