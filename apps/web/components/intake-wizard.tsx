@@ -453,10 +453,20 @@ export function IntakeWizard({
   // Filter services: non-judicial services are always listed; judicial
   // services show only if the city has at least one court of their tier.
   // Judicial services are then ordered by court hierarchy (lowest → highest).
+  // 5-19-26 bug #6: when a flow declares a defaultServiceId, restrict the
+  // picker to that one service. The flow's URL already commits the consumer
+  // to it (e.g. /registry-deed shouldn't surface FIR / Criminal Record as
+  // alternates). The defaultServiceId effect would auto-select it anyway,
+  // but the picker rendered all 3 tiles in the meantime — confusing because
+  // the page heading already says "Registry/Deed".
   const availableServices: ServiceHit[] = useMemo(() => {
+    const defaultId = selectedFlow?.defaultServiceId;
+    const base = defaultId
+      ? services.filter((svc) => svc.id === defaultId)
+      : services;
     const filtered = !draft.payload.city
-      ? services
-      : services.filter((svc) => {
+      ? base
+      : base.filter((svc) => {
           if (!svc.courtLevel) return true;
           return cityCourtTypes.has(svc.courtLevel);
         });
@@ -476,7 +486,7 @@ export function IntakeWizard({
       if (ra !== rb) return ra - rb;
       return a.name.localeCompare(b.name);
     });
-  }, [services, cityCourtTypes, draft.payload.city]);
+  }, [services, cityCourtTypes, draft.payload.city, selectedFlow?.defaultServiceId]);
 
   // For the selected service, find the matching court group (by the service's
   // courtLevel). This is what drives the court picker in Step 1.
@@ -554,6 +564,12 @@ export function IntakeWizard({
 
   // ── Pricing resolver — recompute total whenever the payload's pricing
   //    inputs change. Surfaces base/PDF/delivery surcharges in the checkout.
+  // 5-19-26 bug #4: debounced by 400ms — click-heavy steps (set-type, qty
+  // increments, delivery mode toggles) used to fire a resolve per change and
+  // exhaust the per-user 15/min rate limit, leaving the consumer staring at
+  // a stale checkout while requests 429'd. Debounce coalesces rapid-fire
+  // changes into a single request and the trailing tick reflects the final
+  // state.
   useEffect(() => {
     const flow = draft.flow;
     const p = draft.payload;
@@ -588,28 +604,33 @@ export function IntakeWizard({
     const searchMethod =
       flow === 'judicial_case_search' ? (p.search_method || undefined) : undefined;
 
-    apiClient.post<any>('/pricing-rules/resolve', {
-      flow,
-      courtLevel: p.select_court_type || undefined,
-      caseStatus: p.case_status || undefined,
-      caseYear,
-      yearBand,
-      setType: setType || undefined,
-      attestedQty,
-      nonAttestedQty,
-      wantPdf,
-      deliveryMethod: deliveryMethod || undefined,
-      province: p.province ?? p.province_capital ?? undefined,
-      city: p.select_court_city ?? p.city ?? undefined,
-      // PDF #14: title-based surcharge ("State vs <X>" → +Rs 1,000). The
-      // resolver does the regex match; we just forward whatever the user
-      // typed in Step 2.
-      caseTitle: p.case_title || '',
-      cityCount,
-      searchMethod,
-    })
-      .then((r) => setPricingResult(r))
-      .catch(() => setPricingResult(null));
+    let cancelled = false;
+    const handle = setTimeout(() => {
+      if (cancelled) return;
+      apiClient.post<any>('/pricing-rules/resolve', {
+        flow,
+        courtLevel: p.select_court_type || undefined,
+        caseStatus: p.case_status || undefined,
+        caseYear,
+        yearBand,
+        setType: setType || undefined,
+        attestedQty,
+        nonAttestedQty,
+        wantPdf,
+        deliveryMethod: deliveryMethod || undefined,
+        province: p.province ?? p.province_capital ?? undefined,
+        city: p.select_court_city ?? p.city ?? undefined,
+        // PDF #14: title-based surcharge ("State vs <X>" → +Rs 1,000). The
+        // resolver does the regex match; we just forward whatever the user
+        // typed in Step 2.
+        caseTitle: p.case_title || '',
+        cityCount,
+        searchMethod,
+      })
+        .then((r) => { if (!cancelled) setPricingResult(r); })
+        .catch(() => { if (!cancelled) setPricingResult(null); });
+    }, 400);
+    return () => { cancelled = true; clearTimeout(handle); };
   }, [
     draft.flow,
     draft.payload.select_court_type,
@@ -650,19 +671,24 @@ export function IntakeWizard({
     const caseYear = decidedYear ?? (parseInt(p.case_year ?? p.year ?? '0') || undefined);
     const yearBand: YearBand = computeYearBand(caseYear, isPending);
 
+    // Debounced to coalesce upstream-field churn (case_status flip cascades
+    // year/decided_date changes); part of the bug #4 rate-limit fix.
     let cancelled = false;
-    apiClient.post<Record<string, boolean>>('/pricing-rules/availability', {
-      flow,
-      courtLevel: p.select_court_type || undefined,
-      caseStatus: p.case_status || undefined,
-      yearBand,
-      province: p.province ?? p.province_capital ?? undefined,
-      city: p.select_court_city ?? p.city ?? undefined,
-      options: ['attested', 'non_attested', 'both'],
-    })
-      .then((r) => { if (!cancelled) setSetTypeAvailability(r ?? {}); })
-      .catch(() => { if (!cancelled) setSetTypeAvailability({}); });
-    return () => { cancelled = true; };
+    const handle = setTimeout(() => {
+      if (cancelled) return;
+      apiClient.post<Record<string, boolean>>('/pricing-rules/availability', {
+        flow,
+        courtLevel: p.select_court_type || undefined,
+        caseStatus: p.case_status || undefined,
+        yearBand,
+        province: p.province ?? p.province_capital ?? undefined,
+        city: p.select_court_city ?? p.city ?? undefined,
+        options: ['attested', 'non_attested', 'both'],
+      })
+        .then((r) => { if (!cancelled) setSetTypeAvailability(r ?? {}); })
+        .catch(() => { if (!cancelled) setSetTypeAvailability({}); });
+    }, 400);
+    return () => { cancelled = true; clearTimeout(handle); };
   }, [
     draft.flow,
     draft.payload.select_court_type,

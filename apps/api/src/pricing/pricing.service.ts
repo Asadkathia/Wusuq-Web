@@ -218,11 +218,38 @@ export class PricingService {
         return true;
       });
 
+    // setType-null fallback lookup: used when the flow's pricing isn't keyed
+    // on set type (e.g. judicial_case_search) so the wizard's set-type picker
+    // doesn't show all options as unavailable. Mirrors the same fallback in
+    // `resolve()` below.
+    const lookupNullSetType = (yearBand: string) =>
+      flowRules.filter((r) => {
+        if (r.courtLevel && r.courtLevel !== effectiveCourtLevel) return false;
+        if (r.caseStatus && r.caseStatus !== args.caseStatus) return false;
+        if (r.region && r.region !== region) return false;
+        if (r.yearBand && r.yearBand !== yearBand) return false;
+        if (r.setType) return false;
+        return true;
+      });
+
     const result: Record<string, boolean> = {};
     for (const opt of args.options) {
       let candidates = lookup(opt, requestedYearBand);
       if (!candidates.length && requestedYearBand !== 'current') {
         candidates = lookup(opt, 'current');
+      }
+      // 5-19-26 bug #3: setType-null fallback — when a flow has no
+      // setType-specific rules at all, treat all set-type options as available
+      // (the wizard collects the choice for downstream record-keeping but the
+      // price comes from the setType=null rule).
+      if (!candidates.length) {
+        const nullSetTypeRules =
+          lookupNullSetType(requestedYearBand).length ||
+          lookupNullSetType('current').length;
+        if (nullSetTypeRules) {
+          result[opt] = true;
+          continue;
+        }
       }
       if (!candidates.length) {
         // No matching rule even after the fallback — treat as unavailable so
@@ -340,6 +367,29 @@ export class PricingService {
         } else {
           if (r.setType) return false;
         }
+        return true;
+      });
+    }
+
+    // 5-19-26 bug #3: setType fallback. Some flows (e.g. judicial_case_search)
+    // expose the set-type picker in the wizard for UX continuity but their
+    // pricing isn't keyed on set type — the DB only has `setType=null` rules.
+    // Without this fallback, picking Attested on Case Search makes the
+    // resolver return "no match" and the consumer sees a blank checkout
+    // despite valid inputs. Try again with setType=null at both the
+    // requested band and the current-band fallback.
+    if (!candidates.length && requestedSetType) {
+      candidates = flowRules.filter((r) => {
+        if (r.courtLevel && r.courtLevel !== effectiveCourtLevel) return false;
+        if (r.caseStatus && r.caseStatus !== dto.caseStatus) return false;
+        if (r.region && r.region !== region) return false;
+        if (
+          r.yearBand &&
+          r.yearBand !== requestedYearBand &&
+          r.yearBand !== 'current'
+        )
+          return false;
+        if (r.setType) return false;
         return true;
       });
     }
