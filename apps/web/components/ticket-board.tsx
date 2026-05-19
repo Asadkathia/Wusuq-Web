@@ -131,6 +131,7 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
   // Clerk upload panel state
   const [uploadTicket, setUploadTicket] = useState<TicketRow | null>(null);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadVisibleToConsumer, setUploadVisibleToConsumer] = useState(false);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -455,10 +456,12 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
       const currentTicket = uploadTicket;
       const formData = new FormData();
       formData.append('file', uploadFile);
+      formData.append('visibleToConsumer', String(uploadVisibleToConsumer));
       await apiClient.post(`/tickets/${currentTicket.id}/documents/upload`, formData);
       setMessage('Document uploaded. Add payments to continue.');
       setUploadTicket(null);
       setUploadFile(null);
+      setUploadVisibleToConsumer(false);
       openCostsModal(currentTicket);
       loadTickets();
     } catch (error: any) {
@@ -916,7 +919,7 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
               title={`Upload Work Documents — ${uploadTicket.batchNo}`}
               description="Upload case files, proofs, or supporting documents before entering the payment breakdown."
             />
-            <button onClick={() => { setUploadTicket(null); setUploadFile(null); }} className="p-1.5 text-slate-400 hover:text-slate-700 rounded-md transition-colors">
+            <button onClick={() => { setUploadTicket(null); setUploadFile(null); setUploadVisibleToConsumer(false); }} className="p-1.5 text-slate-400 hover:text-slate-700 rounded-md transition-colors">
               <X className="h-5 w-5" />
             </button>
           </div>
@@ -935,6 +938,14 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
             {uploadFile && (
               <p className="text-xs text-slate-500">Selected: <span className="font-medium text-slate-800">{uploadFile.name}</span> ({(uploadFile.size / 1024).toFixed(1)} KB)</p>
             )}
+            <label className="flex items-center gap-2 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={uploadVisibleToConsumer}
+                onChange={(e) => setUploadVisibleToConsumer(e.target.checked)}
+              />
+              Visible to consumer
+            </label>
             <div className="flex gap-3 pt-2">
               <button
                 onClick={submitUpload}
@@ -945,7 +956,7 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
                 {uploading ? 'Uploading...' : 'Upload'}
               </button>
               <button
-                onClick={() => { setUploadTicket(null); setUploadFile(null); }}
+                onClick={() => { setUploadTicket(null); setUploadFile(null); setUploadVisibleToConsumer(false); }}
                 className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm ring-1 ring-inset ring-border-soft hover:bg-slate-50 transition-colors"
               >
                 Cancel

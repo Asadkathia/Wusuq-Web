@@ -32,11 +32,11 @@ export function CohortGroup({ service, city, court, files, onDeleted }: Props) {
 
   const handleDownload = async (id: string, displayName: string) => {
     try {
-      const blob = await apiClient.getBlob(`/personal-files/${id}/download`);
+      const { blob, filename } = await apiClient.getBlob(`/personal-files/${id}/download`);
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = displayName;
+      a.download = filename || displayName;
       document.body.appendChild(a);
       a.click();
       a.remove();

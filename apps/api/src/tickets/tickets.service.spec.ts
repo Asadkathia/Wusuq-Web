@@ -1,5 +1,9 @@
 import { jest } from '@jest/globals';
-import { BadRequestException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { TicketsService } from './tickets.service';
 
 describe('TicketsService', () => {
@@ -124,5 +128,675 @@ describe('TicketsService', () => {
       service.assign('ticket-1', { representativeId: 'user-1' }),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  describe('rejectAssignment', () => {
+    function buildService(opts: {
+      ticket?: Record<string, unknown> | null;
+      activeAssignment?: Record<string, unknown> | null;
+      assigningAuditLog?: Record<string, unknown> | null;
+    }) {
+      const ticket =
+        opts.ticket === undefined
+          ? {
+              id: 'ticket-1',
+              status: 'ASSIGNED',
+              batchNo: 'TKT-001',
+            }
+          : opts.ticket;
+      const updatedTicket =
+        ticket && typeof ticket === 'object'
+          ? { ...ticket, status: 'PENDING' }
+          : ticket;
+      const activeAssignment =
+        opts.activeAssignment === undefined
+          ? { id: 'assignment-1', ticketId: 'ticket-1', status: 'ACTIVE' }
+          : opts.activeAssignment;
+      const updatedAssignment = activeAssignment
+        ? {
+            ...activeAssignment,
+            status: 'REJECTED',
+            rejectedAt: new Date(),
+            rejectionReason: 'set-in-test',
+          }
+        : null;
+
+      const prisma = {
+        ticket: {
+          findUnique: jest.fn().mockResolvedValue(ticket),
+          update: jest.fn().mockResolvedValue(updatedTicket),
+        },
+        assignment: {
+          findFirst: jest.fn().mockResolvedValue(activeAssignment),
+          update: jest.fn().mockResolvedValue(updatedAssignment),
+        },
+        ticketStatusHistory: {
+          create: jest.fn().mockResolvedValue({ id: 'h-1' }),
+        },
+        auditLog: {
+          findFirst: jest
+            .fn()
+            .mockResolvedValue(
+              opts.assigningAuditLog === undefined
+                ? { actorUserId: 'admin-1' }
+                : opts.assigningAuditLog,
+            ),
+        },
+        $transaction: jest.fn().mockImplementation(async (ops: unknown[]) => {
+          // Return the resolved values from each Prisma promise. In our
+          // implementation the first op is the ticket update.
+          return Promise.all(ops as Promise<unknown>[]);
+        }),
+      };
+      const auditLogsService = { create: jest.fn().mockResolvedValue({}) };
+      const pricingService = {
+        resolve: jest.fn(),
+      };
+      const geoService = { resolveProvinceByCity: jest.fn() };
+      const notificationsService = {
+        create: jest.fn().mockResolvedValue({}),
+      };
+      const service = new TicketsService(
+        prisma as never,
+        auditLogsService as never,
+        pricingService as never,
+        geoService as never,
+        notificationsService as never,
+      );
+      return {
+        service,
+        prisma,
+        auditLogsService,
+        notificationsService,
+      };
+    }
+
+    it('marks active Assignment REJECTED, reverts ticket to PENDING, notifies assigning admin', async () => {
+      const { service, prisma, auditLogsService, notificationsService } =
+        buildService({});
+
+      await service.rejectAssignment(
+        'ticket-1',
+        'Cannot reach court this week',
+        { actorUserId: 'clerk-1', actorEmail: 'clerk-1@example.com' },
+      );
+
+      expect(prisma.ticket.update).toHaveBeenCalledWith({
+        where: { id: 'ticket-1' },
+        data: { status: 'PENDING' },
+      });
+      expect(prisma.assignment.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'assignment-1' },
+          data: expect.objectContaining({
+            status: 'REJECTED',
+            rejectionReason: 'Cannot reach court this week',
+            rejectedAt: expect.any(Date),
+          }),
+        }),
+      );
+      expect(prisma.ticketStatusHistory.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            ticketId: 'ticket-1',
+            from: 'ASSIGNED',
+            to: 'PENDING',
+            note: 'Cannot reach court this week',
+          }),
+        }),
+      );
+      expect(notificationsService.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: 'admin-1',
+          title: expect.stringMatching(/reject/i),
+        }),
+      );
+      expect(auditLogsService.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'TICKET_ASSIGNMENT_REJECTED',
+          metadata: expect.objectContaining({
+            reason: 'Cannot reach court this week',
+          }),
+        }),
+      );
+    });
+
+    it('throws when reason is empty', async () => {
+      const { service } = buildService({});
+      await expect(
+        service.rejectAssignment('ticket-1', '', { actorUserId: 'clerk-1' }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('throws when reason is whitespace-only', async () => {
+      const { service } = buildService({});
+      await expect(
+        service.rejectAssignment('ticket-1', '   ', { actorUserId: 'clerk-1' }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+  });
+
+  describe('acceptAssignment', () => {
+    function buildService(opts: {
+      ticket?: Record<string, unknown> | null;
+      activeAssignment?: Record<string, unknown> | null;
+    }) {
+      const ticket =
+        opts.ticket === undefined
+          ? {
+              id: 'ticket-1',
+              status: 'ASSIGNED',
+              batchNo: 'TKT-001',
+            }
+          : opts.ticket;
+      const updatedTicket =
+        ticket && typeof ticket === 'object'
+          ? { ...ticket, status: 'IN_PROGRESS' }
+          : ticket;
+      const activeAssignment =
+        opts.activeAssignment === undefined
+          ? {
+              id: 'assignment-1',
+              ticketId: 'ticket-1',
+              representativeId: 'clerk-1',
+              status: 'ACTIVE',
+            }
+          : opts.activeAssignment;
+      const updatedAssignment = activeAssignment
+        ? { ...activeAssignment, status: 'ACCEPTED', acceptedAt: new Date() }
+        : null;
+
+      const prisma = {
+        ticket: {
+          findUnique: jest.fn().mockResolvedValue(ticket),
+          update: jest.fn().mockResolvedValue(updatedTicket),
+        },
+        assignment: {
+          findFirst: jest.fn().mockResolvedValue(activeAssignment),
+          update: jest.fn().mockResolvedValue(updatedAssignment),
+        },
+        ticketStatusHistory: {
+          create: jest.fn().mockResolvedValue({ id: 'h-1' }),
+        },
+        $transaction: jest.fn().mockImplementation(async (ops: unknown[]) => {
+          return Promise.all(ops as Promise<unknown>[]);
+        }),
+      };
+      const auditLogsService = { create: jest.fn().mockResolvedValue({}) };
+      const pricingService = { resolve: jest.fn() };
+      const geoService = { resolveProvinceByCity: jest.fn() };
+      const notificationsService = { create: jest.fn().mockResolvedValue({}) };
+      const service = new TicketsService(
+        prisma as never,
+        auditLogsService as never,
+        pricingService as never,
+        geoService as never,
+        notificationsService as never,
+      );
+      return { service, prisma, auditLogsService };
+    }
+
+    it('marks active Assignment ACCEPTED, moves ticket to IN_PROGRESS, audits', async () => {
+      const { service, prisma, auditLogsService } = buildService({});
+
+      await service.acceptAssignment('ticket-1', {
+        actorUserId: 'clerk-1',
+        actorEmail: 'clerk-1@example.com',
+      });
+
+      expect(prisma.ticket.update).toHaveBeenCalledWith({
+        where: { id: 'ticket-1' },
+        data: { status: 'IN_PROGRESS' },
+      });
+      expect(prisma.assignment.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'assignment-1' },
+          data: expect.objectContaining({
+            status: 'ACCEPTED',
+            acceptedAt: expect.any(Date),
+          }),
+        }),
+      );
+      expect(prisma.ticketStatusHistory.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            ticketId: 'ticket-1',
+            from: 'ASSIGNED',
+            to: 'IN_PROGRESS',
+          }),
+        }),
+      );
+      expect(auditLogsService.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'TICKET_ASSIGNMENT_ACCEPTED',
+          entity: 'TICKET',
+          entityId: 'ticket-1',
+          actorUserId: 'clerk-1',
+        }),
+      );
+    });
+
+    it('rejects when ticket is not in ASSIGNED', async () => {
+      const { service } = buildService({
+        ticket: { id: 'ticket-1', status: 'PENDING', batchNo: 'TKT-001' },
+      });
+      await expect(
+        service.acceptAssignment('ticket-1', { actorUserId: 'clerk-1' }),
+      ).rejects.toThrow(/ASSIGNED/);
+    });
+
+    it('forbids non-assigned representative from accepting', async () => {
+      const { service } = buildService({});
+      await expect(
+        service.acceptAssignment('ticket-1', { actorUserId: 'other-clerk' }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+  });
+
+  describe('TicketDocument visibility', () => {
+    function buildService() {
+      const docStore = new Map<string, Record<string, unknown>>();
+      let idSeq = 0;
+      const prisma = {
+        ticket: {
+          findUnique: jest
+            .fn()
+            .mockResolvedValue({ id: 'ticket-1' } as unknown),
+        },
+        ticketDocument: {
+          create: jest.fn().mockImplementation(async (args: unknown) => {
+            const { data } = args as { data: Record<string, unknown> };
+            const id = `doc-${++idSeq}`;
+            const row = { id, ...data };
+            docStore.set(id, row);
+            return row;
+          }),
+          findFirst: jest.fn().mockImplementation(async (args: unknown) => {
+            const { where } = args as {
+              where: { id: string; ticketId: string };
+            };
+            const row = docStore.get(where.id);
+            if (!row || row.ticketId !== where.ticketId) return null;
+            return row;
+          }),
+          update: jest.fn().mockImplementation(async (args: unknown) => {
+            const { where, data } = args as {
+              where: { id: string };
+              data: Record<string, unknown>;
+            };
+            const existing = docStore.get(where.id);
+            if (!existing) return null;
+            const updated = { ...existing, ...data };
+            docStore.set(where.id, updated);
+            return updated;
+          }),
+        },
+      };
+      const auditLogsService = { create: jest.fn().mockResolvedValue({}) };
+      const pricingService = { resolve: jest.fn() };
+      const geoService = { resolveProvinceByCity: jest.fn() };
+      const notificationsService = {
+        create: jest.fn().mockResolvedValue({}),
+      };
+      const service = new TicketsService(
+        prisma as never,
+        auditLogsService as never,
+        pricingService as never,
+        geoService as never,
+        notificationsService as never,
+      );
+      return { service, prisma, auditLogsService };
+    }
+
+    it('uploadDocument defaults visibleToConsumer=false and accepts override', async () => {
+      const { service } = buildService();
+      const doc = await service.uploadDocument(
+        'ticket-1',
+        {
+          filename: 'a.pdf',
+          mimetype: 'application/pdf',
+          path: '/uploads/a.pdf',
+        },
+        { actorUserId: 'clerk-1' },
+        undefined,
+        true,
+      );
+      expect(doc.visibleToConsumer).toBe(true);
+
+      const doc2 = await service.uploadDocument(
+        'ticket-1',
+        {
+          filename: 'b.pdf',
+          mimetype: 'application/pdf',
+          path: '/uploads/b.pdf',
+        },
+        { actorUserId: 'clerk-1' },
+      );
+      expect(doc2.visibleToConsumer).toBe(false);
+    });
+
+    it('patchDocument toggles visibility and audits', async () => {
+      const { service, auditLogsService } = buildService();
+      const doc = await service.uploadDocument(
+        'ticket-1',
+        {
+          filename: 'a.pdf',
+          mimetype: 'application/pdf',
+          path: '/uploads/a.pdf',
+        },
+        { actorUserId: 'clerk-1' },
+      );
+      const updated = await service.patchDocument(
+        'ticket-1',
+        doc.id,
+        { visibleToConsumer: true },
+        { actorUserId: 'clerk-1' },
+      );
+      expect(updated.visibleToConsumer).toBe(true);
+      expect(auditLogsService.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'TICKET_DOCUMENT_VISIBILITY_CHANGED',
+          entity: 'TICKET_DOCUMENT',
+          entityId: doc.id,
+          metadata: expect.objectContaining({
+            ticketId: 'ticket-1',
+            from: false,
+            to: true,
+          }),
+        }),
+      );
+    });
+  });
+
+  describe('resolveDocumentDownload', () => {
+    function seedTicketWithDoc(opts: {
+      visibleToConsumer: boolean;
+      status?: string;
+      consumerId?: string;
+      ticketId?: string;
+      docId?: string;
+    }) {
+      const consumerId = opts.consumerId ?? 'consumer-1';
+      const ticketId = opts.ticketId ?? 'ticket-1';
+      const docId = opts.docId ?? 'doc-1';
+      const document = {
+        id: docId,
+        ticketId,
+        name: 'file.pdf',
+        type: 'application/pdf',
+        fileUrl: '/var/uploads/ticket-documents/file.pdf',
+        caption: null,
+        visibleToConsumer: opts.visibleToConsumer,
+        ticket: {
+          consumerId,
+          status: opts.status ?? 'IN_PROGRESS',
+        },
+      };
+      const prisma = {
+        ticketDocument: {
+          findFirst: jest.fn().mockResolvedValue(document),
+        },
+      };
+      const auditLogsService = { create: jest.fn().mockResolvedValue({}) };
+      const pricingService = { resolve: jest.fn() };
+      const geoService = { resolveProvinceByCity: jest.fn() };
+      const notificationsService = { create: jest.fn().mockResolvedValue({}) };
+      const service = new TicketsService(
+        prisma as never,
+        auditLogsService as never,
+        pricingService as never,
+        geoService as never,
+        notificationsService as never,
+      );
+      return { service, prisma, ticketId, docId, consumerId };
+    }
+
+    it('returns file metadata for staff regardless of visibility', async () => {
+      const { service, ticketId, docId } = seedTicketWithDoc({
+        visibleToConsumer: false,
+      });
+      const result = await service.resolveDocumentDownload(ticketId, docId, {
+        userId: 'staff-1',
+        role: 'CLERK',
+        consumerId: null,
+      });
+      expect(result.filePath).toMatch(/uploads/);
+    });
+
+    it('returns file for consumer when visible and ticket COMPLETED', async () => {
+      const { service, ticketId, docId, consumerId } = seedTicketWithDoc({
+        visibleToConsumer: true,
+        status: 'COMPLETED',
+      });
+      const result = await service.resolveDocumentDownload(ticketId, docId, {
+        userId: consumerId,
+        role: 'CONSUMER',
+        consumerId,
+      });
+      expect(result.filePath).toBeDefined();
+    });
+
+    it('forbids consumer when doc is invisible', async () => {
+      const { service, ticketId, docId, consumerId } = seedTicketWithDoc({
+        visibleToConsumer: false,
+        status: 'COMPLETED',
+      });
+      await expect(
+        service.resolveDocumentDownload(ticketId, docId, {
+          userId: consumerId,
+          role: 'CONSUMER',
+          consumerId,
+        }),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('forbids consumer when ticket is not COMPLETED', async () => {
+      const { service, ticketId, docId, consumerId } = seedTicketWithDoc({
+        visibleToConsumer: true,
+        status: 'IN_PROGRESS',
+      });
+      await expect(
+        service.resolveDocumentDownload(ticketId, docId, {
+          userId: consumerId,
+          role: 'CONSUMER',
+          consumerId,
+        }),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('throws NotFound when document missing', async () => {
+      const { service, prisma, ticketId } = seedTicketWithDoc({
+        visibleToConsumer: true,
+      });
+      prisma.ticketDocument.findFirst.mockResolvedValueOnce(null);
+      await expect(
+        service.resolveDocumentDownload(ticketId, 'missing-doc', {
+          userId: 'staff-1',
+          role: 'CLERK',
+          consumerId: null,
+        }),
+      ).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('findOne visibility filter', () => {
+    function buildFindOneHarness(opts: {
+      ticketId: string;
+      consumerId: string;
+      status: string;
+      docs: Array<{ visibleToConsumer: boolean }>;
+    }) {
+      const documents = opts.docs.map((d, i) => ({
+        id: `doc-${i}`,
+        ticketId: opts.ticketId,
+        name: `doc-${i}.pdf`,
+        type: 'OUTPUT',
+        fileUrl: `https://example.com/doc-${i}.pdf`,
+        visibleToConsumer: d.visibleToConsumer,
+      }));
+      const ticket = {
+        id: opts.ticketId,
+        status: opts.status,
+        consumerId: opts.consumerId,
+        documents,
+        history: [],
+        assignments: [],
+        clerkReport: null,
+        consumer: { id: opts.consumerId },
+        service: { id: 'svc-1', name: 'svc' },
+      };
+
+      const prisma = {
+        ticket: {
+          findUnique: jest.fn().mockResolvedValue(ticket),
+        },
+      };
+      const auditLogsService = { create: jest.fn() };
+      const pricingService = { resolve: jest.fn() };
+      const geoService = { resolveProvinceByCity: jest.fn() };
+      const notificationsService = { create: jest.fn() };
+      const service = new TicketsService(
+        prisma as never,
+        auditLogsService as never,
+        pricingService as never,
+        geoService as never,
+        notificationsService as never,
+      );
+      return { service, prisma };
+    }
+
+    async function seedTicketWithDocs(
+      docs: Array<{ visibleToConsumer: boolean }>,
+      status: string,
+    ) {
+      const ticketId = 'ticket-vf';
+      const consumerId = 'consumer-vf';
+      const { service } = buildFindOneHarness({
+        ticketId,
+        consumerId,
+        status,
+        docs,
+      });
+      return { ticketId, consumerId, service };
+    }
+
+    it('hides invisible docs from consumers, shows them to staff', async () => {
+      const { ticketId, consumerId, service } = await seedTicketWithDocs(
+        [{ visibleToConsumer: true }, { visibleToConsumer: false }],
+        'COMPLETED',
+      );
+
+      const asConsumer = await service.findOne(ticketId, {
+        role: 'CONSUMER',
+        userId: consumerId,
+      });
+      expect(asConsumer.documents).toHaveLength(1);
+      expect(asConsumer.documents[0].visibleToConsumer).toBe(true);
+
+      const { service: staffService } = buildFindOneHarness({
+        ticketId,
+        consumerId,
+        status: 'COMPLETED',
+        docs: [{ visibleToConsumer: true }, { visibleToConsumer: false }],
+      });
+      const asStaff = await staffService.findOne(ticketId, {
+        role: 'CLERK',
+        userId: 'staff-1',
+      });
+      expect(asStaff.documents).toHaveLength(2);
+    });
+
+    it('hides all docs from consumer when ticket not COMPLETED', async () => {
+      const { ticketId, consumerId, service } = await seedTicketWithDocs(
+        [{ visibleToConsumer: true }],
+        'IN_PROGRESS',
+      );
+      const asConsumer = await service.findOne(ticketId, {
+        role: 'CONSUMER',
+        userId: consumerId,
+      });
+      expect(asConsumer.documents).toHaveLength(0);
+    });
+
+    it('completion mirror skips invisible docs', async () => {
+      const ticketId = 'ticket-cm';
+      const caseId = 'case-1';
+      const ticketBefore = {
+        id: ticketId,
+        status: 'WAITING_APPROVAL',
+        caseId,
+      };
+      const ticketAfter = {
+        id: ticketId,
+        status: 'COMPLETED',
+        caseId,
+        batchNo: 'TKT-CM',
+        consumer: { id: 'c-1', name: 'c', email: null, phone: null },
+        service: { id: 's-1', name: 'svc' },
+      };
+
+      const ticketDocs = [
+        {
+          id: 'd-vis',
+          name: 'visible.pdf',
+          type: 'OUTPUT',
+          fileUrl: 'https://example.com/visible.pdf',
+          visibleToConsumer: true,
+        },
+        {
+          id: 'd-hid',
+          name: 'hidden.pdf',
+          type: 'INTERNAL',
+          fileUrl: 'https://example.com/hidden.pdf',
+          visibleToConsumer: false,
+        },
+      ];
+
+      const prisma = {
+        ticket: {
+          findUnique: jest.fn().mockResolvedValue(ticketBefore),
+          update: jest.fn().mockResolvedValue(ticketAfter),
+          findMany: jest.fn().mockResolvedValue([]),
+        },
+        caseEvent: { create: jest.fn().mockResolvedValue({}) },
+        ticketDocument: {
+          findMany: jest.fn().mockResolvedValue(ticketDocs),
+        },
+        caseDocument: { create: jest.fn().mockResolvedValue({}) },
+        case: {
+          findUnique: jest.fn().mockResolvedValue(null),
+          update: jest.fn(),
+        },
+        ticketStatusHistory: { create: jest.fn().mockResolvedValue({}) },
+      };
+      const auditLogsService = { create: jest.fn().mockResolvedValue({}) };
+      const pricingService = { resolve: jest.fn() };
+      const geoService = { resolveProvinceByCity: jest.fn() };
+      const notificationsService = {
+        create: jest.fn().mockResolvedValue({}),
+        sendEmail: jest.fn().mockResolvedValue({}),
+      };
+      const service = new TicketsService(
+        prisma as never,
+        auditLogsService as never,
+        pricingService as never,
+        geoService as never,
+        notificationsService as never,
+      );
+
+      await service.updateStatus(ticketId, 'COMPLETED', undefined, {
+        actorUserId: 'admin-1',
+      });
+
+      expect(prisma.caseDocument.create).toHaveBeenCalledTimes(1);
+      expect(prisma.caseDocument.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            name: 'visible.pdf',
+            fileUrl: 'https://example.com/visible.pdf',
+          }),
+        }),
+      );
+    });
   });
 });

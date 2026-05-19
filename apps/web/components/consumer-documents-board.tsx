@@ -137,16 +137,32 @@ export function ConsumerDocumentsBoard() {
               </div>
               <div className="mt-3 flex items-center justify-between">
                 <StatusPill dot label={doc.type || 'Document'} variant="brand" />
-                <a
-                  href={doc.fileUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center gap-1 text-xs font-semibold text-brand-600 hover:text-brand-700 transition-colors"
-                  download
+                <button
+                  type="button"
+                  disabled={!doc.ticket?.id}
+                  onClick={async () => {
+                    if (!doc.ticket?.id) return;
+                    try {
+                      const { blob, filename } = await apiClient.getBlob(
+                        `/tickets/${doc.ticket.id}/documents/${doc.id}/download`,
+                      );
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = filename || doc.name || 'document';
+                      document.body.appendChild(a);
+                      a.click();
+                      document.body.removeChild(a);
+                      URL.revokeObjectURL(url);
+                    } catch (err: any) {
+                      toast.error('Download failed', err?.message);
+                    }
+                  }}
+                  className="inline-flex items-center gap-1 text-xs font-semibold text-brand-600 hover:text-brand-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <Download className="h-3.5 w-3.5" />
                   Download
-                </a>
+                </button>
               </div>
             </div>
           ))}

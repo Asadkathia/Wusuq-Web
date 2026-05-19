@@ -444,19 +444,34 @@ function ConsumerTicketDrawer({
                   <h4 className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Documents</h4>
                   <div className="mt-3 space-y-2">
                     {ticket.documents.map((doc: any) => (
-                      <a
+                      <button
                         key={doc.id}
-                        href={doc.fileUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="flex items-center gap-3 rounded-xl px-3 py-2.5 ring-1 ring-border-soft bg-surface transition-colors hover:bg-surface-muted"
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            const { blob, filename } = await apiClient.getBlob(
+                              `/tickets/${ticket.id}/documents/${doc.id}/download`,
+                            );
+                            const url = URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.href = url;
+                            a.download = filename || doc.name || 'document';
+                            document.body.appendChild(a);
+                            a.click();
+                            document.body.removeChild(a);
+                            URL.revokeObjectURL(url);
+                          } catch (err) {
+                            console.error('Document download failed', err);
+                          }
+                        }}
+                        className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left ring-1 ring-border-soft bg-surface transition-colors hover:bg-surface-muted"
                       >
                         <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-50 text-brand-500">
                           <FileText className="h-4 w-4" />
                         </span>
                         <span className="min-w-0 flex-1 truncate text-sm text-slate-800">{doc.name ?? 'Document'}</span>
                         <span className="text-[10px] uppercase tracking-[0.08em] text-slate-400">{doc.type ?? ''}</span>
-                      </a>
+                      </button>
                     ))}
                   </div>
                 </section>

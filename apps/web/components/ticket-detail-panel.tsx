@@ -28,6 +28,20 @@ export function TicketDetailPanel({ ticketId, onClose }: Props) {
   const [ticket, setTicket] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [rejectOpen, setRejectOpen] = useState(false);
+  const [rejectReason, setRejectReason] = useState('');
+  const [actionBusy, setActionBusy] = useState(false);
+  const [actionError, setActionError] = useState('');
+
+  useEffect(() => {
+    try {
+      const u = JSON.parse(localStorage.getItem('wusuq_user') || 'null') as { id?: string } | null;
+      setCurrentUserId(u?.id ?? null);
+    } catch {
+      setCurrentUserId(null);
+    }
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -43,6 +57,42 @@ export function TicketDetailPanel({ ticketId, onClose }: Props) {
   }, [ticketId]);
 
   useEffect(() => { load(); }, [load]);
+
+  const isAssignedToMe =
+    !!ticket &&
+    ticket.status === 'ASSIGNED' &&
+    !!currentUserId &&
+    ticket.assignments?.[0]?.representative?.id === currentUserId;
+
+  const handleAccept = async () => {
+    setActionBusy(true);
+    setActionError('');
+    try {
+      await apiClient.post(`/tickets/${ticketId}/accept-assignment`, {});
+      await load();
+    } catch (e: any) {
+      setActionError(e?.message || 'Failed to accept assignment');
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  const handleReject = async () => {
+    setActionBusy(true);
+    setActionError('');
+    try {
+      await apiClient.post(`/tickets/${ticketId}/reject-assignment`, {
+        reason: rejectReason.trim(),
+      });
+      setRejectOpen(false);
+      setRejectReason('');
+      await load();
+    } catch (e: any) {
+      setActionError(e?.message || 'Failed to reject assignment');
+    } finally {
+      setActionBusy(false);
+    }
+  };
 
   const totalCharges = ticket
     ? Number(ticket.serviceCost || 0) +
@@ -116,10 +166,35 @@ export function TicketDetailPanel({ ticketId, onClose }: Props) {
               </div>
             )}
           </div>
-          <button onClick={onClose} className="rounded-full p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors">
-            <X className="h-5 w-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            {isAssignedToMe && (
+              <div className="flex gap-2">
+                <button
+                  disabled={actionBusy}
+                  onClick={handleAccept}
+                  className="rounded-md bg-emerald-600 px-3 py-1.5 text-sm text-white hover:bg-emerald-700 disabled:opacity-50"
+                >
+                  Accept assignment
+                </button>
+                <button
+                  disabled={actionBusy}
+                  onClick={() => { setActionError(''); setRejectOpen(true); }}
+                  className="rounded-md border border-red-300 px-3 py-1.5 text-sm text-red-700 hover:bg-red-50 disabled:opacity-50"
+                >
+                  Reject
+                </button>
+              </div>
+            )}
+            <button onClick={onClose} className="rounded-full p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors">
+              <X className="h-5 w-5" />
+            </button>
+          </div>
         </div>
+        {actionError && (
+          <div className="border-b border-rose-100 bg-rose-50 px-6 py-2 text-sm text-rose-700">
+            {actionError}
+          </div>
+        )}
 
         {/* Scrollable Content */}
         <div className="flex-1 overflow-y-auto p-6 space-y-5">
@@ -333,10 +408,49 @@ export function TicketDetailPanel({ ticketId, onClose }: Props) {
                     {ticket.documents.map((doc: any) => (
                       <li key={doc.id} className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2">
                         <span className="text-sm text-slate-700 truncate">{doc.name}</span>
-                        <a href={doc.fileUrl} target="_blank" rel="noreferrer" download
-                          className="ml-2 flex-shrink-0 p-1 text-slate-400 hover:text-primary-600 transition-colors">
-                          <Download className="h-4 w-4" />
-                        </a>
+                        <div className="flex items-center gap-3 ml-2 flex-shrink-0">
+                          <label className="flex items-center gap-1 text-xs text-slate-600">
+                            <input
+                              type="checkbox"
+                              checked={!!doc.visibleToConsumer}
+                              onChange={async (e) => {
+                                try {
+                                  await apiClient.patch(`/tickets/${ticketId}/documents/${doc.id}`, {
+                                    visibleToConsumer: e.target.checked,
+                                  });
+                                  await load();
+                                } catch (err) {
+                                  console.error('Visibility toggle failed', err);
+                                }
+                              }}
+                            />
+                            Visible to consumer
+                          </label>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              try {
+                                const { blob, filename } = await apiClient.getBlob(
+                                  `/tickets/${ticketId}/documents/${doc.id}/download`,
+                                );
+                                const url = URL.createObjectURL(blob);
+                                const a = document.createElement('a');
+                                a.href = url;
+                                a.download = filename || doc.name || 'document';
+                                document.body.appendChild(a);
+                                a.click();
+                                document.body.removeChild(a);
+                                URL.revokeObjectURL(url);
+                              } catch (err) {
+                                console.error('Document download failed', err);
+                              }
+                            }}
+                            className="p-1 text-slate-400 hover:text-primary-600 transition-colors"
+                            aria-label={`Download ${doc.name ?? 'document'}`}
+                          >
+                            <Download className="h-4 w-4" />
+                          </button>
+                        </div>
                       </li>
                     ))}
                   </ul>
@@ -402,6 +516,40 @@ export function TicketDetailPanel({ ticketId, onClose }: Props) {
           )}
         </div>
       </div>
+
+      {rejectOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40">
+          <div className="w-full max-w-md rounded-lg bg-white p-5 shadow-xl">
+            <h3 className="text-base font-semibold">Reject assignment</h3>
+            <p className="mt-1 text-sm text-slate-600">
+              This returns the ticket to PENDING so an admin can reassign it. A reason is required.
+            </p>
+            <textarea
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              rows={3}
+              className="mt-3 w-full rounded-md border border-slate-300 p-2 text-sm"
+              placeholder="Why are you rejecting this assignment?"
+            />
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                onClick={() => { setRejectOpen(false); setRejectReason(''); }}
+                disabled={actionBusy}
+                className="px-3 py-1.5 text-sm"
+              >
+                Cancel
+              </button>
+              <button
+                disabled={actionBusy || rejectReason.trim().length < 3}
+                onClick={handleReject}
+                className="rounded-md bg-red-600 px-3 py-1.5 text-sm text-white disabled:opacity-50"
+              >
+                Confirm reject
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

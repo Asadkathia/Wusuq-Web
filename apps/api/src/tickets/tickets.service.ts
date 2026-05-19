@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
@@ -272,7 +273,7 @@ export class TicketsService {
     };
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, caller?: { role: string; userId: string }) {
     const ticket = await this.prisma.ticket.findUnique({
       where: { id },
       include: {
@@ -315,6 +316,13 @@ export class TicketsService {
 
     if (!ticket) {
       throw new NotFoundException('Ticket not found');
+    }
+
+    if (caller?.role === 'CONSUMER') {
+      const completed = ticket.status === 'COMPLETED';
+      (ticket as { documents: typeof ticket.documents }).documents = completed
+        ? (ticket.documents ?? []).filter((d) => d.visibleToConsumer)
+        : [];
     }
 
     return ticket;
@@ -690,6 +698,7 @@ export class TicketsService {
         where: { ticketId: id },
       });
       for (const doc of docs) {
+        if (!doc.visibleToConsumer) continue;
         await this.prisma.caseDocument.create({
           data: {
             caseId: updated.caseId,
@@ -828,6 +837,10 @@ export class TicketsService {
           status: 'ASSIGNED',
         },
       }),
+      this.prisma.assignment.updateMany({
+        where: { ticketId: id, status: 'ACTIVE' },
+        data: { status: 'SUPERSEDED' },
+      }),
       this.prisma.assignment.create({
         data: {
           ticketId: id,
@@ -947,6 +960,7 @@ export class TicketsService {
     },
     actor?: { actorUserId?: string; actorEmail?: string },
     caption?: string,
+    visibleToConsumer: boolean = false,
   ) {
     await this.ensureTicketExists(ticketId);
 
@@ -959,6 +973,8 @@ export class TicketsService {
         fileUrl: file.path,
         caption:
           trimmedCaption && trimmedCaption.length > 0 ? trimmedCaption : null,
+        visibleToConsumer,
+        uploadedByUserId: actor?.actorUserId ?? null,
       },
     });
 
@@ -968,10 +984,67 @@ export class TicketsService {
       entityId: document.id,
       actorUserId: actor?.actorUserId,
       actorEmail: actor?.actorEmail,
-      metadata: { ticketId },
+      metadata: { ticketId, visibleToConsumer },
     });
 
     return document;
+  }
+
+  async patchDocument(
+    ticketId: string,
+    documentId: string,
+    dto: { visibleToConsumer: boolean },
+    actor?: { actorUserId?: string; actorEmail?: string },
+  ) {
+    const doc = await this.prisma.ticketDocument.findFirst({
+      where: { id: documentId, ticketId },
+    });
+    if (!doc) {
+      throw new NotFoundException('Document not found');
+    }
+    const updated = await this.prisma.ticketDocument.update({
+      where: { id: documentId },
+      data: { visibleToConsumer: dto.visibleToConsumer },
+    });
+    await this.auditLogsService.create({
+      action: 'TICKET_DOCUMENT_VISIBILITY_CHANGED',
+      entity: 'TICKET_DOCUMENT',
+      entityId: documentId,
+      actorUserId: actor?.actorUserId,
+      actorEmail: actor?.actorEmail,
+      metadata: {
+        ticketId,
+        from: doc.visibleToConsumer,
+        to: dto.visibleToConsumer,
+      },
+    });
+    return updated;
+  }
+
+  async resolveDocumentDownload(
+    ticketId: string,
+    documentId: string,
+    caller: { userId: string; role: string; consumerId: string | null },
+  ): Promise<{ filePath: string; name: string; type: string }> {
+    const doc = await this.prisma.ticketDocument.findFirst({
+      where: { id: documentId, ticketId },
+      include: { ticket: { select: { consumerId: true, status: true } } },
+    });
+    if (!doc) throw new NotFoundException('Document not found');
+
+    const isConsumer = caller.role === 'CONSUMER';
+    if (isConsumer) {
+      if (doc.ticket.consumerId !== caller.consumerId) {
+        throw new ForbiddenException('Not your ticket');
+      }
+      if (!doc.visibleToConsumer) {
+        throw new ForbiddenException('Document not visible to consumer');
+      }
+      if (doc.ticket.status !== 'COMPLETED') {
+        throw new ForbiddenException('Document available after completion');
+      }
+    }
+    return { filePath: doc.fileUrl, name: doc.name, type: doc.type };
   }
 
   async timeline(ticketId: string) {
@@ -1278,11 +1351,79 @@ export class TicketsService {
     return updated;
   }
 
+  async acceptAssignment(
+    ticketId: string,
+    actor?: { actorUserId?: string; actorEmail?: string },
+  ) {
+    const ticket = await this.prisma.ticket.findUnique({
+      where: { id: ticketId },
+    });
+    if (!ticket) {
+      throw new NotFoundException('Ticket not found');
+    }
+    if (ticket.status !== 'ASSIGNED') {
+      throw new BadRequestException('Only ASSIGNED tickets can be accepted');
+    }
+
+    const activeAssignment = await this.prisma.assignment.findFirst({
+      where: { ticketId, status: 'ACTIVE' },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!activeAssignment) {
+      throw new BadRequestException('No active assignment to accept');
+    }
+    if (
+      actor?.actorUserId &&
+      activeAssignment.representativeId !== actor.actorUserId
+    ) {
+      throw new ForbiddenException(
+        'Only the assigned representative can accept',
+      );
+    }
+
+    const txResult = await this.prisma.$transaction([
+      this.prisma.ticket.update({
+        where: { id: ticketId },
+        data: { status: 'IN_PROGRESS' },
+      }),
+      this.prisma.assignment.update({
+        where: { id: activeAssignment.id },
+        data: { status: 'ACCEPTED', acceptedAt: new Date() },
+      }),
+      this.prisma.ticketStatusHistory.create({
+        data: {
+          ticketId,
+          from: 'ASSIGNED',
+          to: 'IN_PROGRESS',
+          note: 'Assignment accepted',
+        },
+      }),
+    ]);
+    const updated = txResult[0];
+
+    await this.auditLogsService.create({
+      action: 'TICKET_ASSIGNMENT_ACCEPTED',
+      entity: 'TICKET',
+      entityId: ticketId,
+      actorUserId: actor?.actorUserId,
+      actorEmail: actor?.actorEmail,
+      metadata: { from: 'ASSIGNED', to: 'IN_PROGRESS' },
+    });
+
+    return updated;
+  }
+
   async rejectAssignment(
     ticketId: string,
     reason: string,
     actor?: { actorUserId?: string; actorEmail?: string },
   ) {
+    if (!reason || reason.trim().length < 3) {
+      throw new BadRequestException(
+        'A reason is required to reject an assignment',
+      );
+    }
+    const trimmedReason = reason.trim();
     const ticket = await this.prisma.ticket.findUnique({
       where: { id: ticketId },
     });
@@ -1293,19 +1434,54 @@ export class TicketsService {
       throw new BadRequestException('Only assigned tickets can be rejected');
     }
 
-    const updated = await this.prisma.ticket.update({
-      where: { id: ticketId },
-      data: { status: 'PENDING' },
+    const activeAssignment = await this.prisma.assignment.findFirst({
+      where: { ticketId, status: 'ACTIVE' },
+      orderBy: { createdAt: 'desc' },
     });
 
-    await this.prisma.ticketStatusHistory.create({
-      data: {
-        ticketId,
-        from: 'ASSIGNED',
-        to: 'PENDING',
-        note: reason,
-      },
-    });
+    const txOps: Prisma.PrismaPromise<unknown>[] = [
+      this.prisma.ticket.update({
+        where: { id: ticketId },
+        data: { status: 'PENDING' },
+      }),
+    ];
+    if (activeAssignment) {
+      txOps.push(
+        this.prisma.assignment.update({
+          where: { id: activeAssignment.id },
+          data: {
+            status: 'REJECTED',
+            rejectedAt: new Date(),
+            rejectionReason: trimmedReason,
+          },
+        }),
+      );
+    }
+    txOps.push(
+      this.prisma.ticketStatusHistory.create({
+        data: {
+          ticketId,
+          from: 'ASSIGNED',
+          to: 'PENDING',
+          note: trimmedReason,
+        },
+      }),
+    );
+
+    const txResult = await this.prisma.$transaction(txOps);
+    const updated = txResult[0];
+
+    if (activeAssignment) {
+      const assigningAdminId = await this.findAssigningAdminId(ticketId);
+      if (assigningAdminId) {
+        await this.notificationsService.create({
+          userId: assigningAdminId,
+          title: 'Assignment rejected',
+          body: `Ticket ${ticket.batchNo} rejected by clerk: ${trimmedReason}`,
+          metadata: { ticketId, reason: trimmedReason },
+        });
+      }
+    }
 
     await this.auditLogsService.create({
       action: 'TICKET_ASSIGNMENT_REJECTED',
@@ -1313,10 +1489,22 @@ export class TicketsService {
       entityId: ticketId,
       actorUserId: actor?.actorUserId,
       actorEmail: actor?.actorEmail,
-      metadata: { reason, from: 'ASSIGNED', to: 'PENDING' },
+      metadata: { reason: trimmedReason, from: 'ASSIGNED', to: 'PENDING' },
     });
 
     return updated;
+  }
+
+  private async findAssigningAdminId(ticketId: string): Promise<string | null> {
+    const log = await this.prisma.auditLog.findFirst({
+      where: {
+        entity: 'TICKET',
+        entityId: ticketId,
+        action: 'TICKET_ASSIGNED',
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    return log?.actorUserId ?? null;
   }
 
   private generateBatchNo() {
@@ -1345,9 +1533,10 @@ export class TicketsService {
     // from shared so fields the wizard marks optional (red ✗ in the PDF
     // matrix) don't fail the API validator with a generic "missing
     // required field" error on submit.
-    const courtType = typeof payload['select_court_type'] === 'string'
-      ? (payload['select_court_type'] as string)
-      : undefined;
+    const courtType =
+      typeof payload['select_court_type'] === 'string'
+        ? payload['select_court_type']
+        : undefined;
     const tier = courtTierFromCourtType(courtType);
     const required = requiredFieldsFor(flow, baseRequired, tier);
 
