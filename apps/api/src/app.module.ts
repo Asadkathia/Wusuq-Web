@@ -7,6 +7,7 @@ import { UsersModule } from './users/users.module';
 import { RolesPermissionsModule } from './roles-permissions/roles-permissions.module';
 import { ServicesModule } from './services/services.module';
 import { TicketsModule } from './tickets/tickets.module';
+import { PaymentsModule } from './payments/payments.module';
 import { AssignmentsModule } from './assignments/assignments.module';
 import { FinanceModule } from './finance/finance.module';
 import { WalletModule } from './wallet/wallet.module';
@@ -58,6 +59,7 @@ import { CaseTypesModule } from './case-types/case-types.module';
     RolesPermissionsModule,
     ServicesModule,
     TicketsModule,
+    PaymentsModule,
     AssignmentsModule,
     FinanceModule,
     WalletModule,
