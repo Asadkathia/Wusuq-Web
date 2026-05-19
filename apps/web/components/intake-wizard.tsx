@@ -2,7 +2,7 @@
 'use client';
 
 import { useMemo, useEffect, useState, useCallback, useRef } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { buildFutureTicketsPayload } from '@/lib/future-tickets';
 import { PanelCard } from '@/components/ui/panel-card';
@@ -749,6 +749,7 @@ export function IntakeWizard({
   // draft hydration below: the prefill is the source of truth, not whatever
   // stale draft happens to exist for the active consumer + flow.
   const searchParams = useSearchParams();
+  const router = useRouter();
   const futureFromTicketId = searchParams?.get('futureFromTicketId') ?? null;
   const futurePrefillAppliedRef = useRef(false);
   const [futureSourceLabel, setFutureSourceLabel] = useState<string>('');
@@ -1458,6 +1459,7 @@ export function IntakeWizard({
       } catch {}
       setInfoMsg('✅ Ticket created successfully! Batch No: ' + ticket.batchNo);
       resetForm();
+      router.push(`/consumer/tickets/${ticket.id}/pay`);
     } catch (e: any) {
       setApiError(e.message || 'Submission failed');
       // Re-enable autosave only on failure — on success resetForm() clears
