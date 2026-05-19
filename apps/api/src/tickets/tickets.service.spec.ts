@@ -799,4 +799,223 @@ describe('TicketsService', () => {
       );
     });
   });
+
+  describe('Ticket origin stamping', () => {
+    function buildIntakeHarness() {
+      const created: { data: Record<string, unknown> }[] = [];
+      const prisma = {
+        user: {
+          findUnique: jest.fn().mockResolvedValue({ id: 'consumer-1' }),
+        },
+        service: {
+          findUnique: jest
+            .fn()
+            .mockResolvedValue({ id: 'svc-1', category: 'judicial' }),
+        },
+        ticket: {
+          create: jest.fn().mockImplementation(async (args: any) => {
+            created.push(args);
+            return { id: 'tkt-new', ...args.data };
+          }),
+        },
+        ticketStatusHistory: {
+          create: jest.fn().mockResolvedValue({}),
+        },
+        ticketIntakeDraft: {
+          delete: jest.fn().mockResolvedValue({}),
+        },
+      };
+      const auditLogsService = { create: jest.fn().mockResolvedValue({}) };
+      const pricingService = {
+        resolve: jest.fn().mockResolvedValue({
+          matched: false,
+          rulesExistForFlow: false,
+          basePrice: 0,
+          attestedCharge: 0,
+          nonAttestedCharge: 0,
+          deliveryCharge: 0,
+          serviceCost: 0,
+          total: 0,
+        }),
+      };
+      const geoService = { resolveProvinceByCity: jest.fn() };
+      const notificationsService = { create: jest.fn().mockResolvedValue({}) };
+      const service = new TicketsService(
+        prisma as never,
+        auditLogsService as never,
+        pricingService as never,
+        geoService as never,
+        notificationsService as never,
+      );
+      return { service, prisma, created };
+    }
+
+    it('stamps createdBy=CONSUMER when the actor is the consumer themselves', async () => {
+      const { service, created } = buildIntakeHarness();
+      await service.createIntakeTicket(
+        {
+          consumerId: 'consumer-1',
+          serviceId: 'svc-1',
+          flow: 'judicial_case_information',
+          payload: {
+            select_service: 'x',
+            select_court: 'x',
+            select_court_city: 'x',
+            case_petition_no: '1',
+            case_year: '2024',
+            case_type: 'civil',
+            case_title: 'A vs B',
+          },
+        } as never,
+        { actorUserId: 'consumer-1', actorEmail: 'c@x.com' },
+      );
+      expect(created[0]?.data.createdBy).toBe('CONSUMER');
+    });
+
+    it('stamps createdBy=ADMIN_STAFF when actor is staff (different user)', async () => {
+      const { service, created } = buildIntakeHarness();
+      await service.createIntakeTicket(
+        {
+          consumerId: 'consumer-1',
+          serviceId: 'svc-1',
+          flow: 'judicial_case_information',
+          payload: {
+            select_service: 'x',
+            select_court: 'x',
+            select_court_city: 'x',
+            case_petition_no: '1',
+            case_year: '2024',
+            case_type: 'civil',
+            case_title: 'A vs B',
+          },
+        } as never,
+        { actorUserId: 'admin-1', actorEmail: 'a@x.com' },
+      );
+      expect(created[0]?.data.createdBy).toBe('ADMIN_STAFF');
+    });
+
+    it('stamps createdBy=ADMIN_STAFF when no actor is supplied', async () => {
+      const { service, created } = buildIntakeHarness();
+      await service.createIntakeTicket(
+        {
+          consumerId: 'consumer-1',
+          serviceId: 'svc-1',
+          flow: 'judicial_case_information',
+          payload: {
+            select_service: 'x',
+            select_court: 'x',
+            select_court_city: 'x',
+            case_petition_no: '1',
+            case_year: '2024',
+            case_type: 'civil',
+            case_title: 'A vs B',
+          },
+        } as never,
+      );
+      expect(created[0]?.data.createdBy).toBe('ADMIN_STAFF');
+    });
+  });
+
+  describe('Payment gate', () => {
+    function buildGateHarness(ticket: {
+      createdBy: 'CONSUMER' | 'ADMIN_STAFF';
+      paymentStatus: 'UNPAID' | 'PARTIALLY_PAID' | 'PAID';
+    }) {
+      const prisma = {
+        ticket: {
+          findUnique: jest.fn().mockResolvedValue({
+            id: 'tkt-1',
+            status: 'PENDING',
+            caseId: null,
+            ...ticket,
+          }),
+          update: jest.fn().mockResolvedValue({
+            id: 'tkt-1',
+            status: 'ASSIGNED',
+            caseId: null,
+            consumer: {
+              id: 'consumer-1',
+              name: 'C',
+              phone: null,
+              email: null,
+            },
+            service: { id: 'svc-1', name: 'Svc' },
+          }),
+          findMany: jest.fn().mockResolvedValue([]),
+        },
+        ticketStatusHistory: { create: jest.fn().mockResolvedValue({}) },
+      };
+      const auditLogsService = { create: jest.fn().mockResolvedValue({}) };
+      const pricingService = { resolve: jest.fn() };
+      const geoService = { resolveProvinceByCity: jest.fn() };
+      const notificationsService = {
+        create: jest.fn().mockResolvedValue({}),
+        sendEmail: jest.fn().mockResolvedValue({}),
+      };
+      const service = new TicketsService(
+        prisma as never,
+        auditLogsService as never,
+        pricingService as never,
+        geoService as never,
+        notificationsService as never,
+      );
+      return { service, prisma };
+    }
+
+    it('blocks PENDING → ASSIGNED for a CONSUMER ticket that is UNPAID', async () => {
+      const { service, prisma } = buildGateHarness({
+        createdBy: 'CONSUMER',
+        paymentStatus: 'UNPAID',
+      });
+      await expect(
+        service.updateStatus('tkt-1', 'ASSIGNED', undefined, {
+          actorUserId: 'admin-1',
+        }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(prisma.ticket.update).not.toHaveBeenCalled();
+    });
+
+    it('blocks PENDING → ASSIGNED for a CONSUMER ticket that is PARTIALLY_PAID', async () => {
+      const { service, prisma } = buildGateHarness({
+        createdBy: 'CONSUMER',
+        paymentStatus: 'PARTIALLY_PAID',
+      });
+      await expect(
+        service.updateStatus('tkt-1', 'ASSIGNED', undefined, {
+          actorUserId: 'admin-1',
+        }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(prisma.ticket.update).not.toHaveBeenCalled();
+    });
+
+    it('allows PENDING → ASSIGNED for ADMIN_STAFF ticket while UNPAID', async () => {
+      const { service, prisma } = buildGateHarness({
+        createdBy: 'ADMIN_STAFF',
+        paymentStatus: 'UNPAID',
+      });
+      const updated = await service.updateStatus(
+        'tkt-1',
+        'ASSIGNED',
+        undefined,
+        { actorUserId: 'admin-1' },
+      );
+      expect(updated.status).toBe('ASSIGNED');
+      expect(prisma.ticket.update).toHaveBeenCalled();
+    });
+
+    it('allows PENDING → ASSIGNED for CONSUMER ticket once paymentStatus=PAID', async () => {
+      const { service, prisma } = buildGateHarness({
+        createdBy: 'CONSUMER',
+        paymentStatus: 'PAID',
+      });
+      const updated = await service.updateStatus(
+        'tkt-1',
+        'ASSIGNED',
+        undefined,
+        { actorUserId: 'admin-1' },
+      );
+      expect(updated.status).toBe('ASSIGNED');
+      expect(prisma.ticket.update).toHaveBeenCalled();
+    });
+  });
 });

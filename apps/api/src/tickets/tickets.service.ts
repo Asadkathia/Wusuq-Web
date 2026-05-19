@@ -444,6 +444,10 @@ export class TicketsService {
         consumerId: dto.consumerId,
         serviceId: dto.serviceId,
         status: 'PENDING',
+        createdBy:
+          actor?.actorUserId && actor.actorUserId === dto.consumerId
+            ? 'CONSUMER'
+            : 'ADMIN_STAFF',
         serviceCity: inferredServiceCity,
         caseType: inferredCaseType,
         serviceCost: pricing.matched ? pricing.serviceCost : 0,
@@ -669,6 +673,8 @@ export class TicketsService {
       );
     }
 
+    this.assertPaymentSatisfied(ticket, status);
+
     const updated = await this.prisma.ticket.update({
       where: { id },
       data: {
@@ -799,6 +805,8 @@ export class TicketsService {
         `Invalid transition from ${ticket.status} to ASSIGNED`,
       );
     }
+
+    this.assertPaymentSatisfied(ticket, 'ASSIGNED');
 
     const clerkCost = dto.clerkCost ?? 0;
     let assignmentWarning: string | null = null;
@@ -1091,6 +1099,7 @@ export class TicketsService {
         consumerId: original.consumerId,
         serviceId: original.serviceId,
         status: 'PENDING',
+        createdBy: original.createdBy ?? 'ADMIN_STAFF',
         serviceCity: original.serviceCity,
         caseType: original.caseType,
         intakeFlow: original.intakeFlow,
@@ -1625,6 +1634,21 @@ export class TicketsService {
 
   private getAllowedTransitions(status: string): TicketStatus[] {
     return STATUS_TRANSITIONS[status as TicketStatus];
+  }
+
+  private assertPaymentSatisfied(
+    ticket: {
+      createdBy: 'CONSUMER' | 'ADMIN_STAFF';
+      paymentStatus: 'UNPAID' | 'PARTIALLY_PAID' | 'PAID';
+    },
+    nextStatus: TicketStatus,
+  ) {
+    if (ticket.createdBy !== 'CONSUMER') return;
+    if (nextStatus === 'PENDING') return;
+    if (ticket.paymentStatus === 'PAID') return;
+    throw new ForbiddenException(
+      'Ticket cannot be progressed until consumer payment is completed.',
+    );
   }
 
   private async ensureServiceExists(id: string) {
