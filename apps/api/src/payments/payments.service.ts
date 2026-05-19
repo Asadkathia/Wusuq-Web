@@ -10,6 +10,7 @@ import { Decimal } from '@prisma/client/runtime/library';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import { NotificationDispatcher } from '../notifications/notification-dispatcher.service';
 import {
   PAYMENT_PROVIDER,
   type PaymentProvider,
@@ -22,6 +23,7 @@ export class PaymentsService {
     @Inject(PAYMENT_PROVIDER) private readonly provider: PaymentProvider,
     private readonly config: ConfigService,
     private readonly auditLogs: AuditLogsService,
+    private readonly dispatcher: NotificationDispatcher,
   ) {}
 
   async initiate(ticketId: string, consumerId: string) {
@@ -174,6 +176,9 @@ export class PaymentsService {
           providerTxnId: verified.providerTxnId,
         },
       });
+      await this.dispatcher
+        .paymentCompleted(payment.ticket.id)
+        .catch(() => undefined);
       return { ok: true };
     }
 
