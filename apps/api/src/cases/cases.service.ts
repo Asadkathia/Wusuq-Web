@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import { NotificationDispatcher } from '../notifications/notification-dispatcher.service';
 import { TicketsService } from '../tickets/tickets.service';
 import { CreateCaseDto } from './dto/create-case.dto';
 import { UpdateCaseDto } from './dto/update-case.dto';
@@ -20,6 +21,7 @@ export class CasesService {
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService,
     private readonly ticketsService: TicketsService,
+    private readonly dispatcher: NotificationDispatcher,
   ) {}
 
   async createCase(
@@ -62,6 +64,8 @@ export class CasesService {
       actorEmail: actor?.actorEmail,
       metadata: { caseRef },
     });
+
+    await this.dispatcher.caseCreated(newCase.id).catch(() => undefined);
 
     return newCase;
   }
@@ -276,6 +280,10 @@ export class CasesService {
       actorEmail: actor?.actorEmail,
       metadata: { from: caseRec.status, to: dto.status },
     });
+
+    await this.dispatcher
+      .caseStatusChanged(id, caseRec.status, dto.status)
+      .catch(() => undefined);
 
     return updated;
   }
