@@ -51,6 +51,10 @@ describe('NotificationsService', () => {
   it('sendEmail() still delegates to EmailService', async () => {
     const { service, emailService } = build();
     await service.sendEmail('a@b.com', 'subj', '<p>x</p>');
-    expect(emailService.send).toHaveBeenCalledWith('a@b.com', 'subj', '<p>x</p>');
+    expect(emailService.send).toHaveBeenCalledWith(
+      'a@b.com',
+      'subj',
+      '<p>x</p>',
+    );
   });
 });

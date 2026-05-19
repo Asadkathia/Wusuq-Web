@@ -35,7 +35,10 @@ export const notificationTemplates = {
     title: `Assignment accepted — ${batchNo}`,
     body: `The representative accepted ticket ${batchNo}.`,
   }),
-  ticketAssignmentRejectedForAdmin: (batchNo: string, reason: string): Copy => ({
+  ticketAssignmentRejectedForAdmin: (
+    batchNo: string,
+    reason: string,
+  ): Copy => ({
     title: `Assignment rejected — ${batchNo}`,
     body: `Ticket ${batchNo} was rejected by the representative: ${reason}`,
   }),

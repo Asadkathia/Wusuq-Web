@@ -227,8 +227,9 @@ describe('TicketsService', () => {
     }
 
     it('marks active Assignment REJECTED, reverts ticket to PENDING, notifies assigning admin', async () => {
-      const { service, prisma, auditLogsService, dispatcher } =
-        buildService({});
+      const { service, prisma, auditLogsService, dispatcher } = buildService(
+        {},
+      );
 
       await service.rejectAssignment(
         'ticket-1',

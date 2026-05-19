@@ -33,7 +33,9 @@ describe('PaymentsService', () => {
         { provide: AuditLogsService, useValue: audit },
         {
           provide: NotificationDispatcher,
-          useValue: { paymentCompleted: jest.fn().mockResolvedValue(undefined) },
+          useValue: {
+            paymentCompleted: jest.fn().mockResolvedValue(undefined),
+          },
         },
         {
           provide: ConfigService,
