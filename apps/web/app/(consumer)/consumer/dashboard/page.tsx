@@ -1,7 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ArrowRight,
   ArrowUpRight,
@@ -33,6 +34,7 @@ type ConsumerSummary = {
     id: string;
     batchNo: string;
     status: string;
+    paymentStatus?: string;
     totalAmount: number;
     createdAt: string;
     service: { name: string };
@@ -138,6 +140,15 @@ export default function ConsumerDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [userName, setUserName] = useState<string>('');
+  const searchParams = useSearchParams();
+  const activeTab = searchParams?.get('tab') ?? 'all';
+  const isUnpaidTab = activeTab === 'unpaid';
+
+  const visibleTickets = useMemo(() => {
+    const tickets = summary?.myRecentTickets ?? [];
+    if (!isUnpaidTab) return tickets;
+    return tickets.filter((t) => (t.paymentStatus ?? 'PAID') !== 'PAID');
+  }, [summary?.myRecentTickets, isUnpaidTab]);
 
   useEffect(() => {
     try {
@@ -284,7 +295,9 @@ export default function ConsumerDashboardPage() {
           <div className="flex items-center justify-between">
             <div>
               <h3 className="text-sm font-semibold text-slate-900">Recent activity</h3>
-              <p className="text-xs text-slate-500">Your latest tickets.</p>
+              <p className="text-xs text-slate-500">
+                {isUnpaidTab ? 'Tickets awaiting payment.' : 'Your latest tickets.'}
+              </p>
             </div>
             <Link
               href="/consumer/my-tickets"
@@ -294,43 +307,83 @@ export default function ConsumerDashboardPage() {
             </Link>
           </div>
 
+          <div className="mt-4 inline-flex items-center gap-1 rounded-lg bg-surface-muted p-1">
+            <Link
+              href="/consumer/dashboard"
+              scroll={false}
+              className={[
+                'rounded-md px-3 py-1 text-xs font-semibold transition-colors',
+                !isUnpaidTab ? 'bg-white text-slate-900 shadow-elev-1' : 'text-slate-500 hover:text-slate-700',
+              ].join(' ')}
+            >
+              All
+            </Link>
+            <Link
+              href="/consumer/dashboard?tab=unpaid"
+              scroll={false}
+              className={[
+                'rounded-md px-3 py-1 text-xs font-semibold transition-colors',
+                isUnpaidTab ? 'bg-white text-slate-900 shadow-elev-1' : 'text-slate-500 hover:text-slate-700',
+              ].join(' ')}
+            >
+              Unpaid
+            </Link>
+          </div>
+
           <div className="mt-5 space-y-2">
             {loading && Array.from({ length: 3 }).map((_, i) => (
               <div key={i} className="h-14 rounded-xl bg-surface-muted animate-pulse" />
             ))}
 
-            {!loading && summary?.myRecentTickets?.length === 0 ? (
+            {!loading && visibleTickets.length === 0 ? (
               <div className="py-10 text-center">
                 <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-50 text-brand-500">
                   <Ticket className="h-5 w-5" />
                 </div>
-                <p className="text-sm font-medium text-slate-900">No tickets yet</p>
-                <p className="mt-1 text-xs text-slate-500">Your requests will show here once you start one.</p>
+                <p className="text-sm font-medium text-slate-900">
+                  {isUnpaidTab ? 'No unpaid tickets' : 'No tickets yet'}
+                </p>
+                <p className="mt-1 text-xs text-slate-500">
+                  {isUnpaidTab
+                    ? 'You are all caught up on payments.'
+                    : 'Your requests will show here once you start one.'}
+                </p>
               </div>
             ) : null}
 
-            {!loading && summary?.myRecentTickets?.map((t) => (
-              <div
-                key={t.id}
-                className="group flex items-center gap-4 rounded-xl px-3 py-3 transition-colors duration-150 hover:bg-surface-muted"
-              >
-                <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-50 text-brand-500 shrink-0">
-                  <Ticket className="h-4 w-4" />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold text-slate-900">{t.service?.name ?? 'Paralegal request'}</p>
-                  <p className="truncate text-xs text-slate-500">
-                    {t.batchNo} · <span className="inline-flex items-center gap-1"><Clock className="h-3 w-3" />{relativeTime(t.createdAt)}</span>
-                  </p>
-                </div>
-                <div className="flex items-center gap-3 shrink-0">
-                  <span className="text-sm font-semibold tabular-nums text-slate-900">
-                    PKR {formatPKR(Number(t.totalAmount || 0))}
+            {!loading && visibleTickets.map((t) => {
+              const isUnpaid = (t.paymentStatus ?? 'PAID') !== 'PAID';
+              return (
+                <div
+                  key={t.id}
+                  className="group flex items-center gap-4 rounded-xl px-3 py-3 transition-colors duration-150 hover:bg-surface-muted"
+                >
+                  <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-50 text-brand-500 shrink-0">
+                    <Ticket className="h-4 w-4" />
                   </span>
-                  <StatusPill label={t.status.replace(/_/g, ' ')} variant={getStatusVariant(t.status)} />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold text-slate-900">{t.service?.name ?? 'Paralegal request'}</p>
+                    <p className="truncate text-xs text-slate-500">
+                      {t.batchNo} · <span className="inline-flex items-center gap-1"><Clock className="h-3 w-3" />{relativeTime(t.createdAt)}</span>
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <span className="text-sm font-semibold tabular-nums text-slate-900">
+                      PKR {formatPKR(Number(t.totalAmount || 0))}
+                    </span>
+                    <StatusPill label={t.status.replace(/_/g, ' ')} variant={getStatusVariant(t.status)} />
+                    {isUnpaid ? (
+                      <Link
+                        href={`/consumer/tickets/${t.id}/pay`}
+                        className="inline-flex items-center gap-1 rounded-lg bg-brand-500 px-3 py-1.5 text-xs font-semibold text-white shadow-elev-1 transition-colors hover:bg-brand-600"
+                      >
+                        Pay now <ArrowRight className="h-3 w-3" />
+                      </Link>
+                    ) : null}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
 
             {error ? (
               <div className="rounded-xl border border-rose-100 bg-rose-50 px-4 py-3 text-xs text-rose-700">

@@ -74,6 +74,7 @@ export class DashboardService {
           id: true,
           batchNo: true,
           status: true,
+          paymentStatus: true,
           totalAmount: true,
           createdAt: true,
           service: { select: { name: true } },
