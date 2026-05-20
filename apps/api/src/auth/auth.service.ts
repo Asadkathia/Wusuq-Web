@@ -8,6 +8,7 @@ import { JwtService } from '@nestjs/jwt';
 import { UserRole } from '@prisma/client';
 import { compare, hash } from 'bcryptjs';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import { NotificationDispatcher } from '../notifications/notification-dispatcher.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { mapPrismaRoleToShared } from '../users/user-role.mapper';
 import { LoginDto } from './dto/login.dto';
@@ -26,6 +27,7 @@ export class AuthService {
     private readonly configService: ConfigService,
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService,
+    private readonly dispatcher: NotificationDispatcher,
   ) {}
 
   async login(dto: LoginDto) {
@@ -198,6 +200,10 @@ export class AuthService {
       actorEmail: actor.email,
       metadata: { reason: 'admin impersonation', targetUserId },
     });
+
+    await this.dispatcher
+      .authImpersonationStarted(targetUserId, actor.email)
+      .catch(() => undefined);
 
     return {
       ...tokens,

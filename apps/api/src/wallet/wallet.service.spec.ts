@@ -2,6 +2,14 @@ import { jest } from '@jest/globals';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { WalletService } from './wallet.service';
 
+function makeDispatcher() {
+  return {
+    walletTopupCreated: jest.fn().mockResolvedValue(undefined),
+    walletTopupDecided: jest.fn().mockResolvedValue(undefined),
+    walletReceiptUploaded: jest.fn().mockResolvedValue(undefined),
+  };
+}
+
 function buildService(overrides: Record<string, unknown> = {}) {
   const auditLogsService = { create: jest.fn() };
 
@@ -19,8 +27,13 @@ function buildService(overrides: Record<string, unknown> = {}) {
     $transaction: jest.fn(),
   };
 
-  const service = new WalletService(prisma as never, auditLogsService as never);
-  return { service, prisma, auditLogsService };
+  const dispatcher = makeDispatcher();
+  const service = new WalletService(
+    prisma as never,
+    auditLogsService as never,
+    dispatcher as never,
+  );
+  return { service, prisma, auditLogsService, dispatcher };
 }
 
 describe('WalletService.topup', () => {
@@ -105,6 +118,7 @@ describe('WalletService.verifyTopup double-credit guard', () => {
     const service = new WalletService(
       prisma as never,
       auditLogsService as never,
+      makeDispatcher() as never,
     );
 
     const result: any = await service.verifyTopup('wtx-1', {});
@@ -195,6 +209,7 @@ describe('WalletService.verifyTopup auto-deduction', () => {
       {
         create: jest.fn(),
       } as never,
+      makeDispatcher() as never,
     );
 
     return { service, prisma, tx };

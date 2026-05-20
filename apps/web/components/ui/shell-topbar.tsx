@@ -9,6 +9,9 @@ import { IconButton } from './icon-button';
 import { Menu, MenuContent, MenuItem, MenuLabel, MenuSeparator, MenuTrigger } from './menu';
 import { ShellNavBody, type NavItem } from './shell-nav';
 
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:4000/api';
+
 type Notification = {
   id: string;
   title: string;
@@ -16,6 +19,11 @@ type Notification = {
   type: string;
   isRead: boolean;
   createdAt: string;
+  metadata?: {
+    ticketId?: string;
+    caseId?: string;
+    transactionId?: string;
+  } | null;
 };
 
 type Variant = 'consumer' | 'staff';
@@ -52,6 +60,28 @@ export function ShellTopbar({ variant, walletHref, profileHref = '/profile', onS
     }
   }, [variant]);
 
+  useEffect(() => {
+    const token =
+      typeof window !== 'undefined'
+        ? localStorage.getItem('wusuq_access_token')
+        : null;
+    if (!token) return;
+
+    const es = new EventSource(
+      `${API_BASE_URL}/notifications/stream?token=${encodeURIComponent(token)}`,
+    );
+
+    es.onmessage = (evt) => {
+      try {
+        const n = JSON.parse(evt.data) as Notification;
+        setNotifications((prev) => [{ ...n, isRead: false }, ...prev].slice(0, 15));
+        setUnread((c) => c + 1);
+      } catch {}
+    };
+
+    return () => es.close();
+  }, []);
+
   const loadNotifications = () => {
     apiClient
       .get<{ items: Notification[] }>('/notifications?limit=15')
@@ -69,6 +99,16 @@ export function ShellTopbar({ variant, walletHref, profileHref = '/profile', onS
     await apiClient.patch(`/notifications/${id}/read`, {}).catch(() => {});
     setNotifications((n) => n.map((x) => (x.id === id ? { ...x, isRead: true } : x)));
     setUnread((c) => Math.max(0, c - 1));
+  };
+
+  const hrefFor = (n: Notification): string | null => {
+    const ticketId = n.metadata?.ticketId;
+    if (ticketId) {
+      return variant === 'consumer'
+        ? `/consumer/tickets/${ticketId}`
+        : `/tickets/${ticketId}`;
+    }
+    return null;
   };
 
   const initials = (user?.name ?? user?.email ?? '?')
@@ -164,15 +204,9 @@ export function ShellTopbar({ variant, walletHref, profileHref = '/profile', onS
               {notifications.length === 0 ? (
                 <li className="px-4 py-8 text-center text-xs text-slate-400">No notifications yet</li>
               ) : (
-                notifications.map((n) => (
-                  <li
-                    key={n.id}
-                    onClick={() => markOne(n.id)}
-                    className={[
-                      'cursor-pointer px-4 py-3 transition-colors hover:bg-surface-muted',
-                      !n.isRead ? 'bg-brand-50/50' : '',
-                    ].join(' ')}
-                  >
+                notifications.map((n) => {
+                  const href = hrefFor(n);
+                  const inner = (
                     <div className="flex items-start gap-2">
                       {!n.isRead ? <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-brand-500" /> : null}
                       <div className={!n.isRead ? '' : 'ml-4'}>
@@ -188,8 +222,26 @@ export function ShellTopbar({ variant, walletHref, profileHref = '/profile', onS
                         </p>
                       </div>
                     </div>
-                  </li>
-                ))
+                  );
+                  return (
+                    <li
+                      key={n.id}
+                      onClick={() => markOne(n.id)}
+                      className={[
+                        'cursor-pointer px-4 py-3 transition-colors hover:bg-surface-muted',
+                        !n.isRead ? 'bg-brand-50/50' : '',
+                      ].join(' ')}
+                    >
+                      {href ? (
+                        <Link href={href} className="block">
+                          {inner}
+                        </Link>
+                      ) : (
+                        inner
+                      )}
+                    </li>
+                  );
+                })
               )}
             </ul>
           </MenuContent>

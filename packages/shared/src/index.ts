@@ -377,3 +377,32 @@ export const FLOW_LABELS: Record<FlowKey, string> = {
   non_judicial_registry_deed: 'Registry / Deed',
   non_judicial_criminal_record_search: 'Search Criminal Record by CNIC by Police Station',
 };
+
+export const NOTIFICATION_TYPES = {
+  TICKET_CREATED: 'ticket.created',
+  TICKET_STATUS_CHANGED: 'ticket.status_changed',
+  TICKET_COMPLETED: 'ticket.completed',
+  TICKET_ASSIGNED: 'ticket.assigned',
+  TICKET_REASSIGNED: 'ticket.reassigned',
+  TICKET_ASSIGNMENT_ACCEPTED: 'ticket.assignment_accepted',
+  TICKET_ASSIGNMENT_REJECTED: 'ticket.assignment_rejected',
+  TICKET_CLERK_COSTS_SUBMITTED: 'ticket.clerk_costs_submitted',
+  TICKET_CLERK_RECEIPT_SUBMITTED: 'ticket.clerk_receipt_submitted',
+  TICKET_CLERK_RECEIPT_VERIFIED: 'ticket.clerk_receipt_verified',
+  TICKET_CLERK_RECEIPT_REJECTED: 'ticket.clerk_receipt_rejected',
+  TICKET_DOCUMENT_UPLOADED: 'ticket.document_uploaded',
+  TICKET_REGENERATED: 'ticket.regenerated',
+  PAYMENT_COMPLETED: 'payment.completed',
+  WALLET_TOPUP_CREATED: 'wallet.topup_created',
+  WALLET_TOPUP_VERIFIED: 'wallet.topup_verified',
+  WALLET_TOPUP_REJECTED: 'wallet.topup_rejected',
+  WALLET_RECEIPT_UPLOADED: 'wallet.receipt_uploaded',
+  CASE_CREATED: 'case.created',
+  CASE_STATUS_CHANGED: 'case.status_changed',
+  CASE_DRIFT_DETECTED: 'case.drift_detected',
+  AUTH_PASSWORD_CHANGED: 'auth.password_changed',
+  AUTH_IMPERSONATION_STARTED: 'auth.impersonation_started',
+} as const;
+
+export type NotificationType =
+  (typeof NOTIFICATION_TYPES)[keyof typeof NOTIFICATION_TYPES];

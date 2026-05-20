@@ -6,6 +6,23 @@ import {
 } from '@nestjs/common';
 import { TicketsService } from './tickets.service';
 
+function makeDispatcher() {
+  return {
+    ticketCreated: jest.fn().mockResolvedValue(undefined),
+    ticketStatusChanged: jest.fn().mockResolvedValue(undefined),
+    ticketAssigned: jest.fn().mockResolvedValue(undefined),
+    ticketReassigned: jest.fn().mockResolvedValue(undefined),
+    ticketAssignmentAccepted: jest.fn().mockResolvedValue(undefined),
+    ticketAssignmentRejected: jest.fn().mockResolvedValue(undefined),
+    ticketClerkCostsSubmitted: jest.fn().mockResolvedValue(undefined),
+    ticketClerkReceiptSubmitted: jest.fn().mockResolvedValue(undefined),
+    ticketClerkReceiptDecided: jest.fn().mockResolvedValue(undefined),
+    ticketDocumentUploaded: jest.fn().mockResolvedValue(undefined),
+    ticketRegenerated: jest.fn().mockResolvedValue(undefined),
+    caseDriftDetected: jest.fn().mockResolvedValue(undefined),
+  };
+}
+
 describe('TicketsService', () => {
   it('preserves financial fields when regenerating a ticket', async () => {
     const original = {
@@ -50,13 +67,13 @@ describe('TicketsService', () => {
       }),
     };
     const geoService = { resolveProvinceByCity: jest.fn() };
-    const notificationsService = { create: jest.fn().mockResolvedValue({}) };
+    const dispatcher = makeDispatcher();
     const service = new TicketsService(
       prisma as never,
       auditLogsService as never,
       pricingService as never,
       geoService as never,
-      notificationsService as never,
+      dispatcher as never,
     );
 
     await service.regenerate('ticket-1');
@@ -115,13 +132,13 @@ describe('TicketsService', () => {
       }),
     };
     const geoService = { resolveProvinceByCity: jest.fn() };
-    const notificationsService = { create: jest.fn() };
+    const dispatcher = makeDispatcher();
     const service = new TicketsService(
       prisma as never,
       auditLogsService as never,
       pricingService as never,
       geoService as never,
-      notificationsService as never,
+      dispatcher as never,
     );
 
     await expect(
@@ -193,27 +210,26 @@ describe('TicketsService', () => {
         resolve: jest.fn(),
       };
       const geoService = { resolveProvinceByCity: jest.fn() };
-      const notificationsService = {
-        create: jest.fn().mockResolvedValue({}),
-      };
+      const dispatcher = makeDispatcher();
       const service = new TicketsService(
         prisma as never,
         auditLogsService as never,
         pricingService as never,
         geoService as never,
-        notificationsService as never,
+        dispatcher as never,
       );
       return {
         service,
         prisma,
         auditLogsService,
-        notificationsService,
+        dispatcher,
       };
     }
 
     it('marks active Assignment REJECTED, reverts ticket to PENDING, notifies assigning admin', async () => {
-      const { service, prisma, auditLogsService, notificationsService } =
-        buildService({});
+      const { service, prisma, auditLogsService, dispatcher } = buildService(
+        {},
+      );
 
       await service.rejectAssignment(
         'ticket-1',
@@ -245,11 +261,9 @@ describe('TicketsService', () => {
           }),
         }),
       );
-      expect(notificationsService.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          userId: 'admin-1',
-          title: expect.stringMatching(/reject/i),
-        }),
+      expect(dispatcher.ticketAssignmentRejected).toHaveBeenCalledWith(
+        'ticket-1',
+        'Cannot reach court this week',
       );
       expect(auditLogsService.create).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -325,13 +339,13 @@ describe('TicketsService', () => {
       const auditLogsService = { create: jest.fn().mockResolvedValue({}) };
       const pricingService = { resolve: jest.fn() };
       const geoService = { resolveProvinceByCity: jest.fn() };
-      const notificationsService = { create: jest.fn().mockResolvedValue({}) };
+      const dispatcher = makeDispatcher();
       const service = new TicketsService(
         prisma as never,
         auditLogsService as never,
         pricingService as never,
         geoService as never,
-        notificationsService as never,
+        dispatcher as never,
       );
       return { service, prisma, auditLogsService };
     }
@@ -435,15 +449,13 @@ describe('TicketsService', () => {
       const auditLogsService = { create: jest.fn().mockResolvedValue({}) };
       const pricingService = { resolve: jest.fn() };
       const geoService = { resolveProvinceByCity: jest.fn() };
-      const notificationsService = {
-        create: jest.fn().mockResolvedValue({}),
-      };
+      const dispatcher = makeDispatcher();
       const service = new TicketsService(
         prisma as never,
         auditLogsService as never,
         pricingService as never,
         geoService as never,
-        notificationsService as never,
+        dispatcher as never,
       );
       return { service, prisma, auditLogsService };
     }
@@ -540,13 +552,13 @@ describe('TicketsService', () => {
       const auditLogsService = { create: jest.fn().mockResolvedValue({}) };
       const pricingService = { resolve: jest.fn() };
       const geoService = { resolveProvinceByCity: jest.fn() };
-      const notificationsService = { create: jest.fn().mockResolvedValue({}) };
+      const dispatcher = makeDispatcher();
       const service = new TicketsService(
         prisma as never,
         auditLogsService as never,
         pricingService as never,
         geoService as never,
-        notificationsService as never,
+        dispatcher as never,
       );
       return { service, prisma, ticketId, docId, consumerId };
     }
@@ -654,13 +666,13 @@ describe('TicketsService', () => {
       const auditLogsService = { create: jest.fn() };
       const pricingService = { resolve: jest.fn() };
       const geoService = { resolveProvinceByCity: jest.fn() };
-      const notificationsService = { create: jest.fn() };
+      const dispatcher = makeDispatcher();
       const service = new TicketsService(
         prisma as never,
         auditLogsService as never,
         pricingService as never,
         geoService as never,
-        notificationsService as never,
+        dispatcher as never,
       );
       return { service, prisma };
     }
@@ -772,16 +784,13 @@ describe('TicketsService', () => {
       const auditLogsService = { create: jest.fn().mockResolvedValue({}) };
       const pricingService = { resolve: jest.fn() };
       const geoService = { resolveProvinceByCity: jest.fn() };
-      const notificationsService = {
-        create: jest.fn().mockResolvedValue({}),
-        sendEmail: jest.fn().mockResolvedValue({}),
-      };
+      const dispatcher = makeDispatcher();
       const service = new TicketsService(
         prisma as never,
         auditLogsService as never,
         pricingService as never,
         geoService as never,
-        notificationsService as never,
+        dispatcher as never,
       );
 
       await service.updateStatus(ticketId, 'COMPLETED', undefined, {
@@ -839,13 +848,13 @@ describe('TicketsService', () => {
         }),
       };
       const geoService = { resolveProvinceByCity: jest.fn() };
-      const notificationsService = { create: jest.fn().mockResolvedValue({}) };
+      const dispatcher = makeDispatcher();
       const service = new TicketsService(
         prisma as never,
         auditLogsService as never,
         pricingService as never,
         geoService as never,
-        notificationsService as never,
+        dispatcher as never,
       );
       return { service, prisma, created };
     }
@@ -946,16 +955,13 @@ describe('TicketsService', () => {
       const auditLogsService = { create: jest.fn().mockResolvedValue({}) };
       const pricingService = { resolve: jest.fn() };
       const geoService = { resolveProvinceByCity: jest.fn() };
-      const notificationsService = {
-        create: jest.fn().mockResolvedValue({}),
-        sendEmail: jest.fn().mockResolvedValue({}),
-      };
+      const dispatcher = makeDispatcher();
       const service = new TicketsService(
         prisma as never,
         auditLogsService as never,
         pricingService as never,
         geoService as never,
-        notificationsService as never,
+        dispatcher as never,
       );
       return { service, prisma };
     }

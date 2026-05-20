@@ -7,6 +7,7 @@ import { PaymentsService } from './payments.service';
 import { MockProvider } from './providers/mock-provider';
 import { PAYMENT_PROVIDER } from './providers/payment-provider.interface';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import { NotificationDispatcher } from '../notifications/notification-dispatcher.service';
 
 const makePrisma = () => ({
   ticket: { findUnique: jest.fn(), update: jest.fn() },
@@ -30,6 +31,12 @@ describe('PaymentsService', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: PAYMENT_PROVIDER, useValue: new MockProvider() },
         { provide: AuditLogsService, useValue: audit },
+        {
+          provide: NotificationDispatcher,
+          useValue: {
+            paymentCompleted: jest.fn().mockResolvedValue(undefined),
+          },
+        },
         {
           provide: ConfigService,
           useValue: {

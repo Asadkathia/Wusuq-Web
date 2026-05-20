@@ -29,7 +29,9 @@ export class NotificationsService {
       },
     });
 
-    // Push real-time SSE event to connected clients
+    // Push real-time SSE event to connected clients. Email is no longer sent
+    // implicitly here — callers (the NotificationDispatcher) decide per-event
+    // whether to also email via sendEmail().
     this.sseService.push(data.userId, {
       id: notification.id,
       title: notification.title,
@@ -37,18 +39,6 @@ export class NotificationsService {
       type: notification.type,
       createdAt: notification.createdAt,
     });
-
-    const user = await this.prisma.user.findUnique({
-      where: { id: data.userId },
-      select: { email: true },
-    });
-    if (user?.email) {
-      await this.emailService.send(
-        user.email,
-        data.title,
-        `<p>${data.body ?? data.title}</p>`,
-      );
-    }
 
     return notification;
   }

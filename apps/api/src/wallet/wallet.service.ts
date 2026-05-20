@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import type { PaymentMode, Prisma } from '@prisma/client';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import { NotificationDispatcher } from '../notifications/notification-dispatcher.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { TopupWalletDto } from './dto/topup-wallet.dto';
@@ -14,6 +15,7 @@ export class WalletService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService,
+    private readonly dispatcher: NotificationDispatcher,
   ) {}
 
   async list(query: PaginationQueryDto) {
@@ -95,6 +97,10 @@ export class WalletService {
         amount: dto.amount,
       },
     });
+
+    await this.dispatcher
+      .walletTopupCreated(transaction.id)
+      .catch(() => undefined);
 
     return {
       success: true,
@@ -189,6 +195,9 @@ export class WalletService {
           amount: Number(result.transaction.amount),
         },
       });
+      await this.dispatcher
+        .walletTopupDecided(result.transaction.id, 'VERIFIED')
+        .catch(() => undefined);
     }
 
     return {
@@ -232,6 +241,10 @@ export class WalletService {
         amount: Number(transaction.amount),
       },
     });
+
+    await this.dispatcher
+      .walletTopupDecided(rejected.id, 'REJECTED')
+      .catch(() => undefined);
 
     return { success: true, transaction: rejected };
   }
@@ -305,6 +318,7 @@ export class WalletService {
       actorEmail: actor.actorEmail,
       metadata: { path: file.path, mimetype: file.mimetype },
     });
+    await this.dispatcher.walletReceiptUploaded().catch(() => undefined);
     return { url, path: url, filename: file.filename };
   }
 
