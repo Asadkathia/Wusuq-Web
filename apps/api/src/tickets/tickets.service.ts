@@ -1665,6 +1665,11 @@ export class TicketsService {
     },
     nextStatus: TicketStatus,
   ) {
+    // Dev escape hatch: payments are not wired in development, so allow
+    // tickets to be assigned/progressed without a completed payment.
+    // Set DISABLE_PAYMENT_GATING=true in non-production .env to bypass.
+    // Leave unset (or false) in production to enforce consumer payment.
+    if (process.env.DISABLE_PAYMENT_GATING === 'true') return;
     if (ticket.createdBy !== 'CONSUMER') return;
     if (nextStatus === 'PENDING') return;
     if (ticket.paymentStatus === 'PAID') return;

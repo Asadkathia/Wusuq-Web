@@ -924,6 +924,19 @@ describe('TicketsService', () => {
   });
 
   describe('Payment gate', () => {
+    // Keep the suite hermetic: the dev escape hatch must be off by default so
+    // the gate assertions hold regardless of the ambient .env.
+    let prevDisableGating: string | undefined;
+    beforeEach(() => {
+      prevDisableGating = process.env.DISABLE_PAYMENT_GATING;
+      delete process.env.DISABLE_PAYMENT_GATING;
+    });
+    afterEach(() => {
+      if (prevDisableGating === undefined)
+        delete process.env.DISABLE_PAYMENT_GATING;
+      else process.env.DISABLE_PAYMENT_GATING = prevDisableGating;
+    });
+
     function buildGateHarness(ticket: {
       createdBy: 'CONSUMER' | 'ADMIN_STAFF';
       paymentStatus: 'UNPAID' | 'PARTIALLY_PAID' | 'PAID';
@@ -1018,6 +1031,19 @@ describe('TicketsService', () => {
         undefined,
         { actorUserId: 'admin-1' },
       );
+      expect(updated.status).toBe('ASSIGNED');
+      expect(prisma.ticket.update).toHaveBeenCalled();
+    });
+
+    it('bypasses the gate for an UNPAID CONSUMER ticket when DISABLE_PAYMENT_GATING=true', async () => {
+      process.env.DISABLE_PAYMENT_GATING = 'true';
+      const { service, prisma } = buildGateHarness({
+        createdBy: 'CONSUMER',
+        paymentStatus: 'UNPAID',
+      });
+      const updated = await service.updateStatus('tkt-1', 'ASSIGNED', undefined, {
+        actorUserId: 'admin-1',
+      });
       expect(updated.status).toBe('ASSIGNED');
       expect(prisma.ticket.update).toHaveBeenCalled();
     });
