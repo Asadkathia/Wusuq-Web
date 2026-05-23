@@ -53,6 +53,7 @@ type TicketRow = {
   additionalCharges?: number | string | null;
   intakeFlow?: string | null;
   createdBy?: string | null;
+  defaultClerkCost?: number | null;
   consumer: { id: string; name: string };
   service: { id: string; name: string; category: string; type: string };
 };
@@ -102,6 +103,7 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
   const [representatives, setRepresentatives] = useState<Representative[]>([]);
   const [representativeId, setRepresentativeId] = useState('');
   const [clerkCost, setClerkCost] = useState('');
+  const [overrideClerkCost, setOverrideClerkCost] = useState(false);
   const [forceAssign, setForceAssign] = useState(false);
   const [assignWarning, setAssignWarning] = useState('');
 
@@ -179,12 +181,13 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
 
   const openFinalizeModal = (ticket: TicketRow) => {
     setFinalizeTicket(ticket);
+    const caps = chargeCapabilitiesFor(ticket.intakeFlow);
     setFinalizeForm({
       attestedCharges: ticket.attestedCharges ? String(ticket.attestedCharges) : '',
       nonAttestedCharges: ticket.nonAttestedCharges ? String(ticket.nonAttestedCharges) : '',
       printingCharges: ticket.printingCharges ? String(ticket.printingCharges) : '',
       deliveryCharges: ticket.deliveryCharges ? String(ticket.deliveryCharges) : '',
-      pdfCharges: '',
+      pdfCharges: caps.pdf ? '300' : '',
     });
   };
 
@@ -322,7 +325,8 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
   const openAssign = async (ticket: TicketRow) => {
     setAssignTicket(ticket);
     setRepresentativeId('');
-    setClerkCost('');
+    setClerkCost(ticket.defaultClerkCost != null ? String(ticket.defaultClerkCost) : '');
+    setOverrideClerkCost(false);
     setForceAssign(false);
     setAssignWarning('');
     try {
@@ -346,9 +350,12 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
     }
     try {
       setAssignWarning('');
+      const resolvedClerkCost = overrideClerkCost
+        ? (clerkCost ? Number(clerkCost) : undefined)
+        : (assignTicket.defaultClerkCost != null ? assignTicket.defaultClerkCost : undefined);
       await apiClient.post(`/tickets/${assignTicket.id}/assign`, {
         representativeId,
-        clerkCost: clerkCost ? Number(clerkCost) : undefined,
+        clerkCost: resolvedClerkCost,
         forceAssign,
       });
       setAssignTicket(null);
@@ -812,16 +819,36 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
               </select>
             </label>
 
-            <label className="block">
-              <span className="text-sm font-medium text-slate-700">Clerk Cost Override (Optional)</span>
+            <div className="block">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-slate-700">Clerk Cost</span>
+                <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={overrideClerkCost}
+                    onChange={(e) => {
+                      setOverrideClerkCost(e.target.checked);
+                      if (!e.target.checked) {
+                        setClerkCost(assignTicket.defaultClerkCost != null ? String(assignTicket.defaultClerkCost) : '');
+                      }
+                    }}
+                    className="h-3.5 w-3.5 rounded border-slate-300 text-primary-600 focus:ring-primary-600"
+                  />
+                  Override clerk cost
+                </label>
+              </div>
               <input
                 type="number"
-                className="mt-1 block w-full rounded-xl border-0 py-2.5 px-3 text-slate-900 ring-1 ring-inset ring-border-soft placeholder:text-slate-400 focus:ring-2 focus:ring-primary-600 sm:text-sm sm:leading-6"
+                className="mt-1 block w-full rounded-xl border-0 py-2.5 px-3 text-slate-900 ring-1 ring-inset ring-border-soft placeholder:text-slate-400 focus:ring-2 focus:ring-primary-600 sm:text-sm sm:leading-6 disabled:bg-slate-50 disabled:text-slate-500 disabled:cursor-not-allowed"
                 placeholder="0.00"
                 value={clerkCost}
+                disabled={!overrideClerkCost}
                 onChange={(e) => setClerkCost(e.target.value)}
               />
-            </label>
+              {!overrideClerkCost && assignTicket.defaultClerkCost == null && (
+                <p className="mt-1 text-xs text-slate-400">No default cost — enable override to set a value.</p>
+              )}
+            </div>
           </div>
           {assignWarning && (
             <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
