@@ -1291,12 +1291,12 @@ type SeedProvince = {
   districts: SeedDistrict[];
 };
 
-export const PAKISTAN_GEO: SeedProvince[] = Object.entries(PAKISTAN_GEO_RAW).map(
-  ([provinceName, districts]) => ({
-    name: provinceName,
-    districts: Object.entries(districts).map(([districtName, cities]) => ({
-      name: districtName,
-      cities: [...cities],
-    })),
-  }),
-);
+export const PAKISTAN_GEO: SeedProvince[] = Object.entries(
+  PAKISTAN_GEO_RAW,
+).map(([provinceName, districts]) => ({
+  name: provinceName,
+  districts: Object.entries(districts).map(([districtName, cities]) => ({
+    name: districtName,
+    cities: [...cities],
+  })),
+}));
