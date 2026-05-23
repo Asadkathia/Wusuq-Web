@@ -204,6 +204,9 @@ model Ticket {
   discountPrice         Decimal             @default(0)
   additionalServiceCost Decimal             @default(0)
   clerkCost             Decimal             @default(0)
+  // Resolved default clerk cost (PricingRule.clerkBaseCost) captured at creation;
+  // pre-fills the assignment dialog's clerk-cost field (admin can override).
+  defaultClerkCost      Decimal?
   clerkApprovalStatus   ClerkApprovalStatus @default(PENDING)
   clerkReceiptUrl       String?
   remainderFinalizedAt       DateTime?
