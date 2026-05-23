@@ -6,7 +6,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { TicketStatus } from '@wusuq/shared';
+import { chargeCapabilitiesFor } from '@wusuq/shared';
 import { apiClient } from '@/lib/api-client';
+import { paymentsClient } from '@/lib/payments-client';
 import { DataTableShell } from '@/components/ui/data-table-shell';
 import { FilterBar } from '@/components/ui/filter-bar';
 import { SectionHeader } from '@/components/ui/section-header';
@@ -23,7 +25,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { UserCircle, MapPin, Tag, RefreshCw, CheckSquare, Clock, History, FileOutput, Eye, PlayCircle, Upload, X, XCircle } from 'lucide-react';
+import { UserCircle, MapPin, Tag, RefreshCw, CheckSquare, Clock, History, FileOutput, Eye, PlayCircle, Upload, X, XCircle, CreditCard } from 'lucide-react';
 import { TicketDetailPanel } from './ticket-detail-panel';
 
 type TicketBoardProps = {
@@ -41,11 +43,16 @@ type TicketRow = {
   clerkReceiptUrl?: string | null;
   serviceCost?: number | string | null;
   totalAmount?: number | string | null;
+  amountPaid?: number | string | null;
+  paymentStatus?: string | null;
+  remainderFinalizedAt?: string | null;
   deliveryCharges?: number | string | null;
   printingCharges?: number | string | null;
   attestedCharges?: number | string | null;
   nonAttestedCharges?: number | string | null;
   additionalCharges?: number | string | null;
+  intakeFlow?: string | null;
+  createdBy?: string | null;
   consumer: { id: string; name: string };
   service: { id: string; name: string; category: string; type: string };
 };
@@ -150,6 +157,59 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
   const [rejectReason, setRejectReason] = useState('');
   const [sendBackTicket, setSendBackTicket] = useState<TicketRow | null>(null);
   const [sendBackReason, setSendBackReason] = useState('');
+
+  // Admin: Finalize remainder (phase-2 charges)
+  type FinalizeForm = {
+    attestedCharges: string;
+    nonAttestedCharges: string;
+    printingCharges: string;
+    deliveryCharges: string;
+    pdfCharges: string;
+  };
+  const EMPTY_FINALIZE: FinalizeForm = {
+    attestedCharges: '',
+    nonAttestedCharges: '',
+    printingCharges: '',
+    deliveryCharges: '',
+    pdfCharges: '',
+  };
+  const [finalizeTicket, setFinalizeTicket] = useState<TicketRow | null>(null);
+  const [finalizeForm, setFinalizeForm] = useState<FinalizeForm>(EMPTY_FINALIZE);
+  const [finalizing, setFinalizing] = useState(false);
+
+  const openFinalizeModal = (ticket: TicketRow) => {
+    setFinalizeTicket(ticket);
+    setFinalizeForm({
+      attestedCharges: ticket.attestedCharges ? String(ticket.attestedCharges) : '',
+      nonAttestedCharges: ticket.nonAttestedCharges ? String(ticket.nonAttestedCharges) : '',
+      printingCharges: ticket.printingCharges ? String(ticket.printingCharges) : '',
+      deliveryCharges: ticket.deliveryCharges ? String(ticket.deliveryCharges) : '',
+      pdfCharges: '',
+    });
+  };
+
+  const submitFinalize = async () => {
+    if (!finalizeTicket) return;
+    setFinalizing(true);
+    try {
+      await paymentsClient.finalizeRemainder(finalizeTicket.id, {
+        attestedCharges: Number(finalizeForm.attestedCharges) || 0,
+        nonAttestedCharges: Number(finalizeForm.nonAttestedCharges) || 0,
+        printingCharges: Number(finalizeForm.printingCharges) || 0,
+        deliveryCharges: Number(finalizeForm.deliveryCharges) || 0,
+        pdfCharges: Number(finalizeForm.pdfCharges) || 0,
+      });
+      setMessage(`Phase-2 charges finalized for ${finalizeTicket.batchNo}`);
+      setFinalizeTicket(null);
+      setFinalizeForm(EMPTY_FINALIZE);
+      loadTickets();
+    } catch (error: any) {
+      setMessage(error.message || 'Finalize failed');
+    } finally {
+      setFinalizing(false);
+    }
+  };
+
   const clerkCostFields: Array<{
     label: string;
     key: keyof ClerkCostsForm;
@@ -667,6 +727,18 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
                                 <Eye className="h-3.5 w-3.5" /> Verify Receipt
                               </button>
                             ) : null}
+                            {(() => {
+                              const caps = chargeCapabilitiesFor(ticket.intakeFlow);
+                              const hasAnyCap = caps.attestation || caps.printing || caps.delivery || caps.pdf;
+                              return hasAnyCap && !ticket.remainderFinalizedAt ? (
+                                <button
+                                  onClick={() => openFinalizeModal(ticket)}
+                                  className="text-violet-600 hover:text-violet-900 bg-violet-50 hover:bg-violet-100 px-3 py-1.5 rounded-md flex items-center gap-1"
+                                >
+                                  <CreditCard className="h-3.5 w-3.5" /> Finalize Charges
+                                </button>
+                              ) : null;
+                            })()}
                             <button
                               onClick={() => completeTicket(ticket)}
                               className="text-emerald-600 hover:text-emerald-900 bg-emerald-50 hover:bg-emerald-100 px-3 py-1.5 rounded-md flex items-center gap-1"
@@ -830,32 +902,55 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
             <DialogTitle>Update ticket payments{costsTicket ? ` — ${costsTicket.batchNo}` : ''}</DialogTitle>
             <DialogDescription>Submit your final cost breakdown before the admin-approval upload step.</DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3">
-            {clerkCostFields.map(({ label, key }) => (
-              <FormField key={key} label={label} htmlFor={`cc-${key}`}>
-                <Input
-                  id={`cc-${key}`}
-                  type="number"
-                  min="0"
-                  value={clerkCosts[key]}
-                  onChange={(e) =>
-                    setClerkCosts((current) => ({ ...current, [key]: e.target.value }))
-                  }
-                  placeholder="0"
-                />
-              </FormField>
-            ))}
-            <FormField label="Printing charges" hint="Computed automatically">
-              <div className="flex h-11 items-center rounded-xl border border-border-soft bg-surface-muted px-4 text-sm">
-                <span className="flex-1 font-semibold tabular-nums text-slate-900">
-                  PKR {((Number(clerkCosts.noOfPages) || 0) * (Number(clerkCosts.costPerPage) || 0)).toLocaleString()}
-                </span>
-                <span className="text-xs text-slate-500">
-                  {clerkCosts.noOfPages || '0'} × {clerkCosts.costPerPage || '0'}
-                </span>
+          {costsTicket && (() => {
+            const caps = chargeCapabilitiesFor(costsTicket.intakeFlow);
+            const visibleFields = clerkCostFields.filter(({ key }) => {
+              if (key === 'attestedCharges' || key === 'nonAttestedCharges') return caps.attestation;
+              if (key === 'deliveryCharges') return caps.delivery;
+              if (key === 'additionalCharges') return true; // always show additional
+              // noOfPages and costPerPage drive printing
+              if (key === 'noOfPages' || key === 'costPerPage') return caps.printing;
+              return true;
+            });
+            const noCaps = !caps.attestation && !caps.printing && !caps.delivery && !caps.pdf;
+            if (noCaps) {
+              return (
+                <p className="py-6 text-center text-sm text-slate-500">
+                  This service type has no billable phase-2 charges.
+                </p>
+              );
+            }
+            return (
+              <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3">
+                {visibleFields.map(({ label, key }) => (
+                  <FormField key={key} label={label} htmlFor={`cc-${key}`}>
+                    <Input
+                      id={`cc-${key}`}
+                      type="number"
+                      min="0"
+                      value={clerkCosts[key]}
+                      onChange={(e) =>
+                        setClerkCosts((current) => ({ ...current, [key]: e.target.value }))
+                      }
+                      placeholder="0"
+                    />
+                  </FormField>
+                ))}
+                {caps.printing && (
+                  <FormField label="Printing charges" hint="Computed automatically">
+                    <div className="flex h-11 items-center rounded-xl border border-border-soft bg-surface-muted px-4 text-sm">
+                      <span className="flex-1 font-semibold tabular-nums text-slate-900">
+                        PKR {((Number(clerkCosts.noOfPages) || 0) * (Number(clerkCosts.costPerPage) || 0)).toLocaleString()}
+                      </span>
+                      <span className="text-xs text-slate-500">
+                        {clerkCosts.noOfPages || '0'} × {clerkCosts.costPerPage || '0'}
+                      </span>
+                    </div>
+                  </FormField>
+                )}
               </div>
-            </FormField>
-          </div>
+            );
+          })()}
           <DialogFooter>
             <Button variant="ghost" onClick={() => setCostsTicket(null)}>Cancel</Button>
             <Button variant="primary" onClick={submitClerkCosts}>Submit costs</Button>
@@ -1083,6 +1178,78 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
           </div>
         </PanelCard>
       )}
+
+      {/* Admin: Finalize Phase-2 Charges */}
+      <Dialog open={Boolean(finalizeTicket)} onOpenChange={(open) => { if (!open) { setFinalizeTicket(null); setFinalizeForm(EMPTY_FINALIZE); } }}>
+        <DialogContent size="xl">
+          <DialogHeader>
+            <DialogTitle>Finalize phase-2 charges{finalizeTicket ? ` — ${finalizeTicket.batchNo}` : ''}</DialogTitle>
+            <DialogDescription>Review and edit the clerk-entered charges, then finalize. The consumer will be billed the remainder.</DialogDescription>
+          </DialogHeader>
+          {finalizeTicket && (() => {
+            const caps = chargeCapabilitiesFor(finalizeTicket.intakeFlow);
+            return (
+              <div className="space-y-4">
+                <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3">
+                  {caps.attestation && (
+                    <>
+                      <FormField label="Attested Charges" htmlFor="fin-attested">
+                        <Input id="fin-attested" type="number" min="0" placeholder="0"
+                          value={finalizeForm.attestedCharges}
+                          onChange={(e) => setFinalizeForm((f) => ({ ...f, attestedCharges: e.target.value }))} />
+                      </FormField>
+                      <FormField label="Non-Attested Charges" htmlFor="fin-non-attested">
+                        <Input id="fin-non-attested" type="number" min="0" placeholder="0"
+                          value={finalizeForm.nonAttestedCharges}
+                          onChange={(e) => setFinalizeForm((f) => ({ ...f, nonAttestedCharges: e.target.value }))} />
+                      </FormField>
+                    </>
+                  )}
+                  {caps.printing && (
+                    <FormField label="Printing Charges" htmlFor="fin-printing">
+                      <Input id="fin-printing" type="number" min="0" placeholder="0"
+                        value={finalizeForm.printingCharges}
+                        onChange={(e) => setFinalizeForm((f) => ({ ...f, printingCharges: e.target.value }))} />
+                    </FormField>
+                  )}
+                  {caps.delivery && (
+                    <FormField label="Delivery Charges" htmlFor="fin-delivery">
+                      <Input id="fin-delivery" type="number" min="0" placeholder="0"
+                        value={finalizeForm.deliveryCharges}
+                        onChange={(e) => setFinalizeForm((f) => ({ ...f, deliveryCharges: e.target.value }))} />
+                    </FormField>
+                  )}
+                  {caps.pdf && (
+                    <FormField label="PDF Charges" htmlFor="fin-pdf">
+                      <Input id="fin-pdf" type="number" min="0" placeholder="0"
+                        value={finalizeForm.pdfCharges}
+                        onChange={(e) => setFinalizeForm((f) => ({ ...f, pdfCharges: e.target.value }))} />
+                    </FormField>
+                  )}
+                </div>
+                <div className="rounded-lg bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                  <span className="font-medium">Base (service cost):</span>{' '}
+                  PKR {Number(finalizeTicket.serviceCost || 0).toLocaleString()}
+                  {' + '}
+                  <span className="font-medium">Phase-2 total:</span>{' '}
+                  PKR {(
+                    (caps.attestation ? (Number(finalizeForm.attestedCharges) || 0) + (Number(finalizeForm.nonAttestedCharges) || 0) : 0) +
+                    (caps.printing ? (Number(finalizeForm.printingCharges) || 0) : 0) +
+                    (caps.delivery ? (Number(finalizeForm.deliveryCharges) || 0) : 0) +
+                    (caps.pdf ? (Number(finalizeForm.pdfCharges) || 0) : 0)
+                  ).toLocaleString()}
+                </div>
+              </div>
+            );
+          })()}
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => { setFinalizeTicket(null); setFinalizeForm(EMPTY_FINALIZE); }}>Cancel</Button>
+            <Button variant="primary" onClick={submitFinalize} disabled={finalizing}>
+              {finalizing ? 'Finalizing…' : 'Finalize & notify consumer'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {message && (
         <div className={`mt-4 rounded-lg p-4 text-sm font-medium ${message.toLowerCase().includes('failed') || message.toLowerCase().includes('select') ? 'bg-rose-50 text-rose-800 border border-rose-200' : 'bg-emerald-50 text-emerald-800 border border-emerald-200'}`}>

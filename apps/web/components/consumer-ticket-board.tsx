@@ -50,7 +50,10 @@ type TicketRow = {
   createdAt?: string;
   totalAmount?: number | string | null;
   amountPaid?: number | string | null;
+  serviceCost?: number | string | null;
   paymentStatus?: string | null;
+  createdBy?: string | null;
+  remainderFinalizedAt?: string | null;
   consumer: { id: string; name: string };
   service: { id: string; name: string; category: string; type: string };
   payload?: Record<string, string> | null;
@@ -285,9 +288,23 @@ function TicketList({
 function TicketCard({ ticket, onOpen }: { ticket: TicketRow; onOpen: () => void }) {
   const total = Number(ticket.totalAmount ?? 0);
   const paid = Number(ticket.amountPaid ?? 0);
+  const base = Number(ticket.serviceCost ?? 0);
   const remaining = Math.max(0, total - paid);
-  const isUnpaid =
-    (ticket.paymentStatus ?? 'PAID') !== 'PAID' && remaining > 0;
+  const isConsumerCreated = ticket.createdBy === 'CONSUMER';
+  const paymentStatus = ticket.paymentStatus ?? 'UNPAID';
+
+  // Show base "Pay now" when: consumer-created, not PAID, base not yet covered
+  const showPayNow =
+    isConsumerCreated &&
+    paymentStatus !== 'PAID' &&
+    (base === 0 ? remaining > 0 : paid < base);
+
+  // Show "Final payment due" when: remainder has been finalized but not yet fully paid
+  const showFinalPayment =
+    isConsumerCreated &&
+    Boolean(ticket.remainderFinalizedAt) &&
+    paymentStatus !== 'PAID' &&
+    remaining > 0;
 
   return (
     <div
@@ -341,7 +358,21 @@ function TicketCard({ ticket, onOpen }: { ticket: TicketRow; onOpen: () => void 
         ) : null}
       </div>
 
-      {isUnpaid ? (
+      {showFinalPayment ? (
+        <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 flex items-center justify-between gap-3">
+          <p className="text-xs font-medium text-rose-700">
+            Final payment due — PKR {formatPKR(remaining)}
+          </p>
+          <Link
+            href={`/consumer/tickets/${ticket.id}/pay`}
+            onClick={(e) => e.stopPropagation()}
+            className="inline-flex items-center gap-1 rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-rose-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/40 shrink-0"
+          >
+            Pay now
+            <ArrowUpRight className="h-3.5 w-3.5" />
+          </Link>
+        </div>
+      ) : showPayNow ? (
         <div className="mt-3 flex justify-end">
           <Link
             href={`/consumer/tickets/${ticket.id}/pay`}
@@ -391,8 +422,21 @@ function ConsumerTicketDrawer({
 
   const total = Number(ticket?.totalAmount || 0);
   const paid = Number(ticket?.amountPaid || 0);
+  const base = Number(ticket?.serviceCost || 0);
   const remaining = Math.max(0, total - paid);
   const discount = Number(ticket?.discountPrice || 0);
+  const isConsumerCreated = ticket?.createdBy === 'CONSUMER';
+  const paymentStatus = ticket?.paymentStatus ?? 'UNPAID';
+  const showFinalPayment =
+    isConsumerCreated &&
+    Boolean(ticket?.remainderFinalizedAt) &&
+    paymentStatus !== 'PAID' &&
+    remaining > 0;
+  const showPayNow =
+    !showFinalPayment &&
+    isConsumerCreated &&
+    paymentStatus !== 'PAID' &&
+    (base === 0 ? remaining > 0 : paid < base);
 
   return (
     <Drawer open={Boolean(ticketId)} onOpenChange={(open) => { if (!open) onClose(); }}>
@@ -544,6 +588,27 @@ function ConsumerTicketDrawer({
         </DrawerBody>
 
         <DrawerFooter>
+          {showFinalPayment && (
+            <div className="w-full rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 mb-2">
+              <p className="text-sm font-medium text-rose-700 mb-2">
+                Final payment due — PKR {formatPKR(remaining)}
+              </p>
+              <Link href={`/consumer/tickets/${ticketId}/pay`}>
+                <Button variant="brand" size="sm" rightIcon={<ArrowUpRight className="h-3.5 w-3.5" />}>
+                  Pay now
+                </Button>
+              </Link>
+            </div>
+          )}
+          {showPayNow && (
+            <div className="w-full mb-2">
+              <Link href={`/consumer/tickets/${ticketId}/pay`}>
+                <Button variant="brand" size="sm" rightIcon={<ArrowUpRight className="h-3.5 w-3.5" />}>
+                  Pay now
+                </Button>
+              </Link>
+            </div>
+          )}
           <Button variant="ghost" onClick={onClose}>Close</Button>
         </DrawerFooter>
       </DrawerContent>

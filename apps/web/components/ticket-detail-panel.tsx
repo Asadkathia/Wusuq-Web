@@ -3,6 +3,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { apiClient } from '@/lib/api-client';
+import { chargeCapabilitiesFor } from '@wusuq/shared';
 import { PanelCard } from '@/components/ui/panel-card';
 import { StatusPill } from '@/components/ui/status-pill';
 import {
@@ -258,33 +259,44 @@ export function TicketDetailPanel({ ticketId, onClose }: Props) {
               {/* Charges Breakdown */}
               <PanelCard className="p-4">
                 <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2"><CreditCard className="h-4 w-4 text-primary-500" />Charges Breakdown</h3>
-                <div className="space-y-2 text-sm">
-                  {[
+                {(() => {
+                  const caps = chargeCapabilitiesFor(ticket.intakeFlow);
+                  const chargeRows: Array<[string, unknown]> = [
                     ['Service Cost', ticket.serviceCost],
-                    ['Delivery Charges', ticket.deliveryCharges],
-                    ['Printing Charges', ticket.printingCharges],
-                    ['Attested Charges', ticket.attestedCharges],
-                    ['Non-Attested Charges', ticket.nonAttestedCharges],
+                    ...(caps.delivery ? [['Delivery Charges', ticket.deliveryCharges] as [string, unknown]] : []),
+                    ...(caps.printing ? [['Printing Charges', ticket.printingCharges] as [string, unknown]] : []),
+                    ...(caps.attestation ? [['Attested Charges', ticket.attestedCharges] as [string, unknown]] : []),
+                    ...(caps.attestation ? [['Non-Attested Charges', ticket.nonAttestedCharges] as [string, unknown]] : []),
                     ['Additional Charges', ticket.additionalCharges],
                     ['Additional Service Cost', ticket.additionalServiceCost],
                     ['Clerk Cost', ticket.clerkCost],
                     ['Discount', ticket.discountPrice ? `-${Number(ticket.discountPrice).toLocaleString()}` : null],
-                  ].filter(([, val]) => val !== null && val !== undefined && Number(val) !== 0).map(([label, val]) => (
-                    <div key={label as string} className="flex justify-between border-b border-slate-50 pb-1.5">
-                      <span className="text-slate-500">{label}</span>
-                      <span className="font-medium text-slate-800">PKR {Number(val || 0).toLocaleString()}</span>
+                  ];
+                  return (
+                    <div className="space-y-2 text-sm">
+                      {chargeRows.filter(([, val]) => val !== null && val !== undefined && Number(val) !== 0).map(([label, val]) => (
+                        <div key={label as string} className="flex justify-between border-b border-slate-50 pb-1.5">
+                          <span className="text-slate-500">{label}</span>
+                          <span className="font-medium text-slate-800">PKR {Number(val || 0).toLocaleString()}</span>
+                        </div>
+                      ))}
+                      <div className="flex justify-between pt-1 font-semibold text-slate-900">
+                        <span>Total</span><span>PKR {totalCharges.toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between text-emerald-700">
+                        <span>Amount Paid</span><span className="font-medium">PKR {Number(ticket.amountPaid || 0).toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between text-rose-700">
+                        <span>Remaining</span><span className="font-medium">PKR {Math.max(0, totalCharges - Number(ticket.amountPaid || 0)).toLocaleString()}</span>
+                      </div>
+                      {ticket.remainderFinalizedAt ? (
+                        <div className="pt-1 text-xs text-slate-500">
+                          Remainder finalized on {new Date(ticket.remainderFinalizedAt).toLocaleDateString('en-PK')}
+                        </div>
+                      ) : null}
                     </div>
-                  ))}
-                  <div className="flex justify-between pt-1 font-semibold text-slate-900">
-                    <span>Total</span><span>PKR {totalCharges.toLocaleString()}</span>
-                  </div>
-                  <div className="flex justify-between text-emerald-700">
-                    <span>Amount Paid</span><span className="font-medium">PKR {Number(ticket.amountPaid || 0).toLocaleString()}</span>
-                  </div>
-                  <div className="flex justify-between text-rose-700">
-                    <span>Remaining</span><span className="font-medium">PKR {Math.max(0, totalCharges - Number(ticket.amountPaid || 0)).toLocaleString()}</span>
-                  </div>
-                </div>
+                  );
+                })()}
               </PanelCard>
 
               {/* Consumer Notes & Delivery */}

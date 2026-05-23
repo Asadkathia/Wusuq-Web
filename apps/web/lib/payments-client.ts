@@ -62,4 +62,18 @@ export const paymentsClient = {
   rejectTransaction(id: string, note?: string): Promise<unknown> {
     return apiClient.post(`/wallet/transactions/${id}/reject`, { note });
   },
+
+  // Admin: post phase-2 clerk charges and finalize the remainder
+  finalizeRemainder(
+    ticketId: string,
+    charges: {
+      attestedCharges?: number;
+      nonAttestedCharges?: number;
+      printingCharges?: number;
+      deliveryCharges?: number;
+      pdfCharges?: number;
+    },
+  ): Promise<unknown> {
+    return apiClient.post(`/tickets/${ticketId}/finalize-remainder`, charges);
+  },
 };

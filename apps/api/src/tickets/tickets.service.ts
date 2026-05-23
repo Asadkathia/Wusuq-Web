@@ -262,6 +262,7 @@ export class TicketsService {
         amountPaid: ticket.amountPaid,
         paymentStatus: ticket.paymentStatus,
         createdBy: ticket.createdBy,
+        remainderFinalizedAt: ticket.remainderFinalizedAt,
         deliveryCharges: ticket.deliveryCharges,
         printingCharges: ticket.printingCharges,
         attestedCharges: ticket.attestedCharges,
