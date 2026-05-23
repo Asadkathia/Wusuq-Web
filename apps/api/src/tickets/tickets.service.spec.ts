@@ -924,6 +924,123 @@ describe('TicketsService', () => {
     });
   });
 
+  describe('createIntakeTicket — SPLIT billing (Task 1.2)', () => {
+    function buildIntakeHarnessWithPricing(opts: {
+      flow: string;
+      serviceCost: number;
+      total: number;
+    }) {
+      const created: { data: Record<string, unknown> }[] = [];
+      const prisma = {
+        user: {
+          findUnique: jest.fn().mockResolvedValue({ id: 'consumer-1' }),
+        },
+        service: {
+          findUnique: jest
+            .fn()
+            .mockResolvedValue({ id: 'svc-1', category: 'judicial' }),
+        },
+        ticket: {
+          create: jest.fn().mockImplementation(async (args: any) => {
+            created.push(args);
+            return { id: 'tkt-new', ...args.data };
+          }),
+        },
+        ticketStatusHistory: {
+          create: jest.fn().mockResolvedValue({}),
+        },
+        ticketIntakeDraft: {
+          delete: jest.fn().mockResolvedValue({}),
+        },
+      };
+      const auditLogsService = { create: jest.fn().mockResolvedValue({}) };
+      const pricingService = {
+        resolve: jest.fn().mockResolvedValue({
+          matched: true,
+          rulesExistForFlow: true,
+          basePrice: opts.serviceCost,
+          attestedCharge: 0,
+          nonAttestedCharge: 0,
+          deliveryCharge: 0,
+          serviceCost: opts.serviceCost,
+          total: opts.total,
+        }),
+      };
+      const geoService = { resolveProvinceByCity: jest.fn() };
+      const dispatcher = makeDispatcher();
+      const service = new TicketsService(
+        prisma as never,
+        auditLogsService as never,
+        pricingService as never,
+        geoService as never,
+        dispatcher as never,
+      );
+      return { service, prisma, created };
+    }
+
+    it('SPLIT flow: totalAmount equals serviceCost (base only) even when pricing.total is higher', async () => {
+      const { service, created } = buildIntakeHarnessWithPricing({
+        flow: 'judicial_case_files',
+        serviceCost: 5000,
+        total: 8000,
+      });
+      await service.createIntakeTicket(
+        {
+          consumerId: 'consumer-1',
+          serviceId: 'svc-1',
+          flow: 'judicial_case_files',
+          payload: {
+            select_service: 'x',
+            select_court: 'x',
+            select_court_city: 'x',
+            select_court_type: 'lower',
+            case_petition_no: '1',
+            case_year: '2024',
+            case_type: 'civil',
+            case_status: 'pending',
+            case_title: 'A vs B',
+            judge_name: 'Judge Smith',
+            sets: '1',
+            set_type: 'attested',
+            delivery_mode: 'courier',
+          },
+        } as never,
+        { actorUserId: 'consumer-1', actorEmail: 'c@x.com' },
+      );
+      const data = created[0]?.data;
+      expect(data?.totalAmount).toBe(data?.serviceCost); // base only for SPLIT
+      expect(data?.serviceCost).toBe(5000);
+      expect(data?.totalAmount).toBe(5000); // NOT 8000
+    });
+
+    it('ONE_TIME flow: totalAmount equals pricing.total (full amount)', async () => {
+      const { service, created } = buildIntakeHarnessWithPricing({
+        flow: 'judicial_case_information',
+        serviceCost: 3000,
+        total: 3500,
+      });
+      await service.createIntakeTicket(
+        {
+          consumerId: 'consumer-1',
+          serviceId: 'svc-1',
+          flow: 'judicial_case_information',
+          payload: {
+            select_service: 'x',
+            select_court: 'x',
+            select_court_city: 'x',
+            case_petition_no: '1',
+            case_year: '2024',
+            case_title: 'A vs B',
+            judge_name: 'Judge Smith',
+          },
+        } as never,
+        { actorUserId: 'consumer-1', actorEmail: 'c@x.com' },
+      );
+      const data = created[0]?.data;
+      expect(data?.totalAmount).toBe(3500); // full total for ONE_TIME
+    });
+  });
+
   describe('Payment gate', () => {
     // Keep the suite hermetic: the dev escape hatch must be off by default so
     // the gate assertions hold regardless of the ambient .env.
@@ -941,18 +1058,28 @@ describe('TicketsService', () => {
     function buildGateHarness(ticket: {
       createdBy: 'CONSUMER' | 'ADMIN_STAFF';
       paymentStatus: 'UNPAID' | 'PARTIALLY_PAID' | 'PAID';
+      intakeFlow?: string;
+      serviceCost?: number;
+      amountPaid?: number;
+      totalAmount?: number;
+      status?: string;
     }) {
+      const { status: ticketStatus = 'PENDING', ...rest } = ticket;
       const prisma = {
         ticket: {
           findUnique: jest.fn().mockResolvedValue({
             id: 'tkt-1',
-            status: 'PENDING',
+            status: ticketStatus,
             caseId: null,
-            ...ticket,
+            intakeFlow: null,
+            serviceCost: 0,
+            amountPaid: 0,
+            totalAmount: 0,
+            ...rest,
           }),
           update: jest.fn().mockResolvedValue({
             id: 'tkt-1',
-            status: 'ASSIGNED',
+            status: ticketStatus === 'WAITING_APPROVAL' ? 'COMPLETED' : 'ASSIGNED',
             caseId: null,
             consumer: {
               id: 'consumer-1',
@@ -984,6 +1111,9 @@ describe('TicketsService', () => {
       const { service, prisma } = buildGateHarness({
         createdBy: 'CONSUMER',
         paymentStatus: 'UNPAID',
+        serviceCost: 5000,
+        amountPaid: 0,
+        totalAmount: 5000,
       });
       await expect(
         service.updateStatus('tkt-1', 'ASSIGNED', undefined, {
@@ -997,6 +1127,9 @@ describe('TicketsService', () => {
       const { service, prisma } = buildGateHarness({
         createdBy: 'CONSUMER',
         paymentStatus: 'PARTIALLY_PAID',
+        serviceCost: 5000,
+        amountPaid: 2000,
+        totalAmount: 5000,
       });
       await expect(
         service.updateStatus('tkt-1', 'ASSIGNED', undefined, {
@@ -1010,6 +1143,9 @@ describe('TicketsService', () => {
       const { service, prisma } = buildGateHarness({
         createdBy: 'ADMIN_STAFF',
         paymentStatus: 'UNPAID',
+        serviceCost: 5000,
+        amountPaid: 0,
+        totalAmount: 5000,
       });
       const updated = await service.updateStatus(
         'tkt-1',
@@ -1021,10 +1157,13 @@ describe('TicketsService', () => {
       expect(prisma.ticket.update).toHaveBeenCalled();
     });
 
-    it('allows PENDING → ASSIGNED for CONSUMER ticket once paymentStatus=PAID', async () => {
+    it('allows PENDING → ASSIGNED for CONSUMER ticket once amountPaid >= totalAmount', async () => {
       const { service, prisma } = buildGateHarness({
         createdBy: 'CONSUMER',
         paymentStatus: 'PAID',
+        serviceCost: 5000,
+        amountPaid: 5000,
+        totalAmount: 5000,
       });
       const updated = await service.updateStatus(
         'tkt-1',
@@ -1041,6 +1180,9 @@ describe('TicketsService', () => {
       const { service, prisma } = buildGateHarness({
         createdBy: 'CONSUMER',
         paymentStatus: 'UNPAID',
+        serviceCost: 5000,
+        amountPaid: 0,
+        totalAmount: 5000,
       });
       const updated = await service.updateStatus(
         'tkt-1',
@@ -1052,6 +1194,78 @@ describe('TicketsService', () => {
       );
       expect(updated.status).toBe('ASSIGNED');
       expect(prisma.ticket.update).toHaveBeenCalled();
+    });
+
+    // ── Phase-aware gate (Task 1.3) ──────────────────────────────────────────
+
+    it('SPLIT: base covered (amountPaid >= serviceCost) allows ASSIGNED even with remainder pending', async () => {
+      const { service, prisma } = buildGateHarness({
+        createdBy: 'CONSUMER',
+        intakeFlow: 'judicial_case_files',
+        serviceCost: 5000,
+        amountPaid: 5000,
+        totalAmount: 5000,
+        paymentStatus: 'PAID',
+      });
+      await service.updateStatus('tkt-1', 'ASSIGNED', undefined, { actorUserId: 'a' });
+      expect(prisma.ticket.update).toHaveBeenCalled();
+    });
+
+    it('SPLIT: COMPLETED blocked when amountPaid < totalAmount (remainder unpaid)', async () => {
+      const { service } = buildGateHarness({
+        createdBy: 'CONSUMER',
+        intakeFlow: 'judicial_case_files',
+        serviceCost: 5000,
+        amountPaid: 5000,
+        totalAmount: 8000,
+        paymentStatus: 'PARTIALLY_PAID',
+        status: 'WAITING_APPROVAL',
+      });
+      await expect(
+        service.updateStatus('tkt-1', 'COMPLETED', undefined, { actorUserId: 'a' }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('SPLIT: COMPLETED allowed when amountPaid >= totalAmount (full paid)', async () => {
+      const { service, prisma } = buildGateHarness({
+        createdBy: 'CONSUMER',
+        intakeFlow: 'judicial_case_files',
+        serviceCost: 5000,
+        amountPaid: 8000,
+        totalAmount: 8000,
+        paymentStatus: 'PAID',
+        status: 'WAITING_APPROVAL',
+      });
+      await service.updateStatus('tkt-1', 'COMPLETED', undefined, { actorUserId: 'a' });
+      expect(prisma.ticket.update).toHaveBeenCalled();
+    });
+
+    it('ONE_TIME: ASSIGNED blocked when amountPaid < totalAmount (base not covered)', async () => {
+      const { service } = buildGateHarness({
+        createdBy: 'CONSUMER',
+        intakeFlow: 'judicial_case_information',
+        serviceCost: 5000,
+        amountPaid: 3000,
+        totalAmount: 5000,
+        paymentStatus: 'PARTIALLY_PAID',
+      });
+      await expect(
+        service.updateStatus('tkt-1', 'ASSIGNED', undefined, { actorUserId: 'a' }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('SPLIT: ASSIGNED blocked when amountPaid < serviceCost (base not covered)', async () => {
+      const { service } = buildGateHarness({
+        createdBy: 'CONSUMER',
+        intakeFlow: 'judicial_case_files',
+        serviceCost: 5000,
+        amountPaid: 3000,
+        totalAmount: 5000,
+        paymentStatus: 'PARTIALLY_PAID',
+      });
+      await expect(
+        service.updateStatus('tkt-1', 'ASSIGNED', undefined, { actorUserId: 'a' }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
     });
   });
 

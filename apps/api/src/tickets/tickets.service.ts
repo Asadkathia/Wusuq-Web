@@ -16,6 +16,7 @@ import {
   type FlowKey,
   requiredFieldsFor,
   courtTierFromCourtType,
+  paymentModelFor,
 } from '@wusuq/shared';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { PricingService } from '../pricing/pricing.service';
@@ -436,6 +437,15 @@ export class TicketsService {
       );
     }
 
+    // SPLIT flows (e.g. judicial_case_files) bill base only at creation;
+    // phase-2 surcharges (attested, printing, delivery, pdf) are added at
+    // finalize (Task 1.4). ONE_TIME flows bill the full computed total upfront.
+    const billedTotal = pricing.matched
+      ? paymentModelFor(dto.flow) === 'SPLIT'
+        ? pricing.serviceCost
+        : pricing.total
+      : 0;
+
     const ticket = await this.prisma.ticket.create({
       data: {
         batchNo: this.generateBatchNo(),
@@ -450,7 +460,7 @@ export class TicketsService {
         caseType: inferredCaseType,
         serviceCost: pricing.matched ? pricing.serviceCost : 0,
         deliveryCharges: pricing.matched ? pricing.deliveryCharge : 0,
-        totalAmount: pricing.matched ? pricing.total : 0,
+        totalAmount: billedTotal,
         intakeFlow: dto.flow,
         formPayload: dto.payload as Prisma.InputJsonValue | undefined,
         // Atomic case linkage + scheduling. Replaces the prior two-step
@@ -1656,7 +1666,11 @@ export class TicketsService {
   private assertPaymentSatisfied(
     ticket: {
       createdBy: 'CONSUMER' | 'ADMIN_STAFF';
+      intakeFlow?: string | null;
       paymentStatus: 'UNPAID' | 'PARTIALLY_PAID' | 'PAID';
+      serviceCost?: unknown;
+      amountPaid?: unknown;
+      totalAmount?: unknown;
     },
     nextStatus: TicketStatus,
   ) {
@@ -1667,9 +1681,26 @@ export class TicketsService {
     if (process.env.DISABLE_PAYMENT_GATING === 'true') return;
     if (ticket.createdBy !== 'CONSUMER') return;
     if (nextStatus === 'PENDING') return;
-    if (ticket.paymentStatus === 'PAID') return;
+
+    const base = Number(ticket.serviceCost ?? 0);
+    const paid = Number(ticket.amountPaid ?? 0);
+    const total = Number(ticket.totalAmount ?? 0);
+    const model = paymentModelFor(ticket.intakeFlow);
+
+    // Dispatch/completion (COMPLETED) needs the full finalized amount paid.
+    if (nextStatus === 'COMPLETED') {
+      if (paid >= total) return;
+      throw new ForbiddenException(
+        'Final payment must be completed before dispatch.',
+      );
+    }
+
+    // All other forward transitions (e.g. ASSIGNED) need the base covered.
+    // SPLIT flows: base = serviceCost. ONE_TIME flows: base = total (full amount).
+    const dueNow = model === 'SPLIT' ? base : total;
+    if (paid >= dueNow) return;
     throw new ForbiddenException(
-      'Ticket cannot be progressed until consumer payment is completed.',
+      'Ticket cannot be progressed until payment is completed.',
     );
   }
 
