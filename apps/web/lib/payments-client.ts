@@ -76,4 +76,26 @@ export const paymentsClient = {
   ): Promise<unknown> {
     return apiClient.post(`/tickets/${ticketId}/finalize-remainder`, charges);
   },
+
+  // Admin: bulk-assign multiple tickets to a representative
+  assignBulk(dto: {
+    ticketIds: string[];
+    representativeId: string;
+    forceAssign?: boolean;
+  }): Promise<{ assigned: string[]; skipped: { ticketId: string; reason: string }[] }> {
+    return apiClient.post('/tickets/assign-bulk', dto);
+  },
+
+  // Clerk: record next-hearing date (and optional type) on a ticket
+  recordNextHearing(
+    ticketId: string,
+    dto: { scheduledDate: string; hearingType?: string },
+  ): Promise<unknown> {
+    return apiClient.post(`/tickets/${ticketId}/next-hearing`, dto);
+  },
+
+  // Admin: generate a new follow-up ticket from a completed ticket's next-hearing date
+  generateNextHearing(ticketId: string): Promise<{ batchNo: string; id: string }> {
+    return apiClient.post(`/tickets/${ticketId}/generate-next-hearing`, {});
+  },
 };

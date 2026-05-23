@@ -3,7 +3,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { apiClient } from '@/lib/api-client';
-import { chargeCapabilitiesFor } from '@wusuq/shared';
+import { chargeCapabilitiesFor, FLOW_LABELS, orderCaseDetailKeys } from '@wusuq/shared';
 import { PanelCard } from '@/components/ui/panel-card';
 import { StatusPill } from '@/components/ui/status-pill';
 import {
@@ -16,6 +16,7 @@ import { BENCH_TYPE_LABELS } from '@/lib/bench-types';
 type Props = {
   ticketId: string;
   onClose: () => void;
+  isClerkView?: boolean;
 };
 
 const STATUS_VARIANT: Record<string, 'success' | 'warning' | 'error' | 'neutral' | 'info'> = {
@@ -25,7 +26,7 @@ const STATUS_VARIANT: Record<string, 'success' | 'warning' | 'error' | 'neutral'
   COMPLETED: 'success',
 };
 
-export function TicketDetailPanel({ ticketId, onClose }: Props) {
+export function TicketDetailPanel({ ticketId, onClose, isClerkView = false }: Props) {
   const [ticket, setTicket] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -109,14 +110,15 @@ export function TicketDetailPanel({ ticketId, onClose }: Props) {
 
   const renderPayload = (payload: Record<string, unknown>, opts: { hideKeys?: string[] } = {}) => {
     const hide = new Set(opts.hideKeys ?? []);
-    return Object.entries(payload)
-      .filter(([k, v]) => !hide.has(k) && v !== null && v !== '' && !String(v).includes('upload'))
-      .map(([k, v]) => (
+    const orderedKeys = orderCaseDetailKeys(Object.keys(payload));
+    return orderedKeys
+      .filter((k) => !hide.has(k) && payload[k] !== null && payload[k] !== '' && !String(payload[k]).includes('upload'))
+      .map((k) => (
         <div key={k} className="flex gap-2 text-sm py-1 border-b border-slate-50 last:border-0">
           <span className="w-40 flex-shrink-0 font-medium text-slate-500 capitalize">
             {k.replace(/_/g, ' ')}
           </span>
-          <span className="text-slate-800">{String(v)}</span>
+          <span className="text-slate-800">{String(payload[k])}</span>
         </div>
       ));
   };
@@ -204,326 +206,405 @@ export function TicketDetailPanel({ ticketId, onClose }: Props) {
 
           {ticket && (
             <>
-              {/* Consumer Info */}
-              <PanelCard className="p-4">
-                <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2"><User className="h-4 w-4 text-primary-500" />Consumer Information</h3>
-                <div className="grid grid-cols-2 gap-3 text-sm">
-                  <div><span className="text-slate-500">Name</span><p className="font-medium text-slate-900 mt-0.5">{ticket.consumer?.name ?? '—'}</p></div>
-                  <div><span className="text-slate-500">Email</span><p className="font-medium text-slate-900 mt-0.5">{ticket.consumer?.email ?? '—'}</p></div>
-                  <div><span className="text-slate-500 flex items-center gap-1"><Phone className="h-3 w-3" />Phone</span><p className="font-medium text-slate-900 mt-0.5">{ticket.consumer?.phone ?? '—'}</p></div>
-                  <div><span className="text-slate-500">CNIC</span><p className="font-medium text-slate-900 mt-0.5">{ticket.consumer?.cnic ?? '—'}</p></div>
-                  <div><span className="text-slate-500 flex items-center gap-1"><MapPin className="h-3 w-3" />Province</span><p className="font-medium text-slate-900 mt-0.5">{ticket.consumer?.province ?? '—'}</p></div>
-                  <div><span className="text-slate-500">City</span><p className="font-medium text-slate-900 mt-0.5">{ticket.consumer?.city ?? '—'}</p></div>
-                </div>
-              </PanelCard>
-
-              {/* Service & Case Details */}
-              <PanelCard className="p-4">
-                <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2"><Briefcase className="h-4 w-4 text-primary-500" />Service Details</h3>
-                <div className="grid grid-cols-2 gap-3 text-sm mb-4">
-                  <div><span className="text-slate-500">Service</span><p className="font-medium text-slate-900 mt-0.5">{ticket.service?.name ?? '—'}</p></div>
-                  <div><span className="text-slate-500">Category</span><p className="font-medium text-slate-900 mt-0.5">{ticket.service?.category ?? '—'}</p></div>
-                  <div><span className="text-slate-500">Service City</span><p className="font-medium text-slate-900 mt-0.5">{ticket.serviceCity ?? '—'}</p></div>
-                  <div><span className="text-slate-500">Case Type</span><p className="font-medium text-slate-900 mt-0.5">{ticket.caseType ?? '—'}</p></div>
-                </div>
-                {ticket.formPayload && typeof ticket.formPayload === 'object' && (
-                  <div className="border-t border-slate-100 pt-3">
-                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Case Payload</p>
-                    {renderBenchSection(ticket.formPayload as Record<string, unknown>)}
-                    {renderPayload(
-                      ticket.formPayload as Record<string, unknown>,
-                      // When a structured bench is present, hide the raw JSON
-                      // value and the derived judge_name row to avoid showing
-                      // the same information twice.
-                      (ticket.formPayload as Record<string, unknown>).bench
-                        ? { hideKeys: ['bench', 'judge_name'] }
-                        : { hideKeys: ['bench'] },
-                    )}
-                  </div>
-                )}
-              </PanelCard>
-
-              {/* Representative */}
-              {ticket.assignments?.length > 0 && (
-                <PanelCard className="p-4">
-                  <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2"><Package className="h-4 w-4 text-primary-500" />Assigned Representative</h3>
-                  <div className="grid grid-cols-2 gap-3 text-sm">
-                    <div><span className="text-slate-500">Name</span><p className="font-medium text-slate-900 mt-0.5">{ticket.assignments[0].representative?.name}</p></div>
-                    <div><span className="text-slate-500">Phone</span><p className="font-medium text-slate-900 mt-0.5">{ticket.assignments[0].representative?.phone ?? '—'}</p></div>
-                    <div><span className="text-slate-500">City</span><p className="font-medium text-slate-900 mt-0.5">{ticket.assignments[0].representative?.city ?? '—'}</p></div>
-                    <div><span className="text-slate-500">Court</span><p className="font-medium text-slate-900 mt-0.5">{ticket.assignments[0].representative?.court ?? '—'}</p></div>
-                  </div>
-                </PanelCard>
-              )}
-
-              {/* Charges Breakdown */}
-              <PanelCard className="p-4">
-                <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2"><CreditCard className="h-4 w-4 text-primary-500" />Charges Breakdown</h3>
-                {(() => {
-                  const caps = chargeCapabilitiesFor(ticket.intakeFlow);
-                  const chargeRows: Array<[string, unknown]> = [
-                    ['Service Cost', ticket.serviceCost],
-                    ...(caps.delivery ? [['Delivery Charges', ticket.deliveryCharges] as [string, unknown]] : []),
-                    ...(caps.printing ? [['Printing Charges', ticket.printingCharges] as [string, unknown]] : []),
-                    ...(caps.attestation ? [['Attested Charges', ticket.attestedCharges] as [string, unknown]] : []),
-                    ...(caps.attestation ? [['Non-Attested Charges', ticket.nonAttestedCharges] as [string, unknown]] : []),
-                    ['Additional Charges', ticket.additionalCharges],
-                    ['Additional Service Cost', ticket.additionalServiceCost],
-                    ['Clerk Cost', ticket.clerkCost],
-                    ['Discount', ticket.discountPrice ? `-${Number(ticket.discountPrice).toLocaleString()}` : null],
-                  ];
-                  return (
-                    <div className="space-y-2 text-sm">
-                      {chargeRows.filter(([, val]) => val !== null && val !== undefined && Number(val) !== 0).map(([label, val]) => (
-                        <div key={label as string} className="flex justify-between border-b border-slate-50 pb-1.5">
-                          <span className="text-slate-500">{label}</span>
-                          <span className="font-medium text-slate-800">PKR {Number(val || 0).toLocaleString()}</span>
-                        </div>
-                      ))}
-                      <div className="flex justify-between pt-1 font-semibold text-slate-900">
-                        <span>Total</span><span>PKR {totalCharges.toLocaleString()}</span>
-                      </div>
-                      <div className="flex justify-between text-emerald-700">
-                        <span>Amount Paid</span><span className="font-medium">PKR {Number(ticket.amountPaid || 0).toLocaleString()}</span>
-                      </div>
-                      <div className="flex justify-between text-rose-700">
-                        <span>Remaining</span><span className="font-medium">PKR {Math.max(0, totalCharges - Number(ticket.amountPaid || 0)).toLocaleString()}</span>
-                      </div>
-                      {ticket.remainderFinalizedAt ? (
-                        <div className="pt-1 text-xs text-slate-500">
-                          Remainder finalized on {new Date(ticket.remainderFinalizedAt).toLocaleDateString('en-PK')}
-                        </div>
-                      ) : null}
-                    </div>
-                  );
-                })()}
-              </PanelCard>
-
-              {/* Consumer Notes & Delivery */}
-              {ticket.formPayload && typeof ticket.formPayload === 'object' && (() => {
-                const p = ticket.formPayload as Record<string, unknown>;
-                const notes = typeof p.notes === 'string' ? p.notes.trim() : '';
-                const deliveryMode = p.delivery_mode ? String(p.delivery_mode) : '';
-                const deliveryMethod = p.delivery_method ? String(p.delivery_method) : '';
-                const rawAddr = p.delivery_address;
-                const hasAddr = rawAddr !== undefined && rawAddr !== null && rawAddr !== '';
-                let structured: ReturnType<typeof parseDeliveryAddress> | null = null;
-                let legacyAddr = '';
-                if (hasAddr) {
-                  if (typeof rawAddr === 'string') {
-                    const trimmed = rawAddr.trim();
-                    if (trimmed.startsWith('{')) {
-                      structured = parseDeliveryAddress(rawAddr);
-                    } else {
-                      legacyAddr = trimmed;
-                    }
-                  } else if (typeof rawAddr === 'object') {
-                    structured = parseDeliveryAddress(rawAddr);
-                  }
-                }
-                const showCard = notes || deliveryMode || deliveryMethod || hasAddr;
-                if (!showCard) return null;
-                return (
+              {/* ── Clerk view: only Case Details + Clerk Cost ── */}
+              {isClerkView ? (
+                <>
+                  {/* Service & Case Details (clerk) */}
                   <PanelCard className="p-4">
-                    <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
-                      <Truck className="h-4 w-4 text-primary-500" />Consumer Notes & Delivery
-                    </h3>
-                    <div className="space-y-3 text-sm">
-                      <div>
-                        <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Consumer Note</span>
-                        <p className="mt-1 whitespace-pre-wrap text-slate-800">
-                          {notes || <span className="italic text-slate-400">(no notes)</span>}
-                        </p>
-                      </div>
-                      {(deliveryMode || deliveryMethod) && (
-                        <div className="border-t border-slate-100 pt-3">
-                          <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Delivery</span>
-                          <p className="mt-1 text-slate-800">
-                            {deliveryMode && <span className="font-medium">{deliveryMode}</span>}
-                            {deliveryMode && deliveryMethod && <span className="text-slate-400"> · </span>}
-                            {deliveryMethod}
+                    <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2"><Briefcase className="h-4 w-4 text-primary-500" />Service Details</h3>
+                    <div className="grid grid-cols-2 gap-3 text-sm mb-4">
+                      <div><span className="text-slate-500">Service</span><p className="font-medium text-slate-900 mt-0.5">{ticket.service?.name ?? '—'}</p></div>
+                      <div><span className="text-slate-500">Category</span><p className="font-medium text-slate-900 mt-0.5">{ticket.service?.category ?? '—'}</p></div>
+                      <div><span className="text-slate-500">Service City</span><p className="font-medium text-slate-900 mt-0.5">{ticket.serviceCity ?? '—'}</p></div>
+                      <div><span className="text-slate-500">Case Type</span><p className="font-medium text-slate-900 mt-0.5">{ticket.caseType ?? '—'}</p></div>
+                      {ticket.intakeFlow && (
+                        <div className="col-span-2">
+                          <span className="text-slate-500">Intake Type</span>
+                          <p className="font-medium text-slate-900 mt-0.5">
+                            {(FLOW_LABELS as Record<string, string>)[ticket.intakeFlow] ?? ticket.intakeFlow}
                           </p>
                         </div>
                       )}
-                      {hasAddr && (
-                        <div className="border-t border-slate-100 pt-3">
-                          <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Delivery Address</span>
-                          {structured ? (
-                            <div className="mt-1 grid grid-cols-2 gap-2 text-slate-800">
-                              {structured.house && <div><span className="text-slate-500">House: </span>{structured.house}</div>}
-                              {structured.block && <div><span className="text-slate-500">Block: </span>{structured.block}</div>}
-                              {structured.mainArea && <div><span className="text-slate-500">Main Area: </span>{structured.mainArea}</div>}
-                              {structured.city && <div><span className="text-slate-500">City: </span>{structured.city}</div>}
-                            </div>
-                          ) : (
-                            <p className="mt-1 whitespace-pre-wrap text-slate-800">{legacyAddr}</p>
-                          )}
+                    </div>
+                    {ticket.formPayload && typeof ticket.formPayload === 'object' && (
+                      <div className="border-t border-slate-100 pt-3">
+                        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Case Details</p>
+                        {renderBenchSection(ticket.formPayload as Record<string, unknown>)}
+                        {renderPayload(
+                          ticket.formPayload as Record<string, unknown>,
+                          (ticket.formPayload as Record<string, unknown>).bench
+                            ? { hideKeys: ['bench', 'judge_name'] }
+                            : { hideKeys: ['bench'] },
+                        )}
+                      </div>
+                    )}
+                  </PanelCard>
+
+                  {/* Clerk Cost */}
+                  <PanelCard className="p-4">
+                    <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2"><CreditCard className="h-4 w-4 text-primary-500" />Clerk Cost</h3>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-slate-500">Clerk Cost</span>
+                      <span className="font-medium text-slate-800">
+                        PKR {Number(ticket.clerkCost || 0).toLocaleString()}
+                      </span>
+                    </div>
+                  </PanelCard>
+                </>
+              ) : (
+                <>
+                  {/* ── Admin / Staff full view ── */}
+
+                  {/* Consumer Info */}
+                  <PanelCard className="p-4">
+                    <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2"><User className="h-4 w-4 text-primary-500" />Consumer Information</h3>
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      <div><span className="text-slate-500">Name</span><p className="font-medium text-slate-900 mt-0.5">{ticket.consumer?.name ?? '—'}</p></div>
+                      <div><span className="text-slate-500">Email</span><p className="font-medium text-slate-900 mt-0.5">{ticket.consumer?.email ?? '—'}</p></div>
+                      <div><span className="text-slate-500 flex items-center gap-1"><Phone className="h-3 w-3" />Phone</span><p className="font-medium text-slate-900 mt-0.5">{ticket.consumer?.phone ?? '—'}</p></div>
+                      <div><span className="text-slate-500">CNIC</span><p className="font-medium text-slate-900 mt-0.5">{ticket.consumer?.cnic ?? '—'}</p></div>
+                      <div><span className="text-slate-500 flex items-center gap-1"><MapPin className="h-3 w-3" />Province</span><p className="font-medium text-slate-900 mt-0.5">{ticket.consumer?.province ?? '—'}</p></div>
+                      <div><span className="text-slate-500">City</span><p className="font-medium text-slate-900 mt-0.5">{ticket.consumer?.city ?? '—'}</p></div>
+                    </div>
+                  </PanelCard>
+
+                  {/* Service & Case Details */}
+                  <PanelCard className="p-4">
+                    <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2"><Briefcase className="h-4 w-4 text-primary-500" />Service Details</h3>
+                    <div className="grid grid-cols-2 gap-3 text-sm mb-4">
+                      <div><span className="text-slate-500">Service</span><p className="font-medium text-slate-900 mt-0.5">{ticket.service?.name ?? '—'}</p></div>
+                      <div><span className="text-slate-500">Category</span><p className="font-medium text-slate-900 mt-0.5">{ticket.service?.category ?? '—'}</p></div>
+                      <div><span className="text-slate-500">Service City</span><p className="font-medium text-slate-900 mt-0.5">{ticket.serviceCity ?? '—'}</p></div>
+                      <div><span className="text-slate-500">Case Type</span><p className="font-medium text-slate-900 mt-0.5">{ticket.caseType ?? '—'}</p></div>
+                      {ticket.intakeFlow && (
+                        <div className="col-span-2">
+                          <span className="text-slate-500">Intake Type</span>
+                          <p className="font-medium text-slate-900 mt-0.5">
+                            {(FLOW_LABELS as Record<string, string>)[ticket.intakeFlow] ?? ticket.intakeFlow}
+                          </p>
                         </div>
                       )}
                     </div>
+                    {ticket.formPayload && typeof ticket.formPayload === 'object' && (
+                      <div className="border-t border-slate-100 pt-3">
+                        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Case Payload</p>
+                        {renderBenchSection(ticket.formPayload as Record<string, unknown>)}
+                        {renderPayload(
+                          ticket.formPayload as Record<string, unknown>,
+                          // When a structured bench is present, hide the raw JSON
+                          // value and the derived judge_name row to avoid showing
+                          // the same information twice.
+                          (ticket.formPayload as Record<string, unknown>).bench
+                            ? { hideKeys: ['bench', 'judge_name'] }
+                            : { hideKeys: ['bench'] },
+                        )}
+                      </div>
+                    )}
                   </PanelCard>
-                );
-              })()}
 
-              {/* Clerk Availability Report */}
-              <PanelCard className="p-4">
-                <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
-                  <ClipboardCheck className="h-4 w-4 text-primary-500" />Clerk Availability Report
-                </h3>
-                {ticket.clerkReport ? (
-                  <div className="grid grid-cols-2 gap-3 text-sm">
-                    <div>
-                      <span className="text-slate-500">Attested available</span>
-                      <p className="font-medium text-slate-900 mt-0.5">{ticket.clerkReport.attestedAvailable ? 'Yes' : 'No'}</p>
-                    </div>
-                    <div>
-                      <span className="text-slate-500">Non-Attested available</span>
-                      <p className="font-medium text-slate-900 mt-0.5">{ticket.clerkReport.nonAttestedAvailable ? 'Yes' : 'No'}</p>
-                    </div>
-                    <div>
-                      <span className="text-slate-500">Both</span>
-                      <p className="font-medium text-slate-900 mt-0.5">{ticket.clerkReport.bothAvailable ? 'Yes' : 'No'}</p>
-                    </div>
-                    <div>
-                      <span className="text-slate-500">Partial completion</span>
-                      <p className="font-medium text-slate-900 mt-0.5">{ticket.clerkReport.partialCompletion ? 'Yes' : 'No'}</p>
-                    </div>
-                    {ticket.clerkReport.perPageRateAttested !== null && ticket.clerkReport.perPageRateAttested !== undefined && (
-                      <div>
-                        <span className="text-slate-500">Per-page rate (attested)</span>
-                        <p className="font-medium text-slate-900 mt-0.5">Rs {Number(ticket.clerkReport.perPageRateAttested).toLocaleString()}</p>
+                  {/* Representative */}
+                  {ticket.assignments?.length > 0 && (
+                    <PanelCard className="p-4">
+                      <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2"><Package className="h-4 w-4 text-primary-500" />Assigned Representative</h3>
+                      <div className="grid grid-cols-2 gap-3 text-sm">
+                        <div><span className="text-slate-500">Name</span><p className="font-medium text-slate-900 mt-0.5">{ticket.assignments[0].representative?.name}</p></div>
+                        <div><span className="text-slate-500">Phone</span><p className="font-medium text-slate-900 mt-0.5">{ticket.assignments[0].representative?.phone ?? '—'}</p></div>
+                        <div><span className="text-slate-500">City</span><p className="font-medium text-slate-900 mt-0.5">{ticket.assignments[0].representative?.city ?? '—'}</p></div>
+                        <div><span className="text-slate-500">Court</span><p className="font-medium text-slate-900 mt-0.5">{ticket.assignments[0].representative?.court ?? '—'}</p></div>
                       </div>
-                    )}
-                    {ticket.clerkReport.perPageRateNonAttested !== null && ticket.clerkReport.perPageRateNonAttested !== undefined && (
-                      <div>
-                        <span className="text-slate-500">Per-page rate (non-attested)</span>
-                        <p className="font-medium text-slate-900 mt-0.5">Rs {Number(ticket.clerkReport.perPageRateNonAttested).toLocaleString()}</p>
-                      </div>
-                    )}
-                    {ticket.clerkReport.unavailableReason && (
-                      <div className="col-span-2">
-                        <span className="text-slate-500">Unavailable reason</span>
-                        <p className="font-medium text-slate-900 mt-0.5 whitespace-pre-wrap">{ticket.clerkReport.unavailableReason}</p>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <p className="text-sm italic text-slate-400">(no clerk report yet)</p>
-                )}
-              </PanelCard>
+                    </PanelCard>
+                  )}
 
-              {/* Documents */}
-              {ticket.documents?.length > 0 && (
-                <PanelCard className="p-4">
-                  <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2"><FileText className="h-4 w-4 text-primary-500" />Documents ({ticket.documents.length})</h3>
-                  <ul className="space-y-2">
-                    {ticket.documents.map((doc: any) => (
-                      <li key={doc.id} className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2">
-                        <span className="text-sm text-slate-700 truncate">{doc.name}</span>
-                        <div className="flex items-center gap-3 ml-2 flex-shrink-0">
-                          <label className="flex items-center gap-1 text-xs text-slate-600">
-                            <input
-                              type="checkbox"
-                              checked={!!doc.visibleToConsumer}
-                              onChange={async (e) => {
-                                try {
-                                  await apiClient.patch(`/tickets/${ticketId}/documents/${doc.id}`, {
-                                    visibleToConsumer: e.target.checked,
-                                  });
-                                  await load();
-                                } catch (err) {
-                                  console.error('Visibility toggle failed', err);
-                                }
-                              }}
-                            />
-                            Visible to consumer
-                          </label>
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              try {
-                                const { blob, filename } = await apiClient.getBlob(
-                                  `/tickets/${ticketId}/documents/${doc.id}/download`,
-                                );
-                                const url = URL.createObjectURL(blob);
-                                const a = document.createElement('a');
-                                a.href = url;
-                                a.download = filename || doc.name || 'document';
-                                document.body.appendChild(a);
-                                a.click();
-                                document.body.removeChild(a);
-                                URL.revokeObjectURL(url);
-                              } catch (err) {
-                                console.error('Document download failed', err);
-                              }
-                            }}
-                            className="p-1 text-slate-400 hover:text-primary-600 transition-colors"
-                            aria-label={`Download ${doc.name ?? 'document'}`}
-                          >
-                            <Download className="h-4 w-4" />
-                          </button>
+                  {/* Charges Breakdown */}
+                  <PanelCard className="p-4">
+                    <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2"><CreditCard className="h-4 w-4 text-primary-500" />Charges Breakdown</h3>
+                    {(() => {
+                      const caps = chargeCapabilitiesFor(ticket.intakeFlow);
+                      const chargeRows: Array<[string, unknown]> = [
+                        ['Service Cost', ticket.serviceCost],
+                        ...(caps.delivery ? [['Delivery Charges', ticket.deliveryCharges] as [string, unknown]] : []),
+                        ...(caps.printing ? [['Printing Charges', ticket.printingCharges] as [string, unknown]] : []),
+                        ...(caps.attestation ? [['Attested Charges', ticket.attestedCharges] as [string, unknown]] : []),
+                        ...(caps.attestation ? [['Non-Attested Charges', ticket.nonAttestedCharges] as [string, unknown]] : []),
+                        ['Additional Charges', ticket.additionalCharges],
+                        ['Additional Service Cost', ticket.additionalServiceCost],
+                        ['Clerk Cost', ticket.clerkCost],
+                        ['Discount', ticket.discountPrice ? `-${Number(ticket.discountPrice).toLocaleString()}` : null],
+                      ];
+                      return (
+                        <div className="space-y-2 text-sm">
+                          {chargeRows.filter(([, val]) => val !== null && val !== undefined && Number(val) !== 0).map(([label, val]) => (
+                            <div key={label as string} className="flex justify-between border-b border-slate-50 pb-1.5">
+                              <span className="text-slate-500">{label}</span>
+                              <span className="font-medium text-slate-800">PKR {Number(val || 0).toLocaleString()}</span>
+                            </div>
+                          ))}
+                          <div className="flex justify-between pt-1 font-semibold text-slate-900">
+                            <span>Total</span><span>PKR {totalCharges.toLocaleString()}</span>
+                          </div>
+                          <div className="flex justify-between text-emerald-700">
+                            <span>Amount Paid</span><span className="font-medium">PKR {Number(ticket.amountPaid || 0).toLocaleString()}</span>
+                          </div>
+                          <div className="flex justify-between text-rose-700">
+                            <span>Remaining</span><span className="font-medium">PKR {Math.max(0, totalCharges - Number(ticket.amountPaid || 0)).toLocaleString()}</span>
+                          </div>
+                          {ticket.remainderFinalizedAt ? (
+                            <div className="pt-1 text-xs text-slate-500">
+                              Remainder finalized on {new Date(ticket.remainderFinalizedAt).toLocaleDateString('en-PK')}
+                            </div>
+                          ) : null}
                         </div>
-                      </li>
-                    ))}
-                  </ul>
-                </PanelCard>
+                      );
+                    })()}
+                  </PanelCard>
+
+                  {/* Consumer Notes & Delivery */}
+                  {ticket.formPayload && typeof ticket.formPayload === 'object' && (() => {
+                    const p = ticket.formPayload as Record<string, unknown>;
+                    const notes = typeof p.notes === 'string' ? p.notes.trim() : '';
+                    const deliveryMode = p.delivery_mode ? String(p.delivery_mode) : '';
+                    const deliveryMethod = p.delivery_method ? String(p.delivery_method) : '';
+                    const rawAddr = p.delivery_address;
+                    const hasAddr = rawAddr !== undefined && rawAddr !== null && rawAddr !== '';
+                    let structured: ReturnType<typeof parseDeliveryAddress> | null = null;
+                    let legacyAddr = '';
+                    if (hasAddr) {
+                      if (typeof rawAddr === 'string') {
+                        const trimmed = rawAddr.trim();
+                        if (trimmed.startsWith('{')) {
+                          structured = parseDeliveryAddress(rawAddr);
+                        } else {
+                          legacyAddr = trimmed;
+                        }
+                      } else if (typeof rawAddr === 'object') {
+                        structured = parseDeliveryAddress(rawAddr);
+                      }
+                    }
+                    const showCard = notes || deliveryMode || deliveryMethod || hasAddr;
+                    if (!showCard) return null;
+                    return (
+                      <PanelCard className="p-4">
+                        <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
+                          <Truck className="h-4 w-4 text-primary-500" />Consumer Notes & Delivery
+                        </h3>
+                        <div className="space-y-3 text-sm">
+                          <div>
+                            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Consumer Note</span>
+                            <p className="mt-1 whitespace-pre-wrap text-slate-800">
+                              {notes || <span className="italic text-slate-400">(no notes)</span>}
+                            </p>
+                          </div>
+                          {(deliveryMode || deliveryMethod) && (
+                            <div className="border-t border-slate-100 pt-3">
+                              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Delivery</span>
+                              <p className="mt-1 text-slate-800">
+                                {deliveryMode && <span className="font-medium">{deliveryMode}</span>}
+                                {deliveryMode && deliveryMethod && <span className="text-slate-400"> · </span>}
+                                {deliveryMethod}
+                              </p>
+                            </div>
+                          )}
+                          {hasAddr && (
+                            <div className="border-t border-slate-100 pt-3">
+                              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Delivery Address</span>
+                              {structured ? (
+                                <div className="mt-1 grid grid-cols-2 gap-2 text-slate-800">
+                                  {structured.house && <div><span className="text-slate-500">House: </span>{structured.house}</div>}
+                                  {structured.block && <div><span className="text-slate-500">Block: </span>{structured.block}</div>}
+                                  {structured.mainArea && <div><span className="text-slate-500">Main Area: </span>{structured.mainArea}</div>}
+                                  {structured.city && <div><span className="text-slate-500">City: </span>{structured.city}</div>}
+                                </div>
+                              ) : (
+                                <p className="mt-1 whitespace-pre-wrap text-slate-800">{legacyAddr}</p>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </PanelCard>
+                    );
+                  })()}
+
+                  {/* Clerk Availability Report */}
+                  <PanelCard className="p-4">
+                    <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
+                      <ClipboardCheck className="h-4 w-4 text-primary-500" />Clerk Availability Report
+                    </h3>
+                    {ticket.clerkReport ? (
+                      <div className="grid grid-cols-2 gap-3 text-sm">
+                        <div>
+                          <span className="text-slate-500">Attested available</span>
+                          <p className="font-medium text-slate-900 mt-0.5">{ticket.clerkReport.attestedAvailable ? 'Yes' : 'No'}</p>
+                        </div>
+                        <div>
+                          <span className="text-slate-500">Non-Attested available</span>
+                          <p className="font-medium text-slate-900 mt-0.5">{ticket.clerkReport.nonAttestedAvailable ? 'Yes' : 'No'}</p>
+                        </div>
+                        <div>
+                          <span className="text-slate-500">Both</span>
+                          <p className="font-medium text-slate-900 mt-0.5">{ticket.clerkReport.bothAvailable ? 'Yes' : 'No'}</p>
+                        </div>
+                        <div>
+                          <span className="text-slate-500">Partial completion</span>
+                          <p className="font-medium text-slate-900 mt-0.5">{ticket.clerkReport.partialCompletion ? 'Yes' : 'No'}</p>
+                        </div>
+                        {ticket.clerkReport.perPageRateAttested !== null && ticket.clerkReport.perPageRateAttested !== undefined && (
+                          <div>
+                            <span className="text-slate-500">Per-page rate (attested)</span>
+                            <p className="font-medium text-slate-900 mt-0.5">Rs {Number(ticket.clerkReport.perPageRateAttested).toLocaleString()}</p>
+                          </div>
+                        )}
+                        {ticket.clerkReport.perPageRateNonAttested !== null && ticket.clerkReport.perPageRateNonAttested !== undefined && (
+                          <div>
+                            <span className="text-slate-500">Per-page rate (non-attested)</span>
+                            <p className="font-medium text-slate-900 mt-0.5">Rs {Number(ticket.clerkReport.perPageRateNonAttested).toLocaleString()}</p>
+                          </div>
+                        )}
+                        {ticket.clerkReport.unavailableReason && (
+                          <div className="col-span-2">
+                            <span className="text-slate-500">Unavailable reason</span>
+                            <p className="font-medium text-slate-900 mt-0.5 whitespace-pre-wrap">{ticket.clerkReport.unavailableReason}</p>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="text-sm italic text-slate-400">(no clerk report yet)</p>
+                    )}
+                  </PanelCard>
+
+                  {/* Documents — grouped by category */}
+                  {ticket.documents?.length > 0 && (() => {
+                    const workDocs = (ticket.documents as any[]).filter((d) => d.category !== 'DELIVERABLE_PDF');
+                    const deliverableDocs = (ticket.documents as any[]).filter((d) => d.category === 'DELIVERABLE_PDF');
+                    const renderDocList = (docs: any[]) => (
+                      <ul className="space-y-2">
+                        {docs.map((doc: any) => (
+                          <li key={doc.id} className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2">
+                            <span className="text-sm text-slate-700 truncate">{doc.name}</span>
+                            <div className="flex items-center gap-3 ml-2 flex-shrink-0">
+                              <label className="flex items-center gap-1 text-xs text-slate-600">
+                                <input
+                                  type="checkbox"
+                                  checked={!!doc.visibleToConsumer}
+                                  onChange={async (e) => {
+                                    try {
+                                      await apiClient.patch(`/tickets/${ticketId}/documents/${doc.id}`, {
+                                        visibleToConsumer: e.target.checked,
+                                      });
+                                      await load();
+                                    } catch (err) {
+                                      console.error('Visibility toggle failed', err);
+                                    }
+                                  }}
+                                />
+                                Visible to consumer
+                              </label>
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  try {
+                                    const { blob, filename } = await apiClient.getBlob(
+                                      `/tickets/${ticketId}/documents/${doc.id}/download`,
+                                    );
+                                    const url = URL.createObjectURL(blob);
+                                    const a = document.createElement('a');
+                                    a.href = url;
+                                    a.download = filename || doc.name || 'document';
+                                    document.body.appendChild(a);
+                                    a.click();
+                                    document.body.removeChild(a);
+                                    URL.revokeObjectURL(url);
+                                  } catch (err) {
+                                    console.error('Document download failed', err);
+                                  }
+                                }}
+                                className="p-1 text-slate-400 hover:text-primary-600 transition-colors"
+                                aria-label={`Download ${doc.name ?? 'document'}`}
+                              >
+                                <Download className="h-4 w-4" />
+                              </button>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    );
+                    return (
+                      <PanelCard className="p-4">
+                        <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
+                          <FileText className="h-4 w-4 text-primary-500" />Documents ({ticket.documents.length})
+                        </h3>
+                        {workDocs.length > 0 && (
+                          <div className="mb-3">
+                            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Work documents</p>
+                            {renderDocList(workDocs)}
+                          </div>
+                        )}
+                        {deliverableDocs.length > 0 && (
+                          <div className={workDocs.length > 0 ? 'border-t border-slate-100 pt-3' : ''}>
+                            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Deliverable PDF(s)</p>
+                            {renderDocList(deliverableDocs)}
+                          </div>
+                        )}
+                      </PanelCard>
+                    );
+                  })()}
+
+                  {/* Status History */}
+                  {ticket.history?.length > 0 && (() => {
+                    // QA R5: surface the consumer's intake details (special
+                    // note + delivery mode/method) as a synthetic "Intake"
+                    // entry at the BOTTOM of the timeline so the timeline tells
+                    // the full ticket story end-to-end, not just the workflow
+                    // transitions. The separate Consumer Notes & Delivery
+                    // card above remains as the primary surface; this
+                    // duplication is intentional — operators reading the
+                    // timeline shouldn't have to scroll back up to find what
+                    // the consumer originally asked for.
+                    const p = (ticket.formPayload ?? {}) as Record<string, unknown>;
+                    const intakeNote = typeof p.notes === 'string' ? p.notes.trim() : '';
+                    const intakeMode = p.delivery_mode ? String(p.delivery_mode) : '';
+                    const intakeMethod = p.delivery_method ? String(p.delivery_method) : '';
+                    const intakeBits = [
+                      intakeMode || intakeMethod
+                        ? `Delivery: ${[intakeMode, intakeMethod].filter(Boolean).join(' · ')}`
+                        : '',
+                      intakeNote ? `Special Note: ${intakeNote}` : '',
+                    ].filter(Boolean);
+                    const intakeSummary = intakeBits.join(' · ');
+                    return (
+                      <PanelCard className="p-4">
+                        <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2"><Clock className="h-4 w-4 text-primary-500" />Status Timeline</h3>
+                        <ol className="relative border-l border-slate-200 space-y-4 pl-4">
+                          {ticket.history.map((h: any, i: number) => (
+                            <li key={i} className="relative">
+                              <span className="absolute -left-[19px] flex h-4 w-4 items-center justify-center rounded-full bg-primary-100 ring-4 ring-white">
+                                <span className="h-1.5 w-1.5 rounded-full bg-primary-600" />
+                              </span>
+                              <div className="text-sm">
+                                <span className="font-medium text-slate-900">{h.to}</span>
+                                {h.from && <span className="text-slate-400"> ← {h.from}</span>}
+                                {h.note && <p className="text-xs text-slate-500 mt-0.5">{h.note}</p>}
+                                <p className="text-xs text-slate-400 mt-0.5">{new Date(h.createdAt).toLocaleString('en-PK')}</p>
+                              </div>
+                            </li>
+                          ))}
+                          {intakeSummary && (
+                            <li className="relative">
+                              <span className="absolute -left-[19px] flex h-4 w-4 items-center justify-center rounded-full bg-amber-100 ring-4 ring-white">
+                                <span className="h-1.5 w-1.5 rounded-full bg-amber-600" />
+                              </span>
+                              <div className="text-sm">
+                                <span className="font-medium text-slate-900">Intake</span>
+                                <p className="text-xs text-slate-500 mt-0.5 whitespace-pre-wrap">{intakeSummary}</p>
+                                <p className="text-xs text-slate-400 mt-0.5">{new Date(ticket.createdAt).toLocaleString('en-PK')}</p>
+                              </div>
+                            </li>
+                          )}
+                        </ol>
+                      </PanelCard>
+                    );
+                  })()}
+                </>
               )}
-
-              {/* Status History */}
-              {ticket.history?.length > 0 && (() => {
-                // QA R5: surface the consumer's intake details (special
-                // note + delivery mode/method) as a synthetic "Intake"
-                // entry at the BOTTOM of the timeline so the timeline tells
-                // the full ticket story end-to-end, not just the workflow
-                // transitions. The separate Consumer Notes & Delivery
-                // card above remains as the primary surface; this
-                // duplication is intentional — operators reading the
-                // timeline shouldn't have to scroll back up to find what
-                // the consumer originally asked for.
-                const p = (ticket.formPayload ?? {}) as Record<string, unknown>;
-                const intakeNote = typeof p.notes === 'string' ? p.notes.trim() : '';
-                const intakeMode = p.delivery_mode ? String(p.delivery_mode) : '';
-                const intakeMethod = p.delivery_method ? String(p.delivery_method) : '';
-                const intakeBits = [
-                  intakeMode || intakeMethod
-                    ? `Delivery: ${[intakeMode, intakeMethod].filter(Boolean).join(' · ')}`
-                    : '',
-                  intakeNote ? `Special Note: ${intakeNote}` : '',
-                ].filter(Boolean);
-                const intakeSummary = intakeBits.join(' · ');
-                return (
-                <PanelCard className="p-4">
-                  <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2"><Clock className="h-4 w-4 text-primary-500" />Status Timeline</h3>
-                  <ol className="relative border-l border-slate-200 space-y-4 pl-4">
-                    {ticket.history.map((h: any, i: number) => (
-                      <li key={i} className="relative">
-                        <span className="absolute -left-[19px] flex h-4 w-4 items-center justify-center rounded-full bg-primary-100 ring-4 ring-white">
-                          <span className="h-1.5 w-1.5 rounded-full bg-primary-600" />
-                        </span>
-                        <div className="text-sm">
-                          <span className="font-medium text-slate-900">{h.to}</span>
-                          {h.from && <span className="text-slate-400"> ← {h.from}</span>}
-                          {h.note && <p className="text-xs text-slate-500 mt-0.5">{h.note}</p>}
-                          <p className="text-xs text-slate-400 mt-0.5">{new Date(h.createdAt).toLocaleString('en-PK')}</p>
-                        </div>
-                      </li>
-                    ))}
-                    {intakeSummary && (
-                      <li className="relative">
-                        <span className="absolute -left-[19px] flex h-4 w-4 items-center justify-center rounded-full bg-amber-100 ring-4 ring-white">
-                          <span className="h-1.5 w-1.5 rounded-full bg-amber-600" />
-                        </span>
-                        <div className="text-sm">
-                          <span className="font-medium text-slate-900">Intake</span>
-                          <p className="text-xs text-slate-500 mt-0.5 whitespace-pre-wrap">{intakeSummary}</p>
-                          <p className="text-xs text-slate-400 mt-0.5">{new Date(ticket.createdAt).toLocaleString('en-PK')}</p>
-                        </div>
-                      </li>
-                    )}
-                  </ol>
-                </PanelCard>
-                );
-              })()}
             </>
           )}
         </div>

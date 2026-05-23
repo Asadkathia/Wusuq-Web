@@ -263,6 +263,8 @@ export class TicketsService {
         paymentStatus: ticket.paymentStatus,
         createdBy: ticket.createdBy,
         remainderFinalizedAt: ticket.remainderFinalizedAt,
+        scheduledDate: ticket.scheduledDate,
+        hearingType: ticket.hearingType,
         clerkCost: ticket.clerkCost,
         defaultClerkCost: ticket.defaultClerkCost,
         deliveryCharges: ticket.deliveryCharges,

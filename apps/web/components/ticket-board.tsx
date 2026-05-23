@@ -54,6 +54,8 @@ type TicketRow = {
   intakeFlow?: string | null;
   createdBy?: string | null;
   defaultClerkCost?: number | null;
+  scheduledDate?: string | null;
+  hearingType?: string | null;
   consumer: { id: string; name: string };
   service: { id: string; name: string; category: string; type: string };
 };
@@ -137,12 +139,28 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
     } catch {}
   }, []);
 
-  // Clerk upload panel state
+  // Clerk upload panel state — two-zone multi-file upload
   const [uploadTicket, setUploadTicket] = useState<TicketRow | null>(null);
-  const [uploadFile, setUploadFile] = useState<File | null>(null);
-  const [uploadVisibleToConsumer, setUploadVisibleToConsumer] = useState(false);
+  const [workFiles, setWorkFiles] = useState<File[]>([]);
+  const [deliverableFiles, setDeliverableFiles] = useState<File[]>([]);
   const [uploading, setUploading] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const workInputRef = useRef<HTMLInputElement>(null);
+  const deliverableInputRef = useRef<HTMLInputElement>(null);
+
+  // Admin: bulk assign selected pending tickets
+  const [bulkAssignOpen, setBulkAssignOpen] = useState(false);
+  const [bulkRepresentatives, setBulkRepresentatives] = useState<Representative[]>([]);
+  const [bulkRepresentativeId, setBulkRepresentativeId] = useState('');
+  const [bulkForceAssign, setBulkForceAssign] = useState(false);
+  const [bulkAssignWarning, setBulkAssignWarning] = useState('');
+
+  // Clerk: next-hearing capture (inside costs / completion flow)
+  const [nextHearingEnabled, setNextHearingEnabled] = useState(false);
+  const [nextHearingDate, setNextHearingDate] = useState('');
+  const [nextHearingType, setNextHearingType] = useState('');
+
+  // Selected ticket IDs for multi-ticket pending-list checkboxes (admin only)
+  const [pendingSelected, setPendingSelected] = useState<Record<string, boolean>>({});
 
   // Clerk receipt submission state (ASA-7)
   const [receiptTicket, setReceiptTicket] = useState<TicketRow | null>(null);
@@ -515,26 +533,116 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
     }
   };
 
-  // Clerk: upload document (receipt or case file) for an IN_PROGRESS ticket
+  // Clerk: two-zone multi-file document upload for an IN_PROGRESS ticket
   const submitUpload = async () => {
-    if (!uploadTicket || !uploadFile) return setMessage('Select a file to upload');
+    if (!uploadTicket) return;
+    const allFiles: Array<{ file: File; category: 'WORK_DOCUMENT' | 'DELIVERABLE_PDF' }> = [
+      ...workFiles.map((f) => ({ file: f, category: 'WORK_DOCUMENT' as const })),
+      ...deliverableFiles.map((f) => ({ file: f, category: 'DELIVERABLE_PDF' as const })),
+    ];
+    if (allFiles.length === 0) return setMessage('Select at least one file to upload');
     setUploading(true);
     try {
       const currentTicket = uploadTicket;
-      const formData = new FormData();
-      formData.append('file', uploadFile);
-      formData.append('visibleToConsumer', String(uploadVisibleToConsumer));
-      await apiClient.post(`/tickets/${currentTicket.id}/documents/upload`, formData);
-      setMessage('Document uploaded. Add payments to continue.');
+      let uploadedCount = 0;
+      for (const { file, category } of allFiles) {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('category', category);
+        formData.append('visibleToConsumer', category === 'DELIVERABLE_PDF' ? 'true' : 'false');
+        await apiClient.post(`/tickets/${currentTicket.id}/documents/upload`, formData);
+        uploadedCount++;
+      }
+      setMessage(`${uploadedCount} file(s) uploaded. Add payments to continue.`);
       setUploadTicket(null);
-      setUploadFile(null);
-      setUploadVisibleToConsumer(false);
+      setWorkFiles([]);
+      setDeliverableFiles([]);
       openCostsModal(currentTicket);
       loadTickets();
     } catch (error: any) {
       setMessage(error.message || 'Upload failed');
     } finally {
       setUploading(false);
+    }
+  };
+
+  // Admin: open bulk-assign dialog for selected pending tickets
+  const openBulkAssign = async () => {
+    const ids = status === 'PENDING'
+      ? Object.entries(pendingSelected).filter(([, v]) => v).map(([id]) => id)
+      : selectedIds;
+    if (ids.length === 0) return setMessage('Select at least one ticket to bulk-assign');
+    setBulkRepresentativeId('');
+    setBulkForceAssign(false);
+    setBulkAssignWarning('');
+    try {
+      const reps = await apiClient.get<Representative[]>('/tickets/representatives');
+      setBulkRepresentatives(reps);
+      if (!reps.length) setBulkAssignWarning('No active representatives found.');
+    } catch (error: any) {
+      setBulkRepresentatives([]);
+      setBulkAssignWarning(error?.message || 'Failed to load representatives.');
+    }
+    setBulkAssignOpen(true);
+  };
+
+  const submitBulkAssign = async () => {
+    const ids = status === 'PENDING'
+      ? Object.entries(pendingSelected).filter(([, v]) => v).map(([id]) => id)
+      : selectedIds;
+    if (ids.length === 0) return;
+    if (!bulkRepresentativeId) {
+      setBulkAssignWarning('Select a representative before confirming.');
+      return;
+    }
+    try {
+      setBulkAssignWarning('');
+      const result = await paymentsClient.assignBulk({
+        ticketIds: ids,
+        representativeId: bulkRepresentativeId,
+        forceAssign: bulkForceAssign || undefined,
+      });
+      const skippedMsg = result.skipped.length
+        ? ` Skipped ${result.skipped.length}: ${result.skipped.map((s) => s.reason).join('; ')}`
+        : '';
+      setMessage(`Assigned ${result.assigned.length} ticket(s).${skippedMsg}`);
+      setBulkAssignOpen(false);
+      setPendingSelected({});
+      setSelected({});
+      loadTickets();
+    } catch (error: any) {
+      setBulkAssignWarning(error?.message || 'Bulk assignment failed');
+      setMessage(error?.message || 'Bulk assignment failed');
+    }
+  };
+
+  // Clerk: record next-hearing date on a ticket
+  const submitNextHearing = async (ticketId: string) => {
+    if (!nextHearingDate) return;
+    try {
+      await paymentsClient.recordNextHearing(ticketId, {
+        scheduledDate: nextHearingDate,
+        hearingType: nextHearingType || undefined,
+      });
+      setMessage('Next hearing date recorded.');
+      setNextHearingEnabled(false);
+      setNextHearingDate('');
+      setNextHearingType('');
+      loadTickets();
+    } catch (error: any) {
+      setMessage(error.message || 'Failed to record next hearing');
+    }
+  };
+
+  // Admin: generate a new follow-up ticket from a completed ticket's next-hearing date
+  const generateNextHearing = async (ticket: TicketRow) => {
+    if (!confirm(`Generate a follow-up hearing ticket from ${ticket.batchNo}?`)) return;
+    try {
+      const result = await paymentsClient.generateNextHearing(ticket.id);
+      setMessage(`Follow-up ticket generated: ${result.batchNo}`);
+      loadTickets();
+    } catch (error: any) {
+      setMessage(error.message || 'Failed to generate next-hearing ticket');
     }
   };
 
@@ -583,24 +691,37 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
                 {isAdmin && (
                   <>
                     <span className="hidden sm:block h-6 w-px bg-slate-200 mx-1" aria-hidden="true"></span>
-                    <select
-                      className="w-full sm:w-auto rounded-lg border-0 py-2 pl-3 pr-8 text-slate-900 shadow-sm ring-1 ring-inset ring-border-soft focus:ring-2 focus:ring-primary-600 sm:text-sm"
-                      value={bulkAction}
-                      onChange={(e) => setBulkAction(e.target.value)}
-                    >
-                      <option value="complete">Complete Tickets</option>
-                      <option value="delete">Delete Tickets</option>
-                      <option value="download-invoice">Download Invoice</option>
-                      <option value="send-invoice">Send Invoice</option>
-                    </select>
-                    <button
-                      type="button"
-                      onClick={runBulkAction}
-                      disabled={selectedIds.length === 0}
-                      className="w-full sm:w-auto rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 disabled:opacity-50 transition-colors"
-                    >
-                      Apply
-                    </button>
+                    {status === 'PENDING' ? (
+                      <button
+                        type="button"
+                        onClick={openBulkAssign}
+                        disabled={Object.values(pendingSelected).filter(Boolean).length === 0}
+                        className="w-full sm:w-auto rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-primary-500 disabled:opacity-50 transition-colors"
+                      >
+                        Assign selected to clerk
+                      </button>
+                    ) : (
+                      <>
+                        <select
+                          className="w-full sm:w-auto rounded-lg border-0 py-2 pl-3 pr-8 text-slate-900 shadow-sm ring-1 ring-inset ring-border-soft focus:ring-2 focus:ring-primary-600 sm:text-sm"
+                          value={bulkAction}
+                          onChange={(e) => setBulkAction(e.target.value)}
+                        >
+                          <option value="complete">Complete Tickets</option>
+                          <option value="delete">Delete Tickets</option>
+                          <option value="download-invoice">Download Invoice</option>
+                          <option value="send-invoice">Send Invoice</option>
+                        </select>
+                        <button
+                          type="button"
+                          onClick={runBulkAction}
+                          disabled={selectedIds.length === 0}
+                          className="w-full sm:w-auto rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 disabled:opacity-50 transition-colors"
+                        >
+                          Apply
+                        </button>
+                      </>
+                    )}
                   </>
                 )}
               </div>
@@ -617,8 +738,21 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
                     <input
                       type="checkbox"
                       className="h-4 w-4 rounded border-slate-300 text-primary-600 focus:ring-primary-600"
-                      checked={filteredTickets.length > 0 && selectedIds.length === filteredTickets.length}
-                      onChange={(e) => toggleAll(e.target.checked)}
+                      checked={
+                        filteredTickets.length > 0 &&
+                        (status === 'PENDING'
+                          ? filteredTickets.every((t) => pendingSelected[t.id])
+                          : selectedIds.length === filteredTickets.length)
+                      }
+                      onChange={(e) => {
+                        if (status === 'PENDING') {
+                          const next: Record<string, boolean> = {};
+                          filteredTickets.forEach((t) => { next[t.id] = e.target.checked; });
+                          setPendingSelected(next);
+                        } else {
+                          toggleAll(e.target.checked);
+                        }
+                      }}
                     />
                     <span>Batch No</span>
                   </div>
@@ -641,8 +775,14 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
                       <input
                         type="checkbox"
                         className="h-4 w-4 rounded border-slate-300 text-primary-600 focus:ring-primary-600 mt-0.5"
-                        checked={Boolean(selected[ticket.id])}
-                        onChange={(e) => setSelected(s => ({ ...s, [ticket.id]: e.target.checked }))}
+                        checked={status === 'PENDING' ? Boolean(pendingSelected[ticket.id]) : Boolean(selected[ticket.id])}
+                        onChange={(e) => {
+                          if (status === 'PENDING') {
+                            setPendingSelected((s) => ({ ...s, [ticket.id]: e.target.checked }));
+                          } else {
+                            setSelected((s) => ({ ...s, [ticket.id]: e.target.checked }));
+                          }
+                        }}
                       />
                     ) : null}
                     <div className="text-sm font-medium text-slate-900">{ticket.batchNo}</div>
@@ -766,6 +906,15 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
                         <button onClick={() => openTimeline(ticket.id)} className="text-slate-600 hover:text-slate-900 bg-slate-100 px-3 py-1.5 rounded-md flex items-center gap-1">
                           <History className="h-3.5 w-3.5" /> Timeline
                         </button>
+                        {status === 'COMPLETED' && ticket.scheduledDate && (
+                          <button
+                            onClick={() => generateNextHearing(ticket)}
+                            className="text-teal-600 hover:text-teal-900 bg-teal-50 hover:bg-teal-100 px-3 py-1.5 rounded-md flex items-center gap-1"
+                            title="Generate follow-up hearing ticket"
+                          >
+                            <Clock className="h-3.5 w-3.5" /> Next Hearing
+                          </button>
+                        )}
                         <button onClick={() => regenerateTicket(ticket.id)} className="text-slate-600 hover:text-rose-600 bg-slate-100 hover:bg-rose-50 px-3 py-1.5 rounded-md flex items-center gap-1" title="Regenerate Ticket">
                           <FileOutput className="h-3.5 w-3.5" />
                         </button>
@@ -923,7 +1072,14 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
         </PanelCard>
       )}
 
-      <Dialog open={Boolean(costsTicket)} onOpenChange={(open) => { if (!open) setCostsTicket(null); }}>
+      <Dialog open={Boolean(costsTicket)} onOpenChange={(open) => {
+        if (!open) {
+          setCostsTicket(null);
+          setNextHearingEnabled(false);
+          setNextHearingDate('');
+          setNextHearingType('');
+        }
+      }}>
         <DialogContent size="xl">
           <DialogHeader>
             <DialogTitle>Update ticket payments{costsTicket ? ` — ${costsTicket.batchNo}` : ''}</DialogTitle>
@@ -940,47 +1096,97 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
               return true;
             });
             const noCaps = !caps.attestation && !caps.printing && !caps.delivery && !caps.pdf;
-            if (noCaps) {
-              return (
-                <p className="py-6 text-center text-sm text-slate-500">
-                  This service type has no billable phase-2 charges.
-                </p>
-              );
-            }
             return (
-              <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3">
-                {visibleFields.map(({ label, key }) => (
-                  <FormField key={key} label={label} htmlFor={`cc-${key}`}>
-                    <Input
-                      id={`cc-${key}`}
-                      type="number"
-                      min="0"
-                      value={clerkCosts[key]}
-                      onChange={(e) =>
-                        setClerkCosts((current) => ({ ...current, [key]: e.target.value }))
-                      }
-                      placeholder="0"
-                    />
-                  </FormField>
-                ))}
-                {caps.printing && (
-                  <FormField label="Printing charges" hint="Computed automatically">
-                    <div className="flex h-11 items-center rounded-xl border border-border-soft bg-surface-muted px-4 text-sm">
-                      <span className="flex-1 font-semibold tabular-nums text-slate-900">
-                        PKR {((Number(clerkCosts.noOfPages) || 0) * (Number(clerkCosts.costPerPage) || 0)).toLocaleString()}
-                      </span>
-                      <span className="text-xs text-slate-500">
-                        {clerkCosts.noOfPages || '0'} × {clerkCosts.costPerPage || '0'}
-                      </span>
-                    </div>
-                  </FormField>
+              <div className="space-y-6">
+                {noCaps ? (
+                  <p className="py-6 text-center text-sm text-slate-500">
+                    This service type has no billable phase-2 charges.
+                  </p>
+                ) : (
+                  <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3">
+                    {visibleFields.map(({ label, key }) => (
+                      <FormField key={key} label={label} htmlFor={`cc-${key}`}>
+                        <Input
+                          id={`cc-${key}`}
+                          type="number"
+                          min="0"
+                          value={clerkCosts[key]}
+                          onChange={(e) =>
+                            setClerkCosts((current) => ({ ...current, [key]: e.target.value }))
+                          }
+                          placeholder="0"
+                        />
+                      </FormField>
+                    ))}
+                    {caps.printing && (
+                      <FormField label="Printing charges" hint="Computed automatically">
+                        <div className="flex h-11 items-center rounded-xl border border-border-soft bg-surface-muted px-4 text-sm">
+                          <span className="flex-1 font-semibold tabular-nums text-slate-900">
+                            PKR {((Number(clerkCosts.noOfPages) || 0) * (Number(clerkCosts.costPerPage) || 0)).toLocaleString()}
+                          </span>
+                          <span className="text-xs text-slate-500">
+                            {clerkCosts.noOfPages || '0'} × {clerkCosts.costPerPage || '0'}
+                          </span>
+                        </div>
+                      </FormField>
+                    )}
+                  </div>
+                )}
+
+                {/* Clerk: optional next-hearing capture (PENDING tickets only) */}
+                {isClerk && costsTicket.status === 'IN_PROGRESS' && (
+                  <div className="rounded-xl border border-border-soft p-4 space-y-3">
+                    <label className="flex items-center gap-3 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={nextHearingEnabled}
+                        onChange={(e) => {
+                          setNextHearingEnabled(e.target.checked);
+                          if (!e.target.checked) { setNextHearingDate(''); setNextHearingType(''); }
+                        }}
+                        className="h-4 w-4 rounded border-slate-300 text-primary-600 focus:ring-primary-600"
+                      />
+                      <span className="text-sm font-medium text-slate-700">Record next hearing date</span>
+                    </label>
+                    {nextHearingEnabled && (
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <FormField label="Hearing date" htmlFor="nh-date">
+                          <Input
+                            id="nh-date"
+                            type="date"
+                            value={nextHearingDate}
+                            onChange={(e) => setNextHearingDate(e.target.value)}
+                          />
+                        </FormField>
+                        <FormField label="Hearing type (optional)" htmlFor="nh-type">
+                          <Input
+                            id="nh-type"
+                            type="text"
+                            placeholder="e.g. Arguments, Evidence"
+                            value={nextHearingType}
+                            onChange={(e) => setNextHearingType(e.target.value)}
+                          />
+                        </FormField>
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
             );
           })()}
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setCostsTicket(null)}>Cancel</Button>
-            <Button variant="primary" onClick={submitClerkCosts}>Submit costs</Button>
+            <Button variant="ghost" onClick={() => { setCostsTicket(null); setNextHearingEnabled(false); setNextHearingDate(''); setNextHearingType(''); }}>Cancel</Button>
+            <Button
+              variant="primary"
+              onClick={async () => {
+                if (costsTicket && nextHearingEnabled && nextHearingDate) {
+                  await submitNextHearing(costsTicket.id);
+                }
+                submitClerkCosts();
+              }}
+            >
+              Submit costs
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1033,57 +1239,89 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
         </PanelCard>
       )}
 
-      {/* Clerk: Upload Work Documents Panel */}
+      {/* Clerk: Two-zone Upload Panel (Work Documents + Deliverable PDFs) */}
       {uploadTicket && (
         <PanelCard className="mt-6">
           <div className="flex items-start justify-between">
             <SectionHeader
-              title={`Upload Work Documents — ${uploadTicket.batchNo}`}
-              description="Upload case files, proofs, or supporting documents before entering the payment breakdown."
+              title={`Upload Documents — ${uploadTicket.batchNo}`}
+              description="Upload work documents and deliverable PDFs. Deliverables are automatically visible to the consumer."
             />
-            <button onClick={() => { setUploadTicket(null); setUploadFile(null); setUploadVisibleToConsumer(false); }} className="p-1.5 text-slate-400 hover:text-slate-700 rounded-md transition-colors">
+            <button
+              onClick={() => { setUploadTicket(null); setWorkFiles([]); setDeliverableFiles([]); }}
+              className="p-1.5 text-slate-400 hover:text-slate-700 rounded-md transition-colors"
+            >
               <X className="h-5 w-5" />
             </button>
           </div>
-          <div className="mt-6 space-y-4">
-            <label className="block">
-              <span className="text-sm font-medium text-slate-700">Select File</span>
-              <p className="text-xs text-slate-500 mt-0.5">Allowed: PDF, JPG, PNG, DOC, DOCX — max 10 MB</p>
+          <div className="mt-6 grid gap-6 md:grid-cols-2">
+            {/* Zone 1: Work Documents */}
+            <div className="rounded-xl border border-border-soft p-4 space-y-3">
+              <div>
+                <span className="text-sm font-semibold text-slate-800">Work documents</span>
+                <p className="text-xs text-slate-500 mt-0.5">Internal case files, proofs, notes — not visible to consumer</p>
+              </div>
               <input
-                ref={fileInputRef}
+                ref={workInputRef}
                 type="file"
+                multiple
                 accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
-                className="mt-2 block w-full text-sm text-slate-700 file:mr-4 file:rounded-lg file:border-0 file:bg-primary-50 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-primary-700 hover:file:bg-primary-100"
-                onChange={(e) => setUploadFile(e.target.files?.[0] ?? null)}
+                className="block w-full text-sm text-slate-700 file:mr-4 file:rounded-lg file:border-0 file:bg-indigo-50 file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-indigo-700 hover:file:bg-indigo-100"
+                onChange={(e) => setWorkFiles(Array.from(e.target.files ?? []))}
               />
-            </label>
-            {uploadFile && (
-              <p className="text-xs text-slate-500">Selected: <span className="font-medium text-slate-800">{uploadFile.name}</span> ({(uploadFile.size / 1024).toFixed(1)} KB)</p>
-            )}
-            <label className="flex items-center gap-2 text-sm text-slate-700">
-              <input
-                type="checkbox"
-                checked={uploadVisibleToConsumer}
-                onChange={(e) => setUploadVisibleToConsumer(e.target.checked)}
-              />
-              Visible to consumer
-            </label>
-            <div className="flex gap-3 pt-2">
-              <button
-                onClick={submitUpload}
-                disabled={!uploadFile || uploading}
-                className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-primary-500 disabled:opacity-50 transition-colors flex items-center gap-2"
-              >
-                <Upload className="h-4 w-4" />
-                {uploading ? 'Uploading...' : 'Upload'}
-              </button>
-              <button
-                onClick={() => { setUploadTicket(null); setUploadFile(null); setUploadVisibleToConsumer(false); }}
-                className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm ring-1 ring-inset ring-border-soft hover:bg-slate-50 transition-colors"
-              >
-                Cancel
-              </button>
+              {workFiles.length > 0 && (
+                <ul className="space-y-1">
+                  {workFiles.map((f, i) => (
+                    <li key={i} className="text-xs text-slate-600 flex items-center gap-1">
+                      <span className="font-medium">{f.name}</span>
+                      <span className="text-slate-400">({(f.size / 1024).toFixed(0)} KB)</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
+
+            {/* Zone 2: Deliverable PDFs */}
+            <div className="rounded-xl border border-border-soft p-4 space-y-3">
+              <div>
+                <span className="text-sm font-semibold text-slate-800">Deliverable PDF(s)</span>
+                <p className="text-xs text-slate-500 mt-0.5">Final certified documents — automatically visible to consumer</p>
+              </div>
+              <input
+                ref={deliverableInputRef}
+                type="file"
+                multiple
+                accept=".pdf,.jpg,.jpeg,.png"
+                className="block w-full text-sm text-slate-700 file:mr-4 file:rounded-lg file:border-0 file:bg-emerald-50 file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-emerald-700 hover:file:bg-emerald-100"
+                onChange={(e) => setDeliverableFiles(Array.from(e.target.files ?? []))}
+              />
+              {deliverableFiles.length > 0 && (
+                <ul className="space-y-1">
+                  {deliverableFiles.map((f, i) => (
+                    <li key={i} className="text-xs text-slate-600 flex items-center gap-1">
+                      <span className="font-medium">{f.name}</span>
+                      <span className="text-slate-400">({(f.size / 1024).toFixed(0)} KB)</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+          <div className="mt-4 flex gap-3 pt-2">
+            <button
+              onClick={submitUpload}
+              disabled={(workFiles.length === 0 && deliverableFiles.length === 0) || uploading}
+              className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-primary-500 disabled:opacity-50 transition-colors flex items-center gap-2"
+            >
+              <Upload className="h-4 w-4" />
+              {uploading ? 'Uploading...' : `Upload ${workFiles.length + deliverableFiles.length > 0 ? `(${workFiles.length + deliverableFiles.length})` : ''}`}
+            </button>
+            <button
+              onClick={() => { setUploadTicket(null); setWorkFiles([]); setDeliverableFiles([]); }}
+              className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm ring-1 ring-inset ring-border-soft hover:bg-slate-50 transition-colors"
+            >
+              Cancel
+            </button>
           </div>
         </PanelCard>
       )}
@@ -1278,6 +1516,72 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
         </DialogContent>
       </Dialog>
 
+      {/* Admin: Bulk Assign Modal */}
+      {bulkAssignOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4"
+          onClick={() => setBulkAssignOpen(false)}
+        >
+          <PanelCard
+            className="w-full max-w-lg"
+            onClick={(e: React.MouseEvent) => e.stopPropagation()}
+          >
+            <SectionHeader
+              title="Assign selected tickets to clerk"
+              description={`Assign ${
+                Object.values(pendingSelected).filter(Boolean).length
+              } selected ticket(s) to a representative.`}
+            />
+            <div className="mt-6 space-y-4">
+              <label className="block">
+                <span className="text-sm font-medium text-slate-700">Representative</span>
+                <select
+                  className="mt-1 block w-full rounded-xl border-0 py-2.5 pl-3 pr-10 text-slate-900 ring-1 ring-inset ring-border-soft focus:ring-2 focus:ring-primary-600 sm:text-sm sm:leading-6"
+                  value={bulkRepresentativeId}
+                  onChange={(e) => setBulkRepresentativeId(e.target.value)}
+                >
+                  <option value="">Select Representative</option>
+                  {bulkRepresentatives.map((rep) => (
+                    <option key={rep.id} value={rep.id}>
+                      {rep.name} ({rep.city || '-'} / {rep.district || '-'})
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex items-center gap-3 text-sm text-slate-700 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={bulkForceAssign}
+                  onChange={(e) => setBulkForceAssign(e.target.checked)}
+                  className="h-4 w-4 rounded border-slate-300 text-primary-600 focus:ring-primary-600"
+                />
+                Override city restriction and assign anyway
+              </label>
+              {bulkAssignWarning && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                  {bulkAssignWarning}
+                </div>
+              )}
+              <div className="flex gap-3 pt-2">
+                <button
+                  onClick={submitBulkAssign}
+                  disabled={!bulkRepresentativeId}
+                  className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-primary-500 transition-colors disabled:opacity-50"
+                >
+                  Confirm Assignment
+                </button>
+                <button
+                  onClick={() => setBulkAssignOpen(false)}
+                  className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm ring-1 ring-inset ring-border-soft hover:bg-slate-50 transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </PanelCard>
+        </div>
+      )}
+
       {message && (
         <div className={`mt-4 rounded-lg p-4 text-sm font-medium ${message.toLowerCase().includes('failed') || message.toLowerCase().includes('select') ? 'bg-rose-50 text-rose-800 border border-rose-200' : 'bg-emerald-50 text-emerald-800 border border-emerald-200'}`}>
           {message}
@@ -1285,7 +1589,7 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
       )}
 
       {viewTicketId && (
-        <TicketDetailPanel ticketId={viewTicketId} onClose={() => setViewTicketId(null)} />
+        <TicketDetailPanel ticketId={viewTicketId} onClose={() => setViewTicketId(null)} isClerkView={isClerk} />
       )}
     </div>
   );
