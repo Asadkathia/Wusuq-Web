@@ -454,3 +454,25 @@ export function chargeCapabilitiesFor(flow?: string | null): ServiceChargeCapabi
   if (!flow) return NO_CHARGES;
   return SERVICE_CHARGE_CAPABILITIES[flow] ?? NO_CHARGES;
 }
+
+// Canonical render order for ticket case-details (Spec 3). Keys not listed are
+// appended after, alphabetically. Resolved through PAYLOAD_FIELD_ALIASES so
+// aliased keys land in the right slot.
+export const CASE_DETAILS_ORDER: string[] = [
+  'select_court_city', 'city', 'serviceCity',
+  'select_court', 'select_court_type', 'bench',
+  'select_service',
+  'case_type', 'case_type_other',
+  'case_petition_no',
+  'case_year',
+  'case_title',
+  'judge_designation', 'judge_name',
+  'case_date', 'future_date', 'scheduledDate',
+];
+
+export function orderCaseDetailKeys(keys: string[]): string[] {
+  const rank = new Map(CASE_DETAILS_ORDER.map((k, i) => [k, i]));
+  const known = keys.filter((k) => rank.has(k)).sort((a, b) => rank.get(a)! - rank.get(b)!);
+  const unknown = keys.filter((k) => !rank.has(k)).sort((a, b) => a.localeCompare(b));
+  return [...known, ...unknown];
+}

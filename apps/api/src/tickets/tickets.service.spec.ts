@@ -8,6 +8,7 @@ import {
   requiredFieldsFor,
   paymentModelFor,
   chargeCapabilitiesFor,
+  orderCaseDetailKeys,
 } from '@wusuq/shared';
 import { TicketsService } from './tickets.service';
 
@@ -1662,5 +1663,12 @@ describe('finalizeRemainder (Task 1.4)', () => {
     await expect(
       service.finalizeRemainder('nonexistent', {}, { actorUserId: 'admin-1' }),
     ).rejects.toBeInstanceOf(NotFoundException);
+  });
+});
+
+describe('orderCaseDetailKeys (Spec 3)', () => {
+  it('orders known keys city→court→service→…, appends unknown alphabetically', () => {
+    const out = orderCaseDetailKeys(['case_title', 'zzz_extra', 'select_court_city', 'select_service', 'aaa_extra']);
+    expect(out).toEqual(['select_court_city', 'select_service', 'case_title', 'aaa_extra', 'zzz_extra']);
   });
 });

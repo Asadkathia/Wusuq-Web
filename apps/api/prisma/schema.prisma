@@ -76,6 +76,11 @@ enum WalletTransactionType {
   ADMIN_ADJUSTMENT
 }
 
+enum DocumentCategory {
+  WORK_DOCUMENT
+  DELIVERABLE_PDF
+}
+
 enum InvoiceStatus {
   GENERATED
   SENT
@@ -370,10 +375,11 @@ model TicketDocument {
   type               String
   fileUrl            String
   caption            String?
-  visibleToConsumer  Boolean  @default(false)
+  visibleToConsumer  Boolean          @default(false)
+  category           DocumentCategory @default(WORK_DOCUMENT)
   uploadedByUserId   String?
-  createdAt          DateTime @default(now())
-  ticket             Ticket   @relation(fields: [ticketId], references: [id])
+  createdAt          DateTime         @default(now())
+  ticket             Ticket           @relation(fields: [ticketId], references: [id])
 }
 
 model WalletTransaction {
