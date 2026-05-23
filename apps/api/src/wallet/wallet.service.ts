@@ -83,6 +83,8 @@ export class WalletService {
         currency: dto.currency,
         status: 'PENDING_VERIFICATION',
         receiptUrl: dto.receiptUrl,
+        ticketId: dto.ticketId ?? null,
+        type: dto.ticketId ? 'TICKET_PAYMENT' : 'TOPUP',
       },
     });
 
