@@ -33,6 +33,7 @@ import { SubmitClerkCostsDto } from './dto/submit-clerk-costs.dto';
 import { FinalizeRemainderDto } from './dto/finalize-remainder.dto';
 import { RecordNextHearingDto } from './dto/record-next-hearing.dto';
 import { RejectAssignmentDto } from './dto/reject-assignment.dto';
+import { StatusOverrideDto } from './dto/status-override.dto';
 import { UpdateTicketStatusDto } from './dto/update-ticket-status.dto';
 import { UpdateTicketDto } from './dto/update-ticket.dto';
 import { TicketsService } from './tickets.service';
@@ -321,6 +322,19 @@ export class TicketsController {
     @CurrentUser() actor: JwtUser | undefined,
   ) {
     return this.ticketsService.updateStatus(id, dto.status, dto.note, {
+      actorUserId: actor?.sub,
+      actorEmail: actor?.email,
+    });
+  }
+
+  @RequirePermissions('tickets.write')
+  @Patch(':id/status-override')
+  overrideStatus(
+    @Param('id') id: string,
+    @Body() dto: StatusOverrideDto,
+    @CurrentUser() actor: JwtUser | undefined,
+  ) {
+    return this.ticketsService.overrideStatus(id, dto.status, {
       actorUserId: actor?.sub,
       actorEmail: actor?.email,
     });

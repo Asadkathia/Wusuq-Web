@@ -20,10 +20,6 @@ export class FinanceQueryDto {
 
   @IsOptional()
   @IsString()
-  paymentStatus?: string;
-
-  @IsOptional()
-  @IsString()
   ticketStatus?: string;
 
   @IsOptional()

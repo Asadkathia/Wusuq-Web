@@ -3,8 +3,9 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { InvoiceStatus, Prisma, TicketPaymentStatus } from '@prisma/client';
+import { InvoiceStatus, Prisma, TicketStatus } from '@prisma/client';
 import PDFDocument from 'pdfkit';
+import { isBaseCovered } from '@wusuq/shared';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { FinanceQueryDto } from './dto/finance-query.dto';
@@ -33,9 +34,6 @@ export class FinanceService {
         { consumer: { name: { contains: query.search, mode: 'insensitive' } } },
       ];
     }
-    if (query.paymentStatus)
-      where.paymentStatus =
-        query.paymentStatus as Prisma.TicketWhereInput['paymentStatus'];
     if (query.ticketStatus)
       where.status = query.ticketStatus as Prisma.TicketWhereInput['status'];
     if (query.serviceId) where.serviceId = query.serviceId;
@@ -103,7 +101,6 @@ export class FinanceService {
             toNumber(ticket.additionalCharges) +
             toNumber(ticket.attestedCharges) +
             toNumber(ticket.nonAttestedCharges),
-          paymentStatus: ticket.paymentStatus,
           invoice: ticket.invoice,
         };
       }),
@@ -123,7 +120,7 @@ export class FinanceService {
     dto: ReconcilePaymentDto,
     actor?: { actorUserId?: string; actorEmail?: string },
   ) {
-    const { updatedTicket, dueAfter, paymentStatus } =
+    const { updatedTicket, dueAfter } =
       await this.prisma.$transaction(async (tx) => {
         // Acquire row-level lock to serialize concurrent reconciliations.
         await tx.$queryRaw`SELECT id FROM "Ticket" WHERE id = ${ticketId} FOR UPDATE`;
@@ -148,17 +145,19 @@ export class FinanceService {
         const paidAfter = paidBefore + dto.amount;
         const dueAfter = Math.max(total - paidAfter, 0);
 
-        const paymentStatus: TicketPaymentStatus =
-          dueAfter <= 0
-            ? TicketPaymentStatus.PAID
-            : TicketPaymentStatus.PARTIALLY_PAID;
+        const ticketUpdateData: { amountPaid: number; status?: TicketStatus } = {
+          amountPaid: paidAfter,
+        };
+        if (
+          ticket.status === 'UNPAID' &&
+          isBaseCovered({ amountPaid: paidAfter, serviceCost: ticket.serviceCost })
+        ) {
+          ticketUpdateData.status = 'PAID';
+        }
 
         const nextTicket = await tx.ticket.update({
           where: { id: ticketId },
-          data: {
-            amountPaid: paidAfter,
-            paymentStatus,
-          },
+          data: ticketUpdateData,
         });
 
         await tx.walletTransaction.create({
@@ -176,7 +175,7 @@ export class FinanceService {
         });
 
         await this.upsertInvoice(ticketId, total, paidAfter, tx);
-        return { updatedTicket: nextTicket, dueAfter, paymentStatus };
+        return { updatedTicket: nextTicket, dueAfter };
       });
 
     await this.auditLogsService.create({
@@ -195,7 +194,6 @@ export class FinanceService {
       ticketId,
       amountPaid: toNumber(updatedTicket.amountPaid),
       remaining: dueAfter,
-      paymentStatus,
     };
   }
 

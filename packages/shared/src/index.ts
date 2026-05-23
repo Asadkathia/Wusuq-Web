@@ -13,14 +13,31 @@ export const USER_ROLES = [
 export type UserRole = (typeof USER_ROLES)[number];
 
 export const TICKET_STATUSES = [
-  'PENDING',
+  'UNPAID',
+  'PAID',
   'ASSIGNED',
   'IN_PROGRESS',
   'WAITING_APPROVAL',
   'COMPLETED',
+  'DELIVERED',
 ] as const;
 
 export type TicketStatus = (typeof TICKET_STATUSES)[number];
+
+// Spec 4: paymentStatus is retired — payment state derives from amounts.
+// Single source for the money comparisons used across API + web.
+export function isBaseCovered(t: {
+  amountPaid: unknown;
+  serviceCost: unknown;
+}): boolean {
+  return Number(t.amountPaid ?? 0) >= Number(t.serviceCost ?? 0);
+}
+export function isFullyPaid(t: {
+  amountPaid: unknown;
+  totalAmount: unknown;
+}): boolean {
+  return Number(t.amountPaid ?? 0) >= Number(t.totalAmount ?? 0);
+}
 
 export const PAYMENT_MODES = ['JAZZ_CASH', 'EASY_PAISA', 'BANK_TRANSFER'] as const;
 export type PaymentMode = (typeof PAYMENT_MODES)[number];

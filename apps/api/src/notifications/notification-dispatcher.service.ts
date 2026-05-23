@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { NOTIFICATION_TYPES } from '@wusuq/shared';
+import { NOTIFICATION_TYPES, isFullyPaid } from '@wusuq/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from './notifications.service';
 import { notificationTemplates as T } from './notification-templates';
@@ -460,12 +460,11 @@ export class NotificationDispatcher {
         consumerId: true,
         totalAmount: true,
         amountPaid: true,
-        paymentStatus: true,
       },
     });
     if (!t) return;
     // No-op if the ticket is already fully paid.
-    if (t.paymentStatus === 'PAID') return;
+    if (isFullyPaid(t)) return;
     const remainder = Math.max(0, Number(t.totalAmount) - Number(t.amountPaid));
     // Nothing owed — don't send a zero-value remainder notification.
     if (remainder <= 0) return;

@@ -20,11 +20,13 @@ enum UserRole {
 }
 
 enum TicketStatus {
-  PENDING
+  UNPAID
+  PAID
   ASSIGNED
   IN_PROGRESS
   WAITING_APPROVAL
   COMPLETED
+  DELIVERED
 }
 
 enum PaymentMode {
@@ -36,12 +38,6 @@ enum PaymentMode {
 enum ServiceType {
   JUDICIAL
   NON_JUDICIAL
-}
-
-enum TicketPaymentStatus {
-  UNPAID
-  PARTIALLY_PAID
-  PAID
 }
 
 enum TicketOrigin {
@@ -196,7 +192,7 @@ model Ticket {
   batchNo         String              @unique
   consumerId      String
   serviceId       String
-  status          TicketStatus        @default(PENDING)
+  status          TicketStatus        @default(UNPAID)
   serviceCity     String?
   caseType        String?
   intakeFlow      String?
@@ -218,7 +214,6 @@ model Ticket {
   remainderFinalizedByUserId String?
   totalAmount           Decimal             @default(0)
   amountPaid      Decimal             @default(0)
-  paymentStatus   TicketPaymentStatus @default(UNPAID)
   createdBy       TicketOrigin        @default(ADMIN_STAFF)
   serviceCost     Decimal             @default(0)
   caseId          String?
@@ -247,7 +242,6 @@ model Ticket {
 
   @@index([consumerId])
   @@index([status])
-  @@index([paymentStatus])
   @@index([createdBy])
 }
 

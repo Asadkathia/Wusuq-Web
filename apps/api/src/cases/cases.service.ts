@@ -348,7 +348,7 @@ export class CasesService {
 
     const totalTickets = caseRec.tickets.length;
     const pending = caseRec.tickets.filter(
-      (t) => t.status === 'PENDING',
+      (t) => t.status === 'UNPAID' || t.status === 'PAID',
     ).length;
     const inProgress = caseRec.tickets.filter(
       (t) => t.status === 'IN_PROGRESS' || t.status === 'ASSIGNED',

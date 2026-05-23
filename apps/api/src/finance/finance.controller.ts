@@ -105,7 +105,7 @@ export class FinanceController {
           r.totalAmount ?? 0,
           r.amountPaid ?? 0,
           r.remaining ?? 0,
-          r.paymentStatus ?? '',
+          '',
         ]
           .map((v) => `"${String(v).replace(/"/g, '""')}"`)
           .join(','),

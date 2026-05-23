@@ -57,7 +57,7 @@ describe('PaymentsService', () => {
         id: 'tkt_1',
         consumerId: 'usr_1',
         totalAmount: new Decimal('500'),
-        paymentStatus: 'UNPAID',
+        status: 'UNPAID',
       });
       prisma.payment.create.mockResolvedValue({
         id: 'pay_1',
@@ -83,7 +83,7 @@ describe('PaymentsService', () => {
         id: 'tkt_1',
         consumerId: 'usr_other',
         totalAmount: new Decimal('500'),
-        paymentStatus: 'UNPAID',
+        status: 'UNPAID',
       });
       await expect(service.initiate('tkt_1', 'usr_1')).rejects.toThrow(
         /forbidden/i,
@@ -95,10 +95,10 @@ describe('PaymentsService', () => {
         id: 'tkt_1',
         consumerId: 'usr_1',
         totalAmount: new Decimal('500'),
-        paymentStatus: 'PAID',
+        status: 'PAID',
       });
       await expect(service.initiate('tkt_1', 'usr_1')).rejects.toThrow(
-        /already paid/i,
+        /not awaiting payment/i,
       );
     });
   });
@@ -121,7 +121,12 @@ describe('PaymentsService', () => {
         providerTxnId: 'MOCK-x',
         status: 'INITIATED',
         amount: new Decimal('500'),
-        ticket: { id: 'tkt_1', totalAmount: new Decimal('500') },
+        ticket: {
+          id: 'tkt_1',
+          totalAmount: new Decimal('500'),
+          serviceCost: new Decimal('500'),
+          status: 'UNPAID',
+        },
       });
 
       await service.handleWebhook(
@@ -133,7 +138,7 @@ describe('PaymentsService', () => {
       expect(prisma.ticket.update).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { id: 'tkt_1' },
-          data: expect.objectContaining({ paymentStatus: 'PAID' }),
+          data: expect.objectContaining({ status: 'PAID' }),
         }),
       );
       expect(prisma.invoice.upsert).toHaveBeenCalled();

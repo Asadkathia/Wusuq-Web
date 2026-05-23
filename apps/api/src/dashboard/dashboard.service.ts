@@ -31,7 +31,7 @@ export class DashboardService {
       this.prisma.ticket.count({
         where: {
           consumerId: userId,
-          status: 'PENDING',
+          status: 'UNPAID',
         },
       }),
       this.prisma.ticket.count({
@@ -53,7 +53,7 @@ export class DashboardService {
       this.prisma.ticket.aggregate({
         where: {
           consumerId: userId,
-          paymentStatus: { not: 'PAID' },
+          status: { notIn: ['DELIVERED'] },
         },
         _sum: {
           totalAmount: true,
@@ -74,7 +74,6 @@ export class DashboardService {
           id: true,
           batchNo: true,
           status: true,
-          paymentStatus: true,
           totalAmount: true,
           createdAt: true,
           service: { select: { name: true } },
@@ -335,9 +334,9 @@ export class DashboardService {
         orderBy: { createdAt: 'asc' },
         select: { createdAt: true },
       }),
-      this.prisma.ticket.count({ where: { status: 'PENDING' } }),
+      this.prisma.ticket.count({ where: { status: 'UNPAID' } }),
       this.prisma.ticket.findFirst({
-        where: { status: 'PENDING' },
+        where: { status: 'UNPAID' },
         orderBy: { createdAt: 'asc' },
         select: { createdAt: true },
       }),
@@ -358,7 +357,7 @@ export class DashboardService {
       }),
       this.prisma.ticket.aggregate({
         where: {
-          paymentStatus: { not: 'PAID' },
+          status: { notIn: ['DELIVERED'] },
           createdAt: { lt: thirtyDaysAgo },
         },
         _sum: { totalAmount: true, amountPaid: true },
@@ -382,11 +381,11 @@ export class DashboardService {
         severity: 'warning' as const,
       },
       {
-        key: 'pending_tickets',
-        label: 'Tickets pending assignment',
+        key: 'unpaid_tickets',
+        label: 'Tickets awaiting payment',
         count: pendingTicketsCount,
         oldestAgeHours: ageHours(oldestPendingTicket?.createdAt),
-        deepLink: '/tickets/pending',
+        deepLink: '/tickets/unpaid',
         severity: 'info' as const,
       },
       {

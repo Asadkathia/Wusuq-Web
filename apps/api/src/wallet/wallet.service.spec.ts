@@ -152,7 +152,14 @@ describe('WalletService.adjustWallet (Task 1.5)', () => {
       walletTransaction: { create: walletTransactionCreate },
       ticket: {
         findMany: ticketFindMany,
-        findUnique: jest.fn().mockResolvedValue(null),
+        findUnique: jest.fn().mockResolvedValue({
+          id: 't-1',
+          batchNo: 'B-1',
+          totalAmount: 0,
+          amountPaid: 0,
+          serviceCost: 0,
+          status: 'UNPAID',
+        }),
         update: jest.fn(),
       },
     };
@@ -244,7 +251,8 @@ describe('WalletService.applyPaymentToTicket type tagging (Task 1.5)', () => {
           batchNo: 'B-1',
           totalAmount: 500,
           amountPaid: 0,
-          paymentStatus: 'UNPAID',
+          serviceCost: 500,
+          status: 'UNPAID',
         }),
         update: jest.fn().mockResolvedValue({}),
       },
@@ -296,6 +304,7 @@ describe('WalletService.verifyTopup auto-deduction', () => {
       batchNo: string;
       totalAmount: number;
       amountPaid: number;
+      serviceCost?: number;
     }>;
     initialBalance: number;
   }) {
@@ -304,7 +313,7 @@ describe('WalletService.verifyTopup auto-deduction', () => {
     const ticketState = new Map(
       opts.tickets.map((t) => [
         t.id,
-        { ...t, paymentStatus: 'UNPAID' as const },
+        { ...t, status: 'UNPAID' as const, serviceCost: t.serviceCost ?? t.totalAmount },
       ]),
     );
     const tx: any = {
@@ -324,7 +333,8 @@ describe('WalletService.verifyTopup auto-deduction', () => {
                     batchNo: t.batchNo,
                     totalAmount: t.totalAmount,
                     amountPaid: t.amountPaid,
-                    paymentStatus: t.paymentStatus,
+                    serviceCost: t.serviceCost,
+                    status: t.status,
                   }
                 : null;
             },
