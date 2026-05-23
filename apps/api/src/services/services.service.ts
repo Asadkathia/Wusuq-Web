@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateServiceDto } from './dto/create-service.dto';
 import { ServiceType } from '@prisma/client';
+import { SPECIAL_COURTS } from '../geo/court-expansion';
 
 const FLOWS = [
   {
@@ -541,44 +542,7 @@ const DEFAULT_SERVICE_CATALOG = [
     category: 'Judicial',
     courtLevel: 'Special Court',
     description: 'Judicial service for special and tribunal matters.',
-    courts: [
-      'Accountability Courts',
-      'Anti-Corruption Courts (Provincial)',
-      'Anti-Terrorism Courts',
-      'Anti-Dumping Appellate Tribunal no bail',
-      'Appellate Tribunals Inland Revenue',
-      'Banking Courts',
-      'Banking Muhtasib',
-      'Board of Revenue',
-      'Child Protection Court',
-      'Commercial Courts',
-      'Competition Appellate Tribunal',
-      'Consumer Courts',
-      'Customs Appellate Tribunals',
-      'Drug Courts',
-      'Environmental Protection Tribunals',
-      'Election Tribunal',
-      'Federal Insurance Tribunal',
-      'Federal Ombudsman',
-      'Federal Service Tribunal',
-      'Federal tax ombudsman',
-      'Foreign Exchange Regulation Appellate Boards',
-      'Income Tax Appellate Tribunal',
-      'Insurance Appellate Tribunal',
-      'Intellectual Property Tribunal',
-      'Labor Appellate Tribunals',
-      'Labor Courts',
-      'Lahore Development Authority Tribunal',
-      'National industrial relations commission (NIRC)',
-      'Pakistan Maritime Carriage Appellate Tribunal',
-      'Provincial Ombudsman',
-      'Provincial Service Tribunals',
-      'Special Courts (Central)',
-      'Special Courts (Control of Narcotic Substances)',
-      'Special Courts (Customs, Taxation Anti-Smuggling)',
-      'Special Courts (Offences in Banks)',
-      'Special Courts of Public Property (Removal of Encroachment)',
-    ],
+    courts: [...SPECIAL_COURTS],
   },
   {
     id: 'svc_judicial_high_court',
