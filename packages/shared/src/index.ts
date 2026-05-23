@@ -181,20 +181,23 @@ export const PAYLOAD_FIELD_ALIASES: Record<string, readonly string[]> = {
 export const REQUIRED_FIELDS_OPTIONAL_BY_TIER: Record<string, Partial<Record<CourtTier, string[]>>> = {
   judicial_case_files: {
     // QA PDF #23-#27 + B6/B7: per-tier optional fields (red ✗ in the matrix).
+    // 2026-05-23 B1: judge_name added to base; drop it for all non-lower tiers.
     lower:   ['case_petition_no', 'case_year', 'case_type'],
-    high:    ['case_year', 'case_type'],
-    special: ['case_petition_no'],
-    shariat: ['case_year', 'case_type'],
-    supreme: ['case_year', 'case_type', 'case_title'],
-    fcc:     ['case_year', 'case_type', 'case_title'],
+    high:    ['case_year', 'case_type', 'judge_name'],
+    special: ['case_petition_no', 'judge_name'],
+    shariat: ['case_year', 'case_type', 'judge_name'],
+    supreme: ['case_year', 'case_type', 'case_title', 'judge_name'],
+    fcc:     ['case_year', 'case_type', 'case_title', 'judge_name'],
   },
   judicial_case_information: {
-    lower:   ['case_petition_no', 'case_year', 'case_type'],
-    high:    ['case_year', 'case_type'],
-    special: ['case_petition_no'],
-    shariat: ['case_year', 'case_type'],
-    supreme: ['case_year', 'case_type'],
-    fcc:     ['case_year', 'case_type'],
+    // 2026-05-23 B1: judge_name added to base; drop for all non-lower tiers.
+    // 2026-05-23 B2: case_type removed from base list entirely; drops cleaned.
+    lower:   ['case_petition_no', 'case_year'],
+    high:    ['case_year', 'judge_name'],
+    special: ['case_petition_no', 'judge_name'],
+    shariat: ['case_year', 'judge_name'],
+    supreme: ['case_year', 'judge_name'],
+    fcc:     ['case_year', 'judge_name'],
   },
   judicial_power_of_attorney: {
     lower:   ['case_petition_no', 'case_year', 'case_type'],

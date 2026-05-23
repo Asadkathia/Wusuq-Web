@@ -537,6 +537,12 @@ const caseFilesSteps: IntakeStep[] = [
     title: 'Case Details',
     fields: [
       {
+        key: 'case_date',
+        label: 'Previous Case Date',
+        type: 'date',
+        hint: 'Date of the last hearing or order on this case.',
+      },
+      {
         key: 'case_status',
         label: 'Case Status',
         type: 'radio',
@@ -627,17 +633,20 @@ const caseFilesSteps: IntakeStep[] = [
         hint: 'Title of the presiding judge — match the most recent order sheet.',
       },
       {
+        key: 'judge_name',
+        label: 'Judge Name',
+        type: 'text',
+        required: true,
+        // 2026-05-23 B1: judge_name mandatory for Lower Court only.
+        requiredByCourtTier: { lower: true, high: false, special: false, shariat: false, supreme: false, fcc: false },
+        hint: 'Name of the presiding judge — match the most recent order sheet.',
+      },
+      {
         key: 'case_date_status',
         label: 'Case Date Status',
         type: 'radio',
         options: ['Known', 'Unknown'],
         hint: "Pick 'Unknown' if you can't find the date on your papers — we'll do our best with what we have.",
-      },
-      {
-        key: 'case_date',
-        label: 'Previous Case Date',
-        type: 'date',
-        hint: 'Date of the last hearing or order on this case.',
       },
       {
         key: 'future_date',
@@ -714,27 +723,15 @@ const caseInformationSteps: IntakeStep[] = [
   {
     title: 'Case Details',
     fields: [
+      // 2026-05-23 B3: case_date moved to first position.
       {
-        key: 'case_type',
-        label: 'Case Type',
-        type: 'select',
-        required: true,
-        options: [],
-        // PDF #34 marks case_type optional for Lower Case Info. Higher tiers
-        // aren't separately annotated; mirror the Case-Files Special-Court
-        // rule (PDF #25) so Special keeps it required, others optional.
-        requiredByCourtTier: { lower: false, high: false, special: true, shariat: false, supreme: false, fcc: false },
-        hint: "Pick the case category as printed on the petition or order sheet. Choose 'Other' if your category isn't listed.",
+        key: 'case_date',
+        label: 'Case Date',
+        type: 'date',
+        hint: 'Date of the last hearing or order on this case.',
       },
-      {
-        key: 'case_type_other',
-        label: 'Specify case type',
-        type: 'text',
-        required: false,
-        placeholder: 'Type the case type as it appears on your record',
-        showWhen: { field: 'case_type', value: 'Other' },
-        hint: 'Type the case category exactly as it appears on your court record.',
-      },
+      // 2026-05-23 B2: case_type + case_type_other removed (Case Info is
+      // pending-only — no case type picker needed).
       {
         key: 'case_no',
         label: 'Case No',
@@ -787,10 +784,13 @@ const caseInformationSteps: IntakeStep[] = [
         hint: 'Title of the presiding judge — match the most recent order sheet.',
       },
       {
-        key: 'case_date',
-        label: 'Case Date',
-        type: 'date',
-        hint: 'Date of the last hearing or order on this case.',
+        key: 'judge_name',
+        label: 'Judge Name',
+        type: 'text',
+        required: true,
+        // 2026-05-23 B1: judge_name mandatory for Lower Court only.
+        requiredByCourtTier: { lower: true, high: false, special: false, shariat: false, supreme: false, fcc: false },
+        hint: 'Name of the presiding judge — match the most recent order sheet.',
       },
     ],
   },
@@ -868,6 +868,17 @@ const caseSearchSteps: IntakeStep[] = [
       },
       // Case Details tab fields — visible for 'details' and 'both'. All
       // optional (PDF #37: "Remove all * required asterisks").
+      // 2026-05-23 B3: case_date leads the Case Details group; showWhen preserved.
+      // 5-19-26 CS#4 + 5-16-26 Case Search Page 2: capture a date for
+      // Pending / Unknown cases too — drives the years-since pricing the
+      // owner wants (Rs 2,000 per year-back). decided_date covers Decided.
+      {
+        key: 'case_date',
+        label: 'Case Date',
+        type: 'date',
+        showWhen: { field: 'case_status', valueIn: ['Pending Case', 'Unknown Case'] },
+        hint: 'Date of the last hearing or order, if known.',
+      },
       {
         key: 'case_status',
         label: 'Case Status',
@@ -932,16 +943,6 @@ const caseSearchSteps: IntakeStep[] = [
         showWhen: { field: 'case_status', value: 'Decided Case' },
         hint: 'Date the case was decided, per the final court order.',
       },
-      // 5-19-26 CS#4 + 5-16-26 Case Search Page 2: capture a date for
-      // Pending / Unknown cases too — drives the years-since pricing the
-      // owner wants (Rs 2,000 per year-back). decided_date covers Decided.
-      {
-        key: 'case_date',
-        label: 'Case Date',
-        type: 'date',
-        showWhen: { field: 'case_status', valueIn: ['Pending Case', 'Unknown Case'] },
-        hint: 'Date of the last hearing or order, if known.',
-      },
     ],
   },
   {
@@ -961,15 +962,8 @@ const caseSearchSteps: IntakeStep[] = [
         type: 'textarea',
         showWhen: { field: 'delivery_mode', value: 'courier' },
       },
-      // 5-19-26 CS set-type unblock: case_search pricing isn't keyed on
-      // set_type (the DB only carries `current`-band, set-type-null rules),
-      // so /pricing-rules/availability returns all options as unavailable
-      // and the consumer can't pick anything. Drop `required` on set_type
-      // here so the wizard treats an unset value as "no preference" —
-      // quantity sub-fields stay required only when a set type IS chosen.
-      ...SET_TYPE_WITH_QUANTITIES.map((f) =>
-        f.key === 'set_type' ? { ...f, required: false } : f,
-      ),
+      // 2026-05-23 B4: attested/non-attested set_type restricted to Case Files
+      // only. Removed SET_TYPE_WITH_QUANTITIES spread from Case Search.
       { key: 'notes', label: 'Notes', type: 'textarea' },
     ],
   },
@@ -1024,6 +1018,15 @@ const caseFilingSteps: IntakeStep[] = [
   {
     title: 'Case Details',
     fields: [
+      // 2026-05-23 B3: Pending-case case_date moved to first position; showWhen
+      // preserved. New-case "Date of Institution" (same key) stays in place.
+      {
+        key: 'case_date',
+        label: 'Case Date',
+        type: 'date',
+        showWhen: { field: 'case_status', value: 'Pending Case' },
+        hint: 'Date of the last hearing or order on this case.',
+      },
       {
         key: 'case_status',
         label: 'Case Status',
@@ -1098,13 +1101,6 @@ const caseFilingSteps: IntakeStep[] = [
         hint: "Pick 'Unknown' if you can't find the date on your papers — we'll do our best with what we have.",
       },
       {
-        key: 'case_date',
-        label: 'Case Date',
-        type: 'date',
-        showWhen: { field: 'case_status', value: 'Pending Case' },
-        hint: 'Date of the last hearing or order on this case.',
-      },
-      {
         // QA R4: for new filings, the clerk needs the Date of Institution
         // (i.e. when the case will be / has been filed). Same canonical
         // payload key (`case_date`) so the API normalises identically; the
@@ -1156,6 +1152,13 @@ const powerOfAttorneySteps: IntakeStep[] = [
   {
     title: 'Case Details',
     fields: [
+      // 2026-05-23 B3: case_date moved to first position; showWhen preserved.
+      {
+        key: 'case_date',
+        label: 'Case Date',
+        type: 'date',
+        hint: 'Date of the last hearing or order on this case.',
+      },
       {
         key: 'case_status',
         label: 'Case Status',
@@ -1210,12 +1213,6 @@ const powerOfAttorneySteps: IntakeStep[] = [
         type: 'radio',
         options: ['Known', 'Unknown'],
         hint: "Pick 'Unknown' if you can't find the date on your papers — we'll do our best with what we have.",
-      },
-      {
-        key: 'case_date',
-        label: 'Case Date',
-        type: 'date',
-        hint: 'Date of the last hearing or order on this case.',
       },
       {
         key: 'future_date',
@@ -1281,6 +1278,21 @@ const copyOfFirSteps: IntakeStep[] = [
   {
     title: 'Request Details',
     fields: [
+      // 2026-05-23 B3: case_date + date_unknow moved to first; showWhen preserved.
+      {
+        key: 'case_date',
+        label: 'Case Date',
+        type: 'date',
+        hint: 'Date of the last hearing or order on this case.',
+        showWhen: { field: 'fir_mode', value: 'have_fir_number' },
+      },
+      {
+        key: 'date_unknow',
+        label: 'Date Unknown',
+        type: 'radio',
+        options: ['No', 'Yes'],
+        showWhen: { field: 'fir_mode', value: 'have_fir_number' },
+      },
       // have_fir_number mode — the original Copy of FIR fields.
       {
         key: 'fir_no',
@@ -1309,20 +1321,6 @@ const copyOfFirSteps: IntakeStep[] = [
         label: 'Case Title',
         type: 'text',
         required: true,
-        showWhen: { field: 'fir_mode', value: 'have_fir_number' },
-      },
-      {
-        key: 'case_date',
-        label: 'Case Date',
-        type: 'date',
-        hint: 'Date of the last hearing or order on this case.',
-        showWhen: { field: 'fir_mode', value: 'have_fir_number' },
-      },
-      {
-        key: 'date_unknow',
-        label: 'Date Unknown',
-        type: 'radio',
-        options: ['No', 'Yes'],
         showWhen: { field: 'fir_mode', value: 'have_fir_number' },
       },
       // search_by_cnic mode — the Search Criminal Record fields.
@@ -1381,7 +1379,8 @@ const copyOfFirSteps: IntakeStep[] = [
         type: 'textarea',
         showWhen: { field: 'delivery_mode', value: 'courier' },
       },
-      ...SET_TYPE_WITH_QUANTITIES,
+      // 2026-05-23 B4: SET_TYPE_WITH_QUANTITIES removed (attested/non-attested
+      // restricted to Case Files only).
       { key: 'notes', label: 'Notes', type: 'textarea' },
     ],
   },
@@ -1411,15 +1410,7 @@ const registryDeedSteps: IntakeStep[] = [
   {
     title: 'Case Particulars',
     fields: [
-      { key: 'doc_no', label: 'Doc No.', type: 'text', required: true },
-      {
-        key: 'year',
-        label: 'Year',
-        type: 'year_select',
-        required: true,
-        hint: 'Year the case was filed (per the order sheet or petition heading).',
-      },
-      { key: 'case_title', label: 'Case Title', type: 'text', required: true },
+      // 2026-05-23 B3: case_date + date_unknow moved to first position.
       {
         key: 'case_date',
         label: 'Case Date',
@@ -1432,6 +1423,15 @@ const registryDeedSteps: IntakeStep[] = [
         type: 'radio',
         options: ['No', 'Yes'],
       },
+      { key: 'doc_no', label: 'Doc No.', type: 'text', required: true },
+      {
+        key: 'year',
+        label: 'Year',
+        type: 'year_select',
+        required: true,
+        hint: 'Year the case was filed (per the order sheet or petition heading).',
+      },
+      { key: 'case_title', label: 'Case Title', type: 'text', required: true },
     ],
   },
   {
@@ -1450,7 +1450,8 @@ const registryDeedSteps: IntakeStep[] = [
         type: 'textarea',
         showWhen: { field: 'delivery_mode', value: 'courier' },
       },
-      ...SET_TYPE_WITH_QUANTITIES,
+      // 2026-05-23 B4: SET_TYPE_WITH_QUANTITIES removed (attested/non-attested
+      // restricted to Case Files only).
       { key: 'notes', label: 'Notes', type: 'textarea' },
     ],
   },

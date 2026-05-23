@@ -51,6 +51,7 @@ const REQUIRED_FIELDS_BY_FLOW: Record<string, string[]> = {
     'case_type',
     'case_status',
     'case_title',
+    'judge_name',
     'sets',
     'set_type',
     'delivery_mode',
@@ -61,8 +62,8 @@ const REQUIRED_FIELDS_BY_FLOW: Record<string, string[]> = {
     'select_court_city',
     'case_petition_no',
     'case_year',
-    'case_type',
     'case_title',
+    'judge_name',
   ],
   judicial_case_search: [
     'select_service',
@@ -73,8 +74,6 @@ const REQUIRED_FIELDS_BY_FLOW: Record<string, string[]> = {
     'case_type',
     'case_status',
     'case_title',
-    'sets',
-    'set_type',
     'delivery_mode',
   ],
   judicial_case_filing: [
@@ -111,8 +110,6 @@ const REQUIRED_FIELDS_BY_FLOW: Record<string, string[]> = {
     'case_title',
     'city_type',
     'delivery_mode',
-    'sets',
-    'set_type',
   ],
   non_judicial_registry_deed: [
     'office_name',
@@ -122,8 +119,6 @@ const REQUIRED_FIELDS_BY_FLOW: Record<string, string[]> = {
     'year',
     'case_title',
     'delivery_mode',
-    'sets',
-    'set_type',
   ],
   non_judicial_criminal_record_search: [
     'province',

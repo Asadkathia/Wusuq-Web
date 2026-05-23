@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
+import { requiredFieldsFor } from '@wusuq/shared';
 import { TicketsService } from './tickets.service';
 
 function makeDispatcher() {
@@ -872,8 +873,8 @@ describe('TicketsService', () => {
             select_court_city: 'x',
             case_petition_no: '1',
             case_year: '2024',
-            case_type: 'civil',
             case_title: 'A vs B',
+            judge_name: 'Judge Smith',
           },
         } as never,
         { actorUserId: 'consumer-1', actorEmail: 'c@x.com' },
@@ -894,8 +895,8 @@ describe('TicketsService', () => {
             select_court_city: 'x',
             case_petition_no: '1',
             case_year: '2024',
-            case_type: 'civil',
             case_title: 'A vs B',
+            judge_name: 'Judge Smith',
           },
         } as never,
         { actorUserId: 'admin-1', actorEmail: 'a@x.com' },
@@ -915,8 +916,8 @@ describe('TicketsService', () => {
           select_court_city: 'x',
           case_petition_no: '1',
           case_year: '2024',
-          case_type: 'civil',
           case_title: 'A vs B',
+          judge_name: 'Judge Smith',
         },
       } as never);
       expect(created[0]?.data.createdBy).toBe('ADMIN_STAFF');
@@ -1041,11 +1042,87 @@ describe('TicketsService', () => {
         createdBy: 'CONSUMER',
         paymentStatus: 'UNPAID',
       });
-      const updated = await service.updateStatus('tkt-1', 'ASSIGNED', undefined, {
-        actorUserId: 'admin-1',
-      });
+      const updated = await service.updateStatus(
+        'tkt-1',
+        'ASSIGNED',
+        undefined,
+        {
+          actorUserId: 'admin-1',
+        },
+      );
       expect(updated.status).toBe('ASSIGNED');
       expect(prisma.ticket.update).toHaveBeenCalled();
+    });
+  });
+
+  // ─── B1: judge_name lower-court requirement ───────────────────────────────
+
+  const CASE_FILES_BASE_WITH_JUDGE = [
+    'select_service',
+    'select_court',
+    'select_court_city',
+    'case_petition_no',
+    'case_year',
+    'case_type',
+    'case_status',
+    'case_title',
+    'judge_name',
+    'sets',
+    'set_type',
+    'delivery_mode',
+  ];
+
+  describe('judge_name lower-court requirement', () => {
+    it('requires judge_name for LOWER tier', () => {
+      expect(
+        requiredFieldsFor(
+          'judicial_case_files',
+          CASE_FILES_BASE_WITH_JUDGE,
+          'lower',
+        ),
+      ).toContain('judge_name');
+    });
+    it('drops judge_name for HIGH tier', () => {
+      expect(
+        requiredFieldsFor(
+          'judicial_case_files',
+          CASE_FILES_BASE_WITH_JUDGE,
+          'high',
+        ),
+      ).not.toContain('judge_name');
+    });
+  });
+
+  // ─── B2: Case Information is pending-only (no case_type) ─────────────────
+
+  const CASE_INFO_BASE_AFTER = [
+    'select_service',
+    'select_court',
+    'select_court_city',
+    'case_petition_no',
+    'case_year',
+    'case_title',
+    'judge_name',
+  ]; // note: NO case_type
+
+  describe('Case Information is pending-only (no case_type)', () => {
+    it('does not require case_type at any tier', () => {
+      for (const tier of [
+        'lower',
+        'high',
+        'special',
+        'shariat',
+        'supreme',
+        'fcc',
+      ] as const) {
+        expect(
+          requiredFieldsFor(
+            'judicial_case_information',
+            CASE_INFO_BASE_AFTER,
+            tier,
+          ),
+        ).not.toContain('case_type');
+      }
     });
   });
 });
