@@ -463,11 +463,13 @@ export class PricingService {
     // Per-set rates from rule are overridden by global settings, which are
     // themselves overridden by a clerk-side report when one exists for the
     // ticket (M5.5).
-    const globalAttestedRate = Number(settings.attestedPricePerSet);
-    const globalNonAttestedRate = Number(settings.nonAttestedPricePerSet);
-
-    let effectiveAttestedRate = globalAttestedRate;
-    let effectiveNonAttestedRate = globalNonAttestedRate;
+    // 2026-05-23: attestation / non-attestation are phase-2 charges entered by
+    // the clerk and marked up by the super admin at finalize. Their global
+    // default rates (PricingSettings) are VOID — never applied to the consumer's
+    // intake/checkout price. A clerk-side report, if one exists, may still
+    // override below; absent that, these stay 0.
+    let effectiveAttestedRate = 0;
+    let effectiveNonAttestedRate = 0;
     let clerkOverride: { attested?: number; nonAttested?: number } | undefined;
     if (dto.ticketId) {
       const report = await this.prisma.ticketClerkReport.findUnique({
@@ -522,13 +524,11 @@ export class PricingService {
       isCaseSearch && dto.searchMethod === 'both' ? SEARCH_BOTH_SURCHARGE : 0;
 
     const deliveryCharge = Number(best.deliveryCharge) + deliveryFee;
-    const serviceCost =
-      basePrice +
-      attestedCharge +
-      nonAttestedCharge +
-      pdfSurcharge +
-      titleSurcharge +
-      ageSurcharge;
+    // Phase-1 consumer base = base service charge + intrinsic base modifiers
+    // (State-vs title surcharge, decided-age surcharge). Attestation /
+    // non-attestation / PDF are NOT part of the base — they're phase-2 charges
+    // (clerk-entered, admin-marked-up) billed at finalize.
+    const serviceCost = basePrice + titleSurcharge + ageSurcharge;
     // For Case Search the per-city block (base + searchBoth + title + pdf +
     // deliveryFee + ageSurcharge) is multiplied by the city count. Per-set
     // rates and the rule's flat deliveryCharge are NOT multiplied — they're
@@ -541,11 +541,9 @@ export class PricingService {
       ageSurcharge +
       pdfSurcharge +
       deliveryFee;
-    const total =
-      perCityBlock * cityCount +
-      attestedCharge +
-      nonAttestedCharge +
-      Number(best.deliveryCharge);
+    // Attestation / non-attestation excluded — phase-2 charges, not part of the
+    // resolved consumer price.
+    const total = perCityBlock * cityCount + Number(best.deliveryCharge);
 
     return {
       matched: true,
