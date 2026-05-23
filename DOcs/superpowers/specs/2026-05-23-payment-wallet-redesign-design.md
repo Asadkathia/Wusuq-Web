@@ -310,3 +310,40 @@ Reuse the dispatcher pattern (`apps/api/src/notifications/`). Events:
   `WalletTransaction`; add `TICKET_DEBIT` entries if not.
 - **One-time wallet flow**: confirm ONE_TIME tickets also route through the wallet
   (assumed yes for consistency) vs a direct single approval.
+
+---
+
+## Addendum (2026-05-23): clerk cost + phase-2 rate entry
+
+Clarifications from the owner that refine §4/§4a:
+
+### Clerk assignment cost — the one default rate, consumer-billed
+- The default clerk cost already lives in **`PricingRule.clerkBaseCost`**, seeded
+  from the rate sheet's **CLERK** column (the `seed-pricing.ts` "Wusuq Service
+  Rates & Clerk Rat" sheet), keyed on `(flow × courtLevel × yearBand × region)`.
+  **No re-import needed**; if the sheet is newer than the xlsx, re-export the
+  xlsx and re-run `seed-pricing.ts`.
+- The pricing resolver now **exposes `clerkBaseCost`** in `/pricing-rules/resolve`.
+- The **assignment dialog** pre-fills the clerk-cost field with the resolved
+  `clerkBaseCost` (the default) and offers an **override toggle** so the admin can
+  change it for that ticket.
+- `clerkCost` **is consumer-billed** (included in the final bill). `assignClerk`
+  already adds it to `totalAmount`; **`finalizeRemainder` now also includes it**
+  so it isn't dropped at finalize.
+
+### Attestation / printing / delivery — no default rates
+- These have **no system defaults** (the WUSUQ/attestation engine rates are NOT
+  used for them). The **clerk enters** the amounts in the clerk payment modal;
+  the **admin reviews/edits** them at finalize; the consumer is billed the
+  admin-set amounts. Capability-gated per §4a (attestation = Case Files only;
+  printing/delivery = SPLIT physical flows).
+
+### PDF — standard, opt-in
+- PDF is a **standard Rs 300** charge but **opt-in**: only billed when a PDF is
+  requested. The finalize/clerk UI defaults the PDF input to 300; the admin may
+  set 0. The backend takes the value as-is (no unconditional 300).
+
+### Net consumer total (SPLIT)
+`totalAmount = serviceCost (base) + clerkCost + attestation + printing + delivery
++ pdf` — clerkCost from the assignment default/override; attestation/printing/
+delivery from the clerk's entries as edited by the admin; pdf standard-when-opted.

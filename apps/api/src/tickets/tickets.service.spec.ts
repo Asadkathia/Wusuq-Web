@@ -1491,6 +1491,46 @@ describe('finalizeRemainder (Task 1.4)', () => {
     );
   });
 
+  it('includes the consumer-billed clerkCost in the finalized total', async () => {
+    const { service, prisma } = buildFinalizeHarness({
+      intakeFlow: 'judicial_case_files',
+      serviceCost: 5000,
+      amountPaid: 5000,
+    });
+
+    prisma.ticket.findUnique
+      .mockResolvedValueOnce({
+        id: 'tkt-fin',
+        consumerId: 'consumer-1',
+        serviceCost: 5000,
+        clerkCost: 1500,
+        amountPaid: 5000,
+        intakeFlow: 'judicial_case_files',
+      })
+      .mockResolvedValue({
+        id: 'tkt-fin',
+        documents: [],
+        assignments: [],
+        history: [],
+        clerkReport: null,
+        consumer: { id: 'consumer-1' },
+        service: { id: 'svc-1' },
+      });
+
+    await service.finalizeRemainder(
+      'tkt-fin',
+      { attestedCharges: 2000, printingCharges: 1000 },
+      { actorUserId: 'admin-1' },
+    );
+
+    // total = serviceCost 5000 + clerkCost 1500 + attested 2000 + printing 1000
+    expect(prisma.ticket.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ totalAmount: 9500 }),
+      }),
+    );
+  });
+
   it('sets PARTIALLY_PAID when amountPaid < totalAmount after finalize', async () => {
     const { service, prisma } = buildFinalizeHarness({
       intakeFlow: 'judicial_case_files',

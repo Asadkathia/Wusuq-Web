@@ -294,6 +294,7 @@ export class PricingService {
     // the number of cities the consumer picked (>=1). Always 1 for other flows.
     cityCount: number;
     clerkRateOverride?: { attested?: number; nonAttested?: number };
+    clerkBaseCost?: number | null;
     attestedCharge: number;
     nonAttestedCharge: number;
     deliveryCharge: number;
@@ -562,6 +563,10 @@ export class PricingService {
       searchBothSurcharge,
       cityCount,
       clerkRateOverride: clerkOverride,
+      // Default internal clerk cost for this (flow × court × band) — used to
+      // pre-fill the assignment dialog's clerk-cost field (override toggle).
+      clerkBaseCost:
+        best.clerkBaseCost != null ? Number(best.clerkBaseCost) : null,
       attestedCharge,
       nonAttestedCharge,
       deliveryCharge,

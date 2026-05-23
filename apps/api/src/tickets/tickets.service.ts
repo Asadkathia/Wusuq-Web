@@ -1611,6 +1611,7 @@ export class TicketsService {
         id: true,
         consumerId: true,
         serviceCost: true,
+        clerkCost: true,
         amountPaid: true,
         intakeFlow: true,
       },
@@ -1618,15 +1619,23 @@ export class TicketsService {
     if (!ticket) throw new NotFoundException('Ticket not found');
 
     const caps = chargeCapabilitiesFor(ticket.intakeFlow);
+    // Attestation / printing / delivery have NO default rates — they are the
+    // amounts the clerk entered (and the admin edited) for this ticket.
     const attested = caps.attestation ? Number(dto.attestedCharges ?? 0) : 0;
     const nonAttested = caps.attestation
       ? Number(dto.nonAttestedCharges ?? 0)
       : 0;
     const printing = caps.printing ? Number(dto.printingCharges ?? 0) : 0;
     const delivery = caps.delivery ? Number(dto.deliveryCharges ?? 0) : 0;
+    // PDF is opt-in: the consumer is charged the standard PDF fee only when a
+    // PDF is requested. The admin sets the amount at finalize (the frontend
+    // defaults the input to the standard Rs 300); 0/absent means no PDF.
     const pdf = caps.pdf ? Number(dto.pdfCharges ?? 0) : 0;
+    // The clerk assignment cost is consumer-billed and was set at assignment;
+    // include it so it isn't dropped when the remainder is finalized.
     const total =
       Number(ticket.serviceCost) +
+      Number(ticket.clerkCost ?? 0) +
       attested +
       nonAttested +
       printing +
