@@ -2,11 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PAKISTAN_GEO, RAW_POLICE_STATIONS_BY_PROVINCE } from './pakistan-seed';
 import courtsJson from './pakistan-courts.json';
-import {
-  BASELINE_SPECIAL_COURTS,
-  LOWER_COURT_SUBCOURTS,
-  SPECIAL_COURT_SUBCOURTS,
-} from './court-expansion';
+import { LOWER_COURT_SUBCOURTS, SPECIAL_COURTS } from './court-expansion';
 import {
   CITY_ALIAS,
   CITY_FANOUT,
@@ -540,27 +536,15 @@ export class GeoService {
                   await upsertSeat(court.id, cityId, false);
                 }
               } else if (courtType === 'Special Court') {
-                // Baseline tribunals (Accountability/ATC/Labour/Drug/Consumer)
-                // operate in every district HQ — seat them whenever the JSON
-                // has any Special Court coverage for this city.
-                for (const subName of BASELINE_SPECIAL_COURTS) {
-                  const court = await getOrCreateCourt(courtType, subName);
-                  await upsertSeat(court.id, cityId, false);
-                }
-                for (const [subName, cities] of Object.entries(
-                  SPECIAL_COURT_SUBCOURTS,
-                )) {
-                  if (
-                    !cities.some(
-                      (c) => c.toLowerCase() === entry.city.toLowerCase(),
-                    )
-                  )
-                    continue;
-                  const court = await getOrCreateCourt(courtType, subName);
-                  await upsertSeat(court.id, cityId, false);
-                }
+                // 2026-05-23: special courts are unified across ALL cities, so
+                // they're seated by the global loop after this JSON walk — not
+                // per JSON entry. Skip here to avoid double work.
+                continue;
               } else {
-                const court = await getOrCreateCourt(courtType, jsonSubCourtName);
+                const court = await getOrCreateCourt(
+                  courtType,
+                  jsonSubCourtName,
+                );
                 await upsertSeat(court.id, cityId, entry.is_principal_seat);
               }
             }
@@ -573,7 +557,9 @@ export class GeoService {
     // tehsils that don't already carry them via a direct JSON entry. Keeps
     // the metro hub city's full court set intact while exposing the sub-
     // tehsils as Lower-Court-only options.
-    for (const [parentCity, tehsils] of Object.entries(LOWER_COURT_ONLY_TEHSILS)) {
+    for (const [parentCity, tehsils] of Object.entries(
+      LOWER_COURT_ONLY_TEHSILS,
+    )) {
       void parentCity;
       for (const tehsil of tehsils) {
         const cityId = globalCityByName.get(tehsil.toLowerCase());
@@ -582,6 +568,18 @@ export class GeoService {
           const court = await getOrCreateCourt('Lower Court', sc.name);
           await upsertSeat(court.id, cityId, false);
         }
+      }
+    }
+
+    // 2026-05-23 unified special courts: every GeoCity exposes the full
+    // canonical catalogue. Seat all SPECIAL_COURTS on every city (idempotent).
+    const allCities = await this.prisma.geoCity.findMany({
+      select: { id: true },
+    });
+    for (const subName of SPECIAL_COURTS) {
+      const court = await getOrCreateCourt('Special Court', subName);
+      for (const c of allCities) {
+        await upsertSeat(court.id, c.id, false);
       }
     }
 

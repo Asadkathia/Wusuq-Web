@@ -31,4 +31,11 @@ export class TopupWalletDto {
   @IsOptional()
   @IsUrl({ require_tld: false })
   receiptUrl?: string;
+
+  // When present, this top-up is a payment toward a specific ticket: it is
+  // tagged TICKET_PAYMENT (vs a generic TOPUP) and routes the admin
+  // payment-approval notification instead of the wallet-topup one.
+  @IsOptional()
+  @IsString()
+  ticketId?: string;
 }

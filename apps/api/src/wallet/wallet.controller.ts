@@ -29,6 +29,7 @@ import { RequirePermissions } from '../roles-permissions/decorators/permissions.
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { ReviewWalletTransactionDto } from './dto/review-wallet-transaction.dto';
 import { TopupWalletDto } from './dto/topup-wallet.dto';
+import { AdjustWalletDto } from './dto/adjust-wallet.dto';
 import { isAdminWalletRole } from './wallet-roles';
 import { WalletService } from './wallet.service';
 
@@ -227,6 +228,25 @@ export class WalletController {
       actorUserId: actor.sub,
       actorEmail: actor.email,
     });
+  }
+
+  @RequirePermissions('finance.write')
+  @Post(':userId/adjust')
+  adjust(
+    @Param('userId') userId: string,
+    @Body() dto: AdjustWalletDto,
+    @CurrentUser() actor: JwtUser | undefined,
+  ) {
+    if (!actor) throw new UnauthorizedException();
+    if (!isAdminWalletRole(actor.role)) {
+      throw new ForbiddenException('Admin role required to adjust wallet');
+    }
+    return this.walletService.adjustWallet(
+      userId,
+      dto.amount,
+      dto.note,
+      actor.sub,
+    );
   }
 
   // Admin-side roles can read any user's transactions. Consumer/lawyer/company

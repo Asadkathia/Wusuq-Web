@@ -83,6 +83,8 @@ export class WalletService {
         currency: dto.currency,
         status: 'PENDING_VERIFICATION',
         receiptUrl: dto.receiptUrl,
+        ticketId: dto.ticketId ?? null,
+        type: dto.ticketId ? 'TICKET_PAYMENT' : 'TOPUP',
       },
     });
 
@@ -98,9 +100,15 @@ export class WalletService {
       },
     });
 
-    await this.dispatcher
-      .walletTopupCreated(transaction.id)
-      .catch(() => undefined);
+    if (transaction.type === 'TICKET_PAYMENT') {
+      await this.dispatcher
+        .paymentSubmitted(transaction.id)
+        .catch(() => undefined);
+    } else {
+      await this.dispatcher
+        .walletTopupCreated(transaction.id)
+        .catch(() => undefined);
+    }
 
     return {
       success: true,
@@ -195,9 +203,15 @@ export class WalletService {
           amount: Number(result.transaction.amount),
         },
       });
-      await this.dispatcher
-        .walletTopupDecided(result.transaction.id, 'VERIFIED')
-        .catch(() => undefined);
+      if (result.transaction.type === 'TICKET_PAYMENT') {
+        await this.dispatcher
+          .paymentDecided(result.transaction.id, true)
+          .catch(() => undefined);
+      } else {
+        await this.dispatcher
+          .walletTopupDecided(result.transaction.id, 'VERIFIED')
+          .catch(() => undefined);
+      }
     }
 
     return {
@@ -242,9 +256,15 @@ export class WalletService {
       },
     });
 
-    await this.dispatcher
-      .walletTopupDecided(rejected.id, 'REJECTED')
-      .catch(() => undefined);
+    if (rejected.type === 'TICKET_PAYMENT') {
+      await this.dispatcher
+        .paymentDecided(rejected.id, false)
+        .catch(() => undefined);
+    } else {
+      await this.dispatcher
+        .walletTopupDecided(rejected.id, 'REJECTED')
+        .catch(() => undefined);
+    }
 
     return { success: true, transaction: rejected };
   }
@@ -320,6 +340,79 @@ export class WalletService {
     });
     await this.dispatcher.walletReceiptUploaded().catch(() => undefined);
     return { url, path: url, filename: file.filename };
+  }
+
+  /**
+   * Public wrapper around clearPendingTickets for use by TicketsService after
+   * finalizing a remainder. Opens its own $transaction and re-reads the user's
+   * current wallet balance so callers don't need to pass it in.
+   */
+  async settleTicketsForUser(userId: string): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT id FROM "User" WHERE id = ${userId} FOR UPDATE`;
+      const user = await tx.user.findUnique({
+        where: { id: userId },
+        select: { walletBalance: true },
+      });
+      if (!user) return;
+      await this.clearPendingTickets(
+        userId,
+        Number(user.walletBalance),
+        'BANK_TRANSFER',
+        tx,
+      );
+    });
+  }
+
+  /**
+   * Admin wallet adjustment: increments/decrements walletBalance, writes an
+   * ADMIN_ADJUSTMENT WalletTransaction (status VERIFIED), and re-settles tickets
+   * on a positive adjustment.
+   */
+  async adjustWallet(
+    userId: string,
+    amount: number,
+    note: string,
+    adminId?: string,
+  ) {
+    const result = await this.prisma.$transaction(async (tx) => {
+      const user = await tx.user.update({
+        where: { id: userId },
+        data: { walletBalance: { increment: amount } },
+        select: { walletBalance: true },
+      });
+      const txn = await tx.walletTransaction.create({
+        data: {
+          userId,
+          amount,
+          paymentMode: 'BANK_TRANSFER',
+          currency: 'PKR',
+          status: 'VERIFIED',
+          type: 'ADMIN_ADJUSTMENT',
+          verifiedAt: new Date(),
+          reviewedByUserId: adminId,
+          note,
+        },
+      });
+      if (amount > 0) {
+        await this.clearPendingTickets(
+          userId,
+          Number(user.walletBalance),
+          'BANK_TRANSFER',
+          tx,
+        );
+      }
+      return { user, txnId: txn.id };
+    });
+    // Sensitive admin action — record it in the audit trail.
+    await this.auditLogsService.create({
+      action: 'WALLET_ADJUSTED',
+      entity: 'WALLET_TRANSACTION',
+      entityId: result.txnId,
+      actorUserId: adminId,
+      metadata: { userId, amount, note },
+    });
+    return result.user;
   }
 
   // Auto-applies wallet balance to the consumer's oldest unpaid tickets in
@@ -437,6 +530,7 @@ export class WalletService {
         paymentMode,
         currency: 'PKR',
         status: 'VERIFIED',
+        type: 'TICKET_DEBIT',
         verifiedAt: new Date(),
         note: `Auto-deducted for ticket ${ticket.batchNo}`,
       },

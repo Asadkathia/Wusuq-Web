@@ -7,6 +7,8 @@ function makeDispatcher() {
     walletTopupCreated: jest.fn().mockResolvedValue(undefined),
     walletTopupDecided: jest.fn().mockResolvedValue(undefined),
     walletReceiptUploaded: jest.fn().mockResolvedValue(undefined),
+    paymentSubmitted: jest.fn().mockResolvedValue(undefined),
+    paymentDecided: jest.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -128,6 +130,161 @@ describe('WalletService.verifyTopup double-credit guard', () => {
     expect(userUpdate).not.toHaveBeenCalled();
     expect(walletTransactionCreate).not.toHaveBeenCalled();
     expect(auditLogsService.create).not.toHaveBeenCalled();
+  });
+});
+
+// ─── Task 1.5: adjustWallet ───────────────────────────────────────────────────
+
+describe('WalletService.adjustWallet (Task 1.5)', () => {
+  it('increments walletBalance, writes ADMIN_ADJUSTMENT transaction, and settles tickets on positive amount', async () => {
+    const ticketFindMany = jest.fn().mockResolvedValue([]);
+    const userUpdate = jest
+      .fn()
+      .mockResolvedValueOnce({ id: 'u-1', walletBalance: 1500 }) // after increment
+      .mockResolvedValue({ id: 'u-1', walletBalance: 1500 }); // after settlement balance write-back
+    const walletTransactionCreate = jest
+      .fn()
+      .mockResolvedValue({ id: 'wtx-adj' });
+
+    const tx: any = {
+      $executeRaw: jest.fn(),
+      user: { update: userUpdate },
+      walletTransaction: { create: walletTransactionCreate },
+      ticket: {
+        findMany: ticketFindMany,
+        findUnique: jest.fn().mockResolvedValue(null),
+        update: jest.fn(),
+      },
+    };
+
+    const prisma: any = {
+      $transaction: jest.fn(async (fn: (t: any) => unknown) => fn(tx)),
+    };
+
+    const auditLogsService = { create: jest.fn() };
+    const service = new WalletService(
+      prisma as never,
+      auditLogsService as never,
+      makeDispatcher() as never,
+    );
+
+    await service.adjustWallet('u-1', 1000, 'Admin credit', 'admin-1');
+
+    expect(userUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'u-1' },
+        data: { walletBalance: { increment: 1000 } },
+      }),
+    );
+    expect(walletTransactionCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          userId: 'u-1',
+          amount: 1000,
+          status: 'VERIFIED',
+          type: 'ADMIN_ADJUSTMENT',
+          note: 'Admin credit',
+          reviewedByUserId: 'admin-1',
+        }),
+      }),
+    );
+    // Positive amount triggers settlement
+    expect(ticketFindMany).toHaveBeenCalled();
+  });
+
+  it('decrements walletBalance and does NOT settle on negative adjustment', async () => {
+    const ticketFindMany = jest.fn().mockResolvedValue([]);
+    const userUpdate = jest
+      .fn()
+      .mockResolvedValueOnce({ id: 'u-1', walletBalance: 200 });
+    const walletTransactionCreate = jest
+      .fn()
+      .mockResolvedValue({ id: 'wtx-adj' });
+
+    const tx: any = {
+      user: { update: userUpdate },
+      walletTransaction: { create: walletTransactionCreate },
+      ticket: { findMany: ticketFindMany },
+    };
+
+    const prisma: any = {
+      $transaction: jest.fn(async (fn: (t: any) => unknown) => fn(tx)),
+    };
+
+    const service = new WalletService(
+      prisma as never,
+      { create: jest.fn() } as never,
+      makeDispatcher() as never,
+    );
+
+    await service.adjustWallet('u-1', -300, 'Admin debit', 'admin-1');
+
+    expect(walletTransactionCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          amount: -300,
+          type: 'ADMIN_ADJUSTMENT',
+        }),
+      }),
+    );
+    // Negative amount must NOT trigger clearPendingTickets
+    expect(ticketFindMany).not.toHaveBeenCalled();
+  });
+});
+
+describe('WalletService.applyPaymentToTicket type tagging (Task 1.5)', () => {
+  it('tags auto-deduction debit entries with type TICKET_DEBIT', async () => {
+    const walletTransactionCreate = jest.fn().mockResolvedValue({});
+    const tx: any = {
+      $executeRaw: jest.fn(),
+      ticket: {
+        findMany: jest.fn().mockResolvedValue([{ id: 't-1' }]),
+        findUnique: jest.fn().mockResolvedValue({
+          id: 't-1',
+          batchNo: 'B-1',
+          totalAmount: 500,
+          amountPaid: 0,
+          paymentStatus: 'UNPAID',
+        }),
+        update: jest.fn().mockResolvedValue({}),
+      },
+      walletTransaction: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'wtx-1',
+          userId: 'u-1',
+          amount: 500,
+          paymentMode: 'BANK_TRANSFER',
+          status: 'PENDING_VERIFICATION',
+        }),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        findUniqueOrThrow: jest
+          .fn()
+          .mockResolvedValue({ id: 'wtx-1', status: 'VERIFIED' }),
+        create: walletTransactionCreate,
+      },
+      user: {
+        update: jest
+          .fn()
+          .mockResolvedValueOnce({ id: 'u-1', walletBalance: 500 })
+          .mockResolvedValue({}),
+      },
+    };
+
+    const prisma: any = {
+      $transaction: jest.fn(async (fn: (t: any) => unknown) => fn(tx)),
+    };
+
+    const service = new WalletService(
+      prisma as never,
+      { create: jest.fn() } as never,
+      makeDispatcher() as never,
+    );
+
+    await service.verifyTopup('wtx-1', {});
+
+    // The wallet transaction created for the auto-deduction should be TICKET_DEBIT
+    const debitCall = walletTransactionCreate.mock.calls[0]?.[0];
+    expect(debitCall?.data?.type).toBe('TICKET_DEBIT');
   });
 });
 

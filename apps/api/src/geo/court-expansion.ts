@@ -10,6 +10,54 @@
 export type SubCourt = { name: string };
 
 /**
+ * Canonical, complete special-court catalogue (single source of truth).
+ *
+ * 2026-05-23: special courts are now UNIFIED — every city exposes this exact
+ * list (see DOcs/superpowers/specs/2026-05-23-intake-forms-redesign-design.md).
+ * This replaces the old per-city SPECIAL_COURT_SUBCOURTS subset map and the
+ * 5-court BASELINE_SPECIAL_COURTS fallback. Naming is singular to match
+ * court-alias.ts. Both the geo seeder and the services catalogue import this.
+ */
+export const SPECIAL_COURTS: string[] = [
+  'Accountability Court',
+  'Anti-Corruption Court',
+  'Anti-Terrorism Court',
+  'Anti-Dumping Appellate Tribunal',
+  'Appellate Tribunal Inland Revenue',
+  'Banking Court',
+  'Banking Muhtasib',
+  'Board of Revenue',
+  'Child Protection Court',
+  'Commercial Court',
+  'Competition Appellate Tribunal',
+  'Consumer Court',
+  'Customs Appellate Tribunal',
+  'Drug Court',
+  'Environmental Protection Tribunal',
+  'Election Tribunal',
+  'Federal Insurance Tribunal',
+  'Federal Ombudsman',
+  'Federal Service Tribunal',
+  'Federal Tax Ombudsman',
+  'Foreign Exchange Regulation Appellate Board',
+  'Income Tax Appellate Tribunal',
+  'Insurance Appellate Tribunal',
+  'Intellectual Property Tribunal',
+  'Labour Appellate Tribunal',
+  'Labour Court',
+  'Lahore Development Authority Tribunal',
+  'National Industrial Relations Commission (NIRC)',
+  'Pakistan Maritime Carriage Appellate Tribunal',
+  'Provincial Ombudsman',
+  'Provincial Service Tribunal',
+  'Special Court (Central)',
+  'Special Court (Control of Narcotic Substances)',
+  'Special Court (Customs, Taxation & Anti-Smuggling)',
+  'Special Court (Offences in Banks)',
+  'Special Court (Removal of Encroachment)',
+];
+
+/**
  * Every Lower Court city in the JSON gets these four standard sub-courts.
  * This mirrors Pakistan's District Judiciary structure.
  */
@@ -19,182 +67,3 @@ export const LOWER_COURT_SUBCOURTS: SubCourt[] = [
   { name: 'Magisterial Court' },
   { name: 'Family Court' },
 ];
-
-/**
- * Baseline specialized special courts that operate in every divisional /
- * district HQ in Pakistan. Applied to every city that pakistan-courts.json
- * lists under "Special Court" — even if the city-specific list in
- * SPECIAL_COURT_SUBCOURTS doesn't cover it.
- *
- * 5-19-26 CF#1a: before this, cities like Abbottabad / Sialkot / Hyderabad /
- * Sukkur / Mardan / Muzaffarabad only saw the generic "Special Court"
- * placeholder. These five tribunals are district-level by statute and exist
- * across the country — Accountability Court (NAB), Anti-Terrorism Court (ATC,
- * 1997 Act), Labour Court (Industrial Relations Acts), Drug Court (Drugs
- * Act), Consumer Court (Consumer Protection Acts).
- *
- * Cities that already get specialized SPECIAL_COURT_SUBCOURTS coverage
- * (Lahore, Karachi, etc.) will get these via that map too — the seeder
- * de-dupes on (courtId, cityId).
- */
-export const BASELINE_SPECIAL_COURTS: string[] = [
-  'Accountability Court',
-  'Anti-Terrorism Court',
-  'Labour Court',
-  'Drug Court',
-  'Consumer Court',
-];
-
-/**
- * Special Courts and tribunals do NOT exist in every city the way Lower Courts
- * do. This map lists the cities where each specialized court/tribunal is
- * seated. We seed a CourtSeat only when the JSON also has "Special Court"
- * coverage for that city, so the JSON remains authoritative on overall
- * presence while this map adds granularity.
- */
-export const SPECIAL_COURT_SUBCOURTS: Record<string, string[]> = {
-  'Accountability Court': [
-    'Lahore',
-    'Karachi',
-    'Islamabad',
-    'Peshawar',
-    'Quetta',
-    'Rawalpindi',
-  ],
-  'Anti-Corruption Court': [
-    'Lahore',
-    'Karachi',
-    'Peshawar',
-    'Quetta',
-    'Rawalpindi',
-  ],
-  'Anti-Terrorism Court': [
-    'Lahore',
-    'Karachi',
-    'Islamabad',
-    'Peshawar',
-    'Quetta',
-    'Rawalpindi',
-    'Faisalabad',
-  ],
-  'Anti-Dumping Appellate Tribunal': ['Islamabad', 'Karachi', 'Lahore'],
-  'Appellate Tribunal Inland Revenue': [
-    'Lahore',
-    'Karachi',
-    'Islamabad',
-    'Peshawar',
-    'Quetta',
-  ],
-  'Banking Court': [
-    'Lahore',
-    'Karachi',
-    'Islamabad',
-    'Rawalpindi',
-    'Faisalabad',
-    'Multan',
-  ],
-  'Banking Muhtasib': ['Karachi', 'Lahore', 'Islamabad'],
-  'Board of Revenue': ['Lahore', 'Karachi', 'Peshawar', 'Quetta'],
-  'Child Protection Court': ['Lahore', 'Karachi', 'Islamabad', 'Rawalpindi'],
-  'Commercial Court': [
-    'Lahore',
-    'Karachi',
-    'Islamabad',
-    'Rawalpindi',
-    'Faisalabad',
-  ],
-  'Competition Appellate Tribunal': ['Islamabad', 'Karachi', 'Lahore'],
-  'Consumer Court': [
-    'Lahore',
-    'Karachi',
-    'Islamabad',
-    'Peshawar',
-    'Quetta',
-    'Rawalpindi',
-    'Faisalabad',
-  ],
-  'Customs Appellate Tribunal': [
-    'Karachi',
-    'Lahore',
-    'Islamabad',
-    'Peshawar',
-    'Quetta',
-  ],
-  'Drug Court': ['Lahore', 'Karachi', 'Islamabad', 'Rawalpindi', 'Peshawar'],
-  'Environmental Protection Tribunal': [
-    'Lahore',
-    'Karachi',
-    'Islamabad',
-    'Peshawar',
-    'Quetta',
-  ],
-  'Election Tribunal': ['Lahore', 'Karachi', 'Islamabad', 'Peshawar', 'Quetta'],
-  'Federal Insurance Tribunal': ['Islamabad', 'Karachi', 'Lahore'],
-  'Federal Ombudsman': ['Islamabad', 'Lahore', 'Karachi', 'Peshawar', 'Quetta'],
-  'Federal Service Tribunal': ['Islamabad'],
-  'Federal Tax Ombudsman': ['Islamabad', 'Lahore', 'Karachi'],
-  'Foreign Exchange Regulation Appellate Board': [
-    'Islamabad',
-    'Karachi',
-    'Lahore',
-  ],
-  'Income Tax Appellate Tribunal': [
-    'Lahore',
-    'Karachi',
-    'Islamabad',
-    'Rawalpindi',
-    'Faisalabad',
-    'Multan',
-    'Peshawar',
-  ],
-  'Insurance Appellate Tribunal': ['Islamabad', 'Karachi', 'Lahore'],
-  'Intellectual Property Tribunal': ['Islamabad', 'Karachi', 'Lahore'],
-  'Labour Appellate Tribunal': [
-    'Lahore',
-    'Karachi',
-    'Islamabad',
-    'Rawalpindi',
-    'Faisalabad',
-    'Peshawar',
-  ],
-  'Labour Court': [
-    'Lahore',
-    'Karachi',
-    'Islamabad',
-    'Rawalpindi',
-    'Faisalabad',
-    'Multan',
-    'Peshawar',
-    'Quetta',
-  ],
-  'Lahore Development Authority Tribunal': ['Lahore'],
-  'National Industrial Relations Commission (NIRC)': [
-    'Islamabad',
-    'Karachi',
-    'Lahore',
-  ],
-  'Pakistan Maritime Carriage Appellate Tribunal': ['Karachi'],
-  'Provincial Ombudsman': ['Lahore', 'Karachi', 'Peshawar', 'Quetta'],
-  'Provincial Service Tribunal': ['Lahore', 'Karachi', 'Peshawar', 'Quetta'],
-  'Special Court (Central)': ['Islamabad', 'Karachi', 'Lahore'],
-  'Special Court (Control of Narcotic Substances)': [
-    'Lahore',
-    'Karachi',
-    'Islamabad',
-    'Peshawar',
-    'Quetta',
-    'Rawalpindi',
-  ],
-  'Special Court (Customs, Taxation & Anti-Smuggling)': [
-    'Karachi',
-    'Lahore',
-    'Islamabad',
-  ],
-  'Special Court (Offences in Banks)': [
-    'Karachi',
-    'Lahore',
-    'Islamabad',
-    'Rawalpindi',
-  ],
-  'Special Court (Removal of Encroachment)': ['Lahore', 'Karachi', 'Islamabad'],
-};

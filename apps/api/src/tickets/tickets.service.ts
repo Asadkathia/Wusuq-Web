@@ -16,6 +16,8 @@ import {
   type FlowKey,
   requiredFieldsFor,
   courtTierFromCourtType,
+  paymentModelFor,
+  chargeCapabilitiesFor,
 } from '@wusuq/shared';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { PricingService } from '../pricing/pricing.service';
@@ -28,7 +30,9 @@ import { FilterTicketsDto } from './dto/filter-tickets.dto';
 import { SaveTicketIntakeDraftDto } from './dto/save-ticket-intake-draft.dto';
 import { SubmitClerkCostsDto } from './dto/submit-clerk-costs.dto';
 import { UpdateTicketDto } from './dto/update-ticket.dto';
+import { FinalizeRemainderDto } from './dto/finalize-remainder.dto';
 import { NotificationDispatcher } from '../notifications/notification-dispatcher.service';
+import { WalletService } from '../wallet/wallet.service';
 
 const INTAKE_FLOWS = new Set([
   'judicial_case_files',
@@ -51,6 +55,7 @@ const REQUIRED_FIELDS_BY_FLOW: Record<string, string[]> = {
     'case_type',
     'case_status',
     'case_title',
+    'judge_name',
     'sets',
     'set_type',
     'delivery_mode',
@@ -61,8 +66,8 @@ const REQUIRED_FIELDS_BY_FLOW: Record<string, string[]> = {
     'select_court_city',
     'case_petition_no',
     'case_year',
-    'case_type',
     'case_title',
+    'judge_name',
   ],
   judicial_case_search: [
     'select_service',
@@ -73,8 +78,6 @@ const REQUIRED_FIELDS_BY_FLOW: Record<string, string[]> = {
     'case_type',
     'case_status',
     'case_title',
-    'sets',
-    'set_type',
     'delivery_mode',
   ],
   judicial_case_filing: [
@@ -111,8 +114,6 @@ const REQUIRED_FIELDS_BY_FLOW: Record<string, string[]> = {
     'case_title',
     'city_type',
     'delivery_mode',
-    'sets',
-    'set_type',
   ],
   non_judicial_registry_deed: [
     'office_name',
@@ -122,8 +123,6 @@ const REQUIRED_FIELDS_BY_FLOW: Record<string, string[]> = {
     'year',
     'case_title',
     'delivery_mode',
-    'sets',
-    'set_type',
   ],
   non_judicial_criminal_record_search: [
     'province',
@@ -158,6 +157,7 @@ export class TicketsService {
     private readonly pricingService: PricingService,
     private readonly geoService: GeoService,
     private readonly dispatcher: NotificationDispatcher,
+    private readonly walletService: WalletService,
   ) {}
 
   async findAll(query: FilterTicketsDto) {
@@ -262,6 +262,11 @@ export class TicketsService {
         amountPaid: ticket.amountPaid,
         paymentStatus: ticket.paymentStatus,
         createdBy: ticket.createdBy,
+        remainderFinalizedAt: ticket.remainderFinalizedAt,
+        scheduledDate: ticket.scheduledDate,
+        hearingType: ticket.hearingType,
+        clerkCost: ticket.clerkCost,
+        defaultClerkCost: ticket.defaultClerkCost,
         deliveryCharges: ticket.deliveryCharges,
         printingCharges: ticket.printingCharges,
         attestedCharges: ticket.attestedCharges,
@@ -441,6 +446,15 @@ export class TicketsService {
       );
     }
 
+    // SPLIT flows (e.g. judicial_case_files) bill base only at creation;
+    // phase-2 surcharges (attested, printing, delivery, pdf) are added at
+    // finalize (Task 1.4). ONE_TIME flows bill the full computed total upfront.
+    const billedTotal = pricing.matched
+      ? paymentModelFor(dto.flow) === 'SPLIT'
+        ? pricing.serviceCost
+        : pricing.total
+      : 0;
+
     const ticket = await this.prisma.ticket.create({
       data: {
         batchNo: this.generateBatchNo(),
@@ -455,7 +469,10 @@ export class TicketsService {
         caseType: inferredCaseType,
         serviceCost: pricing.matched ? pricing.serviceCost : 0,
         deliveryCharges: pricing.matched ? pricing.deliveryCharge : 0,
-        totalAmount: pricing.matched ? pricing.total : 0,
+        defaultClerkCost: pricing.matched
+          ? (pricing.clerkBaseCost ?? null)
+          : null,
+        totalAmount: billedTotal,
         intakeFlow: dto.flow,
         formPayload: dto.payload as Prisma.InputJsonValue | undefined,
         // Atomic case linkage + scheduling. Replaces the prior two-step
@@ -924,6 +941,49 @@ export class TicketsService {
     });
   }
 
+  async assignBulk(
+    dto: {
+      ticketIds: string[];
+      representativeId: string;
+      forceAssign?: boolean;
+    },
+    actor?: { actorUserId?: string; actorEmail?: string },
+  ) {
+    const assigned: string[] = [];
+    const skipped: { ticketId: string; reason: string }[] = [];
+    for (const ticketId of dto.ticketIds) {
+      const t = await this.prisma.ticket.findUnique({
+        where: { id: ticketId },
+        select: { id: true, defaultClerkCost: true },
+      });
+      if (!t) {
+        skipped.push({ ticketId, reason: 'Not found' });
+        continue;
+      }
+      try {
+        await this.assign(
+          ticketId,
+          {
+            representativeId: dto.representativeId,
+            clerkCost:
+              t.defaultClerkCost != null
+                ? Number(t.defaultClerkCost)
+                : undefined,
+            forceAssign: dto.forceAssign,
+          },
+          actor,
+        );
+        assigned.push(ticketId);
+      } catch (e) {
+        skipped.push({
+          ticketId,
+          reason: e instanceof Error ? e.message : 'Failed',
+        });
+      }
+    }
+    return { assigned, skipped };
+  }
+
   async bulkAction(
     dto: BulkTicketActionDto,
     actor?: { actorUserId?: string; actorEmail?: string },
@@ -985,10 +1045,13 @@ export class TicketsService {
     actor?: { actorUserId?: string; actorEmail?: string },
     caption?: string,
     visibleToConsumer: boolean = false,
+    category: 'WORK_DOCUMENT' | 'DELIVERABLE_PDF' = 'WORK_DOCUMENT',
   ) {
     await this.ensureTicketExists(ticketId);
 
     const trimmedCaption = caption?.trim();
+    const consumerVisible =
+      category === 'DELIVERABLE_PDF' ? true : visibleToConsumer;
     const document = await this.prisma.ticketDocument.create({
       data: {
         ticketId,
@@ -997,7 +1060,8 @@ export class TicketsService {
         fileUrl: file.path,
         caption:
           trimmedCaption && trimmedCaption.length > 0 ? trimmedCaption : null,
-        visibleToConsumer,
+        visibleToConsumer: consumerVisible,
+        category,
         uploadedByUserId: actor?.actorUserId ?? null,
       },
     });
@@ -1008,10 +1072,10 @@ export class TicketsService {
       entityId: document.id,
       actorUserId: actor?.actorUserId,
       actorEmail: actor?.actorEmail,
-      metadata: { ticketId, visibleToConsumer },
+      metadata: { ticketId, visibleToConsumer: consumerVisible },
     });
 
-    if (visibleToConsumer) {
+    if (consumerVisible) {
       await this.dispatcher
         .ticketDocumentUploaded(ticketId)
         .catch(() => undefined);
@@ -1538,6 +1602,138 @@ export class TicketsService {
     return updated;
   }
 
+  /**
+   * Clerk draft: write phase-2 charge fields to the ticket without finalizing.
+   * Does not modify totalAmount or paymentStatus. Intended for clerk review
+   * before an admin confirms/edits and calls finalizeRemainder.
+   */
+  async saveClerkCharges(
+    ticketId: string,
+    dto: FinalizeRemainderDto,
+    actor?: { actorUserId?: string; actorEmail?: string },
+  ) {
+    const ticket = await this.prisma.ticket.findUnique({
+      where: { id: ticketId },
+      select: { id: true, intakeFlow: true },
+    });
+    if (!ticket) throw new NotFoundException('Ticket not found');
+
+    const caps = chargeCapabilitiesFor(ticket.intakeFlow);
+    await this.prisma.ticket.update({
+      where: { id: ticketId },
+      data: {
+        attestedCharges: caps.attestation
+          ? (dto.attestedCharges ?? undefined)
+          : 0,
+        nonAttestedCharges: caps.attestation
+          ? (dto.nonAttestedCharges ?? undefined)
+          : 0,
+        printingCharges: caps.printing
+          ? (dto.printingCharges ?? undefined)
+          : undefined,
+        deliveryCharges: caps.delivery
+          ? (dto.deliveryCharges ?? undefined)
+          : undefined,
+      },
+    });
+
+    await this.auditLogsService.create({
+      action: 'TICKET_CLERK_CHARGES_SAVED',
+      entity: 'TICKET',
+      entityId: ticketId,
+      actorUserId: actor?.actorUserId,
+      actorEmail: actor?.actorEmail,
+      metadata: { ...dto },
+    });
+
+    return this.findOne(ticketId);
+  }
+
+  /**
+   * Admin finalize: recompute totalAmount from capability-gated, admin-edited
+   * charges; set remainderFinalizedAt; flip paymentStatus; trigger wallet
+   * settlement so any excess balance auto-covers the new total.
+   */
+  async finalizeRemainder(
+    ticketId: string,
+    dto: FinalizeRemainderDto,
+    actor: { actorUserId?: string; actorEmail?: string },
+  ) {
+    const ticket = await this.prisma.ticket.findUnique({
+      where: { id: ticketId },
+      select: {
+        id: true,
+        consumerId: true,
+        serviceCost: true,
+        clerkCost: true,
+        additionalCharges: true,
+        additionalServiceCost: true,
+        discountPrice: true,
+        amountPaid: true,
+        intakeFlow: true,
+      },
+    });
+    if (!ticket) throw new NotFoundException('Ticket not found');
+
+    const caps = chargeCapabilitiesFor(ticket.intakeFlow);
+    // Attestation / printing / delivery have NO default rates — they are the
+    // amounts the clerk entered (and the admin edited) for this ticket.
+    const attested = caps.attestation ? Number(dto.attestedCharges ?? 0) : 0;
+    const nonAttested = caps.attestation
+      ? Number(dto.nonAttestedCharges ?? 0)
+      : 0;
+    const printing = caps.printing ? Number(dto.printingCharges ?? 0) : 0;
+    const delivery = caps.delivery ? Number(dto.deliveryCharges ?? 0) : 0;
+    // PDF is opt-in: the consumer is charged the standard PDF fee only when a
+    // PDF is requested. The admin sets the amount at finalize (the frontend
+    // defaults the input to the standard Rs 300); 0/absent means no PDF.
+    const pdf = caps.pdf ? Number(dto.pdfCharges ?? 0) : 0;
+    // Clerk assignment cost is consumer-billed (set at assignment) and any
+    // additional charges / discount persisted earlier must be preserved so
+    // finalize stays consistent with assignClerk's total computation.
+    const total =
+      Number(ticket.serviceCost) +
+      Number(ticket.clerkCost ?? 0) +
+      Number(ticket.additionalCharges ?? 0) +
+      Number(ticket.additionalServiceCost ?? 0) -
+      Number(ticket.discountPrice ?? 0) +
+      attested +
+      nonAttested +
+      printing +
+      delivery +
+      pdf;
+    const paid = Number(ticket.amountPaid);
+
+    await this.prisma.ticket.update({
+      where: { id: ticketId },
+      data: {
+        attestedCharges: attested,
+        nonAttestedCharges: nonAttested,
+        printingCharges: printing,
+        deliveryCharges: delivery,
+        totalAmount: total,
+        paymentStatus: paid >= total ? 'PAID' : 'PARTIALLY_PAID',
+        remainderFinalizedAt: new Date(),
+        remainderFinalizedByUserId: actor.actorUserId ?? null,
+      },
+    });
+
+    // Auto-cover from any wallet excess, then notify if a balance remains.
+    await this.walletService.settleTicketsForUser(ticket.consumerId);
+    await this.dispatcher.paymentRemainderDue(ticketId).catch(() => undefined);
+
+    await this.auditLogsService.create({
+      action: 'TICKET_REMAINDER_FINALIZED',
+      entity: 'TICKET',
+      entityId: ticketId,
+      actorUserId: actor.actorUserId,
+      actorEmail: actor.actorEmail,
+      metadata: { total, attested, nonAttested, printing, delivery, pdf },
+    });
+
+    return this.findOne(ticketId);
+  }
+
   private generateBatchNo() {
     const stamp = Date.now().toString().slice(-8);
     const rand = Math.floor(Math.random() * 9000 + 1000);
@@ -1661,7 +1857,11 @@ export class TicketsService {
   private assertPaymentSatisfied(
     ticket: {
       createdBy: 'CONSUMER' | 'ADMIN_STAFF';
+      intakeFlow?: string | null;
       paymentStatus: 'UNPAID' | 'PARTIALLY_PAID' | 'PAID';
+      serviceCost?: unknown;
+      amountPaid?: unknown;
+      totalAmount?: unknown;
     },
     nextStatus: TicketStatus,
   ) {
@@ -1672,9 +1872,26 @@ export class TicketsService {
     if (process.env.DISABLE_PAYMENT_GATING === 'true') return;
     if (ticket.createdBy !== 'CONSUMER') return;
     if (nextStatus === 'PENDING') return;
-    if (ticket.paymentStatus === 'PAID') return;
+
+    const base = Number(ticket.serviceCost ?? 0);
+    const paid = Number(ticket.amountPaid ?? 0);
+    const total = Number(ticket.totalAmount ?? 0);
+    const model = paymentModelFor(ticket.intakeFlow);
+
+    // Dispatch/completion (COMPLETED) needs the full finalized amount paid.
+    if (nextStatus === 'COMPLETED') {
+      if (paid >= total) return;
+      throw new ForbiddenException(
+        'Final payment must be completed before dispatch.',
+      );
+    }
+
+    // All other forward transitions (e.g. ASSIGNED) need the base covered.
+    // SPLIT flows: base = serviceCost. ONE_TIME flows: base = total (full amount).
+    const dueNow = model === 'SPLIT' ? base : total;
+    if (paid >= dueNow) return;
     throw new ForbiddenException(
-      'Ticket cannot be progressed until consumer payment is completed.',
+      'Ticket cannot be progressed until payment is completed.',
     );
   }
 
@@ -1824,5 +2041,100 @@ export class TicketsService {
     if (drifts.length > 0) {
       await this.dispatcher.caseDriftDetected(caseId).catch(() => undefined);
     }
+  }
+
+  async recordNextHearing(
+    ticketId: string,
+    dto: { scheduledDate: string; hearingType?: string },
+  ) {
+    await this.ensureTicketExists(ticketId);
+    return this.prisma.ticket.update({
+      where: { id: ticketId },
+      data: {
+        scheduledDate: new Date(dto.scheduledDate),
+        ...(dto.hearingType ? { hearingType: dto.hearingType } : {}),
+      },
+    });
+  }
+
+  private static FUTURE_COPIED_KEYS = [
+    'city',
+    'city_id',
+    'select_court',
+    'select_court_id',
+    'select_court_type',
+    'select_court_city',
+    'case_type',
+    'case_no',
+    'case_title',
+    'case_year',
+    'bench',
+    'judge_name',
+    'judge_designation',
+  ];
+
+  async generateNextHearing(
+    parentId: string,
+    actor?: { actorUserId?: string; actorEmail?: string },
+  ) {
+    const parent = await this.prisma.ticket.findUnique({
+      where: { id: parentId },
+    });
+    if (!parent) throw new NotFoundException('Ticket not found');
+    if (!parent.scheduledDate)
+      throw new BadRequestException(
+        'No next-hearing date recorded on this ticket',
+      );
+
+    const srcPayload = (parent.formPayload ?? {}) as Record<string, unknown>;
+    const payload: Record<string, unknown> = {};
+    for (const k of TicketsService.FUTURE_COPIED_KEYS) {
+      if (srcPayload[k] !== undefined) payload[k] = srcPayload[k];
+    }
+    payload.case_status = 'Pending Case';
+    payload.case_date = parent.scheduledDate.toISOString().slice(0, 10);
+    payload.parent_ticket_id = parent.id;
+
+    const cloned = await this.prisma.ticket.create({
+      data: {
+        batchNo: this.generateBatchNo(),
+        consumerId: parent.consumerId,
+        serviceId: parent.serviceId,
+        status: 'PENDING',
+        createdBy: 'CONSUMER',
+        serviceCity: parent.serviceCity,
+        caseType: parent.caseType,
+        intakeFlow: parent.intakeFlow,
+        formPayload: payload as Prisma.InputJsonValue,
+        serviceCost: parent.serviceCost,
+        defaultClerkCost: parent.defaultClerkCost,
+        totalAmount: parent.serviceCost,
+        amountPaid: 0,
+        paymentStatus: 'UNPAID',
+      },
+    });
+
+    await this.prisma.ticketStatusHistory.create({
+      data: {
+        ticketId: cloned.id,
+        to: 'PENDING',
+        note: `Generated next-hearing from ${parent.batchNo}`,
+      },
+    });
+
+    await this.auditLogsService.create({
+      action: 'TICKET_NEXT_HEARING_GENERATED',
+      entity: 'TICKET',
+      entityId: cloned.id,
+      actorUserId: actor?.actorUserId,
+      actorEmail: actor?.actorEmail,
+      metadata: {
+        sourceTicketId: parent.id,
+        sourceBatchNo: parent.batchNo,
+        scheduledDate: parent.scheduledDate.toISOString(),
+      },
+    });
+
+    return cloned;
   }
 }

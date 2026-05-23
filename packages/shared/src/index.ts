@@ -181,20 +181,23 @@ export const PAYLOAD_FIELD_ALIASES: Record<string, readonly string[]> = {
 export const REQUIRED_FIELDS_OPTIONAL_BY_TIER: Record<string, Partial<Record<CourtTier, string[]>>> = {
   judicial_case_files: {
     // QA PDF #23-#27 + B6/B7: per-tier optional fields (red ✗ in the matrix).
+    // 2026-05-23 B1: judge_name added to base; drop it for all non-lower tiers.
     lower:   ['case_petition_no', 'case_year', 'case_type'],
-    high:    ['case_year', 'case_type'],
-    special: ['case_petition_no'],
-    shariat: ['case_year', 'case_type'],
-    supreme: ['case_year', 'case_type', 'case_title'],
-    fcc:     ['case_year', 'case_type', 'case_title'],
+    high:    ['case_year', 'case_type', 'judge_name'],
+    special: ['case_petition_no', 'judge_name'],
+    shariat: ['case_year', 'case_type', 'judge_name'],
+    supreme: ['case_year', 'case_type', 'case_title', 'judge_name'],
+    fcc:     ['case_year', 'case_type', 'case_title', 'judge_name'],
   },
   judicial_case_information: {
-    lower:   ['case_petition_no', 'case_year', 'case_type'],
-    high:    ['case_year', 'case_type'],
-    special: ['case_petition_no'],
-    shariat: ['case_year', 'case_type'],
-    supreme: ['case_year', 'case_type'],
-    fcc:     ['case_year', 'case_type'],
+    // 2026-05-23 B1: judge_name added to base; drop for all non-lower tiers.
+    // 2026-05-23 B2: case_type removed from base list entirely; drops cleaned.
+    lower:   ['case_petition_no', 'case_year'],
+    high:    ['case_year', 'judge_name'],
+    special: ['case_petition_no', 'judge_name'],
+    shariat: ['case_year', 'judge_name'],
+    supreme: ['case_year', 'judge_name'],
+    fcc:     ['case_year', 'judge_name'],
   },
   judicial_power_of_attorney: {
     lower:   ['case_petition_no', 'case_year', 'case_type'],
@@ -397,6 +400,10 @@ export const NOTIFICATION_TYPES = {
   WALLET_TOPUP_VERIFIED: 'wallet.topup_verified',
   WALLET_TOPUP_REJECTED: 'wallet.topup_rejected',
   WALLET_RECEIPT_UPLOADED: 'wallet.receipt_uploaded',
+  PAYMENT_SUBMITTED: 'payment.submitted',
+  PAYMENT_APPROVED: 'payment.approved',
+  PAYMENT_REJECTED: 'payment.rejected',
+  PAYMENT_REMAINDER_DUE: 'payment.remainder_due',
   CASE_CREATED: 'case.created',
   CASE_STATUS_CHANGED: 'case.status_changed',
   CASE_DRIFT_DETECTED: 'case.drift_detected',
@@ -406,3 +413,77 @@ export const NOTIFICATION_TYPES = {
 
 export type NotificationType =
   (typeof NOTIFICATION_TYPES)[keyof typeof NOTIFICATION_TYPES];
+
+// ── Payment model per intake flow (Spec 2, 2026-05-23) ──────────────
+export type PaymentModel = 'SPLIT' | 'ONE_TIME';
+
+export const PAYMENT_MODEL_BY_FLOW: Record<string, PaymentModel> = {
+  judicial_case_files: 'SPLIT',
+  non_judicial_copy_of_fir: 'SPLIT',
+  non_judicial_criminal_record_search: 'SPLIT',
+  non_judicial_registry_deed: 'SPLIT',
+  judicial_case_information: 'ONE_TIME',
+  judicial_case_search: 'ONE_TIME',
+  judicial_case_filing: 'ONE_TIME',
+  judicial_power_of_attorney: 'ONE_TIME',
+};
+
+export function paymentModelFor(flow?: string | null): PaymentModel {
+  if (!flow) return 'ONE_TIME';
+  return PAYMENT_MODEL_BY_FLOW[flow] ?? 'ONE_TIME';
+}
+
+// Which phase-2 charges each flow exposes in the clerk charge window (§4a).
+export interface ServiceChargeCapabilities {
+  attestation: boolean; // attested / non-attested
+  printing: boolean;    // printing / copying
+  delivery: boolean;
+  pdf: boolean;
+}
+
+export const SERVICE_CHARGE_CAPABILITIES: Record<string, ServiceChargeCapabilities> = {
+  judicial_case_files: { attestation: true, printing: true, delivery: true, pdf: true },
+  non_judicial_copy_of_fir: { attestation: false, printing: true, delivery: true, pdf: true },
+  non_judicial_registry_deed: { attestation: false, printing: true, delivery: true, pdf: true },
+  non_judicial_criminal_record_search: { attestation: false, printing: true, delivery: true, pdf: true },
+};
+
+const NO_CHARGES: ServiceChargeCapabilities = { attestation: false, printing: false, delivery: false, pdf: false };
+
+export function chargeCapabilitiesFor(flow?: string | null): ServiceChargeCapabilities {
+  if (!flow) return NO_CHARGES;
+  return SERVICE_CHARGE_CAPABILITIES[flow] ?? NO_CHARGES;
+}
+
+// Canonical render order for ticket case-details (Spec 3). Keys not listed are
+// appended after, alphabetically. Resolved through PAYLOAD_FIELD_ALIASES so
+// aliased keys land in the right slot.
+export const CASE_DETAILS_ORDER: string[] = [
+  'select_court_city', 'city', 'serviceCity',
+  'select_court', 'select_court_type', 'bench',
+  'select_service',
+  'case_type', 'case_type_other',
+  'case_petition_no',
+  'case_year',
+  'case_title',
+  'judge_designation', 'judge_name',
+  'case_date', 'future_date', 'scheduledDate',
+];
+
+export function orderCaseDetailKeys(keys: string[]): string[] {
+  const rank = new Map(CASE_DETAILS_ORDER.map((k, i) => [k, i]));
+  // Resolve aliases (e.g. case_no → case_petition_no) so aliased input keys
+  // rank into their canonical slot. Returns the ORIGINAL keys.
+  const aliasToCanonical = new Map<string, string>();
+  for (const [canonical, aliases] of Object.entries(PAYLOAD_FIELD_ALIASES)) {
+    for (const a of aliases) aliasToCanonical.set(a, canonical);
+  }
+  const canon = (k: string) => aliasToCanonical.get(k) ?? k;
+  const known = keys
+    .filter((k) => rank.has(canon(k)))
+    .sort((a, b) => rank.get(canon(a))! - rank.get(canon(b))!);
+  const unknown = keys
+    .filter((k) => !rank.has(canon(k)))
+    .sort((a, b) => a.localeCompare(b));
+  return [...known, ...unknown];
+}

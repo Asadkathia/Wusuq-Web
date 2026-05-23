@@ -22,6 +22,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { UPLOADS_BUCKETS, getUploadsBucketDir } from '../config/uploads';
 import type { JwtUser } from '../auth/types/jwt-user.type';
 import { RequirePermissions } from '../roles-permissions/decorators/permissions.decorator';
+import { AssignBulkDto } from './dto/assign-bulk.dto';
 import { AssignTicketDto } from './dto/assign-ticket.dto';
 import { BulkTicketActionDto } from './dto/bulk-ticket-action.dto';
 import { CreateTicketIntakeDto } from './dto/create-ticket-intake.dto';
@@ -29,6 +30,8 @@ import { FilterTicketsDto } from './dto/filter-tickets.dto';
 import { PatchDocumentDto } from './dto/patch-document.dto';
 import { SaveTicketIntakeDraftDto } from './dto/save-ticket-intake-draft.dto';
 import { SubmitClerkCostsDto } from './dto/submit-clerk-costs.dto';
+import { FinalizeRemainderDto } from './dto/finalize-remainder.dto';
+import { RecordNextHearingDto } from './dto/record-next-hearing.dto';
 import { RejectAssignmentDto } from './dto/reject-assignment.dto';
 import { UpdateTicketStatusDto } from './dto/update-ticket-status.dto';
 import { UpdateTicketDto } from './dto/update-ticket.dto';
@@ -337,6 +340,32 @@ export class TicketsController {
   }
 
   @RequirePermissions('tickets.write')
+  @Post(':id/clerk-charges')
+  saveClerkCharges(
+    @Param('id') id: string,
+    @Body() dto: FinalizeRemainderDto,
+    @CurrentUser() actor: JwtUser | undefined,
+  ) {
+    return this.ticketsService.saveClerkCharges(id, dto, {
+      actorUserId: actor?.sub,
+      actorEmail: actor?.email,
+    });
+  }
+
+  @RequirePermissions('finance.write')
+  @Post(':id/finalize-remainder')
+  finalizeRemainder(
+    @Param('id') id: string,
+    @Body() dto: FinalizeRemainderDto,
+    @CurrentUser() actor: JwtUser | undefined,
+  ) {
+    return this.ticketsService.finalizeRemainder(id, dto, {
+      actorUserId: actor?.sub,
+      actorEmail: actor?.email,
+    });
+  }
+
+  @RequirePermissions('tickets.write')
   @Post(':id/clerk-costs')
   submitClerkCosts(
     @Param('id') id: string,
@@ -369,6 +398,18 @@ export class TicketsController {
     @CurrentUser() actor: JwtUser | undefined,
   ) {
     return this.ticketsService.rejectAssignment(id, dto.reason, {
+      actorUserId: actor?.sub,
+      actorEmail: actor?.email,
+    });
+  }
+
+  @RequirePermissions('tickets.write')
+  @Post('assign-bulk')
+  assignBulk(
+    @Body() dto: AssignBulkDto,
+    @CurrentUser() actor: JwtUser | undefined,
+  ) {
+    return this.ticketsService.assignBulk(dto, {
       actorUserId: actor?.sub,
       actorEmail: actor?.email,
     });
@@ -429,6 +470,7 @@ export class TicketsController {
     file: { filename: string; mimetype: string; path: string },
     @Body('caption') caption: string | undefined,
     @Body('visibleToConsumer') visibleToConsumer: string | undefined,
+    @Body('category') category: 'WORK_DOCUMENT' | 'DELIVERABLE_PDF' | undefined,
     @CurrentUser() actor: JwtUser | undefined,
   ) {
     if (!file) {
@@ -443,6 +485,7 @@ export class TicketsController {
       },
       typeof caption === 'string' ? caption.slice(0, 200) : undefined,
       visibleToConsumer === 'true',
+      category === 'DELIVERABLE_PDF' ? 'DELIVERABLE_PDF' : 'WORK_DOCUMENT',
     );
   }
 
@@ -556,6 +599,27 @@ export class TicketsController {
     @Body('reason') reason?: string,
   ) {
     return this.ticketsService.verifyClerkReceipt(id, decision, reason, {
+      actorUserId: actor?.sub,
+      actorEmail: actor?.email,
+    });
+  }
+
+  @RequirePermissions('tickets.write')
+  @Post(':id/next-hearing')
+  recordNextHearing(
+    @Param('id') id: string,
+    @Body() dto: RecordNextHearingDto,
+  ) {
+    return this.ticketsService.recordNextHearing(id, dto);
+  }
+
+  @RequirePermissions('tickets.write')
+  @Post(':id/generate-next-hearing')
+  generateNextHearing(
+    @Param('id') id: string,
+    @CurrentUser() actor: JwtUser | undefined,
+  ) {
+    return this.ticketsService.generateNextHearing(id, {
       actorUserId: actor?.sub,
       actorEmail: actor?.email,
     });

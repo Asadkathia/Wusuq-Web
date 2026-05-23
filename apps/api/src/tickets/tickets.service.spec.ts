@@ -4,6 +4,12 @@ import {
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
+import {
+  requiredFieldsFor,
+  paymentModelFor,
+  chargeCapabilitiesFor,
+  orderCaseDetailKeys,
+} from '@wusuq/shared';
 import { TicketsService } from './tickets.service';
 
 function makeDispatcher() {
@@ -19,6 +25,7 @@ function makeDispatcher() {
     ticketClerkReceiptDecided: jest.fn().mockResolvedValue(undefined),
     ticketDocumentUploaded: jest.fn().mockResolvedValue(undefined),
     ticketRegenerated: jest.fn().mockResolvedValue(undefined),
+    paymentRemainderDue: jest.fn().mockResolvedValue(undefined),
     caseDriftDetected: jest.fn().mockResolvedValue(undefined),
   };
 }
@@ -74,6 +81,7 @@ describe('TicketsService', () => {
       pricingService as never,
       geoService as never,
       dispatcher as never,
+      { settleTicketsForUser: jest.fn().mockResolvedValue(undefined) } as never,
     );
 
     await service.regenerate('ticket-1');
@@ -139,6 +147,7 @@ describe('TicketsService', () => {
       pricingService as never,
       geoService as never,
       dispatcher as never,
+      { settleTicketsForUser: jest.fn().mockResolvedValue(undefined) } as never,
     );
 
     await expect(
@@ -872,8 +881,8 @@ describe('TicketsService', () => {
             select_court_city: 'x',
             case_petition_no: '1',
             case_year: '2024',
-            case_type: 'civil',
             case_title: 'A vs B',
+            judge_name: 'Judge Smith',
           },
         } as never,
         { actorUserId: 'consumer-1', actorEmail: 'c@x.com' },
@@ -894,8 +903,8 @@ describe('TicketsService', () => {
             select_court_city: 'x',
             case_petition_no: '1',
             case_year: '2024',
-            case_type: 'civil',
             case_title: 'A vs B',
+            judge_name: 'Judge Smith',
           },
         } as never,
         { actorUserId: 'admin-1', actorEmail: 'a@x.com' },
@@ -915,11 +924,128 @@ describe('TicketsService', () => {
           select_court_city: 'x',
           case_petition_no: '1',
           case_year: '2024',
-          case_type: 'civil',
           case_title: 'A vs B',
+          judge_name: 'Judge Smith',
         },
       } as never);
       expect(created[0]?.data.createdBy).toBe('ADMIN_STAFF');
+    });
+  });
+
+  describe('createIntakeTicket — SPLIT billing (Task 1.2)', () => {
+    function buildIntakeHarnessWithPricing(opts: {
+      flow: string;
+      serviceCost: number;
+      total: number;
+    }) {
+      const created: { data: Record<string, unknown> }[] = [];
+      const prisma = {
+        user: {
+          findUnique: jest.fn().mockResolvedValue({ id: 'consumer-1' }),
+        },
+        service: {
+          findUnique: jest
+            .fn()
+            .mockResolvedValue({ id: 'svc-1', category: 'judicial' }),
+        },
+        ticket: {
+          create: jest.fn().mockImplementation(async (args: any) => {
+            created.push(args);
+            return { id: 'tkt-new', ...args.data };
+          }),
+        },
+        ticketStatusHistory: {
+          create: jest.fn().mockResolvedValue({}),
+        },
+        ticketIntakeDraft: {
+          delete: jest.fn().mockResolvedValue({}),
+        },
+      };
+      const auditLogsService = { create: jest.fn().mockResolvedValue({}) };
+      const pricingService = {
+        resolve: jest.fn().mockResolvedValue({
+          matched: true,
+          rulesExistForFlow: true,
+          basePrice: opts.serviceCost,
+          attestedCharge: 0,
+          nonAttestedCharge: 0,
+          deliveryCharge: 0,
+          serviceCost: opts.serviceCost,
+          total: opts.total,
+        }),
+      };
+      const geoService = { resolveProvinceByCity: jest.fn() };
+      const dispatcher = makeDispatcher();
+      const service = new TicketsService(
+        prisma as never,
+        auditLogsService as never,
+        pricingService as never,
+        geoService as never,
+        dispatcher as never,
+      );
+      return { service, prisma, created };
+    }
+
+    it('SPLIT flow: totalAmount equals serviceCost (base only) even when pricing.total is higher', async () => {
+      const { service, created } = buildIntakeHarnessWithPricing({
+        flow: 'judicial_case_files',
+        serviceCost: 5000,
+        total: 8000,
+      });
+      await service.createIntakeTicket(
+        {
+          consumerId: 'consumer-1',
+          serviceId: 'svc-1',
+          flow: 'judicial_case_files',
+          payload: {
+            select_service: 'x',
+            select_court: 'x',
+            select_court_city: 'x',
+            select_court_type: 'lower',
+            case_petition_no: '1',
+            case_year: '2024',
+            case_type: 'civil',
+            case_status: 'pending',
+            case_title: 'A vs B',
+            judge_name: 'Judge Smith',
+            sets: '1',
+            set_type: 'attested',
+            delivery_mode: 'courier',
+          },
+        } as never,
+        { actorUserId: 'consumer-1', actorEmail: 'c@x.com' },
+      );
+      const data = created[0]?.data;
+      expect(data?.totalAmount).toBe(data?.serviceCost); // base only for SPLIT
+      expect(data?.serviceCost).toBe(5000);
+      expect(data?.totalAmount).toBe(5000); // NOT 8000
+    });
+
+    it('ONE_TIME flow: totalAmount equals pricing.total (full amount)', async () => {
+      const { service, created } = buildIntakeHarnessWithPricing({
+        flow: 'judicial_case_information',
+        serviceCost: 3000,
+        total: 3500,
+      });
+      await service.createIntakeTicket(
+        {
+          consumerId: 'consumer-1',
+          serviceId: 'svc-1',
+          flow: 'judicial_case_information',
+          payload: {
+            select_service: 'x',
+            select_court: 'x',
+            select_court_city: 'x',
+            case_petition_no: '1',
+            case_year: '2024',
+            case_title: 'A vs B',
+            judge_name: 'Judge Smith',
+          },
+        } as never,
+        { actorUserId: 'consumer-1', actorEmail: 'c@x.com' },
+      );
+      const data = created[0]?.data;
+      expect(data?.totalAmount).toBe(3500); // full total for ONE_TIME
     });
   });
 
@@ -940,18 +1066,29 @@ describe('TicketsService', () => {
     function buildGateHarness(ticket: {
       createdBy: 'CONSUMER' | 'ADMIN_STAFF';
       paymentStatus: 'UNPAID' | 'PARTIALLY_PAID' | 'PAID';
+      intakeFlow?: string;
+      serviceCost?: number;
+      amountPaid?: number;
+      totalAmount?: number;
+      status?: string;
     }) {
+      const { status: ticketStatus = 'PENDING', ...rest } = ticket;
       const prisma = {
         ticket: {
           findUnique: jest.fn().mockResolvedValue({
             id: 'tkt-1',
-            status: 'PENDING',
+            status: ticketStatus,
             caseId: null,
-            ...ticket,
+            intakeFlow: null,
+            serviceCost: 0,
+            amountPaid: 0,
+            totalAmount: 0,
+            ...rest,
           }),
           update: jest.fn().mockResolvedValue({
             id: 'tkt-1',
-            status: 'ASSIGNED',
+            status:
+              ticketStatus === 'WAITING_APPROVAL' ? 'COMPLETED' : 'ASSIGNED',
             caseId: null,
             consumer: {
               id: 'consumer-1',
@@ -983,6 +1120,9 @@ describe('TicketsService', () => {
       const { service, prisma } = buildGateHarness({
         createdBy: 'CONSUMER',
         paymentStatus: 'UNPAID',
+        serviceCost: 5000,
+        amountPaid: 0,
+        totalAmount: 5000,
       });
       await expect(
         service.updateStatus('tkt-1', 'ASSIGNED', undefined, {
@@ -996,6 +1136,9 @@ describe('TicketsService', () => {
       const { service, prisma } = buildGateHarness({
         createdBy: 'CONSUMER',
         paymentStatus: 'PARTIALLY_PAID',
+        serviceCost: 5000,
+        amountPaid: 2000,
+        totalAmount: 5000,
       });
       await expect(
         service.updateStatus('tkt-1', 'ASSIGNED', undefined, {
@@ -1009,6 +1152,9 @@ describe('TicketsService', () => {
       const { service, prisma } = buildGateHarness({
         createdBy: 'ADMIN_STAFF',
         paymentStatus: 'UNPAID',
+        serviceCost: 5000,
+        amountPaid: 0,
+        totalAmount: 5000,
       });
       const updated = await service.updateStatus(
         'tkt-1',
@@ -1020,10 +1166,13 @@ describe('TicketsService', () => {
       expect(prisma.ticket.update).toHaveBeenCalled();
     });
 
-    it('allows PENDING → ASSIGNED for CONSUMER ticket once paymentStatus=PAID', async () => {
+    it('allows PENDING → ASSIGNED for CONSUMER ticket once amountPaid >= totalAmount', async () => {
       const { service, prisma } = buildGateHarness({
         createdBy: 'CONSUMER',
         paymentStatus: 'PAID',
+        serviceCost: 5000,
+        amountPaid: 5000,
+        totalAmount: 5000,
       });
       const updated = await service.updateStatus(
         'tkt-1',
@@ -1040,12 +1189,747 @@ describe('TicketsService', () => {
       const { service, prisma } = buildGateHarness({
         createdBy: 'CONSUMER',
         paymentStatus: 'UNPAID',
+        serviceCost: 5000,
+        amountPaid: 0,
+        totalAmount: 5000,
       });
-      const updated = await service.updateStatus('tkt-1', 'ASSIGNED', undefined, {
-        actorUserId: 'admin-1',
-      });
+      const updated = await service.updateStatus(
+        'tkt-1',
+        'ASSIGNED',
+        undefined,
+        {
+          actorUserId: 'admin-1',
+        },
+      );
       expect(updated.status).toBe('ASSIGNED');
       expect(prisma.ticket.update).toHaveBeenCalled();
     });
+
+    // ── Phase-aware gate (Task 1.3) ──────────────────────────────────────────
+
+    it('SPLIT: base covered (amountPaid >= serviceCost) allows ASSIGNED even with remainder pending', async () => {
+      const { service, prisma } = buildGateHarness({
+        createdBy: 'CONSUMER',
+        intakeFlow: 'judicial_case_files',
+        serviceCost: 5000,
+        amountPaid: 5000,
+        totalAmount: 5000,
+        paymentStatus: 'PAID',
+      });
+      await service.updateStatus('tkt-1', 'ASSIGNED', undefined, {
+        actorUserId: 'a',
+      });
+      expect(prisma.ticket.update).toHaveBeenCalled();
+    });
+
+    it('SPLIT: COMPLETED blocked when amountPaid < totalAmount (remainder unpaid)', async () => {
+      const { service } = buildGateHarness({
+        createdBy: 'CONSUMER',
+        intakeFlow: 'judicial_case_files',
+        serviceCost: 5000,
+        amountPaid: 5000,
+        totalAmount: 8000,
+        paymentStatus: 'PARTIALLY_PAID',
+        status: 'WAITING_APPROVAL',
+      });
+      await expect(
+        service.updateStatus('tkt-1', 'COMPLETED', undefined, {
+          actorUserId: 'a',
+        }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('SPLIT: COMPLETED allowed when amountPaid >= totalAmount (full paid)', async () => {
+      const { service, prisma } = buildGateHarness({
+        createdBy: 'CONSUMER',
+        intakeFlow: 'judicial_case_files',
+        serviceCost: 5000,
+        amountPaid: 8000,
+        totalAmount: 8000,
+        paymentStatus: 'PAID',
+        status: 'WAITING_APPROVAL',
+      });
+      await service.updateStatus('tkt-1', 'COMPLETED', undefined, {
+        actorUserId: 'a',
+      });
+      expect(prisma.ticket.update).toHaveBeenCalled();
+    });
+
+    it('ONE_TIME: ASSIGNED blocked when amountPaid < totalAmount (base not covered)', async () => {
+      const { service } = buildGateHarness({
+        createdBy: 'CONSUMER',
+        intakeFlow: 'judicial_case_information',
+        serviceCost: 5000,
+        amountPaid: 3000,
+        totalAmount: 5000,
+        paymentStatus: 'PARTIALLY_PAID',
+      });
+      await expect(
+        service.updateStatus('tkt-1', 'ASSIGNED', undefined, {
+          actorUserId: 'a',
+        }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('SPLIT: ASSIGNED blocked when amountPaid < serviceCost (base not covered)', async () => {
+      const { service } = buildGateHarness({
+        createdBy: 'CONSUMER',
+        intakeFlow: 'judicial_case_files',
+        serviceCost: 5000,
+        amountPaid: 3000,
+        totalAmount: 5000,
+        paymentStatus: 'PARTIALLY_PAID',
+      });
+      await expect(
+        service.updateStatus('tkt-1', 'ASSIGNED', undefined, {
+          actorUserId: 'a',
+        }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+  });
+
+  // ─── B1: judge_name lower-court requirement ───────────────────────────────
+
+  const CASE_FILES_BASE_WITH_JUDGE = [
+    'select_service',
+    'select_court',
+    'select_court_city',
+    'case_petition_no',
+    'case_year',
+    'case_type',
+    'case_status',
+    'case_title',
+    'judge_name',
+    'sets',
+    'set_type',
+    'delivery_mode',
+  ];
+
+  describe('judge_name lower-court requirement', () => {
+    it('requires judge_name for LOWER tier', () => {
+      expect(
+        requiredFieldsFor(
+          'judicial_case_files',
+          CASE_FILES_BASE_WITH_JUDGE,
+          'lower',
+        ),
+      ).toContain('judge_name');
+    });
+    it('drops judge_name for HIGH tier', () => {
+      expect(
+        requiredFieldsFor(
+          'judicial_case_files',
+          CASE_FILES_BASE_WITH_JUDGE,
+          'high',
+        ),
+      ).not.toContain('judge_name');
+    });
+  });
+
+  // ─── B2: Case Information is pending-only (no case_type) ─────────────────
+
+  const CASE_INFO_BASE_AFTER = [
+    'select_service',
+    'select_court',
+    'select_court_city',
+    'case_petition_no',
+    'case_year',
+    'case_title',
+    'judge_name',
+  ]; // note: NO case_type
+
+  describe('Case Information is pending-only (no case_type)', () => {
+    it('does not require case_type at any tier', () => {
+      for (const tier of [
+        'lower',
+        'high',
+        'special',
+        'shariat',
+        'supreme',
+        'fcc',
+      ] as const) {
+        expect(
+          requiredFieldsFor(
+            'judicial_case_information',
+            CASE_INFO_BASE_AFTER,
+            tier,
+          ),
+        ).not.toContain('case_type');
+      }
+    });
+  });
+});
+
+describe('payment model + charge capabilities (Spec 2)', () => {
+  it('classifies SPLIT vs ONE_TIME flows', () => {
+    expect(paymentModelFor('judicial_case_files')).toBe('SPLIT');
+    expect(paymentModelFor('non_judicial_registry_deed')).toBe('SPLIT');
+    expect(paymentModelFor('judicial_case_information')).toBe('ONE_TIME');
+    expect(paymentModelFor(undefined)).toBe('ONE_TIME');
+  });
+  it('exposes attestation only for case files', () => {
+    expect(chargeCapabilitiesFor('judicial_case_files').attestation).toBe(true);
+    expect(chargeCapabilitiesFor('non_judicial_copy_of_fir').attestation).toBe(
+      false,
+    );
+    expect(chargeCapabilitiesFor('judicial_case_information')).toEqual({
+      attestation: false,
+      printing: false,
+      delivery: false,
+      pdf: false,
+    });
+  });
+});
+
+// ─── Task 1.4: finalizeRemainder ──────────────────────────────────────────────
+
+describe('finalizeRemainder (Task 1.4)', () => {
+  function buildFinalizeHarness(opts: {
+    intakeFlow: string;
+    serviceCost: number;
+    amountPaid: number;
+    attestedCharges?: number;
+    printingCharges?: number;
+    deliveryCharges?: number;
+    pdfCharges?: number;
+  }) {
+    const ticket = {
+      id: 'tkt-fin',
+      consumerId: 'consumer-1',
+      serviceCost: opts.serviceCost,
+      amountPaid: opts.amountPaid,
+      intakeFlow: opts.intakeFlow,
+    };
+
+    const updatedTicket = { ...ticket };
+    const walletService = {
+      settleTicketsForUser: jest.fn().mockResolvedValue(undefined),
+    };
+
+    const prisma = {
+      ticket: {
+        findUnique: jest.fn().mockResolvedValue(ticket),
+        update: jest.fn().mockResolvedValue(updatedTicket),
+        findFirst: jest.fn().mockResolvedValue(null),
+        findMany: jest.fn().mockResolvedValue([]),
+        include: jest.fn(),
+      },
+      ticketStatusHistory: { create: jest.fn().mockResolvedValue({}) },
+      ticketIntakeDraft: { delete: jest.fn().mockResolvedValue({}) },
+      user: { findUnique: jest.fn().mockResolvedValue({ id: 'consumer-1' }) },
+      service: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValue({ id: 'svc-1', category: 'judicial' }),
+      },
+      assignment: { findFirst: jest.fn().mockResolvedValue(null) },
+    };
+    const auditLogsService = { create: jest.fn().mockResolvedValue({}) };
+    const pricingService = { resolve: jest.fn() };
+    const geoService = { resolveProvinceByCity: jest.fn() };
+    const dispatcher = makeDispatcher();
+    const service = new TicketsService(
+      prisma as never,
+      auditLogsService as never,
+      pricingService as never,
+      geoService as never,
+      dispatcher as never,
+      walletService as never,
+    );
+    return { service, prisma, walletService };
+  }
+
+  it('bumps totalAmount from capability-gated charges and triggers wallet settlement', async () => {
+    const { service, prisma, walletService } = buildFinalizeHarness({
+      intakeFlow: 'judicial_case_files',
+      serviceCost: 5000,
+      amountPaid: 5000,
+      attestedCharges: 2000,
+      printingCharges: 1000,
+    });
+
+    // Mock findOne for the return value
+    prisma.ticket.findUnique
+      .mockResolvedValueOnce({
+        id: 'tkt-fin',
+        consumerId: 'consumer-1',
+        serviceCost: 5000,
+        amountPaid: 5000,
+        intakeFlow: 'judicial_case_files',
+      })
+      .mockResolvedValue({
+        id: 'tkt-fin',
+        consumerId: 'consumer-1',
+        serviceCost: 5000,
+        amountPaid: 5000,
+        intakeFlow: 'judicial_case_files',
+        documents: [],
+        assignments: [],
+        history: [],
+        clerkReport: null,
+        consumer: { id: 'consumer-1' },
+        service: { id: 'svc-1' },
+      });
+
+    await service.finalizeRemainder(
+      'tkt-fin',
+      { attestedCharges: 2000, printingCharges: 1000 },
+      { actorUserId: 'admin-1' },
+    );
+
+    // totalAmount = 5000 + 2000 + 1000 = 8000
+    expect(prisma.ticket.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'tkt-fin' },
+        data: expect.objectContaining({
+          totalAmount: 8000,
+          remainderFinalizedAt: expect.any(Date),
+        }),
+      }),
+    );
+    expect(walletService.settleTicketsForUser).toHaveBeenCalledWith(
+      'consumer-1',
+    );
+  });
+
+  it('includes the consumer-billed clerkCost in the finalized total', async () => {
+    const { service, prisma } = buildFinalizeHarness({
+      intakeFlow: 'judicial_case_files',
+      serviceCost: 5000,
+      amountPaid: 5000,
+    });
+
+    prisma.ticket.findUnique
+      .mockResolvedValueOnce({
+        id: 'tkt-fin',
+        consumerId: 'consumer-1',
+        serviceCost: 5000,
+        clerkCost: 1500,
+        amountPaid: 5000,
+        intakeFlow: 'judicial_case_files',
+      })
+      .mockResolvedValue({
+        id: 'tkt-fin',
+        documents: [],
+        assignments: [],
+        history: [],
+        clerkReport: null,
+        consumer: { id: 'consumer-1' },
+        service: { id: 'svc-1' },
+      });
+
+    await service.finalizeRemainder(
+      'tkt-fin',
+      { attestedCharges: 2000, printingCharges: 1000 },
+      { actorUserId: 'admin-1' },
+    );
+
+    // total = serviceCost 5000 + clerkCost 1500 + attested 2000 + printing 1000
+    expect(prisma.ticket.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ totalAmount: 9500 }),
+      }),
+    );
+  });
+
+  it('sets PARTIALLY_PAID when amountPaid < totalAmount after finalize', async () => {
+    const { service, prisma } = buildFinalizeHarness({
+      intakeFlow: 'judicial_case_files',
+      serviceCost: 5000,
+      amountPaid: 5000,
+    });
+
+    prisma.ticket.findUnique
+      .mockResolvedValueOnce({
+        id: 'tkt-fin',
+        consumerId: 'consumer-1',
+        serviceCost: 5000,
+        amountPaid: 5000,
+        intakeFlow: 'judicial_case_files',
+      })
+      .mockResolvedValue({
+        id: 'tkt-fin',
+        documents: [],
+        assignments: [],
+        history: [],
+        clerkReport: null,
+        consumer: { id: 'consumer-1' },
+        service: { id: 'svc-1' },
+      });
+
+    await service.finalizeRemainder(
+      'tkt-fin',
+      { printingCharges: 3000 },
+      { actorUserId: 'admin-1' },
+    );
+
+    expect(prisma.ticket.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          paymentStatus: 'PARTIALLY_PAID', // 5000 paid < 8000 total
+        }),
+      }),
+    );
+  });
+
+  it('sets PAID when amountPaid >= totalAmount after finalize', async () => {
+    const { service, prisma } = buildFinalizeHarness({
+      intakeFlow: 'judicial_case_files',
+      serviceCost: 5000,
+      amountPaid: 5000,
+    });
+
+    prisma.ticket.findUnique
+      .mockResolvedValueOnce({
+        id: 'tkt-fin',
+        consumerId: 'consumer-1',
+        serviceCost: 5000,
+        amountPaid: 5000,
+        intakeFlow: 'judicial_case_files',
+      })
+      .mockResolvedValue({
+        id: 'tkt-fin',
+        documents: [],
+        assignments: [],
+        history: [],
+        clerkReport: null,
+        consumer: { id: 'consumer-1' },
+        service: { id: 'svc-1' },
+      });
+
+    await service.finalizeRemainder(
+      'tkt-fin',
+      {}, // no additional charges
+      { actorUserId: 'admin-1' },
+    );
+
+    expect(prisma.ticket.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          paymentStatus: 'PAID', // 5000 paid >= 5000 total
+        }),
+      }),
+    );
+  });
+
+  it('zeroes attestation charges for flows without attestation capability', async () => {
+    const { service, prisma } = buildFinalizeHarness({
+      intakeFlow: 'non_judicial_copy_of_fir',
+      serviceCost: 3000,
+      amountPaid: 0,
+    });
+
+    prisma.ticket.findUnique
+      .mockResolvedValueOnce({
+        id: 'tkt-fin',
+        consumerId: 'consumer-1',
+        serviceCost: 3000,
+        amountPaid: 0,
+        intakeFlow: 'non_judicial_copy_of_fir',
+      })
+      .mockResolvedValue({
+        id: 'tkt-fin',
+        documents: [],
+        assignments: [],
+        history: [],
+        clerkReport: null,
+        consumer: { id: 'consumer-1' },
+        service: { id: 'svc-1' },
+      });
+
+    await service.finalizeRemainder(
+      'tkt-fin',
+      { attestedCharges: 9999, printingCharges: 500 }, // attestation should be zeroed
+      { actorUserId: 'admin-1' },
+    );
+
+    const updateCall = prisma.ticket.update.mock.calls[0][0];
+    // attestation is NOT a capability of non_judicial_copy_of_fir
+    expect(updateCall.data.attestedCharges).toBe(0);
+    // printing IS a capability
+    expect(updateCall.data.printingCharges).toBe(500);
+    // totalAmount = 3000 + 0 (attested zeroed) + 500 = 3500
+    expect(updateCall.data.totalAmount).toBe(3500);
+  });
+
+  it('throws NotFoundException when ticket not found', async () => {
+    const { service, prisma } = buildFinalizeHarness({
+      intakeFlow: 'judicial_case_files',
+      serviceCost: 5000,
+      amountPaid: 0,
+    });
+    prisma.ticket.findUnique.mockResolvedValueOnce(null);
+
+    await expect(
+      service.finalizeRemainder('nonexistent', {}, { actorUserId: 'admin-1' }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+});
+
+describe('orderCaseDetailKeys (Spec 3)', () => {
+  it('orders known keys city→court→service→…, appends unknown alphabetically', () => {
+    const out = orderCaseDetailKeys([
+      'case_title',
+      'zzz_extra',
+      'select_court_city',
+      'select_service',
+      'aaa_extra',
+    ]);
+    expect(out).toEqual([
+      'select_court_city',
+      'select_service',
+      'case_title',
+      'aaa_extra',
+      'zzz_extra',
+    ]);
+  });
+});
+
+// ─── Task 1.2: assignBulk ────────────────────────────────────────────────────
+
+describe('assignBulk (Spec 3)', () => {
+  function buildAssignBulkService(opts: {
+    tickets: Array<{ id: string; defaultClerkCost: number | null }>;
+    assignShouldThrowFor?: string[];
+  }) {
+    const ticketMap = new Map(opts.tickets.map((t) => [t.id, t]));
+    const prisma = {
+      ticket: {
+        findUnique: jest
+          .fn()
+          .mockImplementation(
+            async (args: { where: { id: string }; select?: unknown }) => {
+              return ticketMap.get(args.where.id) ?? null;
+            },
+          ),
+      },
+    };
+    const auditLogsService = { create: jest.fn().mockResolvedValue({}) };
+    const pricingService = { resolve: jest.fn() };
+    const geoService = { resolveProvinceByCity: jest.fn() };
+    const dispatcher = makeDispatcher();
+    const service = new TicketsService(
+      prisma as never,
+      auditLogsService as never,
+      pricingService as never,
+      geoService as never,
+      dispatcher as never,
+    );
+
+    // Spy on the real assign method: resolve for normal tickets, throw for bad ones
+    jest.spyOn(service, 'assign').mockImplementation(async (id: string) => {
+      if (opts.assignShouldThrowFor?.includes(id)) {
+        throw new ForbiddenException(`Gating failed for ${id}`);
+      }
+      return { id } as never;
+    });
+
+    return { service, prisma };
+  }
+
+  it('assigns each ticket using its own defaultClerkCost; collects skipped', async () => {
+    const { service } = buildAssignBulkService({
+      tickets: [
+        { id: 'tkt-ok', defaultClerkCost: 1500 },
+        { id: 'tkt-bad', defaultClerkCost: 0 },
+      ],
+      assignShouldThrowFor: ['tkt-bad'],
+    });
+
+    const result = await service.assignBulk(
+      { ticketIds: ['tkt-ok', 'tkt-bad'], representativeId: 'rep-1' },
+      { actorUserId: 'admin-1' },
+    );
+
+    expect(result.assigned).toEqual(['tkt-ok']);
+    expect(result.skipped).toHaveLength(1);
+    expect(result.skipped[0].ticketId).toBe('tkt-bad');
+
+    // Verify assign was called with the ticket's own defaultClerkCost
+    expect(service.assign).toHaveBeenCalledWith(
+      'tkt-ok',
+      expect.objectContaining({ clerkCost: 1500, representativeId: 'rep-1' }),
+      expect.anything(),
+    );
+  });
+
+  it('skips tickets that are not found', async () => {
+    const { service } = buildAssignBulkService({ tickets: [] });
+
+    const result = await service.assignBulk({
+      ticketIds: ['missing-1'],
+      representativeId: 'rep-1',
+    });
+
+    expect(result.assigned).toHaveLength(0);
+    expect(result.skipped[0]).toMatchObject({
+      ticketId: 'missing-1',
+      reason: 'Not found',
+    });
+  });
+});
+
+// ─── Task 1.3: recordNextHearing + generateNextHearing ───────────────────────
+
+describe('recordNextHearing (Task 1.3)', () => {
+  function buildService() {
+    const stored: Record<string, unknown> = {
+      id: 'tkt-1',
+      status: 'IN_PROGRESS',
+    };
+    const prisma = {
+      ticket: {
+        findUnique: jest.fn().mockResolvedValue(stored),
+        update: jest
+          .fn()
+          .mockImplementation(
+            async (args: { data: Record<string, unknown> }) => ({
+              ...stored,
+              ...args.data,
+            }),
+          ),
+      },
+    };
+    const auditLogsService = { create: jest.fn().mockResolvedValue({}) };
+    const pricingService = { resolve: jest.fn() };
+    const geoService = { resolveProvinceByCity: jest.fn() };
+    const dispatcher = makeDispatcher();
+    const service = new TicketsService(
+      prisma as never,
+      auditLogsService as never,
+      pricingService as never,
+      geoService as never,
+      dispatcher as never,
+    );
+    return { service, prisma };
+  }
+
+  it('sets scheduledDate on the ticket', async () => {
+    const { service, prisma } = buildService();
+    await service.recordNextHearing('tkt-1', { scheduledDate: '2026-09-01' });
+    expect(prisma.ticket.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'tkt-1' },
+        data: expect.objectContaining({
+          scheduledDate: new Date('2026-09-01'),
+        }),
+      }),
+    );
+  });
+
+  it('also sets hearingType when provided', async () => {
+    const { service, prisma } = buildService();
+    await service.recordNextHearing('tkt-1', {
+      scheduledDate: '2026-09-01',
+      hearingType: 'Arguments',
+    });
+    expect(prisma.ticket.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ hearingType: 'Arguments' }),
+      }),
+    );
+  });
+});
+
+describe('generateNextHearing (Task 1.3)', () => {
+  function buildService(parent: Record<string, unknown>) {
+    const created: { data: Record<string, unknown> }[] = [];
+    const prisma = {
+      ticket: {
+        findUnique: jest.fn().mockResolvedValue(parent),
+        create: jest
+          .fn()
+          .mockImplementation(
+            async (args: { data: Record<string, unknown> }) => {
+              created.push(args);
+              return { id: 'tkt-new', ...args.data };
+            },
+          ),
+      },
+      ticketStatusHistory: {
+        create: jest.fn().mockResolvedValue({}),
+      },
+    };
+    const auditLogsService = { create: jest.fn().mockResolvedValue({}) };
+    const pricingService = { resolve: jest.fn() };
+    const geoService = { resolveProvinceByCity: jest.fn() };
+    const dispatcher = makeDispatcher();
+    const service = new TicketsService(
+      prisma as never,
+      auditLogsService as never,
+      pricingService as never,
+      geoService as never,
+      dispatcher as never,
+    );
+    return { service, prisma, created };
+  }
+
+  const baseParent = {
+    id: 'tkt-parent',
+    batchNo: 'TKT-001',
+    consumerId: 'consumer-1',
+    serviceId: 'svc-1',
+    serviceCity: 'Lahore',
+    caseType: 'civil',
+    intakeFlow: 'judicial_case_files',
+    formPayload: {
+      select_court_city: 'Lahore',
+      select_court: 'District Court',
+      case_title: 'State vs A',
+      case_year: '2024',
+      judge_name: 'Judge X',
+    },
+    serviceCost: 5000,
+    defaultClerkCost: 1000,
+    scheduledDate: new Date('2026-09-15'),
+  };
+
+  it('creates a CONSUMER-owned UNPAID ticket prefilled from parent', async () => {
+    const { service, created } = buildService(baseParent);
+
+    const result = await service.generateNextHearing('tkt-parent', {
+      actorUserId: 'admin-1',
+    });
+
+    expect(result).toBeDefined();
+    const data = created[0]?.data;
+    expect(data?.createdBy).toBe('CONSUMER');
+    expect(data?.paymentStatus).toBe('UNPAID');
+    expect(data?.status).toBe('PENDING');
+    expect(data?.consumerId).toBe('consumer-1');
+  });
+
+  it('seeds scheduledDate as case_date in the new payload', async () => {
+    const { service, created } = buildService(baseParent);
+    await service.generateNextHearing('tkt-parent', { actorUserId: 'admin-1' });
+    const payload = created[0]?.data.formPayload as Record<string, unknown>;
+    expect(payload?.case_date).toBe('2026-09-15');
+    expect(payload?.case_status).toBe('Pending Case');
+    expect(payload?.parent_ticket_id).toBe('tkt-parent');
+  });
+
+  it('copies case-identifier keys from parent payload', async () => {
+    const { service, created } = buildService(baseParent);
+    await service.generateNextHearing('tkt-parent');
+    const payload = created[0]?.data.formPayload as Record<string, unknown>;
+    expect(payload?.select_court_city).toBe('Lahore');
+    expect(payload?.case_title).toBe('State vs A');
+    expect(payload?.judge_name).toBe('Judge X');
+  });
+
+  it('throws BadRequestException when no scheduledDate recorded', async () => {
+    const parentWithoutDate = { ...baseParent, scheduledDate: null };
+    const { service } = buildService(parentWithoutDate);
+    await expect(
+      service.generateNextHearing('tkt-parent'),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('throws NotFoundException when parent ticket not found', async () => {
+    const { service, prisma } = buildService(baseParent);
+    prisma.ticket.findUnique.mockResolvedValueOnce(null);
+    await expect(
+      service.generateNextHearing('nonexistent'),
+    ).rejects.toBeInstanceOf(NotFoundException);
   });
 });

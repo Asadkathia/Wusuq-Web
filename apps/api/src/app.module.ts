@@ -30,6 +30,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { FileStorageModule } from './file-storage/file-storage.module';
 import { PersonalFilesModule } from './personal-files/personal-files.module';
 import { CaseTypesModule } from './case-types/case-types.module';
+import { PaymentSettingsModule } from './payment-settings/payment-settings.module';
 
 @Module({
   imports: [
@@ -80,6 +81,7 @@ import { CaseTypesModule } from './case-types/case-types.module';
     FileStorageModule,
     PersonalFilesModule,
     CaseTypesModule,
+    PaymentSettingsModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },
