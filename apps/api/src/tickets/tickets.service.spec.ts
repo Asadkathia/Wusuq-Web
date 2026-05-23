@@ -4,7 +4,7 @@ import {
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
-import { requiredFieldsFor } from '@wusuq/shared';
+import { requiredFieldsFor, paymentModelFor, chargeCapabilitiesFor } from '@wusuq/shared';
 import { TicketsService } from './tickets.service';
 
 function makeDispatcher() {
@@ -1123,6 +1123,22 @@ describe('TicketsService', () => {
           ),
         ).not.toContain('case_type');
       }
+    });
+  });
+});
+
+describe('payment model + charge capabilities (Spec 2)', () => {
+  it('classifies SPLIT vs ONE_TIME flows', () => {
+    expect(paymentModelFor('judicial_case_files')).toBe('SPLIT');
+    expect(paymentModelFor('non_judicial_registry_deed')).toBe('SPLIT');
+    expect(paymentModelFor('judicial_case_information')).toBe('ONE_TIME');
+    expect(paymentModelFor(undefined)).toBe('ONE_TIME');
+  });
+  it('exposes attestation only for case files', () => {
+    expect(chargeCapabilitiesFor('judicial_case_files').attestation).toBe(true);
+    expect(chargeCapabilitiesFor('non_judicial_copy_of_fir').attestation).toBe(false);
+    expect(chargeCapabilitiesFor('judicial_case_information')).toEqual({
+      attestation: false, printing: false, delivery: false, pdf: false,
     });
   });
 });

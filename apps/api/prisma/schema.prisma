@@ -69,6 +69,13 @@ enum WalletTransactionStatus {
   REJECTED
 }
 
+enum WalletTransactionType {
+  TOPUP
+  TICKET_PAYMENT
+  TICKET_DEBIT
+  ADMIN_ADJUSTMENT
+}
+
 enum InvoiceStatus {
   GENERATED
   SENT
@@ -199,6 +206,8 @@ model Ticket {
   clerkCost             Decimal             @default(0)
   clerkApprovalStatus   ClerkApprovalStatus @default(PENDING)
   clerkReceiptUrl       String?
+  remainderFinalizedAt       DateTime?
+  remainderFinalizedByUserId String?
   totalAmount           Decimal             @default(0)
   amountPaid      Decimal             @default(0)
   paymentStatus   TicketPaymentStatus @default(UNPAID)
@@ -372,6 +381,7 @@ model WalletTransaction {
   paymentMode PaymentMode
   currency    String      @default("PKR")
   status      WalletTransactionStatus @default(PENDING_VERIFICATION)
+  type        WalletTransactionType @default(TOPUP)
   receiptUrl  String?
   reviewedByUserId String?
   verifiedAt  DateTime?
@@ -696,4 +706,15 @@ model UserStorageUsage {
   fileCount Int      @default(0)
   updatedAt DateTime @updatedAt
   user      User     @relation(fields: [userId], references: [id])
+}
+
+model PaymentSettings {
+  id              String   @id @default("singleton")
+  bankName        String
+  accountTitle    String
+  accountNumber   String
+  iban            String?
+  instructions    String?
+  updatedAt       DateTime @updatedAt
+  updatedByUserId String?
 }

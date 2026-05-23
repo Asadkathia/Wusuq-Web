@@ -409,3 +409,44 @@ export const NOTIFICATION_TYPES = {
 
 export type NotificationType =
   (typeof NOTIFICATION_TYPES)[keyof typeof NOTIFICATION_TYPES];
+
+// ── Payment model per intake flow (Spec 2, 2026-05-23) ──────────────
+export type PaymentModel = 'SPLIT' | 'ONE_TIME';
+
+export const PAYMENT_MODEL_BY_FLOW: Record<string, PaymentModel> = {
+  judicial_case_files: 'SPLIT',
+  non_judicial_copy_of_fir: 'SPLIT',
+  non_judicial_criminal_record_search: 'SPLIT',
+  non_judicial_registry_deed: 'SPLIT',
+  judicial_case_information: 'ONE_TIME',
+  judicial_case_search: 'ONE_TIME',
+  judicial_case_filing: 'ONE_TIME',
+  judicial_power_of_attorney: 'ONE_TIME',
+};
+
+export function paymentModelFor(flow?: string | null): PaymentModel {
+  if (!flow) return 'ONE_TIME';
+  return PAYMENT_MODEL_BY_FLOW[flow] ?? 'ONE_TIME';
+}
+
+// Which phase-2 charges each flow exposes in the clerk charge window (§4a).
+export interface ServiceChargeCapabilities {
+  attestation: boolean; // attested / non-attested
+  printing: boolean;    // printing / copying
+  delivery: boolean;
+  pdf: boolean;
+}
+
+export const SERVICE_CHARGE_CAPABILITIES: Record<string, ServiceChargeCapabilities> = {
+  judicial_case_files: { attestation: true, printing: true, delivery: true, pdf: true },
+  non_judicial_copy_of_fir: { attestation: false, printing: true, delivery: true, pdf: true },
+  non_judicial_registry_deed: { attestation: false, printing: true, delivery: true, pdf: true },
+  non_judicial_criminal_record_search: { attestation: false, printing: true, delivery: true, pdf: true },
+};
+
+const NO_CHARGES: ServiceChargeCapabilities = { attestation: false, printing: false, delivery: false, pdf: false };
+
+export function chargeCapabilitiesFor(flow?: string | null): ServiceChargeCapabilities {
+  if (!flow) return NO_CHARGES;
+  return SERVICE_CHARGE_CAPABILITIES[flow] ?? NO_CHARGES;
+}
