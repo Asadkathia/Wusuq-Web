@@ -12,6 +12,24 @@ export interface PaymentStatusResponse {
   ticketPaymentStatus: 'UNPAID' | 'PARTIALLY_PAID' | 'PAID';
 }
 
+export interface PendingWalletTransaction {
+  id: string;
+  userId: string;
+  amount: number;
+  paymentMode: string;
+  currency: string;
+  status: string;
+  type: 'TOPUP' | 'TICKET_PAYMENT' | 'TICKET_DEBIT' | 'ADMIN_ADJUSTMENT';
+  ticketId?: string | null;
+  receiptUrl?: string | null;
+  createdAt: string;
+  note?: string | null;
+}
+
+export interface WalletAdjustResponse {
+  walletBalance: number;
+}
+
 export const paymentsClient = {
   initiate(ticketId: string) {
     return apiClient.post<InitiateResponse>('/payments/initiate', { ticketId });
@@ -21,5 +39,27 @@ export const paymentsClient = {
   },
   resolveMock(providerTxnId: string, outcome: 'SUCCESS' | 'FAILED' | 'CANCELLED') {
     return apiClient.post(`/payments/mock/${providerTxnId}/resolve`, { outcome });
+  },
+
+  // Admin wallet adjustment (POST /wallet/:userId/adjust)
+  adjustWallet(
+    userId: string,
+    amount: number,
+    note: string,
+  ): Promise<WalletAdjustResponse> {
+    return apiClient.post<WalletAdjustResponse>(`/wallet/${userId}/adjust`, {
+      amount,
+      note,
+    });
+  },
+
+  // Approve a PENDING_VERIFICATION wallet transaction
+  verifyTransaction(id: string, note?: string): Promise<unknown> {
+    return apiClient.post(`/wallet/transactions/${id}/verify`, { note });
+  },
+
+  // Reject a PENDING_VERIFICATION wallet transaction
+  rejectTransaction(id: string, note?: string): Promise<unknown> {
+    return apiClient.post(`/wallet/transactions/${id}/reject`, { note });
   },
 };

@@ -1,18 +1,20 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-unused-vars */
- 
- 
+
+
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useState, useMemo } from 'react';
+import { useCallback, useEffect, useState, useMemo, startTransition } from 'react';
 import { apiClient } from '@/lib/api-client';
+import { paymentsClient, type PendingWalletTransaction } from '@/lib/payments-client';
+import { paymentSettingsClient, type PaymentSettings, type UpdatePaymentSettingsPayload } from '@/lib/payment-settings-client';
 import { SectionHeader } from '@/components/ui/section-header';
 import { DataTableShell } from '@/components/ui/data-table-shell';
 import { FilterBar } from '@/components/ui/filter-bar';
 import { StatCard } from '@/components/ui/stat-card';
 import { StatusPill } from '@/components/ui/status-pill';
-import { Banknote, FileText, Send, Download, CheckCircle, RefreshCw, HandCoins, Pencil, X, Check } from 'lucide-react';
+import { Banknote, FileText, Send, Download, CheckCircle, RefreshCw, HandCoins, Pencil, X, Check, CheckCircle2, XCircle, ExternalLink, Building2, SlidersHorizontal } from 'lucide-react';
 
 type FinanceItem = {
   id: string;
@@ -54,6 +56,28 @@ export function FinanceBoard() {
   const [editAdditional, setEditAdditional] = useState('');
   const [editDiscount, setEditDiscount] = useState('');
 
+  // ── Payment approval queue ─────────────────────────────────────────────
+  const [pendingTxns, setPendingTxns] = useState<PendingWalletTransaction[]>([]);
+  const [txnActionLoading, setTxnActionLoading] = useState<string | null>(null);
+
+  // ── Wallet adjustment form ─────────────────────────────────────────────
+  const [adjustUserId, setAdjustUserId] = useState('');
+  const [adjustAmount, setAdjustAmount] = useState('');
+  const [adjustNote, setAdjustNote] = useState('');
+  const [adjustLoading, setAdjustLoading] = useState(false);
+
+  // ── Bank-details editor ────────────────────────────────────────────────
+  const [bankSettings, setBankSettings] = useState<PaymentSettings | null>(null);
+  const [bankLoading, setBankLoading] = useState(false);
+  const [bankSaving, setBankSaving] = useState(false);
+  const [bankForm, setBankForm] = useState<UpdatePaymentSettingsPayload>({
+    bankName: '',
+    accountTitle: '',
+    accountNumber: '',
+    iban: '',
+    instructions: '',
+  });
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -70,9 +94,51 @@ export function FinanceBoard() {
     }
   }, []);
 
+  const loadPendingTxns = useCallback(async () => {
+    try {
+      const result = await apiClient.get<any>('/wallet?limit=200');
+      const all: PendingWalletTransaction[] = result.pendingTopups ?? [];
+      // Filter to TOPUP and TICKET_PAYMENT types only
+      startTransition(() => {
+        setPendingTxns(
+          all.filter(
+            (t) => t.type === 'TOPUP' || t.type === 'TICKET_PAYMENT',
+          ),
+        );
+      });
+    } catch {
+      // silently ignore — admin wallet read may not be available in all roles
+    }
+  }, []);
+
+  const loadBankSettings = useCallback(async () => {
+    setBankLoading(true);
+    try {
+      const settings = await paymentSettingsClient.get();
+      startTransition(() => {
+        setBankSettings(settings);
+        if (settings) {
+          setBankForm({
+            bankName: settings.bankName ?? '',
+            accountTitle: settings.accountTitle ?? '',
+            accountNumber: settings.accountNumber ?? '',
+            iban: settings.iban ?? '',
+            instructions: settings.instructions ?? '',
+          });
+        }
+      });
+    } catch {
+      // settings may not exist yet
+    } finally {
+      setBankLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     load();
-  }, [load]);
+    loadPendingTxns();
+    loadBankSettings();
+  }, [load, loadPendingTxns, loadBankSettings]);
 
   const stats = useMemo(() => {
     const totalOut = items.reduce((acc, item) => acc + item.remaining, 0);
@@ -183,6 +249,103 @@ export function FinanceBoard() {
     }
   };
 
+  // ── Payment approval queue actions ────────────────────────────────────
+  const approveTxn = async (id: string) => {
+    setTxnActionLoading(id);
+    try {
+      await paymentsClient.verifyTransaction(id);
+      setMessage('Payment approved and wallet credited.');
+      await loadPendingTxns();
+      await load();
+    } catch (error: any) {
+      setMessage(error.message || 'Approve failed');
+    } finally {
+      setTxnActionLoading(null);
+    }
+  };
+
+  const rejectTxn = async (id: string) => {
+    setTxnActionLoading(id);
+    try {
+      await paymentsClient.rejectTransaction(id);
+      setMessage('Payment rejected.');
+      await loadPendingTxns();
+    } catch (error: any) {
+      setMessage(error.message || 'Reject failed');
+    } finally {
+      setTxnActionLoading(null);
+    }
+  };
+
+  const viewReceipt = async (receiptUrl: string) => {
+    try {
+      const m = String(receiptUrl).match(
+        /(?:^|\/)(?:uploads\/wallet-receipts|wallet\/receipt)\/([^/?#]+)$/,
+      );
+      if (!m) {
+        setMessage('Invalid receipt URL');
+        return;
+      }
+      const { blob } = await apiClient.getBlob(`/wallet/receipt/${m[1]}`);
+      const objectUrl = URL.createObjectURL(blob);
+      window.open(objectUrl, '_blank', 'noopener');
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+    } catch (error: any) {
+      setMessage(error.message || 'Receipt download failed');
+    }
+  };
+
+  // ── Wallet adjustment ──────────────────────────────────────────────────
+  const submitAdjustment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const amount = Number(adjustAmount);
+    if (!adjustUserId.trim()) return setMessage('User ID is required');
+    if (!adjustNote.trim()) return setMessage('Note is required');
+
+    setAdjustLoading(true);
+    try {
+      await paymentsClient.adjustWallet(adjustUserId.trim(), amount, adjustNote.trim());
+      setMessage(
+        `Wallet ${amount >= 0 ? 'credited' : 'debited'} by PKR ${Math.abs(amount).toLocaleString()}.`,
+      );
+      setAdjustUserId('');
+      setAdjustAmount('');
+      setAdjustNote('');
+      await loadPendingTxns();
+    } catch (error: any) {
+      setMessage(error.message || 'Adjustment failed');
+    } finally {
+      setAdjustLoading(false);
+    }
+  };
+
+  // ── Bank-details editor ────────────────────────────────────────────────
+  const saveBankSettings = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!bankForm.bankName.trim()) return setMessage('Bank name is required');
+    if (!bankForm.accountTitle.trim()) return setMessage('Account title is required');
+    if (!bankForm.accountNumber.trim()) return setMessage('Account number is required');
+
+    setBankSaving(true);
+    try {
+      const saved = await paymentSettingsClient.update({
+        bankName: bankForm.bankName.trim(),
+        accountTitle: bankForm.accountTitle.trim(),
+        accountNumber: bankForm.accountNumber.trim(),
+        iban: bankForm.iban?.trim() || undefined,
+        instructions: bankForm.instructions?.trim() || undefined,
+      });
+      startTransition(() => {
+        setBankSettings(saved);
+      });
+      setMessage('Bank details saved successfully.');
+    } catch (error: any) {
+      setMessage(error.message || 'Failed to save bank details');
+    } finally {
+      setBankSaving(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <SectionHeader 
@@ -214,6 +377,258 @@ export function FinanceBoard() {
         <StatCard title="Outstanding Balance" value={`PKR ${stats.outstanding.toLocaleString()}`} icon={<Banknote className="h-6 w-6 text-slate-400" />} />
         <StatCard title="Total Collected" value={`PKR ${stats.collected.toLocaleString()}`} icon={<HandCoins className="h-6 w-6 text-slate-400" />} />
         <StatCard title="Issued Invoices" value={stats.invoices.toString()} icon={<FileText className="h-6 w-6 text-slate-400" />} />
+      </div>
+
+      {/* ── Payment Approval Queue ─────────────────────────────────────── */}
+      <div className="rounded-xl border border-amber-200 bg-white shadow-sm overflow-hidden">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-amber-100 bg-amber-50">
+          <div>
+            <h2 className="text-base font-semibold text-slate-900 flex items-center gap-2">
+              <span className="relative flex h-2.5 w-2.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500" />
+              </span>
+              Payment Approval Queue
+            </h2>
+            <p className="text-sm text-slate-500 mt-0.5">TOPUP and ticket payment receipts awaiting review.</p>
+          </div>
+          <span className="text-2xl font-bold text-slate-900">{pendingTxns.length}</span>
+        </div>
+
+        <table className="min-w-full divide-y divide-slate-100">
+          <thead className="bg-slate-50">
+            <tr>
+              <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">User / Tx</th>
+              <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Type</th>
+              <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Amount</th>
+              <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Receipt</th>
+              <th className="px-6 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="bg-white divide-y divide-slate-100">
+            {pendingTxns.map((tx) => (
+              <tr key={tx.id} className="hover:bg-slate-50 transition-colors">
+                <td className="px-6 py-4">
+                  <div className="text-sm font-medium text-slate-900 truncate max-w-[160px]">{tx.userId}</div>
+                  <div className="text-xs text-slate-400 mt-0.5 truncate max-w-[160px]">{tx.id}</div>
+                  {tx.ticketId && (
+                    <div className="text-xs text-primary-600 mt-0.5 truncate max-w-[160px]">Ticket: {tx.ticketId}</div>
+                  )}
+                </td>
+                <td className="px-6 py-4">
+                  <StatusPill
+                    label={tx.type === 'TICKET_PAYMENT' ? 'Ticket Payment' : 'Top-up'}
+                    variant={tx.type === 'TICKET_PAYMENT' ? 'info' : 'neutral'}
+                  />
+                </td>
+                <td className="px-6 py-4">
+                  <div className="text-sm font-bold text-slate-900">PKR {Number(tx.amount).toLocaleString()}</div>
+                  <div className="text-xs text-slate-500 mt-0.5">{tx.paymentMode.replace(/_/g, ' ')}</div>
+                  <div className="text-xs text-slate-400 mt-0.5">{new Date(tx.createdAt).toLocaleDateString()}</div>
+                </td>
+                <td className="px-6 py-4">
+                  {tx.receiptUrl ? (
+                    <button
+                      type="button"
+                      onClick={() => viewReceipt(tx.receiptUrl!)}
+                      className="inline-flex items-center gap-1.5 text-sm text-primary-600 hover:text-primary-800 font-medium"
+                    >
+                      <FileText className="h-4 w-4" /> View
+                      <ExternalLink className="h-3 w-3" />
+                    </button>
+                  ) : (
+                    <span className="text-sm text-slate-400 italic">None</span>
+                  )}
+                </td>
+                <td className="px-6 py-4 text-right">
+                  <div className="flex items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      disabled={txnActionLoading === tx.id}
+                      onClick={() => approveTxn(tx.id)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-semibold rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 disabled:opacity-50 transition-colors"
+                    >
+                      <CheckCircle2 className="h-4 w-4" /> Approve
+                    </button>
+                    <button
+                      type="button"
+                      disabled={txnActionLoading === tx.id}
+                      onClick={() => rejectTxn(tx.id)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-semibold rounded-lg bg-rose-50 text-rose-700 hover:bg-rose-100 disabled:opacity-50 transition-colors"
+                    >
+                      <XCircle className="h-4 w-4" /> Reject
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+            {pendingTxns.length === 0 && (
+              <tr>
+                <td colSpan={5} className="px-6 py-12 text-center">
+                  <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 mb-3">
+                    <CheckCircle2 className="h-6 w-6 text-slate-400" />
+                  </div>
+                  <p className="text-sm font-semibold text-slate-900">All caught up</p>
+                  <p className="text-sm text-slate-500 mt-1">No pending payments require review.</p>
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* ── Admin Tools Row: Wallet Adjustment + Bank Details ─────────── */}
+      <div className="grid gap-6 md:grid-cols-2">
+
+        {/* Wallet Adjustment */}
+        <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-6">
+          <div className="flex items-center gap-3 mb-5">
+            <div className="h-9 w-9 rounded-full bg-violet-50 flex items-center justify-center flex-shrink-0">
+              <SlidersHorizontal className="h-5 w-5 text-violet-600" />
+            </div>
+            <div>
+              <h2 className="text-base font-semibold text-slate-900">Wallet Adjustment</h2>
+              <p className="text-sm text-slate-500">Credit or debit a consumer wallet (admin only).</p>
+            </div>
+          </div>
+
+          <form onSubmit={submitAdjustment} className="space-y-4">
+            <label className="block">
+              <span className="text-sm font-medium text-slate-700">User ID</span>
+              <input
+                required
+                className="mt-1 block w-full rounded-xl border-0 py-2.5 px-3 text-slate-900 ring-1 ring-inset ring-border-soft placeholder:text-slate-400 focus:ring-2 focus:ring-primary-600 sm:text-sm"
+                placeholder="Paste user ID…"
+                value={adjustUserId}
+                onChange={(e) => setAdjustUserId(e.target.value)}
+              />
+            </label>
+
+            <label className="block">
+              <span className="text-sm font-medium text-slate-700">Amount (negative to debit)</span>
+              <input
+                required
+                type="number"
+                className="mt-1 block w-full rounded-xl border-0 py-2.5 px-3 text-slate-900 ring-1 ring-inset ring-border-soft placeholder:text-slate-400 focus:ring-2 focus:ring-primary-600 sm:text-sm"
+                placeholder="e.g. 5000 or -1000"
+                value={adjustAmount}
+                onChange={(e) => setAdjustAmount(e.target.value)}
+              />
+            </label>
+
+            <label className="block">
+              <span className="text-sm font-medium text-slate-700">Reason / Note</span>
+              <input
+                required
+                className="mt-1 block w-full rounded-xl border-0 py-2.5 px-3 text-slate-900 ring-1 ring-inset ring-border-soft placeholder:text-slate-400 focus:ring-2 focus:ring-primary-600 sm:text-sm"
+                placeholder="e.g. Manual credit — bank receipt #123"
+                value={adjustNote}
+                onChange={(e) => setAdjustNote(e.target.value)}
+              />
+            </label>
+
+            <button
+              type="submit"
+              disabled={adjustLoading}
+              className="flex w-full justify-center items-center gap-2 rounded-lg bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 disabled:opacity-50 transition-colors"
+            >
+              {adjustLoading ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+              Apply Adjustment
+            </button>
+          </form>
+        </div>
+
+        {/* Bank Details Editor */}
+        <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-6">
+          <div className="flex items-center gap-3 mb-5">
+            <div className="h-9 w-9 rounded-full bg-sky-50 flex items-center justify-center flex-shrink-0">
+              <Building2 className="h-5 w-5 text-sky-600" />
+            </div>
+            <div>
+              <h2 className="text-base font-semibold text-slate-900">Bank Payment Details</h2>
+              <p className="text-sm text-slate-500">
+                {bankSettings
+                  ? `Last updated ${new Date(bankSettings.updatedAt).toLocaleDateString()}`
+                  : bankLoading
+                  ? 'Loading…'
+                  : 'No details saved yet'}
+              </p>
+            </div>
+          </div>
+
+          <form onSubmit={saveBankSettings} className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <label className="block">
+                <span className="text-sm font-medium text-slate-700">Bank Name</span>
+                <input
+                  required
+                  className="mt-1 block w-full rounded-xl border-0 py-2.5 px-3 text-slate-900 ring-1 ring-inset ring-border-soft placeholder:text-slate-400 focus:ring-2 focus:ring-primary-600 sm:text-sm"
+                  placeholder="e.g. HBL"
+                  value={bankForm.bankName}
+                  onChange={(e) => setBankForm((f) => ({ ...f, bankName: e.target.value }))}
+                />
+              </label>
+              <label className="block">
+                <span className="text-sm font-medium text-slate-700">Account Title</span>
+                <input
+                  required
+                  className="mt-1 block w-full rounded-xl border-0 py-2.5 px-3 text-slate-900 ring-1 ring-inset ring-border-soft placeholder:text-slate-400 focus:ring-2 focus:ring-primary-600 sm:text-sm"
+                  placeholder="e.g. Wusuq Pvt Ltd"
+                  value={bankForm.accountTitle}
+                  onChange={(e) => setBankForm((f) => ({ ...f, accountTitle: e.target.value }))}
+                />
+              </label>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <label className="block">
+                <span className="text-sm font-medium text-slate-700">Account Number</span>
+                <input
+                  required
+                  className="mt-1 block w-full rounded-xl border-0 py-2.5 px-3 text-slate-900 ring-1 ring-inset ring-border-soft placeholder:text-slate-400 focus:ring-2 focus:ring-primary-600 sm:text-sm"
+                  placeholder="0101-234567-001"
+                  value={bankForm.accountNumber}
+                  onChange={(e) =>
+                    setBankForm((f) => ({ ...f, accountNumber: e.target.value }))
+                  }
+                />
+              </label>
+              <label className="block">
+                <span className="text-sm font-medium text-slate-700">IBAN (optional)</span>
+                <input
+                  className="mt-1 block w-full rounded-xl border-0 py-2.5 px-3 text-slate-900 ring-1 ring-inset ring-border-soft placeholder:text-slate-400 focus:ring-2 focus:ring-primary-600 sm:text-sm"
+                  placeholder="PK36SCBL0000001123456702"
+                  value={bankForm.iban ?? ''}
+                  onChange={(e) => setBankForm((f) => ({ ...f, iban: e.target.value }))}
+                />
+              </label>
+            </div>
+
+            <label className="block">
+              <span className="text-sm font-medium text-slate-700">
+                Payment Instructions (optional)
+              </span>
+              <textarea
+                rows={3}
+                className="mt-1 block w-full rounded-xl border-0 py-2.5 px-3 text-slate-900 ring-1 ring-inset ring-border-soft placeholder:text-slate-400 focus:ring-2 focus:ring-primary-600 sm:text-sm resize-none"
+                placeholder="Any additional instructions shown to the consumer…"
+                value={bankForm.instructions ?? ''}
+                onChange={(e) =>
+                  setBankForm((f) => ({ ...f, instructions: e.target.value }))
+                }
+              />
+            </label>
+
+            <button
+              type="submit"
+              disabled={bankSaving || bankLoading}
+              className="flex w-full justify-center items-center gap-2 rounded-lg bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-sky-500 disabled:opacity-50 transition-colors"
+            >
+              {bankSaving ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+              Save Bank Details
+            </button>
+          </form>
+        </div>
       </div>
 
       <DataTableShell

@@ -26,6 +26,7 @@ import {
   CaseDateBlock,
 } from './intake-wizard/service-geo-blocks';
 import { CheckoutPanel, type CheckoutItem, type CheckoutSummary } from './intake-wizard/checkout-panel';
+import { paymentModelFor } from '@wusuq/shared';
 
 // ─── Static lookup tables ────────────────────────────────────────────────────
 // Courts and court→city relationships come from the /geo/cities/:id/courts
@@ -1324,10 +1325,16 @@ export function IntakeWizard({
 
   // Checkout summary — derives display items from draft payload. When a pricing
   // rule is matched, real amounts are shown; otherwise amounts remain null ("—").
+  //
+  // SPLIT flows (e.g. judicial_case_files): show base service cost only at
+  // checkout — attested/non-attested, delivery, and PDF line items move to the
+  // clerk phase-2 prompt and are excluded here.
+  // ONE_TIME flows: show the full breakdown as before.
   const checkoutSummary: CheckoutSummary = useMemo(() => {
     const p = draft.payload;
     const items: CheckoutItem[] = [];
     const pr = pricingResult;
+    const isSplit = paymentModelFor(draft.flow) === 'SPLIT';
 
     if (selectedFlow?.label) {
       items.push({ label: 'Intake type', detail: selectedFlow.label, amount: null });
@@ -1342,9 +1349,10 @@ export function IntakeWizard({
       items.push({ label: 'Service', detail: p.select_court, amount: null });
     }
 
-    // Pricing breakdown — only show when matched. PDF surcharge and
-    // Delivery Guy fee are surfaced as their own line items so the
-    // consumer sees why the total moved.
+    // Pricing breakdown — only show when matched. For SPLIT flows only the
+    // base service cost and title surcharge are shown; surcharges for
+    // attested copies, non-attested copies, PDF, and delivery are deferred to
+    // the phase-2 clerk charge window and are not billed at checkout.
     if (pr?.matched && pr.available !== false) {
       if (pr.basePrice > 0) {
         items.push({ label: 'Base fee', amount: pr.basePrice });
@@ -1355,23 +1363,25 @@ export function IntakeWizard({
           amount: pr.titleSurcharge!,
         });
       }
-      if ((pr.pdfSurcharge ?? 0) > 0) {
-        items.push({ label: 'PDF surcharge', amount: pr.pdfSurcharge! });
-      }
-      if ((pr.deliveryFee ?? 0) > 0) {
-        items.push({ label: 'Delivery fee', amount: pr.deliveryFee! });
-      }
-      if (pr.attestedCharge > 0) {
-        items.push({ label: 'Attested copies', amount: pr.attestedCharge });
-      }
-      if (pr.nonAttestedCharge > 0) {
-        items.push({ label: 'Non-attested copies', amount: pr.nonAttestedCharge });
-      }
-      // Show the static deliveryCharge from the rule only when there's any
-      // (the new flat deliveryFee already covers the Rs 100 surcharge).
-      const staticDelivery = pr.deliveryCharge - (pr.deliveryFee ?? 0);
-      if (staticDelivery > 0) {
-        items.push({ label: 'Delivery', amount: staticDelivery });
+      if (!isSplit) {
+        if ((pr.pdfSurcharge ?? 0) > 0) {
+          items.push({ label: 'PDF surcharge', amount: pr.pdfSurcharge! });
+        }
+        if ((pr.deliveryFee ?? 0) > 0) {
+          items.push({ label: 'Delivery fee', amount: pr.deliveryFee! });
+        }
+        if (pr.attestedCharge > 0) {
+          items.push({ label: 'Attested copies', amount: pr.attestedCharge });
+        }
+        if (pr.nonAttestedCharge > 0) {
+          items.push({ label: 'Non-attested copies', amount: pr.nonAttestedCharge });
+        }
+        // Show the static deliveryCharge from the rule only when there's any
+        // (the new flat deliveryFee already covers the Rs 100 surcharge).
+        const staticDelivery = pr.deliveryCharge - (pr.deliveryFee ?? 0);
+        if (staticDelivery > 0) {
+          items.push({ label: 'Delivery', amount: staticDelivery });
+        }
       }
     } else {
       // Keep existing delivery_mode display when no pricing match
@@ -1381,14 +1391,20 @@ export function IntakeWizard({
     }
 
     const matchedAndAvailable = pr?.matched && pr.available !== false;
+    // For SPLIT flows, the checkout total is the base service cost only.
+    // The remainder (attested/non-attested/PDF/delivery) is billed after
+    // the clerk enters phase-2 charges.
+    const displayTotal = matchedAndAvailable
+      ? (isSplit ? pr!.serviceCost : pr!.total)
+      : null;
     return {
       items,
       subtotal: matchedAndAvailable ? pr!.serviceCost : null,
       fees: null,
-      total: matchedAndAvailable ? pr!.total : null,
+      total: displayTotal,
       currency: 'PKR',
     };
-  }, [draft.payload, pricingResult, selectedFlow]);
+  }, [draft.payload, draft.flow, pricingResult, selectedFlow]);
 
   const submitTicket = async () => {
     if (!selectedFlow || !validateCurrentStep()) return;
