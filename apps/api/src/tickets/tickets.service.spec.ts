@@ -4,7 +4,11 @@ import {
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
-import { requiredFieldsFor, paymentModelFor, chargeCapabilitiesFor } from '@wusuq/shared';
+import {
+  requiredFieldsFor,
+  paymentModelFor,
+  chargeCapabilitiesFor,
+} from '@wusuq/shared';
 import { TicketsService } from './tickets.service';
 
 function makeDispatcher() {
@@ -1082,7 +1086,8 @@ describe('TicketsService', () => {
           }),
           update: jest.fn().mockResolvedValue({
             id: 'tkt-1',
-            status: ticketStatus === 'WAITING_APPROVAL' ? 'COMPLETED' : 'ASSIGNED',
+            status:
+              ticketStatus === 'WAITING_APPROVAL' ? 'COMPLETED' : 'ASSIGNED',
             caseId: null,
             consumer: {
               id: 'consumer-1',
@@ -1210,7 +1215,9 @@ describe('TicketsService', () => {
         totalAmount: 5000,
         paymentStatus: 'PAID',
       });
-      await service.updateStatus('tkt-1', 'ASSIGNED', undefined, { actorUserId: 'a' });
+      await service.updateStatus('tkt-1', 'ASSIGNED', undefined, {
+        actorUserId: 'a',
+      });
       expect(prisma.ticket.update).toHaveBeenCalled();
     });
 
@@ -1225,7 +1232,9 @@ describe('TicketsService', () => {
         status: 'WAITING_APPROVAL',
       });
       await expect(
-        service.updateStatus('tkt-1', 'COMPLETED', undefined, { actorUserId: 'a' }),
+        service.updateStatus('tkt-1', 'COMPLETED', undefined, {
+          actorUserId: 'a',
+        }),
       ).rejects.toBeInstanceOf(ForbiddenException);
     });
 
@@ -1239,7 +1248,9 @@ describe('TicketsService', () => {
         paymentStatus: 'PAID',
         status: 'WAITING_APPROVAL',
       });
-      await service.updateStatus('tkt-1', 'COMPLETED', undefined, { actorUserId: 'a' });
+      await service.updateStatus('tkt-1', 'COMPLETED', undefined, {
+        actorUserId: 'a',
+      });
       expect(prisma.ticket.update).toHaveBeenCalled();
     });
 
@@ -1253,7 +1264,9 @@ describe('TicketsService', () => {
         paymentStatus: 'PARTIALLY_PAID',
       });
       await expect(
-        service.updateStatus('tkt-1', 'ASSIGNED', undefined, { actorUserId: 'a' }),
+        service.updateStatus('tkt-1', 'ASSIGNED', undefined, {
+          actorUserId: 'a',
+        }),
       ).rejects.toBeInstanceOf(ForbiddenException);
     });
 
@@ -1267,7 +1280,9 @@ describe('TicketsService', () => {
         paymentStatus: 'PARTIALLY_PAID',
       });
       await expect(
-        service.updateStatus('tkt-1', 'ASSIGNED', undefined, { actorUserId: 'a' }),
+        service.updateStatus('tkt-1', 'ASSIGNED', undefined, {
+          actorUserId: 'a',
+        }),
       ).rejects.toBeInstanceOf(ForbiddenException);
     });
   });
@@ -1353,9 +1368,14 @@ describe('payment model + charge capabilities (Spec 2)', () => {
   });
   it('exposes attestation only for case files', () => {
     expect(chargeCapabilitiesFor('judicial_case_files').attestation).toBe(true);
-    expect(chargeCapabilitiesFor('non_judicial_copy_of_fir').attestation).toBe(false);
+    expect(chargeCapabilitiesFor('non_judicial_copy_of_fir').attestation).toBe(
+      false,
+    );
     expect(chargeCapabilitiesFor('judicial_case_information')).toEqual({
-      attestation: false, printing: false, delivery: false, pdf: false,
+      attestation: false,
+      printing: false,
+      delivery: false,
+      pdf: false,
     });
   });
 });
@@ -1381,7 +1401,9 @@ describe('finalizeRemainder (Task 1.4)', () => {
     };
 
     const updatedTicket = { ...ticket };
-    const walletService = { settleTicketsForUser: jest.fn().mockResolvedValue(undefined) };
+    const walletService = {
+      settleTicketsForUser: jest.fn().mockResolvedValue(undefined),
+    };
 
     const prisma = {
       ticket: {
@@ -1394,7 +1416,11 @@ describe('finalizeRemainder (Task 1.4)', () => {
       ticketStatusHistory: { create: jest.fn().mockResolvedValue({}) },
       ticketIntakeDraft: { delete: jest.fn().mockResolvedValue({}) },
       user: { findUnique: jest.fn().mockResolvedValue({ id: 'consumer-1' }) },
-      service: { findUnique: jest.fn().mockResolvedValue({ id: 'svc-1', category: 'judicial' }) },
+      service: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValue({ id: 'svc-1', category: 'judicial' }),
+      },
       assignment: { findFirst: jest.fn().mockResolvedValue(null) },
     };
     const auditLogsService = { create: jest.fn().mockResolvedValue({}) };
@@ -1460,7 +1486,9 @@ describe('finalizeRemainder (Task 1.4)', () => {
         }),
       }),
     );
-    expect(walletService.settleTicketsForUser).toHaveBeenCalledWith('consumer-1');
+    expect(walletService.settleTicketsForUser).toHaveBeenCalledWith(
+      'consumer-1',
+    );
   });
 
   it('sets PARTIALLY_PAID when amountPaid < totalAmount after finalize', async () => {

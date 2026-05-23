@@ -241,7 +241,12 @@ export class WalletController {
     if (!isAdminWalletRole(actor.role)) {
       throw new ForbiddenException('Admin role required to adjust wallet');
     }
-    return this.walletService.adjustWallet(userId, dto.amount, dto.note, actor.sub);
+    return this.walletService.adjustWallet(
+      userId,
+      dto.amount,
+      dto.note,
+      actor.sub,
+    );
   }
 
   // Admin-side roles can read any user's transactions. Consumer/lawyer/company

@@ -7,7 +7,9 @@ export class PaymentSettingsService {
   constructor(private readonly prisma: PrismaService) {}
 
   async get() {
-    return this.prisma.paymentSettings.findUnique({ where: { id: 'singleton' } });
+    return this.prisma.paymentSettings.findUnique({
+      where: { id: 'singleton' },
+    });
   }
 
   async update(dto: UpdatePaymentSettingsDto, actorUserId?: string) {

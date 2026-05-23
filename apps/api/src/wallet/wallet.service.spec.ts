@@ -142,13 +142,19 @@ describe('WalletService.adjustWallet (Task 1.5)', () => {
       .fn()
       .mockResolvedValueOnce({ id: 'u-1', walletBalance: 1500 }) // after increment
       .mockResolvedValue({ id: 'u-1', walletBalance: 1500 }); // after settlement balance write-back
-    const walletTransactionCreate = jest.fn().mockResolvedValue({ id: 'wtx-adj' });
+    const walletTransactionCreate = jest
+      .fn()
+      .mockResolvedValue({ id: 'wtx-adj' });
 
     const tx: any = {
       $executeRaw: jest.fn(),
       user: { update: userUpdate },
       walletTransaction: { create: walletTransactionCreate },
-      ticket: { findMany: ticketFindMany, findUnique: jest.fn().mockResolvedValue(null), update: jest.fn() },
+      ticket: {
+        findMany: ticketFindMany,
+        findUnique: jest.fn().mockResolvedValue(null),
+        update: jest.fn(),
+      },
     };
 
     const prisma: any = {
@@ -191,7 +197,9 @@ describe('WalletService.adjustWallet (Task 1.5)', () => {
     const userUpdate = jest
       .fn()
       .mockResolvedValueOnce({ id: 'u-1', walletBalance: 200 });
-    const walletTransactionCreate = jest.fn().mockResolvedValue({ id: 'wtx-adj' });
+    const walletTransactionCreate = jest
+      .fn()
+      .mockResolvedValue({ id: 'wtx-adj' });
 
     const tx: any = {
       user: { update: userUpdate },
@@ -213,7 +221,10 @@ describe('WalletService.adjustWallet (Task 1.5)', () => {
 
     expect(walletTransactionCreate).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ amount: -300, type: 'ADMIN_ADJUSTMENT' }),
+        data: expect.objectContaining({
+          amount: -300,
+          type: 'ADMIN_ADJUSTMENT',
+        }),
       }),
     );
     // Negative amount must NOT trigger clearPendingTickets
@@ -246,7 +257,9 @@ describe('WalletService.applyPaymentToTicket type tagging (Task 1.5)', () => {
           status: 'PENDING_VERIFICATION',
         }),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
-        findUniqueOrThrow: jest.fn().mockResolvedValue({ id: 'wtx-1', status: 'VERIFIED' }),
+        findUniqueOrThrow: jest
+          .fn()
+          .mockResolvedValue({ id: 'wtx-1', status: 'VERIFIED' }),
         create: walletTransactionCreate,
       },
       user: {

@@ -1568,10 +1568,18 @@ export class TicketsService {
     await this.prisma.ticket.update({
       where: { id: ticketId },
       data: {
-        attestedCharges: caps.attestation ? (dto.attestedCharges ?? undefined) : 0,
-        nonAttestedCharges: caps.attestation ? (dto.nonAttestedCharges ?? undefined) : 0,
-        printingCharges: caps.printing ? (dto.printingCharges ?? undefined) : undefined,
-        deliveryCharges: caps.delivery ? (dto.deliveryCharges ?? undefined) : undefined,
+        attestedCharges: caps.attestation
+          ? (dto.attestedCharges ?? undefined)
+          : 0,
+        nonAttestedCharges: caps.attestation
+          ? (dto.nonAttestedCharges ?? undefined)
+          : 0,
+        printingCharges: caps.printing
+          ? (dto.printingCharges ?? undefined)
+          : undefined,
+        deliveryCharges: caps.delivery
+          ? (dto.deliveryCharges ?? undefined)
+          : undefined,
       },
     });
 
@@ -1611,12 +1619,19 @@ export class TicketsService {
 
     const caps = chargeCapabilitiesFor(ticket.intakeFlow);
     const attested = caps.attestation ? Number(dto.attestedCharges ?? 0) : 0;
-    const nonAttested = caps.attestation ? Number(dto.nonAttestedCharges ?? 0) : 0;
+    const nonAttested = caps.attestation
+      ? Number(dto.nonAttestedCharges ?? 0)
+      : 0;
     const printing = caps.printing ? Number(dto.printingCharges ?? 0) : 0;
     const delivery = caps.delivery ? Number(dto.deliveryCharges ?? 0) : 0;
     const pdf = caps.pdf ? Number(dto.pdfCharges ?? 0) : 0;
     const total =
-      Number(ticket.serviceCost) + attested + nonAttested + printing + delivery + pdf;
+      Number(ticket.serviceCost) +
+      attested +
+      nonAttested +
+      printing +
+      delivery +
+      pdf;
     const paid = Number(ticket.amountPaid);
 
     await this.prisma.ticket.update({
