@@ -98,6 +98,26 @@ export const notificationTemplates = {
     title: `Wallet receipt uploaded`,
     body: `A consumer uploaded a wallet payment receipt for review.`,
   }),
+  paymentSubmittedForConsumer: (batchNo: string, amount: number): Copy => ({
+    title: `Payment submitted — ${batchNo}`,
+    body: `Your payment of PKR ${amount} for ticket ${batchNo} is awaiting verification.`,
+  }),
+  paymentSubmittedForFinance: (batchNo: string, amount: number): Copy => ({
+    title: `Ticket payment pending — ${batchNo}`,
+    body: `A payment of PKR ${amount} for ticket ${batchNo} needs review.`,
+  }),
+  paymentApprovedForConsumer: (batchNo: string): Copy => ({
+    title: `Payment approved — ${batchNo}`,
+    body: `Your payment for ticket ${batchNo} has been verified and credited to your account.`,
+  }),
+  paymentRejectedForConsumer: (batchNo: string): Copy => ({
+    title: `Payment rejected — ${batchNo}`,
+    body: `Your payment for ticket ${batchNo} was rejected. Please resubmit with a valid receipt.`,
+  }),
+  paymentRemainderDueForConsumer: (batchNo: string, amount: number): Copy => ({
+    title: `Final payment due — ${batchNo}`,
+    body: `The remaining balance of PKR ${amount} is due for ticket ${batchNo}. Please complete your payment to proceed.`,
+  }),
   caseCreatedForConsumer: (caseRef: string): Copy => ({
     title: `Case opened — ${caseRef}`,
     body: `A case file ${caseRef} has been opened for you.`,

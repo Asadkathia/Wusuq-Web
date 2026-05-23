@@ -98,9 +98,15 @@ export class WalletService {
       },
     });
 
-    await this.dispatcher
-      .walletTopupCreated(transaction.id)
-      .catch(() => undefined);
+    if (transaction.type === 'TICKET_PAYMENT') {
+      await this.dispatcher
+        .paymentSubmitted(transaction.id)
+        .catch(() => undefined);
+    } else {
+      await this.dispatcher
+        .walletTopupCreated(transaction.id)
+        .catch(() => undefined);
+    }
 
     return {
       success: true,
@@ -195,9 +201,15 @@ export class WalletService {
           amount: Number(result.transaction.amount),
         },
       });
-      await this.dispatcher
-        .walletTopupDecided(result.transaction.id, 'VERIFIED')
-        .catch(() => undefined);
+      if (result.transaction.type === 'TICKET_PAYMENT') {
+        await this.dispatcher
+          .paymentDecided(result.transaction.id, true)
+          .catch(() => undefined);
+      } else {
+        await this.dispatcher
+          .walletTopupDecided(result.transaction.id, 'VERIFIED')
+          .catch(() => undefined);
+      }
     }
 
     return {
@@ -242,9 +254,15 @@ export class WalletService {
       },
     });
 
-    await this.dispatcher
-      .walletTopupDecided(rejected.id, 'REJECTED')
-      .catch(() => undefined);
+    if (rejected.type === 'TICKET_PAYMENT') {
+      await this.dispatcher
+        .paymentDecided(rejected.id, false)
+        .catch(() => undefined);
+    } else {
+      await this.dispatcher
+        .walletTopupDecided(rejected.id, 'REJECTED')
+        .catch(() => undefined);
+    }
 
     return { success: true, transaction: rejected };
   }

@@ -386,6 +386,99 @@ export class NotificationDispatcher {
     }
   }
 
+  private async loadTxnWithTicket(transactionId: string) {
+    return this.prisma.walletTransaction.findUnique({
+      where: { id: transactionId },
+      include: {
+        user: { select: { id: true, email: true } },
+        ticket: { select: { id: true, batchNo: true } },
+      },
+    });
+  }
+
+  async paymentSubmitted(transactionId: string): Promise<void> {
+    const tx = await this.loadTxnWithTicket(transactionId);
+    if (!tx) return;
+    const batchNo = tx.ticket?.batchNo ?? transactionId;
+    const amount = Number(tx.amount);
+    const consumerCopy = T.paymentSubmittedForConsumer(batchNo, amount);
+    await this.notifications.create({
+      userId: tx.userId,
+      ...consumerCopy,
+      type: NOTIFICATION_TYPES.PAYMENT_SUBMITTED,
+      metadata: { transactionId: tx.id, ticketId: tx.ticketId ?? undefined },
+    });
+    const financeCopy = T.paymentSubmittedForFinance(batchNo, amount);
+    const ids = new Set([
+      ...(await this.adminIds()),
+      ...(await this.financeIds()),
+    ]);
+    for (const id of ids) {
+      if (id === tx.userId) continue;
+      await this.notifications.create({
+        userId: id,
+        ...financeCopy,
+        type: NOTIFICATION_TYPES.PAYMENT_SUBMITTED,
+        metadata: { transactionId: tx.id, ticketId: tx.ticketId ?? undefined },
+      });
+    }
+  }
+
+  async paymentDecided(
+    transactionId: string,
+    approved: boolean,
+  ): Promise<void> {
+    const tx = await this.loadTxnWithTicket(transactionId);
+    if (!tx) return;
+    const batchNo = tx.ticket?.batchNo ?? transactionId;
+    const copy = approved
+      ? T.paymentApprovedForConsumer(batchNo)
+      : T.paymentRejectedForConsumer(batchNo);
+    await this.notifications.create({
+      userId: tx.userId,
+      ...copy,
+      type: approved
+        ? NOTIFICATION_TYPES.PAYMENT_APPROVED
+        : NOTIFICATION_TYPES.PAYMENT_REJECTED,
+      metadata: { transactionId: tx.id, ticketId: tx.ticketId ?? undefined },
+    });
+    if (tx.user.email) {
+      await this.notifications.sendEmail(
+        tx.user.email,
+        copy.title,
+        `<p>${copy.body}</p>`,
+      );
+    }
+  }
+
+  async paymentRemainderDue(ticketId: string): Promise<void> {
+    const t = await this.prisma.ticket.findUnique({
+      where: { id: ticketId },
+      select: {
+        id: true,
+        batchNo: true,
+        consumerId: true,
+        totalAmount: true,
+        amountPaid: true,
+        paymentStatus: true,
+      },
+    });
+    if (!t) return;
+    // No-op if the ticket is already fully paid.
+    if (t.paymentStatus === 'PAID') return;
+    const remainder = Math.max(
+      0,
+      Number(t.totalAmount) - Number(t.amountPaid),
+    );
+    const copy = T.paymentRemainderDueForConsumer(t.batchNo, remainder);
+    await this.notifications.create({
+      userId: t.consumerId,
+      ...copy,
+      type: NOTIFICATION_TYPES.PAYMENT_REMAINDER_DUE,
+      metadata: { ticketId: t.id, batchNo: t.batchNo, remainder },
+    });
+  }
+
   // ─── case ───
   private async loadCase(caseId: string) {
     return this.prisma.case.findUnique({

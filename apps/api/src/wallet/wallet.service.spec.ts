@@ -7,6 +7,8 @@ function makeDispatcher() {
     walletTopupCreated: jest.fn().mockResolvedValue(undefined),
     walletTopupDecided: jest.fn().mockResolvedValue(undefined),
     walletReceiptUploaded: jest.fn().mockResolvedValue(undefined),
+    paymentSubmitted: jest.fn().mockResolvedValue(undefined),
+    paymentDecided: jest.fn().mockResolvedValue(undefined),
   };
 }
 

@@ -1634,7 +1634,7 @@ export class TicketsService {
 
     // Auto-cover from any wallet excess, then notify if a balance remains.
     await this.walletService.settleTicketsForUser(ticket.consumerId);
-    // TODO(1.6): notify consumer remainder due
+    await this.dispatcher.paymentRemainderDue(ticketId).catch(() => undefined);
 
     await this.auditLogsService.create({
       action: 'TICKET_REMAINDER_FINALIZED',
