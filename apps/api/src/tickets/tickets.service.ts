@@ -467,7 +467,9 @@ export class TicketsService {
         caseType: inferredCaseType,
         serviceCost: pricing.matched ? pricing.serviceCost : 0,
         deliveryCharges: pricing.matched ? pricing.deliveryCharge : 0,
-        defaultClerkCost: pricing.matched ? (pricing.clerkBaseCost ?? null) : null,
+        defaultClerkCost: pricing.matched
+          ? (pricing.clerkBaseCost ?? null)
+          : null,
         totalAmount: billedTotal,
         intakeFlow: dto.flow,
         formPayload: dto.payload as Prisma.InputJsonValue | undefined,
@@ -937,6 +939,49 @@ export class TicketsService {
     });
   }
 
+  async assignBulk(
+    dto: {
+      ticketIds: string[];
+      representativeId: string;
+      forceAssign?: boolean;
+    },
+    actor?: { actorUserId?: string; actorEmail?: string },
+  ) {
+    const assigned: string[] = [];
+    const skipped: { ticketId: string; reason: string }[] = [];
+    for (const ticketId of dto.ticketIds) {
+      const t = await this.prisma.ticket.findUnique({
+        where: { id: ticketId },
+        select: { id: true, defaultClerkCost: true },
+      });
+      if (!t) {
+        skipped.push({ ticketId, reason: 'Not found' });
+        continue;
+      }
+      try {
+        await this.assign(
+          ticketId,
+          {
+            representativeId: dto.representativeId,
+            clerkCost:
+              t.defaultClerkCost != null
+                ? Number(t.defaultClerkCost)
+                : undefined,
+            forceAssign: dto.forceAssign,
+          },
+          actor,
+        );
+        assigned.push(ticketId);
+      } catch (e) {
+        skipped.push({
+          ticketId,
+          reason: e instanceof Error ? e.message : 'Failed',
+        });
+      }
+    }
+    return { assigned, skipped };
+  }
+
   async bulkAction(
     dto: BulkTicketActionDto,
     actor?: { actorUserId?: string; actorEmail?: string },
@@ -998,10 +1043,13 @@ export class TicketsService {
     actor?: { actorUserId?: string; actorEmail?: string },
     caption?: string,
     visibleToConsumer: boolean = false,
+    category: 'WORK_DOCUMENT' | 'DELIVERABLE_PDF' = 'WORK_DOCUMENT',
   ) {
     await this.ensureTicketExists(ticketId);
 
     const trimmedCaption = caption?.trim();
+    const consumerVisible =
+      category === 'DELIVERABLE_PDF' ? true : visibleToConsumer;
     const document = await this.prisma.ticketDocument.create({
       data: {
         ticketId,
@@ -1010,7 +1058,8 @@ export class TicketsService {
         fileUrl: file.path,
         caption:
           trimmedCaption && trimmedCaption.length > 0 ? trimmedCaption : null,
-        visibleToConsumer,
+        visibleToConsumer: consumerVisible,
+        category,
         uploadedByUserId: actor?.actorUserId ?? null,
       },
     });
@@ -1021,10 +1070,10 @@ export class TicketsService {
       entityId: document.id,
       actorUserId: actor?.actorUserId,
       actorEmail: actor?.actorEmail,
-      metadata: { ticketId, visibleToConsumer },
+      metadata: { ticketId, visibleToConsumer: consumerVisible },
     });
 
-    if (visibleToConsumer) {
+    if (consumerVisible) {
       await this.dispatcher
         .ticketDocumentUploaded(ticketId)
         .catch(() => undefined);
@@ -1983,5 +2032,100 @@ export class TicketsService {
     if (drifts.length > 0) {
       await this.dispatcher.caseDriftDetected(caseId).catch(() => undefined);
     }
+  }
+
+  async recordNextHearing(
+    ticketId: string,
+    dto: { scheduledDate: string; hearingType?: string },
+  ) {
+    await this.ensureTicketExists(ticketId);
+    return this.prisma.ticket.update({
+      where: { id: ticketId },
+      data: {
+        scheduledDate: new Date(dto.scheduledDate),
+        ...(dto.hearingType ? { hearingType: dto.hearingType } : {}),
+      },
+    });
+  }
+
+  private static FUTURE_COPIED_KEYS = [
+    'city',
+    'city_id',
+    'select_court',
+    'select_court_id',
+    'select_court_type',
+    'select_court_city',
+    'case_type',
+    'case_no',
+    'case_title',
+    'case_year',
+    'bench',
+    'judge_name',
+    'judge_designation',
+  ];
+
+  async generateNextHearing(
+    parentId: string,
+    actor?: { actorUserId?: string; actorEmail?: string },
+  ) {
+    const parent = await this.prisma.ticket.findUnique({
+      where: { id: parentId },
+    });
+    if (!parent) throw new NotFoundException('Ticket not found');
+    if (!parent.scheduledDate)
+      throw new BadRequestException(
+        'No next-hearing date recorded on this ticket',
+      );
+
+    const srcPayload = (parent.formPayload ?? {}) as Record<string, unknown>;
+    const payload: Record<string, unknown> = {};
+    for (const k of TicketsService.FUTURE_COPIED_KEYS) {
+      if (srcPayload[k] !== undefined) payload[k] = srcPayload[k];
+    }
+    payload.case_status = 'Pending Case';
+    payload.case_date = parent.scheduledDate.toISOString().slice(0, 10);
+    payload.parent_ticket_id = parent.id;
+
+    const cloned = await this.prisma.ticket.create({
+      data: {
+        batchNo: this.generateBatchNo(),
+        consumerId: parent.consumerId,
+        serviceId: parent.serviceId,
+        status: 'PENDING',
+        createdBy: 'CONSUMER',
+        serviceCity: parent.serviceCity,
+        caseType: parent.caseType,
+        intakeFlow: parent.intakeFlow,
+        formPayload: payload as Prisma.InputJsonValue,
+        serviceCost: parent.serviceCost,
+        defaultClerkCost: parent.defaultClerkCost,
+        totalAmount: parent.serviceCost,
+        amountPaid: 0,
+        paymentStatus: 'UNPAID',
+      },
+    });
+
+    await this.prisma.ticketStatusHistory.create({
+      data: {
+        ticketId: cloned.id,
+        to: 'PENDING',
+        note: `Generated next-hearing from ${parent.batchNo}`,
+      },
+    });
+
+    await this.auditLogsService.create({
+      action: 'TICKET_NEXT_HEARING_GENERATED',
+      entity: 'TICKET',
+      entityId: cloned.id,
+      actorUserId: actor?.actorUserId,
+      actorEmail: actor?.actorEmail,
+      metadata: {
+        sourceTicketId: parent.id,
+        sourceBatchNo: parent.batchNo,
+        scheduledDate: parent.scheduledDate.toISOString(),
+      },
+    });
+
+    return cloned;
   }
 }

@@ -1668,7 +1668,268 @@ describe('finalizeRemainder (Task 1.4)', () => {
 
 describe('orderCaseDetailKeys (Spec 3)', () => {
   it('orders known keys city→court→service→…, appends unknown alphabetically', () => {
-    const out = orderCaseDetailKeys(['case_title', 'zzz_extra', 'select_court_city', 'select_service', 'aaa_extra']);
-    expect(out).toEqual(['select_court_city', 'select_service', 'case_title', 'aaa_extra', 'zzz_extra']);
+    const out = orderCaseDetailKeys([
+      'case_title',
+      'zzz_extra',
+      'select_court_city',
+      'select_service',
+      'aaa_extra',
+    ]);
+    expect(out).toEqual([
+      'select_court_city',
+      'select_service',
+      'case_title',
+      'aaa_extra',
+      'zzz_extra',
+    ]);
+  });
+});
+
+// ─── Task 1.2: assignBulk ────────────────────────────────────────────────────
+
+describe('assignBulk (Spec 3)', () => {
+  function buildAssignBulkService(opts: {
+    tickets: Array<{ id: string; defaultClerkCost: number | null }>;
+    assignShouldThrowFor?: string[];
+  }) {
+    const ticketMap = new Map(opts.tickets.map((t) => [t.id, t]));
+    const prisma = {
+      ticket: {
+        findUnique: jest
+          .fn()
+          .mockImplementation(
+            async (args: { where: { id: string }; select?: unknown }) => {
+              return ticketMap.get(args.where.id) ?? null;
+            },
+          ),
+      },
+    };
+    const auditLogsService = { create: jest.fn().mockResolvedValue({}) };
+    const pricingService = { resolve: jest.fn() };
+    const geoService = { resolveProvinceByCity: jest.fn() };
+    const dispatcher = makeDispatcher();
+    const service = new TicketsService(
+      prisma as never,
+      auditLogsService as never,
+      pricingService as never,
+      geoService as never,
+      dispatcher as never,
+    );
+
+    // Spy on the real assign method: resolve for normal tickets, throw for bad ones
+    jest.spyOn(service, 'assign').mockImplementation(async (id: string) => {
+      if (opts.assignShouldThrowFor?.includes(id)) {
+        throw new ForbiddenException(`Gating failed for ${id}`);
+      }
+      return { id } as never;
+    });
+
+    return { service, prisma };
+  }
+
+  it('assigns each ticket using its own defaultClerkCost; collects skipped', async () => {
+    const { service } = buildAssignBulkService({
+      tickets: [
+        { id: 'tkt-ok', defaultClerkCost: 1500 },
+        { id: 'tkt-bad', defaultClerkCost: 0 },
+      ],
+      assignShouldThrowFor: ['tkt-bad'],
+    });
+
+    const result = await service.assignBulk(
+      { ticketIds: ['tkt-ok', 'tkt-bad'], representativeId: 'rep-1' },
+      { actorUserId: 'admin-1' },
+    );
+
+    expect(result.assigned).toEqual(['tkt-ok']);
+    expect(result.skipped).toHaveLength(1);
+    expect(result.skipped[0].ticketId).toBe('tkt-bad');
+
+    // Verify assign was called with the ticket's own defaultClerkCost
+    expect(service.assign).toHaveBeenCalledWith(
+      'tkt-ok',
+      expect.objectContaining({ clerkCost: 1500, representativeId: 'rep-1' }),
+      expect.anything(),
+    );
+  });
+
+  it('skips tickets that are not found', async () => {
+    const { service } = buildAssignBulkService({ tickets: [] });
+
+    const result = await service.assignBulk({
+      ticketIds: ['missing-1'],
+      representativeId: 'rep-1',
+    });
+
+    expect(result.assigned).toHaveLength(0);
+    expect(result.skipped[0]).toMatchObject({
+      ticketId: 'missing-1',
+      reason: 'Not found',
+    });
+  });
+});
+
+// ─── Task 1.3: recordNextHearing + generateNextHearing ───────────────────────
+
+describe('recordNextHearing (Task 1.3)', () => {
+  function buildService() {
+    const stored: Record<string, unknown> = {
+      id: 'tkt-1',
+      status: 'IN_PROGRESS',
+    };
+    const prisma = {
+      ticket: {
+        findUnique: jest.fn().mockResolvedValue(stored),
+        update: jest
+          .fn()
+          .mockImplementation(
+            async (args: { data: Record<string, unknown> }) => ({
+              ...stored,
+              ...args.data,
+            }),
+          ),
+      },
+    };
+    const auditLogsService = { create: jest.fn().mockResolvedValue({}) };
+    const pricingService = { resolve: jest.fn() };
+    const geoService = { resolveProvinceByCity: jest.fn() };
+    const dispatcher = makeDispatcher();
+    const service = new TicketsService(
+      prisma as never,
+      auditLogsService as never,
+      pricingService as never,
+      geoService as never,
+      dispatcher as never,
+    );
+    return { service, prisma };
+  }
+
+  it('sets scheduledDate on the ticket', async () => {
+    const { service, prisma } = buildService();
+    await service.recordNextHearing('tkt-1', { scheduledDate: '2026-09-01' });
+    expect(prisma.ticket.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'tkt-1' },
+        data: expect.objectContaining({
+          scheduledDate: new Date('2026-09-01'),
+        }),
+      }),
+    );
+  });
+
+  it('also sets hearingType when provided', async () => {
+    const { service, prisma } = buildService();
+    await service.recordNextHearing('tkt-1', {
+      scheduledDate: '2026-09-01',
+      hearingType: 'Arguments',
+    });
+    expect(prisma.ticket.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ hearingType: 'Arguments' }),
+      }),
+    );
+  });
+});
+
+describe('generateNextHearing (Task 1.3)', () => {
+  function buildService(parent: Record<string, unknown>) {
+    const created: { data: Record<string, unknown> }[] = [];
+    const prisma = {
+      ticket: {
+        findUnique: jest.fn().mockResolvedValue(parent),
+        create: jest
+          .fn()
+          .mockImplementation(
+            async (args: { data: Record<string, unknown> }) => {
+              created.push(args);
+              return { id: 'tkt-new', ...args.data };
+            },
+          ),
+      },
+      ticketStatusHistory: {
+        create: jest.fn().mockResolvedValue({}),
+      },
+    };
+    const auditLogsService = { create: jest.fn().mockResolvedValue({}) };
+    const pricingService = { resolve: jest.fn() };
+    const geoService = { resolveProvinceByCity: jest.fn() };
+    const dispatcher = makeDispatcher();
+    const service = new TicketsService(
+      prisma as never,
+      auditLogsService as never,
+      pricingService as never,
+      geoService as never,
+      dispatcher as never,
+    );
+    return { service, prisma, created };
+  }
+
+  const baseParent = {
+    id: 'tkt-parent',
+    batchNo: 'TKT-001',
+    consumerId: 'consumer-1',
+    serviceId: 'svc-1',
+    serviceCity: 'Lahore',
+    caseType: 'civil',
+    intakeFlow: 'judicial_case_files',
+    formPayload: {
+      select_court_city: 'Lahore',
+      select_court: 'District Court',
+      case_title: 'State vs A',
+      case_year: '2024',
+      judge_name: 'Judge X',
+    },
+    serviceCost: 5000,
+    defaultClerkCost: 1000,
+    scheduledDate: new Date('2026-09-15'),
+  };
+
+  it('creates a CONSUMER-owned UNPAID ticket prefilled from parent', async () => {
+    const { service, created } = buildService(baseParent);
+
+    const result = await service.generateNextHearing('tkt-parent', {
+      actorUserId: 'admin-1',
+    });
+
+    expect(result).toBeDefined();
+    const data = created[0]?.data;
+    expect(data?.createdBy).toBe('CONSUMER');
+    expect(data?.paymentStatus).toBe('UNPAID');
+    expect(data?.status).toBe('PENDING');
+    expect(data?.consumerId).toBe('consumer-1');
+  });
+
+  it('seeds scheduledDate as case_date in the new payload', async () => {
+    const { service, created } = buildService(baseParent);
+    await service.generateNextHearing('tkt-parent', { actorUserId: 'admin-1' });
+    const payload = created[0]?.data.formPayload as Record<string, unknown>;
+    expect(payload?.case_date).toBe('2026-09-15');
+    expect(payload?.case_status).toBe('Pending Case');
+    expect(payload?.parent_ticket_id).toBe('tkt-parent');
+  });
+
+  it('copies case-identifier keys from parent payload', async () => {
+    const { service, created } = buildService(baseParent);
+    await service.generateNextHearing('tkt-parent');
+    const payload = created[0]?.data.formPayload as Record<string, unknown>;
+    expect(payload?.select_court_city).toBe('Lahore');
+    expect(payload?.case_title).toBe('State vs A');
+    expect(payload?.judge_name).toBe('Judge X');
+  });
+
+  it('throws BadRequestException when no scheduledDate recorded', async () => {
+    const parentWithoutDate = { ...baseParent, scheduledDate: null };
+    const { service } = buildService(parentWithoutDate);
+    await expect(
+      service.generateNextHearing('tkt-parent'),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('throws NotFoundException when parent ticket not found', async () => {
+    const { service, prisma } = buildService(baseParent);
+    prisma.ticket.findUnique.mockResolvedValueOnce(null);
+    await expect(
+      service.generateNextHearing('nonexistent'),
+    ).rejects.toBeInstanceOf(NotFoundException);
   });
 });
