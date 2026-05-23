@@ -1666,6 +1666,9 @@ export class TicketsService {
         consumerId: true,
         serviceCost: true,
         clerkCost: true,
+        additionalCharges: true,
+        additionalServiceCost: true,
+        discountPrice: true,
         amountPaid: true,
         intakeFlow: true,
       },
@@ -1685,11 +1688,15 @@ export class TicketsService {
     // PDF is requested. The admin sets the amount at finalize (the frontend
     // defaults the input to the standard Rs 300); 0/absent means no PDF.
     const pdf = caps.pdf ? Number(dto.pdfCharges ?? 0) : 0;
-    // The clerk assignment cost is consumer-billed and was set at assignment;
-    // include it so it isn't dropped when the remainder is finalized.
+    // Clerk assignment cost is consumer-billed (set at assignment) and any
+    // additional charges / discount persisted earlier must be preserved so
+    // finalize stays consistent with assignClerk's total computation.
     const total =
       Number(ticket.serviceCost) +
       Number(ticket.clerkCost ?? 0) +
+      Number(ticket.additionalCharges ?? 0) +
+      Number(ticket.additionalServiceCost ?? 0) -
+      Number(ticket.discountPrice ?? 0) +
       attested +
       nonAttested +
       printing +

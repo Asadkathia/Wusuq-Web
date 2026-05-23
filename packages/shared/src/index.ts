@@ -472,7 +472,18 @@ export const CASE_DETAILS_ORDER: string[] = [
 
 export function orderCaseDetailKeys(keys: string[]): string[] {
   const rank = new Map(CASE_DETAILS_ORDER.map((k, i) => [k, i]));
-  const known = keys.filter((k) => rank.has(k)).sort((a, b) => rank.get(a)! - rank.get(b)!);
-  const unknown = keys.filter((k) => !rank.has(k)).sort((a, b) => a.localeCompare(b));
+  // Resolve aliases (e.g. case_no → case_petition_no) so aliased input keys
+  // rank into their canonical slot. Returns the ORIGINAL keys.
+  const aliasToCanonical = new Map<string, string>();
+  for (const [canonical, aliases] of Object.entries(PAYLOAD_FIELD_ALIASES)) {
+    for (const a of aliases) aliasToCanonical.set(a, canonical);
+  }
+  const canon = (k: string) => aliasToCanonical.get(k) ?? k;
+  const known = keys
+    .filter((k) => rank.has(canon(k)))
+    .sort((a, b) => rank.get(canon(a))! - rank.get(canon(b))!);
+  const unknown = keys
+    .filter((k) => !rank.has(canon(k)))
+    .sort((a, b) => a.localeCompare(b));
   return [...known, ...unknown];
 }

@@ -126,6 +126,11 @@ export default function PayTicketPage() {
     e.preventDefault();
     if (!ticketId || submitting) return;
 
+    if (!bankDetails) {
+      setSubmitError('Bank details are not available. Please contact support.');
+      return;
+    }
+
     const amount = Number(amountStr);
     if (!amount || amount <= 0) {
       setSubmitError('Please enter a valid amount.');
@@ -432,6 +437,7 @@ export default function PayTicketPage() {
                 type="file"
                 accept="image/*,application/pdf"
                 className="sr-only"
+                disabled={!bankDetails}
                 onChange={(e) => setReceiptFile(e.target.files?.[0] ?? null)}
               />
             </label>
@@ -447,6 +453,7 @@ export default function PayTicketPage() {
               variant="primary"
               size="lg"
               loading={submitting}
+              disabled={!bankDetails || submitting}
               fullWidth
             >
               Submit payment

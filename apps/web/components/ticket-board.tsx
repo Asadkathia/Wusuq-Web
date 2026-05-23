@@ -56,6 +56,7 @@ type TicketRow = {
   defaultClerkCost?: number | null;
   scheduledDate?: string | null;
   hearingType?: string | null;
+  payload?: Record<string, string> | null;
   consumer: { id: string; name: string };
   service: { id: string; name: string; category: string; type: string };
 };
@@ -200,12 +201,13 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
   const openFinalizeModal = (ticket: TicketRow) => {
     setFinalizeTicket(ticket);
     const caps = chargeCapabilitiesFor(ticket.intakeFlow);
+    const consumerWantsPdf = ticket.payload?.want_pdf_before_dispatch === 'Yes';
     setFinalizeForm({
       attestedCharges: ticket.attestedCharges ? String(ticket.attestedCharges) : '',
       nonAttestedCharges: ticket.nonAttestedCharges ? String(ticket.nonAttestedCharges) : '',
       printingCharges: ticket.printingCharges ? String(ticket.printingCharges) : '',
       deliveryCharges: ticket.deliveryCharges ? String(ticket.deliveryCharges) : '',
-      pdfCharges: caps.pdf ? '300' : '',
+      pdfCharges: caps.pdf && consumerWantsPdf ? '300' : '',
     });
   };
 
@@ -616,9 +618,9 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
     }
   };
 
-  // Clerk: record next-hearing date on a ticket
-  const submitNextHearing = async (ticketId: string) => {
-    if (!nextHearingDate) return;
+  // Clerk: record next-hearing date on a ticket. Returns true on success.
+  const submitNextHearing = async (ticketId: string): Promise<boolean> => {
+    if (!nextHearingDate) return true; // nothing to save, treat as success
     try {
       await paymentsClient.recordNextHearing(ticketId, {
         scheduledDate: nextHearingDate,
@@ -629,8 +631,10 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
       setNextHearingDate('');
       setNextHearingType('');
       loadTickets();
+      return true;
     } catch (error: any) {
       setMessage(error.message || 'Failed to record next hearing');
+      return false;
     }
   };
 
@@ -1180,7 +1184,8 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
               variant="primary"
               onClick={async () => {
                 if (costsTicket && nextHearingEnabled && nextHearingDate) {
-                  await submitNextHearing(costsTicket.id);
+                  const hearingSaved = await submitNextHearing(costsTicket.id);
+                  if (!hearingSaved) return;
                 }
                 submitClerkCosts();
               }}

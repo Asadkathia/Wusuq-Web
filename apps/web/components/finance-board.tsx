@@ -279,14 +279,23 @@ export function FinanceBoard() {
 
   const viewReceipt = async (receiptUrl: string) => {
     try {
-      const m = String(receiptUrl).match(
-        /(?:^|\/)(?:uploads\/wallet-receipts|wallet\/receipt)\/([^/?#]+)$/,
-      );
-      if (!m) {
-        setMessage('Invalid receipt URL');
+      if (!receiptUrl || typeof receiptUrl !== 'string') {
+        setMessage('Invalid receipt');
         return;
       }
-      const { blob } = await apiClient.getBlob(`/wallet/receipt/${m[1]}`);
+      const m = receiptUrl.match(
+        /(?:^|\/)(?:uploads\/wallet-receipts|wallet\/receipt)\/([^/?#]+)$/,
+      );
+      if (!m || !m[1]) {
+        setMessage('Invalid receipt');
+        return;
+      }
+      const receiptId = m[1];
+      if (!/^[\w-]+$/.test(receiptId)) {
+        setMessage('Invalid receipt');
+        return;
+      }
+      const { blob } = await apiClient.getBlob(`/wallet/receipt/${receiptId}`);
       const objectUrl = URL.createObjectURL(blob);
       window.open(objectUrl, '_blank', 'noopener');
       setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);

@@ -375,13 +375,13 @@ export class WalletService {
     note: string,
     adminId?: string,
   ) {
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const user = await tx.user.update({
         where: { id: userId },
         data: { walletBalance: { increment: amount } },
         select: { walletBalance: true },
       });
-      await tx.walletTransaction.create({
+      const txn = await tx.walletTransaction.create({
         data: {
           userId,
           amount,
@@ -402,8 +402,17 @@ export class WalletService {
           tx,
         );
       }
-      return user;
+      return { user, txnId: txn.id };
     });
+    // Sensitive admin action — record it in the audit trail.
+    await this.auditLogsService.create({
+      action: 'WALLET_ADJUSTED',
+      entity: 'WALLET_TRANSACTION',
+      entityId: result.txnId,
+      actorUserId: adminId,
+      metadata: { userId, amount, note },
+    });
+    return result.user;
   }
 
   // Auto-applies wallet balance to the consumer's oldest unpaid tickets in

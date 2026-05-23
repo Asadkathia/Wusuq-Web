@@ -467,6 +467,8 @@ export class NotificationDispatcher {
     // No-op if the ticket is already fully paid.
     if (t.paymentStatus === 'PAID') return;
     const remainder = Math.max(0, Number(t.totalAmount) - Number(t.amountPaid));
+    // Nothing owed — don't send a zero-value remainder notification.
+    if (remainder <= 0) return;
     const copy = T.paymentRemainderDueForConsumer(t.batchNo, remainder);
     await this.notifications.create({
       userId: t.consumerId,
