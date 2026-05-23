@@ -322,6 +322,70 @@ export class WalletService {
     return { url, path: url, filename: file.filename };
   }
 
+  /**
+   * Public wrapper around clearPendingTickets for use by TicketsService after
+   * finalizing a remainder. Opens its own $transaction and re-reads the user's
+   * current wallet balance so callers don't need to pass it in.
+   */
+  async settleTicketsForUser(userId: string): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT id FROM "User" WHERE id = ${userId} FOR UPDATE`;
+      const user = await tx.user.findUnique({
+        where: { id: userId },
+        select: { walletBalance: true },
+      });
+      if (!user) return;
+      await this.clearPendingTickets(
+        userId,
+        Number(user.walletBalance),
+        'BANK_TRANSFER',
+        tx,
+      );
+    });
+  }
+
+  /**
+   * Admin wallet adjustment: increments/decrements walletBalance, writes an
+   * ADMIN_ADJUSTMENT WalletTransaction (status VERIFIED), and re-settles tickets
+   * on a positive adjustment.
+   */
+  async adjustWallet(
+    userId: string,
+    amount: number,
+    note: string,
+    adminId?: string,
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      const user = await tx.user.update({
+        where: { id: userId },
+        data: { walletBalance: { increment: amount } },
+        select: { walletBalance: true },
+      });
+      await tx.walletTransaction.create({
+        data: {
+          userId,
+          amount,
+          paymentMode: 'BANK_TRANSFER',
+          currency: 'PKR',
+          status: 'VERIFIED',
+          type: 'ADMIN_ADJUSTMENT',
+          verifiedAt: new Date(),
+          reviewedByUserId: adminId,
+          note,
+        },
+      });
+      if (amount > 0) {
+        await this.clearPendingTickets(
+          userId,
+          Number(user.walletBalance),
+          'BANK_TRANSFER',
+          tx,
+        );
+      }
+      return user;
+    });
+  }
+
   // Auto-applies wallet balance to the consumer's oldest unpaid tickets in
   // FIFO order. Skips tickets with totalAmount <= 0 so a free-priced or
   // unresolved-pricing ticket never gets silently marked PAID. Records the
@@ -437,6 +501,7 @@ export class WalletService {
         paymentMode,
         currency: 'PKR',
         status: 'VERIFIED',
+        type: 'TICKET_DEBIT',
         verifiedAt: new Date(),
         note: `Auto-deducted for ticket ${ticket.batchNo}`,
       },

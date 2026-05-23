@@ -29,6 +29,7 @@ import { FilterTicketsDto } from './dto/filter-tickets.dto';
 import { PatchDocumentDto } from './dto/patch-document.dto';
 import { SaveTicketIntakeDraftDto } from './dto/save-ticket-intake-draft.dto';
 import { SubmitClerkCostsDto } from './dto/submit-clerk-costs.dto';
+import { FinalizeRemainderDto } from './dto/finalize-remainder.dto';
 import { RejectAssignmentDto } from './dto/reject-assignment.dto';
 import { UpdateTicketStatusDto } from './dto/update-ticket-status.dto';
 import { UpdateTicketDto } from './dto/update-ticket.dto';
@@ -331,6 +332,32 @@ export class TicketsController {
     @CurrentUser() actor: JwtUser | undefined,
   ) {
     return this.ticketsService.assign(id, dto, {
+      actorUserId: actor?.sub,
+      actorEmail: actor?.email,
+    });
+  }
+
+  @RequirePermissions('tickets.write')
+  @Post(':id/clerk-charges')
+  saveClerkCharges(
+    @Param('id') id: string,
+    @Body() dto: FinalizeRemainderDto,
+    @CurrentUser() actor: JwtUser | undefined,
+  ) {
+    return this.ticketsService.saveClerkCharges(id, dto, {
+      actorUserId: actor?.sub,
+      actorEmail: actor?.email,
+    });
+  }
+
+  @RequirePermissions('finance.write')
+  @Post(':id/finalize-remainder')
+  finalizeRemainder(
+    @Param('id') id: string,
+    @Body() dto: FinalizeRemainderDto,
+    @CurrentUser() actor: JwtUser | undefined,
+  ) {
+    return this.ticketsService.finalizeRemainder(id, dto, {
       actorUserId: actor?.sub,
       actorEmail: actor?.email,
     });

@@ -75,6 +75,7 @@ describe('TicketsService', () => {
       pricingService as never,
       geoService as never,
       dispatcher as never,
+      { settleTicketsForUser: jest.fn().mockResolvedValue(undefined) } as never,
     );
 
     await service.regenerate('ticket-1');
@@ -140,6 +141,7 @@ describe('TicketsService', () => {
       pricingService as never,
       geoService as never,
       dispatcher as never,
+      { settleTicketsForUser: jest.fn().mockResolvedValue(undefined) } as never,
     );
 
     await expect(
@@ -1354,5 +1356,242 @@ describe('payment model + charge capabilities (Spec 2)', () => {
     expect(chargeCapabilitiesFor('judicial_case_information')).toEqual({
       attestation: false, printing: false, delivery: false, pdf: false,
     });
+  });
+});
+
+// ─── Task 1.4: finalizeRemainder ──────────────────────────────────────────────
+
+describe('finalizeRemainder (Task 1.4)', () => {
+  function buildFinalizeHarness(opts: {
+    intakeFlow: string;
+    serviceCost: number;
+    amountPaid: number;
+    attestedCharges?: number;
+    printingCharges?: number;
+    deliveryCharges?: number;
+    pdfCharges?: number;
+  }) {
+    const ticket = {
+      id: 'tkt-fin',
+      consumerId: 'consumer-1',
+      serviceCost: opts.serviceCost,
+      amountPaid: opts.amountPaid,
+      intakeFlow: opts.intakeFlow,
+    };
+
+    const updatedTicket = { ...ticket };
+    const walletService = { settleTicketsForUser: jest.fn().mockResolvedValue(undefined) };
+
+    const prisma = {
+      ticket: {
+        findUnique: jest.fn().mockResolvedValue(ticket),
+        update: jest.fn().mockResolvedValue(updatedTicket),
+        findFirst: jest.fn().mockResolvedValue(null),
+        findMany: jest.fn().mockResolvedValue([]),
+        include: jest.fn(),
+      },
+      ticketStatusHistory: { create: jest.fn().mockResolvedValue({}) },
+      ticketIntakeDraft: { delete: jest.fn().mockResolvedValue({}) },
+      user: { findUnique: jest.fn().mockResolvedValue({ id: 'consumer-1' }) },
+      service: { findUnique: jest.fn().mockResolvedValue({ id: 'svc-1', category: 'judicial' }) },
+      assignment: { findFirst: jest.fn().mockResolvedValue(null) },
+    };
+    const auditLogsService = { create: jest.fn().mockResolvedValue({}) };
+    const pricingService = { resolve: jest.fn() };
+    const geoService = { resolveProvinceByCity: jest.fn() };
+    const dispatcher = makeDispatcher();
+    const service = new TicketsService(
+      prisma as never,
+      auditLogsService as never,
+      pricingService as never,
+      geoService as never,
+      dispatcher as never,
+      walletService as never,
+    );
+    return { service, prisma, walletService };
+  }
+
+  it('bumps totalAmount from capability-gated charges and triggers wallet settlement', async () => {
+    const { service, prisma, walletService } = buildFinalizeHarness({
+      intakeFlow: 'judicial_case_files',
+      serviceCost: 5000,
+      amountPaid: 5000,
+      attestedCharges: 2000,
+      printingCharges: 1000,
+    });
+
+    // Mock findOne for the return value
+    prisma.ticket.findUnique
+      .mockResolvedValueOnce({
+        id: 'tkt-fin',
+        consumerId: 'consumer-1',
+        serviceCost: 5000,
+        amountPaid: 5000,
+        intakeFlow: 'judicial_case_files',
+      })
+      .mockResolvedValue({
+        id: 'tkt-fin',
+        consumerId: 'consumer-1',
+        serviceCost: 5000,
+        amountPaid: 5000,
+        intakeFlow: 'judicial_case_files',
+        documents: [],
+        assignments: [],
+        history: [],
+        clerkReport: null,
+        consumer: { id: 'consumer-1' },
+        service: { id: 'svc-1' },
+      });
+
+    await service.finalizeRemainder(
+      'tkt-fin',
+      { attestedCharges: 2000, printingCharges: 1000 },
+      { actorUserId: 'admin-1' },
+    );
+
+    // totalAmount = 5000 + 2000 + 1000 = 8000
+    expect(prisma.ticket.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'tkt-fin' },
+        data: expect.objectContaining({
+          totalAmount: 8000,
+          remainderFinalizedAt: expect.any(Date),
+        }),
+      }),
+    );
+    expect(walletService.settleTicketsForUser).toHaveBeenCalledWith('consumer-1');
+  });
+
+  it('sets PARTIALLY_PAID when amountPaid < totalAmount after finalize', async () => {
+    const { service, prisma } = buildFinalizeHarness({
+      intakeFlow: 'judicial_case_files',
+      serviceCost: 5000,
+      amountPaid: 5000,
+    });
+
+    prisma.ticket.findUnique
+      .mockResolvedValueOnce({
+        id: 'tkt-fin',
+        consumerId: 'consumer-1',
+        serviceCost: 5000,
+        amountPaid: 5000,
+        intakeFlow: 'judicial_case_files',
+      })
+      .mockResolvedValue({
+        id: 'tkt-fin',
+        documents: [],
+        assignments: [],
+        history: [],
+        clerkReport: null,
+        consumer: { id: 'consumer-1' },
+        service: { id: 'svc-1' },
+      });
+
+    await service.finalizeRemainder(
+      'tkt-fin',
+      { printingCharges: 3000 },
+      { actorUserId: 'admin-1' },
+    );
+
+    expect(prisma.ticket.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          paymentStatus: 'PARTIALLY_PAID', // 5000 paid < 8000 total
+        }),
+      }),
+    );
+  });
+
+  it('sets PAID when amountPaid >= totalAmount after finalize', async () => {
+    const { service, prisma } = buildFinalizeHarness({
+      intakeFlow: 'judicial_case_files',
+      serviceCost: 5000,
+      amountPaid: 5000,
+    });
+
+    prisma.ticket.findUnique
+      .mockResolvedValueOnce({
+        id: 'tkt-fin',
+        consumerId: 'consumer-1',
+        serviceCost: 5000,
+        amountPaid: 5000,
+        intakeFlow: 'judicial_case_files',
+      })
+      .mockResolvedValue({
+        id: 'tkt-fin',
+        documents: [],
+        assignments: [],
+        history: [],
+        clerkReport: null,
+        consumer: { id: 'consumer-1' },
+        service: { id: 'svc-1' },
+      });
+
+    await service.finalizeRemainder(
+      'tkt-fin',
+      {}, // no additional charges
+      { actorUserId: 'admin-1' },
+    );
+
+    expect(prisma.ticket.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          paymentStatus: 'PAID', // 5000 paid >= 5000 total
+        }),
+      }),
+    );
+  });
+
+  it('zeroes attestation charges for flows without attestation capability', async () => {
+    const { service, prisma } = buildFinalizeHarness({
+      intakeFlow: 'non_judicial_copy_of_fir',
+      serviceCost: 3000,
+      amountPaid: 0,
+    });
+
+    prisma.ticket.findUnique
+      .mockResolvedValueOnce({
+        id: 'tkt-fin',
+        consumerId: 'consumer-1',
+        serviceCost: 3000,
+        amountPaid: 0,
+        intakeFlow: 'non_judicial_copy_of_fir',
+      })
+      .mockResolvedValue({
+        id: 'tkt-fin',
+        documents: [],
+        assignments: [],
+        history: [],
+        clerkReport: null,
+        consumer: { id: 'consumer-1' },
+        service: { id: 'svc-1' },
+      });
+
+    await service.finalizeRemainder(
+      'tkt-fin',
+      { attestedCharges: 9999, printingCharges: 500 }, // attestation should be zeroed
+      { actorUserId: 'admin-1' },
+    );
+
+    const updateCall = prisma.ticket.update.mock.calls[0][0];
+    // attestation is NOT a capability of non_judicial_copy_of_fir
+    expect(updateCall.data.attestedCharges).toBe(0);
+    // printing IS a capability
+    expect(updateCall.data.printingCharges).toBe(500);
+    // totalAmount = 3000 + 0 (attested zeroed) + 500 = 3500
+    expect(updateCall.data.totalAmount).toBe(3500);
+  });
+
+  it('throws NotFoundException when ticket not found', async () => {
+    const { service, prisma } = buildFinalizeHarness({
+      intakeFlow: 'judicial_case_files',
+      serviceCost: 5000,
+      amountPaid: 0,
+    });
+    prisma.ticket.findUnique.mockResolvedValueOnce(null);
+
+    await expect(
+      service.finalizeRemainder('nonexistent', {}, { actorUserId: 'admin-1' }),
+    ).rejects.toBeInstanceOf(NotFoundException);
   });
 });
