@@ -21,7 +21,7 @@ interface RequestOptions extends RequestInit {
 
 let refreshPromise: Promise<string | null> | null = null;
 
-async function refreshAccessToken(): Promise<string | null> {
+export async function refreshAccessToken(): Promise<string | null> {
   if (typeof window === 'undefined') {
     return null;
   }
