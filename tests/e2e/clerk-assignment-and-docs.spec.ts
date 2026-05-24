@@ -47,7 +47,9 @@ test.describe('Clerk assignment + document visibility', () => {
       });
     });
 
-    await page.route('**/tickets/ticket-1', async (route) => {
+    // Scope to /api/ so this mock matches the API fetch only — NOT the page
+    // navigation to /tickets/ticket-1 (which must load the real Next.js page).
+    await page.route('**/api/tickets/ticket-1', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -133,7 +135,9 @@ test.describe('Clerk assignment + document visibility', () => {
       });
     });
 
-    await page.route('**/tickets/ticket-c', async (route) => {
+    // Scope to /api/ so this mock matches the API fetch only — NOT the page
+    // navigation to /consumer/tickets/ticket-c (which must load the real page).
+    await page.route('**/api/tickets/ticket-c', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
