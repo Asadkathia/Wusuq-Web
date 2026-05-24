@@ -815,6 +815,7 @@ export class TicketsService {
     await this.prisma.ticketStatusHistory.create({
       data: {
         ticketId,
+        from: ticket.status,
         to: status,
         note: `Admin override from ${ticket.status}`,
       },
