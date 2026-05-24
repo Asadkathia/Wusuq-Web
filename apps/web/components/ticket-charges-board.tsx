@@ -28,14 +28,13 @@ type TicketRow = {
   totalAmount: number;
   amountPaid: number;
   remaining: number;
-  paymentStatus: string;
+  status: string;
   clerkPayout: number;
   invoice: { invoiceNo: string; status: string } | null;
 };
 
 type Filters = {
   search: string;
-  paymentStatus: string;
   ticketStatus: string;
   dateFrom: string;
   dateTo: string;
@@ -52,12 +51,12 @@ type ChargeEdit = {
   discountPrice: string;
 };
 
-const PAYMENT_STATUSES = ['UNPAID', 'PARTIALLY_PAID', 'PAID'];
-const TICKET_STATUSES = ['PENDING', 'ASSIGNED', 'IN_PROGRESS', 'WAITING_APPROVAL', 'COMPLETED'];
+const TICKET_STATUSES = ['UNPAID', 'PAID', 'ASSIGNED', 'IN_PROGRESS', 'WAITING_APPROVAL', 'COMPLETED', 'DELIVERED'];
 
-function paymentVariant(s: string): 'success' | 'warning' | 'neutral' | 'info' {
-  if (s === 'PAID') return 'success';
-  if (s === 'PARTIALLY_PAID') return 'warning';
+function statusVariant(s: string): 'success' | 'warning' | 'neutral' | 'info' {
+  if (s === 'COMPLETED' || s === 'DELIVERED') return 'success';
+  if (s === 'UNPAID') return 'warning';
+  if (s === 'PAID' || s === 'ASSIGNED' || s === 'IN_PROGRESS') return 'info';
   return 'neutral';
 }
 
@@ -70,7 +69,7 @@ export function TicketChargesBoard() {
   const limit = 20;
 
   const [filters, setFilters] = useState<Filters>({
-    search: '', paymentStatus: '', ticketStatus: '', dateFrom: '', dateTo: '',
+    search: '', ticketStatus: '', dateFrom: '', dateTo: '',
   });
   const [pendingFilters, setPendingFilters] = useState<Filters>(filters);
 
@@ -84,7 +83,6 @@ export function TicketChargesBoard() {
     params.set('page', String(p));
     params.set('limit', String(limit));
     if (f.search) params.set('search', f.search);
-    if (f.paymentStatus) params.set('paymentStatus', f.paymentStatus);
     if (f.ticketStatus) params.set('ticketStatus', f.ticketStatus);
     if (f.dateFrom) params.set('dateFrom', f.dateFrom);
     if (f.dateTo) params.set('dateTo', f.dateTo);
@@ -112,7 +110,7 @@ export function TicketChargesBoard() {
   };
 
   const resetFilters = () => {
-    const empty: Filters = { search: '', paymentStatus: '', ticketStatus: '', dateFrom: '', dateTo: '' };
+    const empty: Filters = { search: '', ticketStatus: '', dateFrom: '', dateTo: '' };
     setPendingFilters(empty);
     setFilters(empty);
     setPage(1);
@@ -173,7 +171,7 @@ export function TicketChargesBoard() {
   ];
 
   const activeFilterCount = useMemo(() =>
-    [filters.paymentStatus, filters.ticketStatus, filters.dateFrom, filters.dateTo, filters.search].filter(Boolean).length,
+    [filters.ticketStatus, filters.dateFrom, filters.dateTo, filters.search].filter(Boolean).length,
     [filters]);
 
   return (
@@ -197,7 +195,7 @@ export function TicketChargesBoard() {
 
       {/* Filter Bar */}
       <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <input
             type="text"
             placeholder="Search batch no. or consumer…"
@@ -205,14 +203,6 @@ export function TicketChargesBoard() {
             value={pendingFilters.search}
             onChange={e => setPendingFilters(f => ({ ...f, search: e.target.value }))}
           />
-          <select
-            className="rounded border border-slate-200 py-1.5 px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-primary-600"
-            value={pendingFilters.paymentStatus}
-            onChange={e => setPendingFilters(f => ({ ...f, paymentStatus: e.target.value }))}
-          >
-            <option value="">All Payment Status</option>
-            {PAYMENT_STATUSES.map(s => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
-          </select>
           <select
             className="rounded border border-slate-200 py-1.5 px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-primary-600"
             value={pendingFilters.ticketStatus}
@@ -304,7 +294,7 @@ export function TicketChargesBoard() {
                     {(item.remaining ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <StatusPill label={item.paymentStatus.replace('_', ' ')} variant={paymentVariant(item.paymentStatus)} />
+                    <StatusPill label={item.status.replace(/_/g, ' ')} variant={statusVariant(item.status)} />
                   </td>
                   <td className="px-4 py-3 text-right" onClick={e => e.stopPropagation()}>
                     <button

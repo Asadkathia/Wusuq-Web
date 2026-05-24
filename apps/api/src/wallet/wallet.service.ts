@@ -3,7 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import type { PaymentMode, Prisma } from '@prisma/client';
+import type { PaymentMode, Prisma, TicketStatus } from '@prisma/client';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { NotificationDispatcher } from '../notifications/notification-dispatcher.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -429,7 +429,7 @@ export class WalletService {
     const candidateIds = await tx.ticket.findMany({
       where: {
         consumerId: userId,
-        paymentStatus: { not: 'PAID' },
+        status: { notIn: ['DELIVERED'] },
       },
       orderBy: { createdAt: 'asc' },
       select: { id: true },
@@ -444,7 +444,7 @@ export class WalletService {
       // This serialises wallet auto-deduction against finance.reconcilePayment
       // (which also takes a row-level lock on the same ticket) so two
       // concurrent payment paths can't race on the same ticket and
-      // overpay / leave a stale paymentStatus.
+      // overpay.
       await tx.$executeRaw`SELECT id FROM "Ticket" WHERE id = ${id} FOR UPDATE`;
 
       const fresh = await tx.ticket.findUnique({
@@ -454,12 +454,13 @@ export class WalletService {
           batchNo: true,
           totalAmount: true,
           amountPaid: true,
-          paymentStatus: true,
+          serviceCost: true,
+          status: true,
         },
       });
       if (!fresh) continue;
-      // Status may have flipped to PAID between findMany and the lock.
-      if (fresh.paymentStatus === 'PAID') continue;
+      // Status may have been fully settled between findMany and the lock.
+      if (fresh.status === 'DELIVERED') continue;
 
       const totalAmount = Number(fresh.totalAmount);
       const amountPaid = Number(fresh.amountPaid);
@@ -479,6 +480,8 @@ export class WalletService {
           batchNo: fresh.batchNo,
           totalAmount,
           amountPaid,
+          serviceCost: Number(fresh.serviceCost),
+          status: fresh.status,
         },
         deducted,
         paymentMode,
@@ -505,21 +508,24 @@ export class WalletService {
       batchNo: string;
       totalAmount: number;
       amountPaid: number;
+      serviceCost: number;
+      status: string;
     },
     deducted: number,
     paymentMode: PaymentMode,
     userId: string,
   ) {
-    const ticketRemaining = ticket.totalAmount - ticket.amountPaid;
-    const newPaymentStatus =
-      deducted >= ticketRemaining ? 'PAID' : 'PARTIALLY_PAID';
+    const newAmountPaid = ticket.amountPaid + deducted;
+    const data: { amountPaid: { increment: number }; status?: TicketStatus } = {
+      amountPaid: { increment: deducted },
+    };
+    if (ticket.status === 'UNPAID' && newAmountPaid >= ticket.serviceCost) {
+      data.status = 'PAID';
+    }
 
     await tx.ticket.update({
       where: { id: ticket.ticketId },
-      data: {
-        amountPaid: { increment: deducted },
-        paymentStatus: newPaymentStatus,
-      },
+      data,
     });
 
     await tx.walletTransaction.create({

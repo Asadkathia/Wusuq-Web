@@ -9,6 +9,9 @@ import {
   paymentModelFor,
   chargeCapabilitiesFor,
   orderCaseDetailKeys,
+  isBaseCovered,
+  isFullyPaid,
+  TICKET_STATUSES,
 } from '@wusuq/shared';
 import { TicketsService } from './tickets.service';
 
@@ -49,7 +52,6 @@ describe('TicketsService', () => {
       clerkCost: 10,
       totalAmount: 120,
       amountPaid: 20,
-      paymentStatus: 'PARTIALLY_PAID',
     };
 
     const prisma = {
@@ -97,7 +99,7 @@ describe('TicketsService', () => {
           clerkCost: 10,
           totalAmount: 120,
           amountPaid: 20,
-          paymentStatus: 'PARTIALLY_PAID',
+          status: 'UNPAID',
         }),
       }),
     );
@@ -172,7 +174,7 @@ describe('TicketsService', () => {
           : opts.ticket;
       const updatedTicket =
         ticket && typeof ticket === 'object'
-          ? { ...ticket, status: 'PENDING' }
+          ? { ...ticket, status: 'PAID' }
           : ticket;
       const activeAssignment =
         opts.activeAssignment === undefined
@@ -248,7 +250,7 @@ describe('TicketsService', () => {
 
       expect(prisma.ticket.update).toHaveBeenCalledWith({
         where: { id: 'ticket-1' },
-        data: { status: 'PENDING' },
+        data: { status: 'PAID' },
       });
       expect(prisma.assignment.update).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -265,7 +267,7 @@ describe('TicketsService', () => {
           data: expect.objectContaining({
             ticketId: 'ticket-1',
             from: 'ASSIGNED',
-            to: 'PENDING',
+            to: 'PAID',
             note: 'Cannot reach court this week',
           }),
         }),
@@ -401,7 +403,7 @@ describe('TicketsService', () => {
 
     it('rejects when ticket is not in ASSIGNED', async () => {
       const { service } = buildService({
-        ticket: { id: 'ticket-1', status: 'PENDING', batchNo: 'TKT-001' },
+        ticket: { id: 'ticket-1', status: 'UNPAID', batchNo: 'TKT-001' },
       });
       await expect(
         service.acceptAssignment('ticket-1', { actorUserId: 'clerk-1' }),
@@ -1065,14 +1067,13 @@ describe('TicketsService', () => {
 
     function buildGateHarness(ticket: {
       createdBy: 'CONSUMER' | 'ADMIN_STAFF';
-      paymentStatus: 'UNPAID' | 'PARTIALLY_PAID' | 'PAID';
       intakeFlow?: string;
       serviceCost?: number;
       amountPaid?: number;
       totalAmount?: number;
       status?: string;
     }) {
-      const { status: ticketStatus = 'PENDING', ...rest } = ticket;
+      const { status: ticketStatus = 'PAID', ...rest } = ticket;
       const prisma = {
         ticket: {
           findUnique: jest.fn().mockResolvedValue({
@@ -1088,7 +1089,11 @@ describe('TicketsService', () => {
           update: jest.fn().mockResolvedValue({
             id: 'tkt-1',
             status:
-              ticketStatus === 'WAITING_APPROVAL' ? 'COMPLETED' : 'ASSIGNED',
+              ticketStatus === 'WAITING_APPROVAL'
+                ? 'COMPLETED'
+                : ticketStatus === 'COMPLETED'
+                  ? 'DELIVERED'
+                  : 'ASSIGNED',
             caseId: null,
             consumer: {
               id: 'consumer-1',
@@ -1116,10 +1121,10 @@ describe('TicketsService', () => {
       return { service, prisma };
     }
 
-    it('blocks PENDING → ASSIGNED for a CONSUMER ticket that is UNPAID', async () => {
+    it('UNPAID → ASSIGNED is blocked (invalid transition in new machine)', async () => {
       const { service, prisma } = buildGateHarness({
         createdBy: 'CONSUMER',
-        paymentStatus: 'UNPAID',
+        status: 'UNPAID',
         serviceCost: 5000,
         amountPaid: 0,
         totalAmount: 5000,
@@ -1128,48 +1133,14 @@ describe('TicketsService', () => {
         service.updateStatus('tkt-1', 'ASSIGNED', undefined, {
           actorUserId: 'admin-1',
         }),
-      ).rejects.toBeInstanceOf(ForbiddenException);
+      ).rejects.toBeInstanceOf(BadRequestException);
       expect(prisma.ticket.update).not.toHaveBeenCalled();
     });
 
-    it('blocks PENDING → ASSIGNED for a CONSUMER ticket that is PARTIALLY_PAID', async () => {
+    it('PAID → ASSIGNED is allowed', async () => {
       const { service, prisma } = buildGateHarness({
         createdBy: 'CONSUMER',
-        paymentStatus: 'PARTIALLY_PAID',
-        serviceCost: 5000,
-        amountPaid: 2000,
-        totalAmount: 5000,
-      });
-      await expect(
-        service.updateStatus('tkt-1', 'ASSIGNED', undefined, {
-          actorUserId: 'admin-1',
-        }),
-      ).rejects.toBeInstanceOf(ForbiddenException);
-      expect(prisma.ticket.update).not.toHaveBeenCalled();
-    });
-
-    it('allows PENDING → ASSIGNED for ADMIN_STAFF ticket while UNPAID', async () => {
-      const { service, prisma } = buildGateHarness({
-        createdBy: 'ADMIN_STAFF',
-        paymentStatus: 'UNPAID',
-        serviceCost: 5000,
-        amountPaid: 0,
-        totalAmount: 5000,
-      });
-      const updated = await service.updateStatus(
-        'tkt-1',
-        'ASSIGNED',
-        undefined,
-        { actorUserId: 'admin-1' },
-      );
-      expect(updated.status).toBe('ASSIGNED');
-      expect(prisma.ticket.update).toHaveBeenCalled();
-    });
-
-    it('allows PENDING → ASSIGNED for CONSUMER ticket once amountPaid >= totalAmount', async () => {
-      const { service, prisma } = buildGateHarness({
-        createdBy: 'CONSUMER',
-        paymentStatus: 'PAID',
+        status: 'PAID',
         serviceCost: 5000,
         amountPaid: 5000,
         totalAmount: 5000,
@@ -1184,107 +1155,47 @@ describe('TicketsService', () => {
       expect(prisma.ticket.update).toHaveBeenCalled();
     });
 
-    it('bypasses the gate for an UNPAID CONSUMER ticket when DISABLE_PAYMENT_GATING=true', async () => {
-      process.env.DISABLE_PAYMENT_GATING = 'true';
-      const { service, prisma } = buildGateHarness({
-        createdBy: 'CONSUMER',
-        paymentStatus: 'UNPAID',
-        serviceCost: 5000,
-        amountPaid: 0,
-        totalAmount: 5000,
-      });
-      const updated = await service.updateStatus(
-        'tkt-1',
-        'ASSIGNED',
-        undefined,
-        {
-          actorUserId: 'admin-1',
-        },
-      );
-      expect(updated.status).toBe('ASSIGNED');
-      expect(prisma.ticket.update).toHaveBeenCalled();
-    });
-
-    // ── Phase-aware gate (Task 1.3) ──────────────────────────────────────────
-
-    it('SPLIT: base covered (amountPaid >= serviceCost) allows ASSIGNED even with remainder pending', async () => {
-      const { service, prisma } = buildGateHarness({
-        createdBy: 'CONSUMER',
-        intakeFlow: 'judicial_case_files',
-        serviceCost: 5000,
-        amountPaid: 5000,
-        totalAmount: 5000,
-        paymentStatus: 'PAID',
-      });
-      await service.updateStatus('tkt-1', 'ASSIGNED', undefined, {
-        actorUserId: 'a',
-      });
-      expect(prisma.ticket.update).toHaveBeenCalled();
-    });
-
-    it('SPLIT: COMPLETED blocked when amountPaid < totalAmount (remainder unpaid)', async () => {
+    it('COMPLETED → DELIVERED blocked when amountPaid < totalAmount', async () => {
       const { service } = buildGateHarness({
         createdBy: 'CONSUMER',
-        intakeFlow: 'judicial_case_files',
+        status: 'COMPLETED',
         serviceCost: 5000,
         amountPaid: 5000,
         totalAmount: 8000,
-        paymentStatus: 'PARTIALLY_PAID',
-        status: 'WAITING_APPROVAL',
       });
       await expect(
-        service.updateStatus('tkt-1', 'COMPLETED', undefined, {
+        service.updateStatus('tkt-1', 'DELIVERED', undefined, {
           actorUserId: 'a',
         }),
       ).rejects.toBeInstanceOf(ForbiddenException);
     });
 
-    it('SPLIT: COMPLETED allowed when amountPaid >= totalAmount (full paid)', async () => {
+    it('COMPLETED → DELIVERED allowed when amountPaid >= totalAmount', async () => {
       const { service, prisma } = buildGateHarness({
         createdBy: 'CONSUMER',
-        intakeFlow: 'judicial_case_files',
+        status: 'COMPLETED',
         serviceCost: 5000,
         amountPaid: 8000,
         totalAmount: 8000,
-        paymentStatus: 'PAID',
+      });
+      await service.updateStatus('tkt-1', 'DELIVERED', undefined, {
+        actorUserId: 'a',
+      });
+      expect(prisma.ticket.update).toHaveBeenCalled();
+    });
+
+    it('WAITING_APPROVAL → COMPLETED is allowed', async () => {
+      const { service, prisma } = buildGateHarness({
+        createdBy: 'CONSUMER',
         status: 'WAITING_APPROVAL',
+        serviceCost: 5000,
+        amountPaid: 5000,
+        totalAmount: 5000,
       });
       await service.updateStatus('tkt-1', 'COMPLETED', undefined, {
         actorUserId: 'a',
       });
       expect(prisma.ticket.update).toHaveBeenCalled();
-    });
-
-    it('ONE_TIME: ASSIGNED blocked when amountPaid < totalAmount (base not covered)', async () => {
-      const { service } = buildGateHarness({
-        createdBy: 'CONSUMER',
-        intakeFlow: 'judicial_case_information',
-        serviceCost: 5000,
-        amountPaid: 3000,
-        totalAmount: 5000,
-        paymentStatus: 'PARTIALLY_PAID',
-      });
-      await expect(
-        service.updateStatus('tkt-1', 'ASSIGNED', undefined, {
-          actorUserId: 'a',
-        }),
-      ).rejects.toBeInstanceOf(ForbiddenException);
-    });
-
-    it('SPLIT: ASSIGNED blocked when amountPaid < serviceCost (base not covered)', async () => {
-      const { service } = buildGateHarness({
-        createdBy: 'CONSUMER',
-        intakeFlow: 'judicial_case_files',
-        serviceCost: 5000,
-        amountPaid: 3000,
-        totalAmount: 5000,
-        paymentStatus: 'PARTIALLY_PAID',
-      });
-      await expect(
-        service.updateStatus('tkt-1', 'ASSIGNED', undefined, {
-          actorUserId: 'a',
-        }),
-      ).rejects.toBeInstanceOf(ForbiddenException);
     });
   });
 
@@ -1532,7 +1443,7 @@ describe('finalizeRemainder (Task 1.4)', () => {
     );
   });
 
-  it('sets PARTIALLY_PAID when amountPaid < totalAmount after finalize', async () => {
+  it('does not include paymentStatus in the finalize update (removed column)', async () => {
     const { service, prisma } = buildFinalizeHarness({
       intakeFlow: 'judicial_case_files',
       serviceCost: 5000,
@@ -1563,53 +1474,9 @@ describe('finalizeRemainder (Task 1.4)', () => {
       { actorUserId: 'admin-1' },
     );
 
-    expect(prisma.ticket.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          paymentStatus: 'PARTIALLY_PAID', // 5000 paid < 8000 total
-        }),
-      }),
-    );
-  });
-
-  it('sets PAID when amountPaid >= totalAmount after finalize', async () => {
-    const { service, prisma } = buildFinalizeHarness({
-      intakeFlow: 'judicial_case_files',
-      serviceCost: 5000,
-      amountPaid: 5000,
-    });
-
-    prisma.ticket.findUnique
-      .mockResolvedValueOnce({
-        id: 'tkt-fin',
-        consumerId: 'consumer-1',
-        serviceCost: 5000,
-        amountPaid: 5000,
-        intakeFlow: 'judicial_case_files',
-      })
-      .mockResolvedValue({
-        id: 'tkt-fin',
-        documents: [],
-        assignments: [],
-        history: [],
-        clerkReport: null,
-        consumer: { id: 'consumer-1' },
-        service: { id: 'svc-1' },
-      });
-
-    await service.finalizeRemainder(
-      'tkt-fin',
-      {}, // no additional charges
-      { actorUserId: 'admin-1' },
-    );
-
-    expect(prisma.ticket.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          paymentStatus: 'PAID', // 5000 paid >= 5000 total
-        }),
-      }),
-    );
+    const updateCall = prisma.ticket.update.mock.calls[0][0];
+    expect(updateCall.data).not.toHaveProperty('paymentStatus');
+    expect(updateCall.data.totalAmount).toBe(8000); // 5000 + 3000
   });
 
   it('zeroes attestation charges for flows without attestation capability', async () => {
@@ -1663,6 +1530,26 @@ describe('finalizeRemainder (Task 1.4)', () => {
     await expect(
       service.finalizeRemainder('nonexistent', {}, { actorUserId: 'admin-1' }),
     ).rejects.toBeInstanceOf(NotFoundException);
+  });
+});
+
+describe('unified status helpers (Spec 4)', () => {
+  it('has the 7 unified statuses, no PENDING', () => {
+    expect(TICKET_STATUSES).toEqual([
+      'UNPAID',
+      'PAID',
+      'ASSIGNED',
+      'IN_PROGRESS',
+      'WAITING_APPROVAL',
+      'COMPLETED',
+      'DELIVERED',
+    ]);
+  });
+  it('derives base coverage and full payment from amounts', () => {
+    expect(isBaseCovered({ amountPaid: 500, serviceCost: 500 })).toBe(true);
+    expect(isBaseCovered({ amountPaid: 200, serviceCost: 500 })).toBe(false);
+    expect(isFullyPaid({ amountPaid: 800, totalAmount: 800 })).toBe(true);
+    expect(isFullyPaid({ amountPaid: 500, totalAmount: 800 })).toBe(false);
   });
 });
 
@@ -1894,8 +1781,7 @@ describe('generateNextHearing (Task 1.3)', () => {
     expect(result).toBeDefined();
     const data = created[0]?.data;
     expect(data?.createdBy).toBe('CONSUMER');
-    expect(data?.paymentStatus).toBe('UNPAID');
-    expect(data?.status).toBe('PENDING');
+    expect(data?.status).toBe('UNPAID');
     expect(data?.consumerId).toBe('consumer-1');
   });
 

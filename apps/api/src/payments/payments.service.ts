@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Decimal } from '@prisma/client/runtime/library';
-import { Prisma } from '@prisma/client';
+import { Prisma, TicketStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { NotificationDispatcher } from '../notifications/notification-dispatcher.service';
@@ -34,8 +34,8 @@ export class PaymentsService {
     if (ticket.consumerId !== consumerId) {
       throw new ForbiddenException('Forbidden: ticket not owned by consumer');
     }
-    if (ticket.paymentStatus === 'PAID') {
-      throw new BadRequestException('Ticket already paid');
+    if (ticket.status !== 'UNPAID') {
+      throw new BadRequestException('Ticket is not awaiting payment');
     }
 
     const returnUrl = this.config.get<string>('PAYMENT_RETURN_URL')!;
@@ -71,7 +71,7 @@ export class PaymentsService {
     const payment = await this.prisma.payment.findUnique({
       where: { id: paymentId },
       include: {
-        ticket: { select: { consumerId: true, paymentStatus: true } },
+        ticket: { select: { consumerId: true, status: true } },
       },
     });
     if (!payment) throw new NotFoundException('Payment not found');
@@ -81,21 +81,21 @@ export class PaymentsService {
     return {
       id: payment.id,
       status: payment.status,
-      ticketPaymentStatus: payment.ticket.paymentStatus,
+      ticketStatus: payment.ticket.status,
     };
   }
 
   async getByProviderTxnId(providerTxnId: string) {
     const payment = await this.prisma.payment.findUnique({
       where: { providerTxnId },
-      include: { ticket: { select: { id: true, paymentStatus: true } } },
+      include: { ticket: { select: { id: true, status: true } } },
     });
     if (!payment) return null;
     return {
       id: payment.id,
       status: payment.status,
       ticketId: payment.ticket.id,
-      ticketPaymentStatus: payment.ticket.paymentStatus,
+      ticketStatus: payment.ticket.status,
     };
   }
 
@@ -113,7 +113,16 @@ export class PaymentsService {
     }
     const payment = await this.prisma.payment.findUnique({
       where: { providerTxnId: verified.providerTxnId },
-      include: { ticket: { select: { id: true, totalAmount: true } } },
+      include: {
+        ticket: {
+          select: {
+            id: true,
+            totalAmount: true,
+            serviceCost: true,
+            status: true,
+          },
+        },
+      },
     });
     if (!payment) throw new NotFoundException('Payment not found');
 
@@ -140,12 +149,19 @@ export class PaymentsService {
             rawCallback: body as Prisma.InputJsonValue,
           },
         });
+        const newAmountPaid = new Decimal(payment.ticket.totalAmount);
+        const ticketData: { amountPaid: Decimal; status?: TicketStatus } = {
+          amountPaid: newAmountPaid,
+        };
+        if (
+          payment.ticket.status === 'UNPAID' &&
+          newAmountPaid.gte(new Decimal(payment.ticket.serviceCost))
+        ) {
+          ticketData.status = 'PAID';
+        }
         await tx.ticket.update({
           where: { id: payment.ticket.id },
-          data: {
-            paymentStatus: 'PAID',
-            amountPaid: new Decimal(payment.ticket.totalAmount),
-          },
+          data: ticketData,
         });
         await tx.invoice.upsert({
           where: { ticketId: payment.ticket.id },

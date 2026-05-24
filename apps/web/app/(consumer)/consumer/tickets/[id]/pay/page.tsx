@@ -16,12 +16,12 @@ import { Input } from '@/components/ui/input';
 interface TicketSummary {
   id: string;
   batchNo: string;
+  status?: string | null;
   intakeFlow?: string | null;
   serviceCost?: number | string | null;
   totalAmount?: number | string | null;
   amountPaid?: number | string | null;
   remainderFinalizedAt?: string | null;
-  paymentStatus?: 'UNPAID' | 'PARTIALLY_PAID' | 'PAID' | null;
   service?: { name?: string | null } | null;
 }
 
@@ -210,9 +210,11 @@ export default function PayTicketPage() {
     );
   }
 
-  // ── Already paid ─────────────────────────────────────────────────────────
+  // ── Already paid (fully settled: amountPaid >= totalAmount) ─────────────
 
-  if (ticket.paymentStatus === 'PAID') {
+  const totalAmt = toNum(ticket.totalAmount);
+  const paidAmt = toNum(ticket.amountPaid);
+  if (totalAmt > 0 && paidAmt >= totalAmt) {
     return (
       <div className="mx-auto max-w-xl px-6 py-12">
         <PanelCard>

@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { TicketStatus } from '@wusuq/shared';
 import { chargeCapabilitiesFor } from '@wusuq/shared';
+import { TICKET_STATUSES } from '@wusuq/shared';
 import { apiClient } from '@/lib/api-client';
 import { paymentsClient } from '@/lib/payments-client';
 import { DataTableShell } from '@/components/ui/data-table-shell';
@@ -44,7 +45,6 @@ type TicketRow = {
   serviceCost?: number | string | null;
   totalAmount?: number | string | null;
   amountPaid?: number | string | null;
-  paymentStatus?: string | null;
   remainderFinalizedAt?: string | null;
   deliveryCharges?: number | string | null;
   printingCharges?: number | string | null;
@@ -120,15 +120,17 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
     }>;
   } | null>(null);
 
-  // Clerk (representative) role detection
+  // Role detection from localStorage
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [isClerk, setIsClerk] = useState(false);
   const [isConsumer, setIsConsumer] = useState(false);
+  const [userRole, setUserRole] = useState<string | null>(null);
   useEffect(() => {
     try {
       const u = JSON.parse(localStorage.getItem('wusuq_user') || 'null');
       if (!u) return;
 
+      setUserRole(u.role ?? null);
       if (u.role === 'representative') {
         setIsClerk(true);
         setCurrentUserId(u.id ?? null);
@@ -273,6 +275,35 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
   }, [loadTickets]);
 
   const isAdmin = !isClerk && !isConsumer;
+  // Status override is available to admin and finance roles
+  const isAdminOrFinance = isAdmin && (userRole === 'admin' || userRole === 'super_admin' || userRole === 'finance' || userRole === null);
+
+  const handleStatusOverride = async (ticket: TicketRow, newStatus: string) => {
+    if (newStatus === ticket.status) return;
+    // Normal transitions for the 7-status machine
+    const NORMAL_NEXT: Record<string, string> = {
+      UNPAID: 'PAID',
+      PAID: 'ASSIGNED',
+      ASSIGNED: 'IN_PROGRESS',
+      IN_PROGRESS: 'WAITING_APPROVAL',
+      WAITING_APPROVAL: 'COMPLETED',
+      COMPLETED: 'DELIVERED',
+    };
+    const isNormalNext = NORMAL_NEXT[ticket.status] === newStatus;
+    if (!isNormalNext) {
+      const confirmed = window.confirm(
+        `Override ticket ${ticket.batchNo} status from ${ticket.status} → ${newStatus}?\n\nThis bypasses the normal workflow and will be recorded in the audit log.`,
+      );
+      if (!confirmed) return;
+    }
+    try {
+      await paymentsClient.overrideStatus(ticket.id, newStatus);
+      setMessage(`Ticket ${ticket.batchNo} status set to ${newStatus}`);
+      loadTickets();
+    } catch (error: any) {
+      setMessage(error.message || 'Status override failed');
+    }
+  };
 
   const filteredTickets = useMemo(() => {
     if (!search) return tickets;
@@ -291,8 +322,9 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
   };
 
   const getStatusVariant = (st: string) => {
-    if (st === 'COMPLETED') return 'success';
-    if (st === 'PENDING') return 'warning';
+    if (st === 'COMPLETED' || st === 'DELIVERED') return 'success';
+    if (st === 'UNPAID') return 'warning';
+    if (st === 'PAID') return 'info';
     if (st === 'ASSIGNED' || st === 'IN_PROGRESS') return 'info';
     if (st === 'WAITING_APPROVAL') return 'warning';
     return 'neutral';
@@ -410,7 +442,7 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
 
   // Admin: mark a single IN_PROGRESS ticket as completed
   const completeTicket = async (ticket: TicketRow) => {
-    if (!confirm(`Mark ticket ${ticket.batchNo} as Completed? Payment status will be set to Paid.`)) return;
+    if (!confirm(`Mark ticket ${ticket.batchNo} as Completed?`)) return;
     try {
       const updated = await apiClient.patch<{
         caseId?: string | null;
@@ -568,9 +600,9 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
     }
   };
 
-  // Admin: open bulk-assign dialog for selected pending tickets
+  // Admin: open bulk-assign dialog for selected unpaid/paid tickets
   const openBulkAssign = async () => {
-    const ids = status === 'PENDING'
+    const ids = (status === 'UNPAID' || status === 'PAID')
       ? Object.entries(pendingSelected).filter(([, v]) => v).map(([id]) => id)
       : selectedIds;
     if (ids.length === 0) return setMessage('Select at least one ticket to bulk-assign');
@@ -589,7 +621,7 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
   };
 
   const submitBulkAssign = async () => {
-    const ids = status === 'PENDING'
+    const ids = (status === 'UNPAID' || status === 'PAID')
       ? Object.entries(pendingSelected).filter(([, v]) => v).map(([id]) => id)
       : selectedIds;
     if (ids.length === 0) return;
@@ -695,7 +727,7 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
                 {isAdmin && (
                   <>
                     <span className="hidden sm:block h-6 w-px bg-slate-200 mx-1" aria-hidden="true"></span>
-                    {status === 'PENDING' ? (
+                    {status === 'UNPAID' || status === 'PAID' ? (
                       <button
                         type="button"
                         onClick={openBulkAssign}
@@ -744,12 +776,12 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
                       className="h-4 w-4 rounded border-slate-300 text-primary-600 focus:ring-primary-600"
                       checked={
                         filteredTickets.length > 0 &&
-                        (status === 'PENDING'
+                        (status === 'UNPAID' || status === 'PAID'
                           ? filteredTickets.every((t) => pendingSelected[t.id])
                           : selectedIds.length === filteredTickets.length)
                       }
                       onChange={(e) => {
-                        if (status === 'PENDING') {
+                        if (status === 'UNPAID' || status === 'PAID') {
                           const next: Record<string, boolean> = {};
                           filteredTickets.forEach((t) => { next[t.id] = e.target.checked; });
                           setPendingSelected(next);
@@ -779,9 +811,9 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
                       <input
                         type="checkbox"
                         className="h-4 w-4 rounded border-slate-300 text-primary-600 focus:ring-primary-600 mt-0.5"
-                        checked={status === 'PENDING' ? Boolean(pendingSelected[ticket.id]) : Boolean(selected[ticket.id])}
+                        checked={status === 'UNPAID' || status === 'PAID' ? Boolean(pendingSelected[ticket.id]) : Boolean(selected[ticket.id])}
                         onChange={(e) => {
-                          if (status === 'PENDING') {
+                          if (status === 'UNPAID' || status === 'PAID') {
                             setPendingSelected((s) => ({ ...s, [ticket.id]: e.target.checked }));
                           } else {
                             setSelected((s) => ({ ...s, [ticket.id]: e.target.checked }));
@@ -806,7 +838,21 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
                   </div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
-                  <StatusPill label={ticket.status} variant={getStatusVariant(ticket.status)} />
+                  {isAdminOrFinance ? (
+                    <select
+                      className="rounded-lg border-0 py-1.5 pl-2 pr-7 text-xs font-medium shadow-sm ring-1 ring-inset ring-border-soft focus:ring-2 focus:ring-primary-600"
+                      value={ticket.status}
+                      onChange={(e) => handleStatusOverride(ticket, e.target.value)}
+                      onClick={(e) => e.stopPropagation()}
+                      title="Override ticket status (admin only)"
+                    >
+                      {TICKET_STATUSES.map((s) => (
+                        <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <StatusPill label={ticket.status} variant={getStatusVariant(ticket.status)} />
+                  )}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                   <div className="flex flex-wrap items-center justify-end gap-2 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
@@ -859,7 +905,7 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
                       </>
                     ) : (
                       <>
-                        {status === 'PENDING' && (
+                        {(status === 'UNPAID' || status === 'PAID') && (
                           <button onClick={() => openAssign(ticket)} className="text-primary-600 hover:text-primary-900 bg-primary-50 px-3 py-1.5 rounded-md flex items-center gap-1">
                             <CheckSquare className="h-3.5 w-3.5" /> Assign
                           </button>

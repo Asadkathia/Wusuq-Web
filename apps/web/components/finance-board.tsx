@@ -35,7 +35,7 @@ type FinanceItem = {
   amountPaid: number;
   remaining: number;
   clerkPayout: number;
-  paymentStatus: string;
+  status: string;
   invoice?: { invoiceNo: string; status: string } | null;
 };
 
@@ -697,9 +697,15 @@ export function FinanceBoard() {
                   {item.clerkPayout > 0 && <div className="text-sm text-violet-600 mt-1">Clerk: {item.clerkPayout}</div>}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
-                  <StatusPill 
-                    label={item.paymentStatus} 
-                    variant={item.paymentStatus === 'PAID' ? 'success' : item.paymentStatus === 'PARTIAL' ? 'warning' : 'neutral'} 
+                  <StatusPill
+                    label={item.status}
+                    variant={
+                      item.status === 'COMPLETED' || item.status === 'DELIVERED'
+                        ? 'success'
+                        : item.status === 'UNPAID'
+                        ? 'warning'
+                        : 'info'
+                    }
                   />
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">

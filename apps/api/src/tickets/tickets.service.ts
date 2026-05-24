@@ -18,6 +18,7 @@ import {
   courtTierFromCourtType,
   paymentModelFor,
   chargeCapabilitiesFor,
+  isFullyPaid,
 } from '@wusuq/shared';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { PricingService } from '../pricing/pricing.service';
@@ -140,11 +141,13 @@ const REQUIRED_FIELDS_BY_FLOW: Record<string, string[]> = {
 const PAYLOAD_FIELD_ALIASES: Record<string, readonly string[]> = SHARED_ALIASES;
 
 const STATUS_TRANSITIONS: Record<TicketStatus, TicketStatus[]> = {
-  PENDING: ['ASSIGNED'],
+  UNPAID: ['PAID'],
+  PAID: ['ASSIGNED'],
   ASSIGNED: ['IN_PROGRESS'],
   IN_PROGRESS: ['WAITING_APPROVAL'],
   WAITING_APPROVAL: ['COMPLETED', 'IN_PROGRESS'],
-  COMPLETED: [],
+  COMPLETED: ['DELIVERED'],
+  DELIVERED: [],
 };
 
 @Injectable()
@@ -260,7 +263,6 @@ export class TicketsService {
         serviceCost: ticket.serviceCost,
         totalAmount: ticket.totalAmount,
         amountPaid: ticket.amountPaid,
-        paymentStatus: ticket.paymentStatus,
         createdBy: ticket.createdBy,
         remainderFinalizedAt: ticket.remainderFinalizedAt,
         scheduledDate: ticket.scheduledDate,
@@ -460,7 +462,7 @@ export class TicketsService {
         batchNo: this.generateBatchNo(),
         consumerId: dto.consumerId,
         serviceId: dto.serviceId,
-        status: 'PENDING',
+        status: 'UNPAID',
         createdBy:
           actor?.actorUserId && actor.actorUserId === dto.consumerId
             ? 'CONSUMER'
@@ -488,7 +490,7 @@ export class TicketsService {
     await this.prisma.ticketStatusHistory.create({
       data: {
         ticketId: ticket.id,
-        to: 'PENDING',
+        to: 'UNPAID',
         note: 'Ticket created via intake flow',
       },
     });
@@ -695,13 +697,14 @@ export class TicketsService {
       );
     }
 
-    this.assertPaymentSatisfied(ticket, status);
+    if (status === 'DELIVERED' && !isFullyPaid(ticket)) {
+      throw new ForbiddenException('Final payment required before delivery.');
+    }
 
     const updated = await this.prisma.ticket.update({
       where: { id },
       data: {
         status,
-        ...(status === 'COMPLETED' ? { paymentStatus: 'PAID' } : {}),
       },
       include: {
         consumer: {
@@ -795,6 +798,39 @@ export class TicketsService {
     return { ...updated, caseRecommendations };
   }
 
+  async overrideStatus(
+    ticketId: string,
+    status: TicketStatus,
+    actor: { actorUserId?: string; actorEmail?: string },
+  ) {
+    const ticket = await this.prisma.ticket.findUnique({
+      where: { id: ticketId },
+      select: { id: true, status: true },
+    });
+    if (!ticket) throw new NotFoundException('Ticket not found');
+    const updated = await this.prisma.ticket.update({
+      where: { id: ticketId },
+      data: { status },
+    });
+    await this.prisma.ticketStatusHistory.create({
+      data: {
+        ticketId,
+        from: ticket.status,
+        to: status,
+        note: `Admin override from ${ticket.status}`,
+      },
+    });
+    await this.auditLogsService.create({
+      action: 'TICKET_STATUS_OVERRIDDEN',
+      entity: 'TICKET',
+      entityId: ticketId,
+      actorUserId: actor.actorUserId,
+      actorEmail: actor.actorEmail,
+      metadata: { from: ticket.status, to: status },
+    });
+    return updated;
+  }
+
   async assign(
     id: string,
     dto: AssignTicketDto,
@@ -816,8 +852,6 @@ export class TicketsService {
         `Invalid transition from ${ticket.status} to ASSIGNED`,
       );
     }
-
-    this.assertPaymentSatisfied(ticket, 'ASSIGNED');
 
     const clerkCost = dto.clerkCost ?? 0;
     let assignmentWarning: string | null = null;
@@ -1184,7 +1218,7 @@ export class TicketsService {
         batchNo: this.generateBatchNo(),
         consumerId: original.consumerId,
         serviceId: original.serviceId,
-        status: 'PENDING',
+        status: 'UNPAID',
         createdBy: original.createdBy ?? 'ADMIN_STAFF',
         serviceCity: original.serviceCity,
         caseType: original.caseType,
@@ -1203,14 +1237,13 @@ export class TicketsService {
         clerkCost: original.clerkCost,
         totalAmount: original.totalAmount,
         amountPaid: original.amountPaid,
-        paymentStatus: original.paymentStatus,
       },
     });
 
     await this.prisma.ticketStatusHistory.create({
       data: {
         ticketId: cloned.id,
-        to: 'PENDING',
+        to: 'UNPAID',
         note: `Regenerated from ${original.batchNo}`,
       },
     });
@@ -1555,7 +1588,7 @@ export class TicketsService {
     const txOps: Prisma.PrismaPromise<unknown>[] = [
       this.prisma.ticket.update({
         where: { id: ticketId },
-        data: { status: 'PENDING' },
+        data: { status: 'PAID' },
       }),
     ];
     if (activeAssignment) {
@@ -1575,7 +1608,7 @@ export class TicketsService {
         data: {
           ticketId,
           from: 'ASSIGNED',
-          to: 'PENDING',
+          to: 'PAID',
           note: trimmedReason,
         },
       }),
@@ -1590,7 +1623,7 @@ export class TicketsService {
       entityId: ticketId,
       actorUserId: actor?.actorUserId,
       actorEmail: actor?.actorEmail,
-      metadata: { reason: trimmedReason, from: 'ASSIGNED', to: 'PENDING' },
+      metadata: { reason: trimmedReason, from: 'ASSIGNED', to: 'PAID' },
     });
 
     if (activeAssignment) {
@@ -1604,7 +1637,7 @@ export class TicketsService {
 
   /**
    * Clerk draft: write phase-2 charge fields to the ticket without finalizing.
-   * Does not modify totalAmount or paymentStatus. Intended for clerk review
+   * Does not modify totalAmount. Intended for clerk review
    * before an admin confirms/edits and calls finalizeRemainder.
    */
   async saveClerkCharges(
@@ -1651,8 +1684,8 @@ export class TicketsService {
 
   /**
    * Admin finalize: recompute totalAmount from capability-gated, admin-edited
-   * charges; set remainderFinalizedAt; flip paymentStatus; trigger wallet
-   * settlement so any excess balance auto-covers the new total.
+   * charges; set remainderFinalizedAt; trigger wallet settlement so any excess
+   * balance auto-covers the new total.
    */
   async finalizeRemainder(
     ticketId: string,
@@ -1702,7 +1735,6 @@ export class TicketsService {
       printing +
       delivery +
       pdf;
-    const paid = Number(ticket.amountPaid);
 
     await this.prisma.ticket.update({
       where: { id: ticketId },
@@ -1712,7 +1744,6 @@ export class TicketsService {
         printingCharges: printing,
         deliveryCharges: delivery,
         totalAmount: total,
-        paymentStatus: paid >= total ? 'PAID' : 'PARTIALLY_PAID',
         remainderFinalizedAt: new Date(),
         remainderFinalizedByUserId: actor.actorUserId ?? null,
       },
@@ -1852,47 +1883,6 @@ export class TicketsService {
 
   private getAllowedTransitions(status: string): TicketStatus[] {
     return STATUS_TRANSITIONS[status as TicketStatus];
-  }
-
-  private assertPaymentSatisfied(
-    ticket: {
-      createdBy: 'CONSUMER' | 'ADMIN_STAFF';
-      intakeFlow?: string | null;
-      paymentStatus: 'UNPAID' | 'PARTIALLY_PAID' | 'PAID';
-      serviceCost?: unknown;
-      amountPaid?: unknown;
-      totalAmount?: unknown;
-    },
-    nextStatus: TicketStatus,
-  ) {
-    // Dev escape hatch: payments are not wired in development, so allow
-    // tickets to be assigned/progressed without a completed payment.
-    // Set DISABLE_PAYMENT_GATING=true in non-production .env to bypass.
-    // Leave unset (or false) in production to enforce consumer payment.
-    if (process.env.DISABLE_PAYMENT_GATING === 'true') return;
-    if (ticket.createdBy !== 'CONSUMER') return;
-    if (nextStatus === 'PENDING') return;
-
-    const base = Number(ticket.serviceCost ?? 0);
-    const paid = Number(ticket.amountPaid ?? 0);
-    const total = Number(ticket.totalAmount ?? 0);
-    const model = paymentModelFor(ticket.intakeFlow);
-
-    // Dispatch/completion (COMPLETED) needs the full finalized amount paid.
-    if (nextStatus === 'COMPLETED') {
-      if (paid >= total) return;
-      throw new ForbiddenException(
-        'Final payment must be completed before dispatch.',
-      );
-    }
-
-    // All other forward transitions (e.g. ASSIGNED) need the base covered.
-    // SPLIT flows: base = serviceCost. ONE_TIME flows: base = total (full amount).
-    const dueNow = model === 'SPLIT' ? base : total;
-    if (paid >= dueNow) return;
-    throw new ForbiddenException(
-      'Ticket cannot be progressed until payment is completed.',
-    );
   }
 
   private async ensureServiceExists(id: string) {
@@ -2100,7 +2090,7 @@ export class TicketsService {
         batchNo: this.generateBatchNo(),
         consumerId: parent.consumerId,
         serviceId: parent.serviceId,
-        status: 'PENDING',
+        status: 'UNPAID',
         createdBy: 'CONSUMER',
         serviceCity: parent.serviceCity,
         caseType: parent.caseType,
@@ -2110,14 +2100,13 @@ export class TicketsService {
         defaultClerkCost: parent.defaultClerkCost,
         totalAmount: parent.serviceCost,
         amountPaid: 0,
-        paymentStatus: 'UNPAID',
       },
     });
 
     await this.prisma.ticketStatusHistory.create({
       data: {
         ticketId: cloned.id,
-        to: 'PENDING',
+        to: 'UNPAID',
         note: `Generated next-hearing from ${parent.batchNo}`,
       },
     });
