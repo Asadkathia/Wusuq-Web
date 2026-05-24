@@ -1,13 +1,17 @@
 -- Spec 4: unify TicketStatus, retire TicketPaymentStatus.
--- Single-transaction rename-swap (no ALTER TYPE ADD VALUE, which can't be used
--- in the same transaction it's created). PENDING rows are mapped in the USING
--- cast via the still-present paymentStatus column, which is dropped afterwards.
+-- Single-transaction rename-swap. All columns that depend on the enum are
+-- handled before the old type is dropped.
 
--- 1. Rebuild the TicketStatus enum with the unified set.
+-- 1. Decouple the status-history audit log from the enum (text labels).
+--    Preserves legacy values (e.g. PENDING) and future-proofs status changes.
+ALTER TABLE "TicketStatusHistory" ALTER COLUMN "from" TYPE TEXT USING ("from"::text);
+ALTER TABLE "TicketStatusHistory" ALTER COLUMN "to" TYPE TEXT USING ("to"::text);
+
+-- 2. Rebuild the TicketStatus enum with the unified set.
 ALTER TYPE "TicketStatus" RENAME TO "TicketStatus_old";
 CREATE TYPE "TicketStatus" AS ENUM ('UNPAID','PAID','ASSIGNED','IN_PROGRESS','WAITING_APPROVAL','COMPLETED','DELIVERED');
 
--- 2. Re-type Ticket.status, mapping legacy PENDING via paymentStatus.
+-- 3. Re-type Ticket.status, mapping legacy PENDING via the (still-present) paymentStatus.
 ALTER TABLE "Ticket" ALTER COLUMN "status" DROP DEFAULT;
 ALTER TABLE "Ticket" ALTER COLUMN "status" TYPE "TicketStatus" USING (
   (CASE
@@ -19,7 +23,7 @@ ALTER TABLE "Ticket" ALTER COLUMN "status" TYPE "TicketStatus" USING (
 ALTER TABLE "Ticket" ALTER COLUMN "status" SET DEFAULT 'UNPAID';
 DROP TYPE "TicketStatus_old";
 
--- 3. Retire paymentStatus (column + index + enum).
+-- 4. Retire paymentStatus (column + index + enum).
 DROP INDEX IF EXISTS "Ticket_paymentStatus_idx";
 ALTER TABLE "Ticket" DROP COLUMN "paymentStatus";
 DROP TYPE "TicketPaymentStatus";

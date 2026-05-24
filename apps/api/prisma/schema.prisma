@@ -340,8 +340,11 @@ model TicketIntakeDraft {
 model TicketStatusHistory {
   id        String       @id @default(cuid())
   ticketId  String
-  from      TicketStatus?
-  to        TicketStatus
+  // Audit log of status transitions — plain text labels, intentionally NOT the
+  // live TicketStatus enum so historical values (e.g. legacy PENDING) survive
+  // and future status changes don't require migrating this table.
+  from      String?
+  to        String
   note      String?
   createdAt DateTime     @default(now())
   ticket    Ticket       @relation(fields: [ticketId], references: [id])
