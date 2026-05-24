@@ -16,10 +16,16 @@ type Tab = {
 
 const TABS: Tab[] = [
   {
-    key: 'pending',
-    label: 'Pending',
-    query: 'status=PENDING&page=1&limit=8',
-    viewAllHref: '/tickets/pending',
+    key: 'unpaid',
+    label: 'Unpaid',
+    query: 'status=UNPAID&page=1&limit=8',
+    viewAllHref: '/tickets/unpaid',
+  },
+  {
+    key: 'paid',
+    label: 'Paid',
+    query: 'status=PAID&page=1&limit=8',
+    viewAllHref: '/tickets/paid',
   },
   {
     key: 'assigned',
@@ -55,9 +61,10 @@ type Row = {
 };
 
 function statusVariant(s: string) {
-  if (s === 'COMPLETED') return 'success' as const;
-  if (s === 'PENDING') return 'warning' as const;
-  if (s === 'ASSIGNED' || s === 'IN_PROGRESS') return 'info' as const;
+  if (s === 'COMPLETED' || s === 'DELIVERED') return 'success' as const;
+  if (s === 'UNPAID') return 'warning' as const;
+  if (s === 'PAID' || s === 'ASSIGNED' || s === 'IN_PROGRESS')
+    return 'info' as const;
   return 'neutral' as const;
 }
 

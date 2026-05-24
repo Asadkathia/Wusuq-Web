@@ -124,13 +124,11 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [isClerk, setIsClerk] = useState(false);
   const [isConsumer, setIsConsumer] = useState(false);
-  const [userRole, setUserRole] = useState<string | null>(null);
   useEffect(() => {
     try {
       const u = JSON.parse(localStorage.getItem('wusuq_user') || 'null');
       if (!u) return;
 
-      setUserRole(u.role ?? null);
       if (u.role === 'representative') {
         setIsClerk(true);
         setCurrentUserId(u.id ?? null);
@@ -275,8 +273,11 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
   }, [loadTickets]);
 
   const isAdmin = !isClerk && !isConsumer;
-  // Status override is available to admin and finance roles
-  const isAdminOrFinance = isAdmin && (userRole === 'admin' || userRole === 'super_admin' || userRole === 'finance' || userRole === null);
+  // Any staff/admin/finance user (non-clerk, non-consumer) gets the status
+  // override control; the backend @RequirePermissions('tickets.write') is the
+  // real guard. (The previous role-string allowlist was brittle — it omitted
+  // manager_admin/staff_admin/lead_admin and referenced a non-existent 'admin'.)
+  const isAdminOrFinance = isAdmin;
 
   const handleStatusOverride = async (ticket: TicketRow, newStatus: string) => {
     if (newStatus === ticket.status) return;

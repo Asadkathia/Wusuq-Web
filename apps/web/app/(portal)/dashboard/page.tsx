@@ -64,9 +64,10 @@ type ConsumerSummary = {
 };
 
 function getStatusVariant(st: string) {
-  if (st === 'COMPLETED') return 'success' as const;
-  if (st === 'PENDING') return 'warning' as const;
-  if (st === 'ASSIGNED' || st === 'IN_PROGRESS') return 'info' as const;
+  if (st === 'COMPLETED' || st === 'DELIVERED') return 'success' as const;
+  if (st === 'UNPAID') return 'warning' as const;
+  if (st === 'PAID' || st === 'ASSIGNED' || st === 'IN_PROGRESS')
+    return 'info' as const;
   return 'neutral' as const;
 }
 
