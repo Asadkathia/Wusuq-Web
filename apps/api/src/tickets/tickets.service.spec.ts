@@ -1089,7 +1089,11 @@ describe('TicketsService', () => {
           update: jest.fn().mockResolvedValue({
             id: 'tkt-1',
             status:
-              ticketStatus === 'WAITING_APPROVAL' ? 'COMPLETED' : ticketStatus === 'COMPLETED' ? 'DELIVERED' : 'ASSIGNED',
+              ticketStatus === 'WAITING_APPROVAL'
+                ? 'COMPLETED'
+                : ticketStatus === 'COMPLETED'
+                  ? 'DELIVERED'
+                  : 'ASSIGNED',
             caseId: null,
             consumer: {
               id: 'consumer-1',

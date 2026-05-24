@@ -1734,7 +1734,6 @@ export class TicketsService {
       printing +
       delivery +
       pdf;
-    const paid = Number(ticket.amountPaid);
 
     await this.prisma.ticket.update({
       where: { id: ticketId },

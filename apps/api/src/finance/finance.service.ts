@@ -120,8 +120,8 @@ export class FinanceService {
     dto: ReconcilePaymentDto,
     actor?: { actorUserId?: string; actorEmail?: string },
   ) {
-    const { updatedTicket, dueAfter } =
-      await this.prisma.$transaction(async (tx) => {
+    const { updatedTicket, dueAfter } = await this.prisma.$transaction(
+      async (tx) => {
         // Acquire row-level lock to serialize concurrent reconciliations.
         await tx.$queryRaw`SELECT id FROM "Ticket" WHERE id = ${ticketId} FOR UPDATE`;
 
@@ -145,12 +145,16 @@ export class FinanceService {
         const paidAfter = paidBefore + dto.amount;
         const dueAfter = Math.max(total - paidAfter, 0);
 
-        const ticketUpdateData: { amountPaid: number; status?: TicketStatus } = {
-          amountPaid: paidAfter,
-        };
+        const ticketUpdateData: { amountPaid: number; status?: TicketStatus } =
+          {
+            amountPaid: paidAfter,
+          };
         if (
           ticket.status === 'UNPAID' &&
-          isBaseCovered({ amountPaid: paidAfter, serviceCost: ticket.serviceCost })
+          isBaseCovered({
+            amountPaid: paidAfter,
+            serviceCost: ticket.serviceCost,
+          })
         ) {
           ticketUpdateData.status = 'PAID';
         }
@@ -176,7 +180,8 @@ export class FinanceService {
 
         await this.upsertInvoice(ticketId, total, paidAfter, tx);
         return { updatedTicket: nextTicket, dueAfter };
-      });
+      },
+    );
 
     await this.auditLogsService.create({
       action: 'FINANCE_PAYMENT_RECONCILED',

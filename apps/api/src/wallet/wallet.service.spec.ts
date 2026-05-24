@@ -313,7 +313,11 @@ describe('WalletService.verifyTopup auto-deduction', () => {
     const ticketState = new Map(
       opts.tickets.map((t) => [
         t.id,
-        { ...t, status: 'UNPAID' as const, serviceCost: t.serviceCost ?? t.totalAmount },
+        {
+          ...t,
+          status: 'UNPAID' as const,
+          serviceCost: t.serviceCost ?? t.totalAmount,
+        },
       ]),
     );
     const tx: any = {

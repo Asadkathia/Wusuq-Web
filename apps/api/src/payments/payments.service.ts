@@ -114,7 +114,14 @@ export class PaymentsService {
     const payment = await this.prisma.payment.findUnique({
       where: { providerTxnId: verified.providerTxnId },
       include: {
-        ticket: { select: { id: true, totalAmount: true, serviceCost: true, status: true } },
+        ticket: {
+          select: {
+            id: true,
+            totalAmount: true,
+            serviceCost: true,
+            status: true,
+          },
+        },
       },
     });
     if (!payment) throw new NotFoundException('Payment not found');
