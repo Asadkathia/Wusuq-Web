@@ -39,7 +39,7 @@ import { IconButton } from '@/components/ui/icon-button';
 import { useToast } from '@/components/ui/toast';
 import { FutureTicketsStrip } from './consumer-ticket-board/future-tickets-strip';
 
-type TicketStatus = 'PENDING' | 'ASSIGNED' | 'IN_PROGRESS' | 'WAITING_APPROVAL' | 'COMPLETED';
+type TicketStatus = 'UNPAID' | 'PAID' | 'ASSIGNED' | 'IN_PROGRESS' | 'WAITING_APPROVAL' | 'COMPLETED' | 'DELIVERED';
 
 type TicketRow = {
   id: string;
@@ -51,7 +51,6 @@ type TicketRow = {
   totalAmount?: number | string | null;
   amountPaid?: number | string | null;
   serviceCost?: number | string | null;
-  paymentStatus?: string | null;
   createdBy?: string | null;
   remainderFinalizedAt?: string | null;
   consumer: { id: string; name: string };
@@ -61,20 +60,22 @@ type TicketRow = {
 };
 
 function statusVariant(status: TicketStatus) {
-  if (status === 'COMPLETED') return 'success' as const;
-  if (status === 'PENDING') return 'warning' as const;
+  if (status === 'COMPLETED' || status === 'DELIVERED') return 'success' as const;
+  if (status === 'UNPAID') return 'warning' as const;
   if (status === 'WAITING_APPROVAL') return 'brand' as const;
-  if (status === 'ASSIGNED' || status === 'IN_PROGRESS') return 'info' as const;
+  if (status === 'PAID' || status === 'ASSIGNED' || status === 'IN_PROGRESS') return 'info' as const;
   return 'neutral' as const;
 }
 
 function statusLabel(status: TicketStatus) {
   switch (status) {
-    case 'PENDING': return 'Pending';
+    case 'UNPAID': return 'Unpaid';
+    case 'PAID': return 'Paid';
     case 'ASSIGNED': return 'Assigned';
     case 'IN_PROGRESS': return 'In progress';
     case 'WAITING_APPROVAL': return 'Being reviewed';
     case 'COMPLETED': return 'Completed';
+    case 'DELIVERED': return 'Delivered';
     default: return status;
   }
 }
@@ -137,9 +138,9 @@ export function ConsumerTicketBoard() {
   const filtered = useMemo(() => {
     const s = search.trim().toLowerCase();
     return tickets.filter((t) => {
-      if (tab === 'active' && t.status === 'COMPLETED') return false;
-      if (tab === 'completed' && t.status !== 'COMPLETED') return false;
-      if (tab === 'unpaid' && (t.paymentStatus ?? 'PAID') === 'PAID') return false;
+      if (tab === 'active' && (t.status === 'COMPLETED' || t.status === 'DELIVERED')) return false;
+      if (tab === 'completed' && t.status !== 'COMPLETED' && t.status !== 'DELIVERED') return false;
+      if (tab === 'unpaid' && t.status !== 'UNPAID') return false;
       if (!s) return true;
       return (
         t.batchNo.toLowerCase().includes(s) ||
@@ -152,9 +153,9 @@ export function ConsumerTicketBoard() {
 
   const counts = useMemo(() => ({
     all: tickets.length,
-    active: tickets.filter((t) => t.status !== 'COMPLETED').length,
-    completed: tickets.filter((t) => t.status === 'COMPLETED').length,
-    unpaid: tickets.filter((t) => (t.paymentStatus ?? 'PAID') !== 'PAID').length,
+    active: tickets.filter((t) => t.status !== 'COMPLETED' && t.status !== 'DELIVERED').length,
+    completed: tickets.filter((t) => t.status === 'COMPLETED' || t.status === 'DELIVERED').length,
+    unpaid: tickets.filter((t) => t.status === 'UNPAID').length,
   }), [tickets]);
 
   return (
@@ -291,19 +292,20 @@ function TicketCard({ ticket, onOpen }: { ticket: TicketRow; onOpen: () => void 
   const base = Number(ticket.serviceCost ?? 0);
   const remaining = Math.max(0, total - paid);
   const isConsumerCreated = ticket.createdBy === 'CONSUMER';
-  const paymentStatus = ticket.paymentStatus ?? 'UNPAID';
+  const isUnpaid = ticket.status === 'UNPAID';
+  const isFullyPaid = paid >= total && total > 0;
 
-  // Show base "Pay now" when: consumer-created, not PAID, base not yet covered
+  // Show base "Pay now" when: consumer-created, UNPAID status, base not yet covered
   const showPayNow =
     isConsumerCreated &&
-    paymentStatus !== 'PAID' &&
+    isUnpaid &&
     (base === 0 ? remaining > 0 : paid < base);
 
   // Show "Final payment due" when: remainder has been finalized but not yet fully paid
   const showFinalPayment =
     isConsumerCreated &&
     Boolean(ticket.remainderFinalizedAt) &&
-    paymentStatus !== 'PAID' &&
+    !isFullyPaid &&
     remaining > 0;
 
   return (
@@ -426,16 +428,17 @@ function ConsumerTicketDrawer({
   const remaining = Math.max(0, total - paid);
   const discount = Number(ticket?.discountPrice || 0);
   const isConsumerCreated = ticket?.createdBy === 'CONSUMER';
-  const paymentStatus = ticket?.paymentStatus ?? 'UNPAID';
+  const isUnpaid = ticket?.status === 'UNPAID';
+  const isFullyPaid = paid >= total && total > 0;
   const showFinalPayment =
     isConsumerCreated &&
     Boolean(ticket?.remainderFinalizedAt) &&
-    paymentStatus !== 'PAID' &&
+    !isFullyPaid &&
     remaining > 0;
   const showPayNow =
     !showFinalPayment &&
     isConsumerCreated &&
-    paymentStatus !== 'PAID' &&
+    isUnpaid &&
     (base === 0 ? remaining > 0 : paid < base);
 
   return (
@@ -555,15 +558,17 @@ function ConsumerTicketDrawer({
                   <Clock className="h-3.5 w-3.5" /> What&rsquo;s next?
                 </p>
                 <p className="mt-1 text-brand-700/80">
-                  {ticket.status === 'PENDING' && 'We\u2019re assigning a representative. You\u2019ll get a notification shortly.'}
+                  {ticket.status === 'UNPAID' && 'Your request is awaiting payment. Complete your payment to proceed.'}
+                  {ticket.status === 'PAID' && 'Payment received. We\u2019re assigning a representative. You\u2019ll get a notification shortly.'}
                   {ticket.status === 'ASSIGNED' && 'A representative has been assigned and will start work soon.'}
                   {ticket.status === 'IN_PROGRESS' && 'Your request is being handled. We\u2019ll notify you once it moves forward.'}
                   {ticket.status === 'WAITING_APPROVAL' && 'Your request is under final review. You\u2019ll be notified on completion.'}
-                  {ticket.status === 'COMPLETED' && 'All done — you can download the final documents above.'}
+                  {ticket.status === 'COMPLETED' && 'All done — your documents are being prepared for delivery.'}
+                  {ticket.status === 'DELIVERED' && 'All done — you can download the final documents above.'}
                 </p>
               </section>
 
-              {ticket?.status === 'COMPLETED' ? (
+              {(ticket?.status === 'COMPLETED' || ticket?.status === 'DELIVERED') ? (
                 <PanelCard className="mt-4 border border-brand-200 bg-gradient-to-br from-brand-50 to-violet-50">
                   <div className="flex items-start gap-3">
                     <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-500 text-white">

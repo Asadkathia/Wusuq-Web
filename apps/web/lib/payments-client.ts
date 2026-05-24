@@ -9,7 +9,6 @@ export interface InitiateResponse {
 export interface PaymentStatusResponse {
   id: string;
   status: 'INITIATED' | 'SUCCESS' | 'FAILED' | 'CANCELLED';
-  ticketPaymentStatus: 'UNPAID' | 'PARTIALLY_PAID' | 'PAID';
 }
 
 export interface PendingWalletTransaction {
@@ -97,5 +96,10 @@ export const paymentsClient = {
   // Admin: generate a new follow-up ticket from a completed ticket's next-hearing date
   generateNextHearing(ticketId: string): Promise<{ batchNo: string; id: string }> {
     return apiClient.post(`/tickets/${ticketId}/generate-next-hearing`, {});
+  },
+
+  // Admin: set any status bypassing the normal state machine (audited override)
+  overrideStatus(ticketId: string, status: string): Promise<unknown> {
+    return apiClient.patch(`/tickets/${ticketId}/status-override`, { status });
   },
 };

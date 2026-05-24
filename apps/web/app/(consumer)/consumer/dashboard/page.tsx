@@ -34,7 +34,6 @@ type ConsumerSummary = {
     id: string;
     batchNo: string;
     status: string;
-    paymentStatus?: string;
     totalAmount: number;
     createdAt: string;
     service: { name: string };
@@ -110,9 +109,9 @@ const TONE_CLASS: Record<ServiceTone, { iconBg: string; iconText: string; hoverR
 };
 
 function getStatusVariant(status: string) {
-  if (status === 'COMPLETED') return 'success' as const;
-  if (status === 'PENDING') return 'warning' as const;
-  if (status === 'ASSIGNED' || status === 'IN_PROGRESS') return 'info' as const;
+  if (status === 'COMPLETED' || status === 'DELIVERED') return 'success' as const;
+  if (status === 'UNPAID') return 'warning' as const;
+  if (status === 'PAID' || status === 'ASSIGNED' || status === 'IN_PROGRESS') return 'info' as const;
   return 'neutral' as const;
 }
 
@@ -147,7 +146,7 @@ export default function ConsumerDashboardPage() {
   const visibleTickets = useMemo(() => {
     const tickets = summary?.myRecentTickets ?? [];
     if (!isUnpaidTab) return tickets;
-    return tickets.filter((t) => (t.paymentStatus ?? 'PAID') !== 'PAID');
+    return tickets.filter((t) => t.status === 'UNPAID');
   }, [summary?.myRecentTickets, isUnpaidTab]);
 
   useEffect(() => {
@@ -352,7 +351,7 @@ export default function ConsumerDashboardPage() {
             ) : null}
 
             {!loading && visibleTickets.map((t) => {
-              const isUnpaid = (t.paymentStatus ?? 'PAID') !== 'PAID';
+              const isUnpaid = t.status === 'UNPAID';
               return (
                 <div
                   key={t.id}
