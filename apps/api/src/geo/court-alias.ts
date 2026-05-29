@@ -29,7 +29,14 @@ export const CITY_ALIAS: Record<string, string> = {
   'Tando Muhammad Khan': 'Tando Mohammad Khan',
   'Qambar-Shahdadkot': 'Kambar',
   Swat: 'Mingora',
-  'Babuzai (Swat)': 'Mingora',
+  // 5-24-26 #21: Babuzai and Mingora are SEPARATE tehsils in the Swat geo tree
+  // (both exist as GeoCities), and each has its own Lower Court row in the
+  // courts JSON. This alias previously redirected Babuzai's Lower Court to
+  // Mingora, leaving the Babuzai GeoCity with no lower court — so it surfaced
+  // as "special courts only". Map it to its own bare geo name instead. (`Swat`
+  // above stays → Mingora: that alias only seats the district's special courts
+  // at the Swat HQ, Mingora.)
+  'Babuzai (Swat)': 'Babuzai',
   Buner: 'Daggar',
   'Daggar (Buner)': 'Daggar',
   Batagram: 'Batagram',
@@ -105,3 +112,210 @@ export const LOWER_COURT_ONLY_TEHSILS: Record<string, string[]> = {
     'Karachi Central',
   ],
 };
+
+// 2026-05-25: special courts sit at the DISTRICT level, not in every tehsil
+// (see "Pakistan Court Wise" workbook). This is the canonical list of the
+// districts where special courts are seated. Seeders attach the full
+// SPECIAL_COURTS catalogue (court-expansion.ts) to one seat city per district
+// — the tehsil matching the district name, falling back to CITY_ALIAS for the
+// districts whose HQ tehsil has a different name (e.g. Swat → Mingora,
+// Tharparkar → Mithi). This replaces the prior "seat on every GeoCity"
+// behaviour. Names are kept exactly as they appear in the workbook and are
+// resolved through resolveSpecialCourtSeatCityIds below.
+//
+// The workbook lists 149 special-court districts but omits Islamabad (it only
+// appears in the High/Supreme/Constitutional columns). Islamabad is added here
+// as a deliberate correction — the federal capital hosts the full set of
+// special courts/tribunals — bringing the total to 150 seats.
+export const SPECIAL_COURT_DISTRICTS: string[] = [
+  // Punjab (42)
+  'Bahawalnagar',
+  'Bahawalpur',
+  'Rahim Yar Khan',
+  'Dera Ghazi Khan',
+  'Layyah',
+  'Taunsa Sharif',
+  'Muzaffargarh',
+  'Kot Addu',
+  'Rajanpur',
+  'Jampur',
+  'Chiniot',
+  'Faisalabad',
+  'Jhang',
+  'Toba Tek Singh',
+  'Gujranwala',
+  'Wazirabad',
+  'Gujrat',
+  'Hafizabad',
+  'Mandi Bahauddin',
+  'Narowal',
+  'Sialkot',
+  'Kasur',
+  'Lahore',
+  'Nankana Sahib',
+  'Sheikhupura',
+  'Khanewal',
+  'Lodhran',
+  'Multan',
+  'Vehari',
+  'Attock',
+  'Chakwal',
+  'Talagang',
+  'Jhelum',
+  'Rawalpindi',
+  'Murree',
+  'Okara',
+  'Pakpattan',
+  'Sahiwal',
+  'Bhakkar',
+  'Khushab',
+  'Mianwali',
+  'Sargodha',
+  // Sindh (25)
+  'Badin',
+  'Sujawal',
+  'Thatta',
+  'Dadu',
+  'Hyderabad',
+  'Jamshoro',
+  'Matiari',
+  'Tando Allahyar',
+  'Tando Muhammad Khan',
+  'Karachi',
+  'Malir',
+  'Jacobabad',
+  'Kashmore',
+  'Larkana',
+  'Qambar-Shahdadkot',
+  'Shikarpur',
+  'Mirpur Khas',
+  'Sanghar',
+  'Tharparkar',
+  'Umerkot',
+  'Ghotki',
+  'Khairpur',
+  'Sukkur',
+  'Naushahro Feroze',
+  'Shaheed Benazir Abad',
+  // KPK (27) — note: the workbook tags Awaran (a Balochistan district) as KPK;
+  // resolution is by name regardless of the province label.
+  'Bannu',
+  'Lakki Marwat',
+  'Dera Ismail Khan',
+  'Tank',
+  'Abbottabad',
+  'Batagram',
+  'Haripur',
+  'Lower Kohistan',
+  'Mansehra',
+  'Torghar',
+  'Upper Kohistan',
+  'Hangu',
+  'Karak',
+  'Kohat',
+  'Buner',
+  'Chitral',
+  'Lower Dir',
+  'Malakand',
+  'Shangla',
+  'Swat',
+  'Upper Dir',
+  'Mardan',
+  'Swabi',
+  'Charsadda',
+  'Nowshera',
+  'Peshawar',
+  'Awaran',
+  // Balochistan (31)
+  'Kalat',
+  'Kharan',
+  'Khuzdar',
+  'Lasbela',
+  'Mastung',
+  'Washuk',
+  'Gwadar',
+  'Kech',
+  'Panjgur',
+  'Jafarabad',
+  'Jhal Magsi',
+  'Kachi',
+  'Lehri',
+  'Nasirabad',
+  'Sohbatpur',
+  'Chagai',
+  'Killa Abdullah',
+  'Nushki',
+  'Pishin',
+  'Quetta',
+  'Dera Bugti',
+  'Harnai',
+  'Kohlu',
+  'Sibi',
+  'Ziarat',
+  'Barkhan',
+  'Killa Saifullah',
+  'Loralai',
+  'Musakhel',
+  'Sherani',
+  'Zhob',
+  // Azad Kashmir (10)
+  'Kotli',
+  'Mirpur',
+  'Bhimber',
+  'Jhelum Valley',
+  'Muzaffarabad',
+  'Neelum',
+  'Bagh',
+  'Haveli',
+  'Poonch',
+  'Sudhnoti',
+  // Gilgit-Baltistan (14)
+  'Ghanche',
+  'Rondu',
+  'Shigar',
+  'Skardu',
+  'Kharmang',
+  'Astore',
+  'Darel',
+  'Diamir',
+  'Tangir',
+  'Ghizer',
+  'Gilgit',
+  'Gupis-Yasin',
+  'Hunza',
+  'Nagar',
+  // Islamabad Capital Territory (1) — not in the workbook's Special Court
+  // column; added as a correction (see note above).
+  'Islamabad',
+];
+
+/**
+ * Resolve the SPECIAL_COURT_DISTRICTS list to GeoCity ids, given a
+ * lowercased-name → cityId lookup (the `globalCityByName` map both seeders
+ * already build). Each district resolves to its same-named tehsil, falling
+ * back to CITY_ALIAS for districts whose HQ tehsil differs. Returns the
+ * resolved city ids plus any districts that failed to resolve so callers can
+ * surface a warning instead of silently dropping a district.
+ */
+export function resolveSpecialCourtSeatCityIds(
+  globalCityByName: Map<string, string>,
+): { cityIds: string[]; unresolved: string[] } {
+  const cityIds: string[] = [];
+  const unresolved: string[] = [];
+  const seen = new Set<string>();
+  for (const district of SPECIAL_COURT_DISTRICTS) {
+    const alias = CITY_ALIAS[district];
+    const id =
+      globalCityByName.get(district.toLowerCase()) ??
+      (alias ? globalCityByName.get(alias.toLowerCase()) : undefined);
+    if (!id) {
+      unresolved.push(district);
+      continue;
+    }
+    if (!seen.has(id)) {
+      seen.add(id);
+      cityIds.push(id);
+    }
+  }
+  return { cityIds, unresolved };
+}

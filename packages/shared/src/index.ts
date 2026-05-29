@@ -199,22 +199,28 @@ export const REQUIRED_FIELDS_OPTIONAL_BY_TIER: Record<string, Partial<Record<Cou
   judicial_case_files: {
     // QA PDF #23-#27 + B6/B7: per-tier optional fields (red ✗ in the matrix).
     // 2026-05-23 B1: judge_name added to base; drop it for all non-lower tiers.
+    // 5-24-26 #22: case_title is optional at High Court (wizard high:false) — it
+    // was missing from the high drop list, so high-court submits errored on
+    // case_title despite the FE marking it optional. Added here to restore
+    // lock-step.
     lower:   ['case_petition_no', 'case_year', 'case_type'],
-    high:    ['case_year', 'case_type', 'judge_name'],
+    high:    ['case_year', 'case_type', 'case_title', 'judge_name'],
     special: ['case_petition_no', 'judge_name'],
     shariat: ['case_year', 'case_type', 'judge_name'],
     supreme: ['case_year', 'case_type', 'case_title', 'judge_name'],
     fcc:     ['case_year', 'case_type', 'case_title', 'judge_name'],
   },
   judicial_case_information: {
-    // 2026-05-23 B1: judge_name added to base; drop for all non-lower tiers.
-    // 2026-05-23 B2: case_type removed from base list entirely; drops cleaned.
-    lower:   ['case_petition_no', 'case_year'],
-    high:    ['case_year', 'judge_name'],
+    // 5-24-26 #2/#3: Case Information now mirrors Case Files (case type +
+    // status + full date set). Keep these per-tier drops identical to
+    // judicial_case_files so the FE `requiredByCourtTier` (copied from Case
+    // Files) and the API validator stay in lock-step.
+    lower:   ['case_petition_no', 'case_year', 'case_type'],
+    high:    ['case_year', 'case_type', 'case_title', 'judge_name'],
     special: ['case_petition_no', 'judge_name'],
-    shariat: ['case_year', 'judge_name'],
-    supreme: ['case_year', 'judge_name'],
-    fcc:     ['case_year', 'judge_name'],
+    shariat: ['case_year', 'case_type', 'judge_name'],
+    supreme: ['case_year', 'case_type', 'case_title', 'judge_name'],
+    fcc:     ['case_year', 'case_type', 'case_title', 'judge_name'],
   },
   judicial_power_of_attorney: {
     lower:   ['case_petition_no', 'case_year', 'case_type'],
@@ -223,6 +229,12 @@ export const REQUIRED_FIELDS_OPTIONAL_BY_TIER: Record<string, Partial<Record<Cou
     shariat: ['case_year', 'case_type'],
     supreme: ['case_year', 'case_type'],
     fcc:     ['case_year', 'case_type'],
+  },
+  judicial_case_filing: {
+    // 5-24-26 #16: Lower Court never requires case number/year (the case is
+    // being filed now, so neither exists yet). Lock-step with the wizard's
+    // requiredByCourtTier on the Case Filing year field.
+    lower: ['case_petition_no', 'case_year'],
   },
   judicial_case_search: {
     // Search is a lookup — the consumer typically doesn't have the case

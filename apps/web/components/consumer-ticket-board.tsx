@@ -390,7 +390,8 @@ function TicketCard({ ticket, onOpen }: { ticket: TicketRow; onOpen: () => void 
   );
 }
 
-// Consumer-scoped drawer: only shows consumer-visible info (no clerk/admin internals)
+// Consumer-scoped drawer (My Tickets list): wraps the shared ConsumerTicketDetail
+// in drawer chrome. Consumer-safe — no clerk/admin internals.
 function ConsumerTicketDrawer({
   ticketId,
   onClose,
@@ -398,222 +399,17 @@ function ConsumerTicketDrawer({
   ticketId: string | null;
   onClose: () => void;
 }) {
-  const [ticket, setTicket] = useState<any>(null);
-  const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    if (!ticketId) return;
-    startTransition(() => setLoading(true));
-    apiClient
-      .get<any>(`/tickets/${ticketId}`)
-      .then((r) => setTicket(r))
-      .catch(() => setTicket(null))
-      .finally(() => setLoading(false));
-  }, [ticketId]);
-
-  const charges: Array<[string, number]> = ticket
-    ? [
-        ['Service', Number(ticket.serviceCost || 0)],
-        ['Delivery', Number(ticket.deliveryCharges || 0)],
-        ['Printing', Number(ticket.printingCharges || 0)],
-        ['Attested', Number(ticket.attestedCharges || 0)],
-        ['Non-attested', Number(ticket.nonAttestedCharges || 0)],
-        ['Additional', Number(ticket.additionalCharges || 0)],
-      ].filter((row) => Number(row[1]) !== 0) as Array<[string, number]>
-    : [];
-
-  const total = Number(ticket?.totalAmount || 0);
-  const paid = Number(ticket?.amountPaid || 0);
-  const base = Number(ticket?.serviceCost || 0);
-  const remaining = Math.max(0, total - paid);
-  const discount = Number(ticket?.discountPrice || 0);
-  const isConsumerCreated = ticket?.createdBy === 'CONSUMER';
-  const isUnpaid = ticket?.status === 'UNPAID';
-  const isFullyPaid = paid >= total && total > 0;
-  const showFinalPayment =
-    isConsumerCreated &&
-    Boolean(ticket?.remainderFinalizedAt) &&
-    !isFullyPaid &&
-    remaining > 0;
-  const showPayNow =
-    !showFinalPayment &&
-    isConsumerCreated &&
-    isUnpaid &&
-    (base === 0 ? remaining > 0 : paid < base);
-
   return (
     <Drawer open={Boolean(ticketId)} onOpenChange={(open) => { if (!open) onClose(); }}>
       <DrawerContent>
         <DrawerHeader>
-          <div className="flex items-center gap-3">
-            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-50 text-brand-500">
-              <TicketIcon className="h-4 w-4" />
-            </span>
-            <div className="min-w-0">
-              <DrawerTitle className="truncate">{ticket?.service?.name ?? 'Loading…'}</DrawerTitle>
-              <DrawerDescription>
-                {ticket?.batchNo ?? ' '}
-                {ticket?.createdAt ? ` · ${relativeTime(ticket.createdAt)}` : ''}
-              </DrawerDescription>
-            </div>
-          </div>
-          {ticket ? (
-            <div className="mt-4">
-              <StatusPill dot label={statusLabel(ticket.status)} variant={statusVariant(ticket.status)} />
-            </div>
-          ) : null}
+          <DrawerTitle>Ticket details</DrawerTitle>
+          <DrawerDescription className="sr-only">Your request details and payment status</DrawerDescription>
         </DrawerHeader>
-
         <DrawerBody>
-          {loading || !ticket ? (
-            <div className="space-y-3">
-              <Skeleton className="h-5 w-1/2" />
-              <Skeleton className="h-24 rounded-xl" />
-              <Skeleton className="h-24 rounded-xl" />
-            </div>
-          ) : (
-            <div className="space-y-6">
-              {/* Summary */}
-              <section className="grid grid-cols-2 gap-3">
-                <MiniStat label="Total" value={`PKR ${formatPKR(total)}`} />
-                <MiniStat label={remaining > 0 ? 'Due' : 'Paid'} value={`PKR ${formatPKR(remaining > 0 ? remaining : paid)}`} tone={remaining > 0 ? 'amber' : 'emerald'} />
-              </section>
-
-              {/* Service details */}
-              <section>
-                <h4 className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Service details</h4>
-                <dl className="mt-3 space-y-2 text-sm">
-                  {ticket.caseType ? <Row label="Case type" value={ticket.caseType} /> : null}
-                  {ticket.serviceCity ? <Row label="Location" value={ticket.serviceCity} /> : null}
-                  {ticket.service?.category ? <Row label="Category" value={ticket.service.category} /> : null}
-                </dl>
-              </section>
-
-              {/* Charges breakdown */}
-              {charges.length > 0 || discount > 0 ? (
-                <section>
-                  <h4 className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Charges</h4>
-                  <div className="mt-3 divide-y divide-border-soft rounded-xl ring-1 ring-border-soft bg-surface">
-                    {charges.map(([label, val]) => (
-                      <div key={label} className="flex items-center justify-between px-4 py-2.5 text-sm">
-                        <span className="text-slate-600">{label}</span>
-                        <span className="tabular-nums text-slate-900">PKR {formatPKR(val)}</span>
-                      </div>
-                    ))}
-                    {discount > 0 ? (
-                      <div className="flex items-center justify-between px-4 py-2.5 text-sm">
-                        <span className="text-slate-600">Discount</span>
-                        <span className="tabular-nums text-emerald-600">− PKR {formatPKR(discount)}</span>
-                      </div>
-                    ) : null}
-                    <div className="flex items-center justify-between px-4 py-3 text-sm font-semibold">
-                      <span className="text-slate-900">Total</span>
-                      <span className="tabular-nums text-slate-900">PKR {formatPKR(total)}</span>
-                    </div>
-                  </div>
-                </section>
-              ) : null}
-
-              {/* Documents (only final uploaded docs visible to consumer) */}
-              {Array.isArray(ticket.documents) && ticket.documents.length > 0 ? (
-                <section>
-                  <h4 className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Documents</h4>
-                  <div className="mt-3 space-y-2">
-                    {ticket.documents.map((doc: any) => (
-                      <button
-                        key={doc.id}
-                        type="button"
-                        onClick={async () => {
-                          try {
-                            const { blob, filename } = await apiClient.getBlob(
-                              `/tickets/${ticket.id}/documents/${doc.id}/download`,
-                            );
-                            const url = URL.createObjectURL(blob);
-                            const a = document.createElement('a');
-                            a.href = url;
-                            a.download = filename || doc.name || 'document';
-                            document.body.appendChild(a);
-                            a.click();
-                            document.body.removeChild(a);
-                            URL.revokeObjectURL(url);
-                          } catch (err) {
-                            console.error('Document download failed', err);
-                          }
-                        }}
-                        className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left ring-1 ring-border-soft bg-surface transition-colors hover:bg-surface-muted"
-                      >
-                        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-50 text-brand-500">
-                          <FileText className="h-4 w-4" />
-                        </span>
-                        <span className="min-w-0 flex-1 truncate text-sm text-slate-800">{doc.name ?? 'Document'}</span>
-                        <span className="text-[10px] uppercase tracking-[0.08em] text-slate-400">{doc.type ?? ''}</span>
-                      </button>
-                    ))}
-                  </div>
-                </section>
-              ) : null}
-
-              <section className="rounded-xl bg-brand-50/60 px-4 py-3 text-xs text-brand-700 ring-1 ring-inset ring-brand-100">
-                <p className="flex items-center gap-2 font-semibold">
-                  <Clock className="h-3.5 w-3.5" /> What&rsquo;s next?
-                </p>
-                <p className="mt-1 text-brand-700/80">
-                  {ticket.status === 'UNPAID' && 'Your request is awaiting payment. Complete your payment to proceed.'}
-                  {ticket.status === 'PAID' && 'Payment received. We\u2019re assigning a representative. You\u2019ll get a notification shortly.'}
-                  {ticket.status === 'ASSIGNED' && 'A representative has been assigned and will start work soon.'}
-                  {ticket.status === 'IN_PROGRESS' && 'Your request is being handled. We\u2019ll notify you once it moves forward.'}
-                  {ticket.status === 'WAITING_APPROVAL' && 'Your request is under final review. You\u2019ll be notified on completion.'}
-                  {ticket.status === 'COMPLETED' && 'All done — your documents are being prepared for delivery.'}
-                  {ticket.status === 'DELIVERED' && 'All done — you can download the final documents above.'}
-                </p>
-              </section>
-
-              {(ticket?.status === 'COMPLETED' || ticket?.status === 'DELIVERED') ? (
-                <PanelCard className="mt-4 border border-brand-200 bg-gradient-to-br from-brand-50 to-violet-50">
-                  <div className="flex items-start gap-3">
-                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-500 text-white">
-                      <ArrowRight className="h-4 w-4" />
-                    </span>
-                    <div className="flex-1">
-                      <h3 className="text-sm font-semibold text-slate-900">Need another service?</h3>
-                      <p className="mt-1 text-sm text-slate-600">
-                        Browse judicial and non-judicial services to start a new request.
-                      </p>
-                      <Link href="/consumer/paralegal-services" className="mt-3 inline-block">
-                        <Button variant="brand" size="sm" rightIcon={<ArrowRight className="h-4 w-4" />}>
-                          Order another service
-                        </Button>
-                      </Link>
-                    </div>
-                  </div>
-                </PanelCard>
-              ) : null}
-            </div>
-          )}
+          {ticketId ? <ConsumerTicketDetail ticketId={ticketId} /> : null}
         </DrawerBody>
-
         <DrawerFooter>
-          {showFinalPayment && (
-            <div className="w-full rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 mb-2">
-              <p className="text-sm font-medium text-rose-700 mb-2">
-                Final payment due — PKR {formatPKR(remaining)}
-              </p>
-              <Link href={`/consumer/tickets/${ticketId}/pay`}>
-                <Button variant="brand" size="sm" rightIcon={<ArrowUpRight className="h-3.5 w-3.5" />}>
-                  Pay now
-                </Button>
-              </Link>
-            </div>
-          )}
-          {showPayNow && (
-            <div className="w-full mb-2">
-              <Link href={`/consumer/tickets/${ticketId}/pay`}>
-                <Button variant="brand" size="sm" rightIcon={<ArrowUpRight className="h-3.5 w-3.5" />}>
-                  Pay now
-                </Button>
-              </Link>
-            </div>
-          )}
           <Button variant="ghost" onClick={onClose}>Close</Button>
         </DrawerFooter>
       </DrawerContent>
@@ -640,6 +436,215 @@ function MiniStat({ label, value, tone = 'slate' }: { label: string; value: stri
     <div className="rounded-xl bg-surface-muted px-4 py-3">
       <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-slate-500">{label}</p>
       <p className={['mt-1 text-base font-semibold tabular-nums', toneClass[tone]].join(' ')}>{value}</p>
+    </div>
+  );
+}
+
+// Consumer-safe ticket detail — the single rendering used by both the My
+// Tickets drawer and the full-page route (/consumer/tickets/[id]). Shows ONLY
+// consumer-visible info: service, location, charges (NO clerk cost / no admin
+// internals), status guidance, downloadable final documents, and pay-now
+// actions. The admin TicketDetailPanel must NOT be used for consumers — it
+// exposes clerk cost, PII and status-override controls.
+export function ConsumerTicketDetail({
+  ticketId,
+  showHeader = true,
+}: {
+  ticketId: string;
+  showHeader?: boolean;
+}) {
+  const [ticket, setTicket] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!ticketId) return;
+    startTransition(() => setLoading(true));
+    apiClient
+      .get<any>(`/tickets/${ticketId}`)
+      .then((r) => setTicket(r))
+      .catch(() => setTicket(null))
+      .finally(() => setLoading(false));
+  }, [ticketId]);
+
+  if (loading || !ticket) {
+    return (
+      <div className="space-y-3">
+        <Skeleton className="h-5 w-1/2" />
+        <Skeleton className="h-24 rounded-xl" />
+        <Skeleton className="h-24 rounded-xl" />
+      </div>
+    );
+  }
+
+  const charges: Array<[string, number]> = (
+    [
+      ['Service', Number(ticket.serviceCost || 0)],
+      ['Delivery', Number(ticket.deliveryCharges || 0)],
+      ['Printing', Number(ticket.printingCharges || 0)],
+      ['Attested', Number(ticket.attestedCharges || 0)],
+      ['Non-attested', Number(ticket.nonAttestedCharges || 0)],
+      ['Additional', Number(ticket.additionalCharges || 0)],
+    ] as Array<[string, number]>
+  ).filter((row) => Number(row[1]) !== 0);
+
+  const total = Number(ticket.totalAmount || 0);
+  const paid = Number(ticket.amountPaid || 0);
+  const base = Number(ticket.serviceCost || 0);
+  const remaining = Math.max(0, total - paid);
+  const discount = Number(ticket.discountPrice || 0);
+  const isConsumerCreated = ticket.createdBy === 'CONSUMER';
+  const isUnpaid = ticket.status === 'UNPAID';
+  const isFullyPaid = paid >= total && total > 0;
+  const showFinalPayment =
+    isConsumerCreated && Boolean(ticket.remainderFinalizedAt) && !isFullyPaid && remaining > 0;
+  const showPayNow =
+    !showFinalPayment && isConsumerCreated && isUnpaid && (base === 0 ? remaining > 0 : paid < base);
+
+  const nextSteps: Record<string, string> = {
+    UNPAID: "Your request is awaiting payment. Complete your payment to proceed.",
+    PAID: "Payment received. We're assigning a representative. You'll get a notification shortly.",
+    ASSIGNED: "A representative has been assigned and will start work soon.",
+    IN_PROGRESS: "Your request is being handled. We'll notify you once it moves forward.",
+    WAITING_APPROVAL: "Your request is under final review. You'll be notified on completion.",
+    COMPLETED: "All done — your documents are being prepared for delivery.",
+    DELIVERED: "All done — you can download the final documents above.",
+  };
+
+  return (
+    <div className="space-y-6">
+      {showHeader ? (
+        <header>
+          <div className="flex items-center gap-3">
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-50 text-brand-500">
+              <TicketIcon className="h-4 w-4" />
+            </span>
+            <div className="min-w-0">
+              <h2 className="truncate text-base font-semibold text-slate-900">{ticket.service?.name ?? 'Ticket'}</h2>
+              <p className="text-xs text-slate-500">
+                {ticket.batchNo ?? ' '}
+                {ticket.createdAt ? ` · ${relativeTime(ticket.createdAt)}` : ''}
+              </p>
+            </div>
+          </div>
+          <div className="mt-4">
+            <StatusPill dot label={statusLabel(ticket.status)} variant={statusVariant(ticket.status)} />
+          </div>
+        </header>
+      ) : null}
+
+      <section className="grid grid-cols-2 gap-3">
+        <MiniStat label="Total" value={`PKR ${formatPKR(total)}`} />
+        <MiniStat label={remaining > 0 ? 'Due' : 'Paid'} value={`PKR ${formatPKR(remaining > 0 ? remaining : paid)}`} tone={remaining > 0 ? 'amber' : 'emerald'} />
+      </section>
+
+      <section>
+        <h4 className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Service details</h4>
+        <dl className="mt-3 space-y-2 text-sm">
+          {ticket.caseType ? <Row label="Case type" value={ticket.caseType} /> : null}
+          {ticket.serviceCity ? <Row label="Location" value={ticket.serviceCity} /> : null}
+          {ticket.service?.category ? <Row label="Category" value={ticket.service.category} /> : null}
+        </dl>
+      </section>
+
+      {charges.length > 0 || discount > 0 ? (
+        <section>
+          <h4 className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Charges</h4>
+          <div className="mt-3 divide-y divide-border-soft rounded-xl ring-1 ring-border-soft bg-surface">
+            {charges.map(([label, val]) => (
+              <div key={label} className="flex items-center justify-between px-4 py-2.5 text-sm">
+                <span className="text-slate-600">{label}</span>
+                <span className="tabular-nums text-slate-900">PKR {formatPKR(val)}</span>
+              </div>
+            ))}
+            {discount > 0 ? (
+              <div className="flex items-center justify-between px-4 py-2.5 text-sm">
+                <span className="text-slate-600">Discount</span>
+                <span className="tabular-nums text-emerald-600">− PKR {formatPKR(discount)}</span>
+              </div>
+            ) : null}
+            <div className="flex items-center justify-between px-4 py-3 text-sm font-semibold">
+              <span className="text-slate-900">Total</span>
+              <span className="tabular-nums text-slate-900">PKR {formatPKR(total)}</span>
+            </div>
+          </div>
+        </section>
+      ) : null}
+
+      {Array.isArray(ticket.documents) && ticket.documents.length > 0 ? (
+        <section>
+          <h4 className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Documents</h4>
+          <div className="mt-3 space-y-2">
+            {ticket.documents.map((doc: any) => (
+              <button
+                key={doc.id}
+                type="button"
+                onClick={async () => {
+                  try {
+                    const { blob, filename } = await apiClient.getBlob(
+                      `/tickets/${ticket.id}/documents/${doc.id}/download`,
+                    );
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = filename || doc.name || 'document';
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                  } catch (err) {
+                    console.error('Document download failed', err);
+                  }
+                }}
+                className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left ring-1 ring-border-soft bg-surface transition-colors hover:bg-surface-muted"
+              >
+                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-50 text-brand-500">
+                  <FileText className="h-4 w-4" />
+                </span>
+                <span className="min-w-0 flex-1 truncate text-sm text-slate-800">{doc.name ?? 'Document'}</span>
+                <span className="text-[10px] uppercase tracking-[0.08em] text-slate-400">{doc.type ?? ''}</span>
+              </button>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      <section className="rounded-xl bg-brand-50/60 px-4 py-3 text-xs text-brand-700 ring-1 ring-inset ring-brand-100">
+        <p className="flex items-center gap-2 font-semibold">
+          <Clock className="h-3.5 w-3.5" /> What&rsquo;s next?
+        </p>
+        <p className="mt-1 text-brand-700/80">{nextSteps[ticket.status] ?? ''}</p>
+      </section>
+
+      {showFinalPayment ? (
+        <div className="w-full rounded-lg border border-rose-200 bg-rose-50 px-4 py-3">
+          <p className="text-sm font-medium text-rose-700 mb-2">Final payment due — PKR {formatPKR(remaining)}</p>
+          <Link href={`/consumer/tickets/${ticketId}/pay`}>
+            <Button variant="brand" size="sm" rightIcon={<ArrowUpRight className="h-3.5 w-3.5" />}>Pay now</Button>
+          </Link>
+        </div>
+      ) : null}
+      {showPayNow ? (
+        <Link href={`/consumer/tickets/${ticketId}/pay`} className="inline-block">
+          <Button variant="brand" size="sm" rightIcon={<ArrowUpRight className="h-3.5 w-3.5" />}>Pay now</Button>
+        </Link>
+      ) : null}
+
+      {ticket.status === 'COMPLETED' || ticket.status === 'DELIVERED' ? (
+        <PanelCard className="mt-4 border border-brand-200 bg-gradient-to-br from-brand-50 to-violet-50">
+          <div className="flex items-start gap-3">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-500 text-white">
+              <ArrowRight className="h-4 w-4" />
+            </span>
+            <div className="flex-1">
+              <h3 className="text-sm font-semibold text-slate-900">Need another service?</h3>
+              <p className="mt-1 text-sm text-slate-600">Browse judicial and non-judicial services to start a new request.</p>
+              <Link href="/consumer/paralegal-services" className="mt-3 inline-block">
+                <Button variant="brand" size="sm" rightIcon={<ArrowRight className="h-4 w-4" />}>Order another service</Button>
+              </Link>
+            </div>
+          </div>
+        </PanelCard>
+      ) : null}
     </div>
   );
 }

@@ -7,6 +7,8 @@ export class PricingAvailabilityDto {
   @IsOptional() @IsString() yearBand?: string;
   @IsOptional() @IsString() region?: string;
   @IsOptional() @IsString() province?: string;
+  // Preferred region source — selected GeoCity id (see #26). `city` is fallback.
+  @IsOptional() @IsString() cityId?: string;
   @IsOptional() @IsString() city?: string;
   @IsArray() @ArrayNotEmpty() @IsString({ each: true }) options!: string[];
 }

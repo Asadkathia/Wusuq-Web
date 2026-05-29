@@ -20,6 +20,10 @@ export class ResolvePricingDto {
   @IsOptional() @IsNumber() @Min(0) nonAttestedQty?: number;
   @IsOptional() @IsString() region?: string; // 'Punjab' | 'other'
   @IsOptional() @IsString() province?: string; // raw province name — service derives region
+  // Preferred region source: the selected GeoCity id. The resolver joins
+  // city → district → province to derive region reliably (see #26). `city`
+  // (name) is only a fallback when the id is absent.
+  @IsOptional() @IsString() cityId?: string;
   @IsOptional() @IsString() city?: string; // city name — fallback if province unknown
 
   // v2 surcharge toggles.
@@ -48,4 +52,10 @@ export class ResolvePricingDto {
   // 'both'. Only consulted for `judicial_case_search`; 'both' adds a
   // Rs 1,000 per-city surcharge.
   @IsOptional() @IsString() searchMethod?: string;
+
+  // 5-24-26 #6/#7 (Case Information document bundle). Canonical DocBundle key
+  // (e.g. 'doc_only_last_order') from payload.required_documentations. Only
+  // consulted for `judicial_case_information`, where it adds a region-keyed
+  // surcharge on top of the seeded base fee.
+  @IsOptional() @IsString() docBundle?: string;
 }

@@ -12,11 +12,13 @@ export type SubCourt = { name: string };
 /**
  * Canonical, complete special-court catalogue (single source of truth).
  *
- * 2026-05-23: special courts are now UNIFIED — every city exposes this exact
- * list (see DOcs/superpowers/specs/2026-05-23-intake-forms-redesign-design.md).
- * This replaces the old per-city SPECIAL_COURT_SUBCOURTS subset map and the
- * 5-court BASELINE_SPECIAL_COURTS fallback. Naming is singular to match
- * court-alias.ts. Both the geo seeder and the services catalogue import this.
+ * This is the full set of special-court *names*. Every district that has
+ * special courts exposes this exact list. 2026-05-25: special courts are seated
+ * at the DISTRICT level — one seat city per district in SPECIAL_COURT_DISTRICTS
+ * (court-alias.ts) — not on every city. This catalogue replaced the old
+ * per-city SPECIAL_COURT_SUBCOURTS subset map and the 5-court
+ * BASELINE_SPECIAL_COURTS fallback. Naming is singular to match court-alias.ts.
+ * Both the geo seeder and the services catalogue import this.
  */
 export const SPECIAL_COURTS: string[] = [
   'Accountability Court',

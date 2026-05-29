@@ -305,6 +305,7 @@ export function IntakeWizard({
     pdfSurcharge?: number;
     deliveryFee?: number;
     titleSurcharge?: number;
+    bundleSurcharge?: number;
     attestedCharge: number;
     nonAttestedCharge: number;
     deliveryCharge: number;
@@ -539,7 +540,10 @@ export function IntakeWizard({
           select_court_type: selectedCourtType,
         },
       }));
+    // 5-24-26 #8/#9: don't clear a resumed court selection while courts are still loading — that wiped court + pricing on draft resume.
     } else if (
+      !cityCourtsLoading &&
+      cityCourtGroups.length > 0 &&
       selectedCourtList.length === 0 &&
       (draft.payload.select_court_id || draft.payload.select_court)
     ) {
@@ -549,7 +553,7 @@ export function IntakeWizard({
       }));
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedService?.id, selectedCourtList]);
+  }, [selectedService?.id, selectedCourtList, cityCourtsLoading, cityCourtGroups]);
 
   const setField = (field: keyof TicketDraft, value: string | number) =>
     setDraft((c) => ({ ...c, [field]: value }));
@@ -620,6 +624,9 @@ export function IntakeWizard({
         wantPdf,
         deliveryMethod: deliveryMethod || undefined,
         province: p.province ?? p.province_capital ?? undefined,
+        // #26: pass the selected GeoCity id so the resolver derives region via
+        // the geo FK chain instead of fragile city-name matching.
+        cityId: p.city_id || undefined,
         city: p.select_court_city ?? p.city ?? undefined,
         // PDF #14: title-based surcharge ("State vs <X>" → +Rs 1,000). The
         // resolver does the regex match; we just forward whatever the user
@@ -627,6 +634,8 @@ export function IntakeWizard({
         caseTitle: p.case_title || '',
         cityCount,
         searchMethod,
+        // 5-24-26 #6/#7: Case Information document-bundle add-on (region-keyed).
+        docBundle: p.required_documentations || undefined,
       })
         .then((r) => { if (!cancelled) setPricingResult(r); })
         .catch(() => { if (!cancelled) setPricingResult(null); });
@@ -651,6 +660,7 @@ export function IntakeWizard({
     draft.payload.case_title,
     draft.payload.cities,
     draft.payload.search_method,
+    draft.payload.required_documentations,
   ]);
 
   // ── Set-type availability — batched lookup ("Can't Get" handling) ────────
@@ -683,6 +693,8 @@ export function IntakeWizard({
         caseStatus: p.case_status || undefined,
         yearBand,
         province: p.province ?? p.province_capital ?? undefined,
+        // #26: prefer the GeoCity id for reliable region derivation.
+        cityId: p.city_id || undefined,
         city: p.select_court_city ?? p.city ?? undefined,
         options: ['attested', 'non_attested', 'both'],
       })
@@ -1363,6 +1375,10 @@ export function IntakeWizard({
           amount: pr.titleSurcharge!,
         });
       }
+      // 5-24-26 #6/#7: Case Information document-bundle add-on (on top of base).
+      if ((pr.bundleSurcharge ?? 0) > 0) {
+        items.push({ label: 'Document bundle', amount: pr.bundleSurcharge! });
+      }
       if (!isSplit) {
         if ((pr.pdfSurcharge ?? 0) > 0) {
           items.push({ label: 'PDF surcharge', amount: pr.pdfSurcharge! });
@@ -1475,7 +1491,10 @@ export function IntakeWizard({
       } catch {}
       setInfoMsg('✅ Ticket created successfully! Batch No: ' + ticket.batchNo);
       resetForm();
-      router.push(`/consumer/tickets/${ticket.id}/pay`);
+      // 5-24-26 #18: land on the ticket detail page after creation so the
+      // consumer can review what they requested (it carries the Pay-now action
+      // for unpaid tickets) instead of jumping straight to payment.
+      router.push(`/consumer/tickets/${ticket.id}`);
     } catch (e: any) {
       setApiError(e.message || 'Submission failed');
       // Re-enable autosave only on failure — on success resetForm() clears
@@ -1834,21 +1853,36 @@ export function IntakeWizard({
               // Petition / Paperbook based on the active court tier while
               // keeping the canonical DocBundle key as the stored value.
               if (field.key === 'required_documentations') {
-                // QA P2: Case Information has two priced tiers — Rs 750 for
-                // "Only Last Order", Rs 1,500 for "Only Complete Order
-                // Sheet". Surface the difference next to the label so the
-                // consumer doesn't pick blind. Other flows render plain
-                // labels (no priced tiers).
+                // 5-24-26 #6/#7: Case Information prices each document bundle as
+                // a region-keyed add-on on top of the base fee. Surface the
+                // add-on next to each label so the consumer doesn't pick blind.
+                // Mirrors CASE_INFO_BUNDLE_SURCHARGE in pricing.service.ts —
+                // keep the two in sync. Other flows render plain labels.
                 const showPriceHint = draft.flow === 'judicial_case_information';
-                const priceHint: Record<string, string> = {
-                  doc_only_last_order: ' — Rs 750',
-                  doc_only_complete_order_sheet: ' — Rs 1,500',
-                };
+                const isPunjab =
+                  (draft.payload.province ?? draft.payload.province_capital) === 'Punjab';
+                const bundleAddOn: Record<string, number> = isPunjab
+                  ? {
+                      doc_only_petition: 500,
+                      doc_petition_plus_last_order: 700,
+                      doc_petition_plus_complete_order: 800,
+                      doc_only_last_order: 750,
+                      doc_only_complete_order_sheet: 1500,
+                    }
+                  : {
+                      doc_only_petition: 750,
+                      doc_petition_plus_last_order: 1500,
+                      doc_petition_plus_complete_order: 1500,
+                      doc_only_last_order: 750,
+                      doc_only_complete_order_sheet: 1200,
+                    };
                 field = {
                   ...field,
                   optionsLabel: (opt: string) => {
                     const base = docBundleLabel(opt, activeCourtTier);
-                    return showPriceHint && priceHint[opt] ? base + priceHint[opt] : base;
+                    return showPriceHint && bundleAddOn[opt]
+                      ? `${base} — +Rs ${bundleAddOn[opt].toLocaleString()}`
+                      : base;
                   },
                 };
               }

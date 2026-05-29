@@ -20,6 +20,7 @@ import {
   CITY_FANOUT,
   LOWER_COURT_ONLY_TEHSILS,
   PROVINCE_ALIAS,
+  resolveSpecialCourtSeatCityIds,
 } from '../src/geo/court-alias';
 
 const prisma = new PrismaClient();
@@ -203,8 +204,9 @@ async function main() {
                 seatRows.push({ courtId, cityId, isPrincipalSeat: false });
               }
             } else if (courtType === 'Special Court') {
-              // 2026-05-23: special courts are unified across ALL cities —
-              // seated by the global loop after this JSON walk, not per entry.
+              // Special courts are seated at the district level after this JSON
+              // walk (see SPECIAL_COURT_DISTRICTS resolution below), not per
+              // JSON entry.
               continue;
             } else {
               const courtId = await getOrCreateCourt(courtType, jsonSubCourtName);
@@ -232,18 +234,16 @@ async function main() {
     }
   }
 
-  // 2026-05-23 unified special courts: every GeoCity exposes the full
-  // canonical catalogue. Seat all SPECIAL_COURTS on every city; these rows
-  // join seatRows and are deduped + bulk-inserted below.
-  const allCityIds: string[] = [];
-  for (const prov of provinces) {
-    for (const dist of prov.districts) {
-      for (const city of dist.cities) allCityIds.push(city.id);
-    }
-  }
+  // 2026-05-25 district-level special courts: special courts sit at the
+  // district seat only (one city per district), not in every tehsil. Resolve
+  // the canonical SPECIAL_COURT_DISTRICTS list to seat-city ids and seat the
+  // full SPECIAL_COURTS catalogue on each; these rows join seatRows and are
+  // deduped + bulk-inserted below.
+  const { cityIds: specialSeatCityIds, unresolved: unresolvedSpecial } =
+    resolveSpecialCourtSeatCityIds(globalCityByName);
   for (const subName of SPECIAL_COURTS) {
     const courtId = await getOrCreateCourt('Special Court', subName);
-    for (const cityId of allCityIds) {
+    for (const cityId of specialSeatCityIds) {
       seatRows.push({ courtId, cityId, isPrincipalSeat: false });
     }
   }
@@ -262,11 +262,19 @@ async function main() {
   }
 
   console.log('\nSeed complete:', totals);
+  console.log(
+    `Special courts seated on ${specialSeatCityIds.length} district seats.`,
+  );
   if (unresolved.size > 0) {
     console.log('\nUnresolved cities (not in geo tree — courts skipped):');
     for (const [province, cities] of unresolved.entries()) {
       console.log(`  ${province}: ${Array.from(cities).sort().join(', ')}`);
     }
+  }
+  if (unresolvedSpecial.length > 0) {
+    console.log(
+      `\nUnresolved special-court districts (no seat city — skipped): ${unresolvedSpecial.join(', ')}`,
+    );
   }
 }
 

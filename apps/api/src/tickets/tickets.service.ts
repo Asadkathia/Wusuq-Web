@@ -62,11 +62,17 @@ const REQUIRED_FIELDS_BY_FLOW: Record<string, string[]> = {
     'delivery_mode',
   ],
   judicial_case_information: [
+    // 5-24-26 #2/#3: Case Information now collects the same case-identifying
+    // fields as Case Files (case type + status added). Per-tier drops in
+    // REQUIRED_FIELDS_OPTIONAL_BY_TIER.judicial_case_information mirror Case
+    // Files so the wizard and validator stay in lock-step.
     'select_service',
     'select_court',
     'select_court_city',
     'case_petition_no',
     'case_year',
+    'case_type',
+    'case_status',
     'case_title',
     'judge_name',
   ],
@@ -425,6 +431,14 @@ export class TicketsService {
       payload['city'] ??
       payload['select_city'] ??
       '';
+    // #26: the selected GeoCity id lets the resolver derive the pricing region
+    // via the geo FK chain instead of fragile city-name matching.
+    const cityId = payload['city_id'] ?? undefined;
+    // 5-24-26 #17: PDF is priced at intake — fold the surcharge into
+    // serviceCost when the consumer ticks "Want PDF before dispatch?" so the
+    // quoted/charged price reflects it (the resolver adds pdfSurcharge to
+    // serviceCost). It is therefore NOT re-billed at finalize.
+    const wantPdf = payload['want_pdf_before_dispatch'] === 'Yes';
     const pricing = await this.pricingService.resolve({
       flow: dto.flow,
       courtLevel,
@@ -434,7 +448,11 @@ export class TicketsService {
       attestedQty,
       nonAttestedQty,
       province,
+      cityId,
       city,
+      wantPdf,
+      // 5-24-26 #6/#7: Case Information bundle add-on (region-keyed).
+      docBundle: payload['required_documentations'],
     });
 
     if (!pricing.matched && pricing.rulesExistForFlow) {
@@ -871,6 +889,10 @@ export class TicketsService {
         }
       }
     }
+    // 5-24-26 #23: clerk assignment cost is INTERNAL ONLY — it is the
+    // representative's pay-out, not something the client is billed for. It is
+    // still persisted on the ticket (below) for internal accounting but is
+    // deliberately excluded from the consumer-facing totalAmount.
     const nextTotalAmount =
       Number(ticket.serviceCost) +
       Number(ticket.deliveryCharges) +
@@ -878,8 +900,7 @@ export class TicketsService {
       Number(ticket.attestedCharges) +
       Number(ticket.nonAttestedCharges) +
       Number(ticket.additionalCharges) +
-      Number(ticket.additionalServiceCost) +
-      clerkCost -
+      Number(ticket.additionalServiceCost) -
       Number(ticket.discountPrice);
     const priorAssignment = await this.prisma.assignment.findFirst({
       where: { ticketId: id, status: 'ACTIVE' },
@@ -1378,6 +1399,8 @@ export class TicketsService {
       dto.nonAttestedCharges ?? Number(ticket.nonAttestedCharges);
     const additionalCharges =
       dto.additionalCharges ?? Number(ticket.additionalCharges);
+    // 5-24-26 #23: clerk cost is internal-only and excluded from the
+    // consumer-facing totalAmount (see assignClerk).
     const totalAmount =
       Number(ticket.serviceCost) +
       deliveryCharges +
@@ -1385,8 +1408,7 @@ export class TicketsService {
       attestedCharges +
       nonAttestedCharges +
       additionalCharges +
-      Number(ticket.additionalServiceCost) +
-      Number(ticket.clerkCost) -
+      Number(ticket.additionalServiceCost) -
       Number(ticket.discountPrice);
 
     const updated = await this.prisma.ticket.update({
@@ -1717,24 +1739,21 @@ export class TicketsService {
       : 0;
     const printing = caps.printing ? Number(dto.printingCharges ?? 0) : 0;
     const delivery = caps.delivery ? Number(dto.deliveryCharges ?? 0) : 0;
-    // PDF is opt-in: the consumer is charged the standard PDF fee only when a
-    // PDF is requested. The admin sets the amount at finalize (the frontend
-    // defaults the input to the standard Rs 300); 0/absent means no PDF.
-    const pdf = caps.pdf ? Number(dto.pdfCharges ?? 0) : 0;
-    // Clerk assignment cost is consumer-billed (set at assignment) and any
-    // additional charges / discount persisted earlier must be preserved so
-    // finalize stays consistent with assignClerk's total computation.
+    // 5-24-26 #17: PDF is now priced at intake (folded into serviceCost by the
+    // pricing resolver when want_pdf_before_dispatch=Yes), so it is NOT
+    // re-added at finalize — doing so would double-bill the PDF surcharge.
+    // 5-24-26 #23: clerk assignment cost is internal-only (rep pay-out) and is
+    // excluded from the consumer total. Additional charges / discount persisted
+    // earlier are preserved.
     const total =
       Number(ticket.serviceCost) +
-      Number(ticket.clerkCost ?? 0) +
       Number(ticket.additionalCharges ?? 0) +
       Number(ticket.additionalServiceCost ?? 0) -
       Number(ticket.discountPrice ?? 0) +
       attested +
       nonAttested +
       printing +
-      delivery +
-      pdf;
+      delivery;
 
     await this.prisma.ticket.update({
       where: { id: ticketId },
@@ -1759,7 +1778,7 @@ export class TicketsService {
       entityId: ticketId,
       actorUserId: actor.actorUserId,
       actorEmail: actor.actorEmail,
-      metadata: { total, attested, nonAttested, printing, delivery, pdf },
+      metadata: { total, attested, nonAttested, printing, delivery },
     });
 
     return this.findOne(ticketId);

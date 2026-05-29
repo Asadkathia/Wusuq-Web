@@ -883,6 +883,8 @@ describe('TicketsService', () => {
             select_court_city: 'x',
             case_petition_no: '1',
             case_year: '2024',
+            case_type: 'Civil',
+            case_status: 'Pending Case',
             case_title: 'A vs B',
             judge_name: 'Judge Smith',
           },
@@ -905,6 +907,8 @@ describe('TicketsService', () => {
             select_court_city: 'x',
             case_petition_no: '1',
             case_year: '2024',
+            case_type: 'Civil',
+            case_status: 'Pending Case',
             case_title: 'A vs B',
             judge_name: 'Judge Smith',
           },
@@ -926,6 +930,8 @@ describe('TicketsService', () => {
           select_court_city: 'x',
           case_petition_no: '1',
           case_year: '2024',
+          case_type: 'Civil',
+          case_status: 'Pending Case',
           case_title: 'A vs B',
           judge_name: 'Judge Smith',
         },
@@ -1040,6 +1046,8 @@ describe('TicketsService', () => {
             select_court_city: 'x',
             case_petition_no: '1',
             case_year: '2024',
+            case_type: 'Civil',
+            case_status: 'Pending Case',
             case_title: 'A vs B',
             judge_name: 'Judge Smith',
           },
@@ -1403,7 +1411,7 @@ describe('finalizeRemainder (Task 1.4)', () => {
     );
   });
 
-  it('includes the consumer-billed clerkCost in the finalized total', async () => {
+  it('excludes the internal clerkCost from the finalized total (5-24-26 #23)', async () => {
     const { service, prisma } = buildFinalizeHarness({
       intakeFlow: 'judicial_case_files',
       serviceCost: 5000,
@@ -1435,10 +1443,12 @@ describe('finalizeRemainder (Task 1.4)', () => {
       { actorUserId: 'admin-1' },
     );
 
-    // total = serviceCost 5000 + clerkCost 1500 + attested 2000 + printing 1000
+    // total = serviceCost 5000 + attested 2000 + printing 1000.
+    // clerkCost 1500 is internal-only (rep pay-out) and NOT billed to the
+    // consumer, so it is excluded from the finalized total.
     expect(prisma.ticket.update).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ totalAmount: 9500 }),
+        data: expect.objectContaining({ totalAmount: 8000 }),
       }),
     );
   });

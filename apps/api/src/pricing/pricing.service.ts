@@ -46,6 +46,53 @@ function deriveRegion(province?: string): 'Punjab' | 'other' | undefined {
   return PUNJAB_NAMES.has(province) ? 'Punjab' : 'other';
 }
 
+// Flows that are always delivered digitally (PDF / WhatsApp / portal) and so
+// never carry a physical delivery fee or the rule's static delivery charge.
+// Case Information has its own seeded base-fee rules (xlsx "Case Information"
+// service rows) — it is NOT aliased to Case Files; only its delivery is digital.
+function isDigitalDeliveryFlow(flow: string): boolean {
+  return flow === 'judicial_case_information';
+}
+
+// 5-24-26 #6/#7: Case Information is priced as (seeded regional base fee) +
+// (document-bundle add-on). The base fee comes from the seeded
+// judicial_case_information rules (varies by court tier / region); the add-on
+// below is region-keyed (Punjab vs other-than-Punjab) per the owner's rate
+// sheet. Keyed by the canonical DocBundle value stored in
+// payload.required_documentations. Bundles absent from a region map add 0.
+const CASE_INFO_BUNDLE_SURCHARGE: Record<
+  'Punjab' | 'other',
+  Record<string, number>
+> = {
+  Punjab: {
+    doc_only_petition: 500,
+    doc_petition_plus_last_order: 700,
+    doc_petition_plus_complete_order: 800,
+    doc_only_last_order: 750,
+    doc_only_complete_order_sheet: 1500,
+  },
+  other: {
+    doc_only_petition: 750,
+    doc_petition_plus_last_order: 1500,
+    doc_petition_plus_complete_order: 1500,
+    doc_only_last_order: 750,
+    doc_only_complete_order_sheet: 1200,
+  },
+};
+
+export function caseInfoBundleSurcharge(
+  flow: string,
+  region: string | undefined,
+  docBundle: string | undefined,
+): number {
+  if (flow !== 'judicial_case_information' || !docBundle) return 0;
+  const table =
+    region === 'Punjab'
+      ? CASE_INFO_BUNDLE_SURCHARGE.Punjab
+      : CASE_INFO_BUNDLE_SURCHARGE.other;
+  return table[docBundle] ?? 0;
+}
+
 // Federal Shariat Court historically reused High Court pricing in the legacy
 // model. With pricing engine v2 we have explicit rules for FSC, so the
 // normalization is gated to courts that lack rules in the new dataset.
@@ -157,6 +204,40 @@ export class PricingService {
     });
   }
 
+  // Resolve the province NAME for a request, used only to derive the pricing
+  // region (Punjab vs other). Prefers an explicit province, then a reliable
+  // GeoCity-id FK join, and only falls back to fragile city-NAME matching.
+  //
+  // 5-24-26 #26 root cause: region was derived solely by matching the free-text
+  // `city` against GeoCity.name. Court-seat labels that don't exactly match a
+  // GeoCity row (common outside Punjab) left region=undefined, and the strict
+  // `if (r.region && r.region !== region)` filter then discarded EVERY
+  // region-keyed rule → "No pricing rule matched". Looking up by the selected
+  // city id removes that whole class of misses.
+  private async deriveProvinceName(opts: {
+    province?: string;
+    cityId?: string;
+    city?: string;
+  }): Promise<string | undefined> {
+    if (opts.province) return opts.province;
+    if (opts.cityId) {
+      const byId = await this.prisma.geoCity.findUnique({
+        where: { id: opts.cityId },
+        include: { district: { include: { province: true } } },
+      });
+      const name = byId?.district?.province?.name;
+      if (name) return name;
+    }
+    if (opts.city) {
+      const byName = await this.prisma.geoCity.findFirst({
+        where: { name: { equals: opts.city, mode: 'insensitive' } },
+        include: { district: { include: { province: true } } },
+      });
+      return byName?.district?.province?.name;
+    }
+    return undefined;
+  }
+
   // ── Availability (per set-type) ────────────────────────────────────────────
   //
   // Returns a {option → boolean} map indicating, for the given
@@ -171,20 +252,18 @@ export class PricingService {
     yearBand?: string;
     region?: string;
     province?: string;
+    cityId?: string;
     city?: string;
     options: string[];
   }): Promise<Record<string, boolean>> {
     const settings = await this.getSettings();
 
-    // Derive region from province / city when not provided.
-    let province = args.province;
-    if (!province && args.city) {
-      const cityRecord = await this.prisma.geoCity.findFirst({
-        where: { name: { equals: args.city, mode: 'insensitive' } },
-        include: { district: { include: { province: true } } },
-      });
-      province = cityRecord?.district?.province?.name;
-    }
+    // Derive region from province / city id / city name (in that order).
+    const province = await this.deriveProvinceName({
+      province: args.province,
+      cityId: args.cityId,
+      city: args.city,
+    });
     const region = args.region ?? deriveRegion(province);
     const effectiveCourtLevel = normalizeCourtLevel(args.courtLevel);
     const requestedYearBand = args.yearBand ?? 'current';
@@ -287,6 +366,9 @@ export class PricingService {
     // PDF #7 / QA 5-10-26: Rs 1,000/year surcharge on Decided cases beyond
     // 10 years old. Zero for pending and current-year cases.
     ageSurcharge: number;
+    // 5-24-26 #6/#7: Case Information document-bundle add-on (region-keyed),
+    // added on top of the base fee. Zero for every other flow.
+    bundleSurcharge: number;
     // PDF #37: Rs 1,000 surcharge added per city when search_method === 'both'
     // for `judicial_case_search`. Zero for every other flow.
     searchBothSurcharge: number;
@@ -306,15 +388,12 @@ export class PricingService {
     const attestedQty = dto.attestedQty ?? 0;
     const nonAttestedQty = dto.nonAttestedQty ?? 0;
 
-    // Derive region from province; if province is absent, look it up from city name
-    let province = dto.province;
-    if (!province && dto.city) {
-      const cityRecord = await this.prisma.geoCity.findFirst({
-        where: { name: { equals: dto.city, mode: 'insensitive' } },
-        include: { district: { include: { province: true } } },
-      });
-      province = cityRecord?.district?.province?.name;
-    }
+    // Derive region from province / city id / city name (in that order).
+    const province = await this.deriveProvinceName({
+      province: dto.province,
+      cityId: dto.cityId,
+      city: dto.city,
+    });
     const region = dto.region ?? deriveRegion(province);
 
     const effectiveCourtLevel = normalizeCourtLevel(dto.courtLevel);
@@ -419,6 +498,7 @@ export class PricingService {
         deliveryFee: 0,
         titleSurcharge: 0,
         ageSurcharge: 0,
+        bundleSurcharge: 0,
         searchBothSurcharge: 0,
         cityCount: 1,
         attestedCharge: 0,
@@ -448,6 +528,7 @@ export class PricingService {
         deliveryFee: 0,
         titleSurcharge: 0,
         ageSurcharge: 0,
+        bundleSurcharge: 0,
         searchBothSurcharge: 0,
         cityCount: 1,
         attestedCharge: 0,
@@ -496,11 +577,22 @@ export class PricingService {
 
     // v2 surcharges: PDF + Delivery Guy fee (flat per-rule).
     const wantPdf = dto.wantPdf === true;
+    // 5-24-26 #6/#7: digital-only flows (Case Information) never incur a
+    // physical delivery fee. 'portal' / 'whatsapp' / 'other_no' are digital
+    // delivery modes and are treated like 'pickup' / 'none'.
+    const digitalDeliveryFlow = isDigitalDeliveryFlow(dto.flow);
+    const NON_PHYSICAL_DELIVERY = new Set([
+      'pickup',
+      'none',
+      'portal',
+      'whatsapp',
+      'other_no',
+    ]);
     const deliveryNeeded =
+      !digitalDeliveryFlow &&
       dto.deliveryMethod != null &&
       dto.deliveryMethod !== '' &&
-      dto.deliveryMethod.toLowerCase() !== 'pickup' &&
-      dto.deliveryMethod.toLowerCase() !== 'none';
+      !NON_PHYSICAL_DELIVERY.has(dto.deliveryMethod.toLowerCase());
     const pdfSurcharge = wantPdf ? Number(best.pdfSurchargeAmount ?? 0) : 0;
     const deliveryFee = deliveryNeeded ? Number(best.deliveryGuyFee ?? 0) : 0;
     // PDF #14: flat Rs 1,000 add-on when the case title is "State vs <X>".
@@ -516,6 +608,15 @@ export class PricingService {
     // pricing sheet only needs the banded rules — no per-year rows.
     const ageSurcharge = computeAgeSurcharge(dto.caseStatus, dto.caseYear);
 
+    // 5-24-26 #6/#7: Case Information add-on for the chosen document bundle,
+    // on TOP of the seeded regional base fee. Region-keyed (Punjab vs other).
+    // Zero for every other flow / when no bundle is chosen.
+    const bundleSurcharge = caseInfoBundleSurcharge(
+      dto.flow,
+      region,
+      dto.docBundle,
+    );
+
     // PDF #36 / #37 — Case Search-specific multipliers. Other flows ignore
     // both: cityCount stays 1 and searchBothSurcharge stays 0.
     const isCaseSearch = dto.flow === 'judicial_case_search';
@@ -523,12 +624,21 @@ export class PricingService {
     const searchBothSurcharge =
       isCaseSearch && dto.searchMethod === 'both' ? SEARCH_BOTH_SURCHARGE : 0;
 
-    const deliveryCharge = Number(best.deliveryCharge) + deliveryFee;
+    // Digital-only flows (Case Information) carry no static delivery charge.
+    const staticDeliveryCharge = digitalDeliveryFlow
+      ? 0
+      : Number(best.deliveryCharge);
+    const deliveryCharge = staticDeliveryCharge + deliveryFee;
     // Phase-1 consumer base = base service charge + intrinsic base modifiers
-    // (State-vs title surcharge, decided-age surcharge). Attestation /
-    // non-attestation / PDF are NOT part of the base — they're phase-2 charges
-    // (clerk-entered, admin-marked-up) billed at finalize.
-    const serviceCost = basePrice + titleSurcharge + ageSurcharge;
+    // (State-vs title surcharge, decided-age surcharge, and — 5-24-26 #17 — the
+    // PDF surcharge, which is now priced at intake rather than deferred to the
+    // phase-2 finalize). Attestation / non-attestation remain phase-2 charges.
+    const serviceCost =
+      basePrice +
+      titleSurcharge +
+      ageSurcharge +
+      pdfSurcharge +
+      bundleSurcharge;
     // For Case Search the per-city block (base + searchBoth + title + pdf +
     // deliveryFee + ageSurcharge) is multiplied by the city count. Per-set
     // rates and the rule's flat deliveryCharge are NOT multiplied — they're
@@ -540,10 +650,11 @@ export class PricingService {
       titleSurcharge +
       ageSurcharge +
       pdfSurcharge +
+      bundleSurcharge +
       deliveryFee;
     // Attestation / non-attestation excluded — phase-2 charges, not part of the
     // resolved consumer price.
-    const total = perCityBlock * cityCount + Number(best.deliveryCharge);
+    const total = perCityBlock * cityCount + staticDeliveryCharge;
 
     return {
       matched: true,
@@ -558,6 +669,7 @@ export class PricingService {
       deliveryFee,
       titleSurcharge,
       ageSurcharge,
+      bundleSurcharge,
       searchBothSurcharge,
       cityCount,
       clerkRateOverride: clerkOverride,

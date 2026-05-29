@@ -564,7 +564,7 @@ const caseFilesSteps: IntakeStep[] = [
       },
       {
         key: 'case_type_other',
-        label: 'Specify case type',
+        label: 'Other — type your case type',
         type: 'text',
         required: false,
         placeholder: 'Type the case type as it appears on your record',
@@ -638,7 +638,12 @@ const caseFilesSteps: IntakeStep[] = [
         type: 'text',
         required: true,
         // 2026-05-23 B1: judge_name mandatory for Lower Court only.
+        // 5-26-25 #25: bench tiers (High/Shariat/Supreme/FCC) capture judge
+        // names via the Bench picker, so the standalone Judge Name is redundant
+        // there — show it only for Lower & Special (single-judge, no bench).
+        // Inverse of the bench field's showWhen above.
         requiredByCourtTier: { lower: true, high: false, special: false, shariat: false, supreme: false, fcc: false },
+        showWhen: { field: 'select_court_type', valueIn: ['Lower Court', 'Special Court'] },
         hint: 'Name of the presiding judge — match the most recent order sheet.',
       },
       {
@@ -722,42 +727,78 @@ const caseInformationSteps: IntakeStep[] = [
   },
   {
     title: 'Case Details',
+    // 5-24-26: Case Information mirrors Case Files case-details (case type + status + full date set).
     fields: [
-      // 2026-05-23 B3: case_date moved to first position.
       {
         key: 'case_date',
         label: 'Case Date',
         type: 'date',
         hint: 'Date of the last hearing or order on this case.',
       },
-      // 2026-05-23 B2: case_type + case_type_other removed (Case Info is
-      // pending-only — no case type picker needed).
+      {
+        key: 'case_status',
+        label: 'Case Status',
+        type: 'radio',
+        required: true,
+        options: ['Pending Case', 'Decided Case', 'Unknown Case'],
+        defaultValue: 'Pending Case',
+        hint: 'Choose the option that best matches the latest status shown on the court file.',
+      },
+      {
+        key: 'case_type',
+        label: 'Case Type',
+        type: 'select',
+        required: true,
+        options: [],
+        // PDF #23-#27 literal matrix (case-files step 2).
+        // Special Court (#25) is the only tier that flags case_type as required.
+        requiredByCourtTier: { lower: false, high: false, special: true, shariat: false, supreme: false, fcc: false },
+        hint: "Pick the case category as printed on the petition or order sheet. Choose 'Other' if your category isn't listed.",
+      },
+      {
+        key: 'case_type_other',
+        label: 'Other — type your case type',
+        type: 'text',
+        required: false,
+        placeholder: 'Type the case type as it appears on your record',
+        showWhen: { field: 'case_type', value: 'Other' },
+        hint: 'Type the case category exactly as it appears on your court record.',
+      },
       {
         key: 'case_no',
         label: 'Case No',
         type: 'text',
         required: true,
-        // Per PDF #34: case_no is optional in Lower Case Info; higher tiers
-        // need it as the lookup key.
-        requiredByCourtTier: { lower: false, high: true, special: true, shariat: true, supreme: true, fcc: true },
+        hint: 'Enter the exact number as it appears on the petition or order sheet.',
+        // PDF #23-#27: High / Shariat / Supreme / FCC mark case_no required;
+        // Lower (#23) and Special (#25) mark it optional with a red ✗.
+        requiredByCourtTier: { lower: false, high: true, special: false, shariat: true, supreme: true, fcc: true },
       },
       {
         key: 'year',
         label: 'Year',
         type: 'year_select',
         required: true,
-        // PDF #34 marks year optional for Lower Case Info. Mirror Case-Files
-        // Special-Court (#25) so Special keeps it required.
+        // PDF #23-#27: year is required only for Special Court (#25).
         requiredByCourtTier: { lower: false, high: false, special: true, shariat: false, supreme: false, fcc: false },
         hint: 'Year the case was filed (per the order sheet or petition heading).',
+        // 5-19-26 #6: for Decided cases the year that drives pricing is
+        // `decided_date`, not this filing-year input. Two inputs on the same
+        // step produced silent disagreement (year=2025 + decided_date=2024-XX
+        // → pricing used 2024 → wrong band). Hide for Decided; the wizard
+        // syncs payload.year = decided_date.slice(0,4) so backend validators
+        // (REQUIRED_FIELDS_BY_FLOW) still see a year.
+        showWhen: { field: 'case_status', valueIn: ['Pending Case', 'Unknown Case'] },
       },
       {
         key: 'case_title',
         label: 'Case Title',
         type: 'text',
         required: true,
-        // PDF #34 marks case_title required for Lower Case Info. Mirror
-        // Case-Files for higher tiers (PDF #23-#27 matrix).
+        hint: 'Use the party names exactly as written in the court record.',
+        // PDF #23-#27: Lower (#23), Special (#25), and FSC (#26 — unmarked,
+        // treated as keep-required) mark case_title required. High (#24) and
+        // Supreme/FCC (#27) mark it optional.
         requiredByCourtTier: { lower: true, high: false, special: true, shariat: true, supreme: false, fcc: false },
       },
       {
@@ -765,8 +806,9 @@ const caseInformationSteps: IntakeStep[] = [
         label: 'Bench',
         type: 'bench',
         required: true,
-        // 5-19-26 CF#3: bench hidden for Lower & Special in Case Info too —
-        // single-judge by default, redundant with judge_designation.
+        // 5-19-26 CF#3: bench is hidden for Lower & Special — those tiers
+        // are single-judge by default, so the picker is redundant with
+        // judge_designation.
         requiredByCourtTier: { high: false, shariat: true, supreme: true, fcc: true },
         showWhen: { field: 'select_court_type', valueNotIn: ['Lower Court', 'Special Court'] },
         hint: 'For multi-judge benches, name each judge in seniority order.',
@@ -777,9 +819,9 @@ const caseInformationSteps: IntakeStep[] = [
         type: 'select',
         required: true,
         options: [],
-        // PDF #34 marks judge_designation required for Lower Case Info. Same
-        // matrix as Case-Files (#23-#27): Lower + High optional, the rest
-        // required.
+        // PDF #23-#27 + QA 5-14-26 #34: judge_designation required for Lower
+        // (parity with Case Information) / Special / Shariat / Supreme / FCC.
+        // Optional for High Court only.
         requiredByCourtTier: { lower: true, high: false, special: true, shariat: true, supreme: true, fcc: true },
         hint: 'Title of the presiding judge — match the most recent order sheet.',
       },
@@ -789,13 +831,38 @@ const caseInformationSteps: IntakeStep[] = [
         type: 'text',
         required: true,
         // 2026-05-23 B1: judge_name mandatory for Lower Court only.
+        // 5-26-25 #25: bench tiers (High/Shariat/Supreme/FCC) capture judge
+        // names via the Bench picker, so the standalone Judge Name is redundant
+        // there — show it only for Lower & Special (single-judge, no bench).
+        // Inverse of the bench field's showWhen above.
         requiredByCourtTier: { lower: true, high: false, special: false, shariat: false, supreme: false, fcc: false },
+        showWhen: { field: 'select_court_type', valueIn: ['Lower Court', 'Special Court'] },
         hint: 'Name of the presiding judge — match the most recent order sheet.',
+      },
+      {
+        key: 'case_date_status',
+        label: 'Case Date Status',
+        type: 'radio',
+        options: ['Known', 'Unknown'],
+        hint: "Pick 'Unknown' if you can't find the date on your papers — we'll do our best with what we have.",
+      },
+      {
+        key: 'future_date',
+        label: 'Future Date',
+        type: 'date',
+        hint: "Date of the upcoming hearing. We'll have the documents ready before then.",
+      },
+      {
+        key: 'decided_date',
+        label: 'Decided Date',
+        type: 'date',
+        showWhen: { field: 'case_status', value: 'Decided Case' },
+        hint: 'Date the case was decided, per the final court order.',
       },
     ],
   },
   {
-    title: 'Required Documents & Notes',
+    title: 'Information Required',
     fields: [
       REQUIRED_DOCS_CASE_INFO,
       { key: 'notes', label: 'Notes', type: 'textarea' },
@@ -847,6 +914,31 @@ const caseSearchSteps: IntakeStep[] = [
         type: 'search_method_tabs',
         hint: 'Pick either method, or pick both for a wider search.',
       },
+      // 5-24-26: Case Status leads, with the date inputs directly below it.
+      {
+        key: 'case_status',
+        label: 'Case Status',
+        type: 'radio',
+        options: ['Pending Case', 'Decided Case', 'Unknown Case'],
+        showWhen: { field: 'search_method', valueIn: ['details', 'both'] },
+      },
+      // 5-19-26 CS#4 + 5-16-26 Case Search Page 2: capture a date for
+      // Pending / Unknown cases too — drives the years-since pricing the
+      // owner wants (Rs 2,000 per year-back). decided_date covers Decided.
+      {
+        key: 'case_date',
+        label: 'Case Date',
+        type: 'date',
+        showWhen: { field: 'case_status', valueIn: ['Pending Case', 'Unknown Case'] },
+        hint: 'Date of the last hearing or order, if known.',
+      },
+      {
+        key: 'decided_date',
+        label: 'Decided Date',
+        type: 'date',
+        showWhen: { field: 'case_status', value: 'Decided Case' },
+        hint: 'Date the case was decided, per the final court order.',
+      },
       // CNIC tab fields — visible for 'cnic' and 'both'.
       {
         key: 'subject_cnic',
@@ -868,24 +960,6 @@ const caseSearchSteps: IntakeStep[] = [
       },
       // Case Details tab fields — visible for 'details' and 'both'. All
       // optional (PDF #37: "Remove all * required asterisks").
-      // 2026-05-23 B3: case_date leads the Case Details group; showWhen preserved.
-      // 5-19-26 CS#4 + 5-16-26 Case Search Page 2: capture a date for
-      // Pending / Unknown cases too — drives the years-since pricing the
-      // owner wants (Rs 2,000 per year-back). decided_date covers Decided.
-      {
-        key: 'case_date',
-        label: 'Case Date',
-        type: 'date',
-        showWhen: { field: 'case_status', valueIn: ['Pending Case', 'Unknown Case'] },
-        hint: 'Date of the last hearing or order, if known.',
-      },
-      {
-        key: 'case_status',
-        label: 'Case Status',
-        type: 'radio',
-        options: ['Pending Case', 'Decided Case', 'Unknown Case'],
-        showWhen: { field: 'search_method', valueIn: ['details', 'both'] },
-      },
       {
         key: 'case_type',
         label: 'Case Type',
@@ -896,7 +970,7 @@ const caseSearchSteps: IntakeStep[] = [
       },
       {
         key: 'case_type_other',
-        label: 'Specify case type',
+        label: 'Other — type your case type',
         type: 'text',
         required: false,
         placeholder: 'Type the case type as it appears on your record',
@@ -936,31 +1010,41 @@ const caseSearchSteps: IntakeStep[] = [
         showWhen: { field: 'search_method', valueIn: ['details', 'both'] },
         hint: 'Title of the presiding judge — match the most recent order sheet.',
       },
-      {
-        key: 'decided_date',
-        label: 'Decided Date',
-        type: 'date',
-        showWhen: { field: 'case_status', value: 'Decided Case' },
-        hint: 'Date the case was decided, per the final court order.',
-      },
     ],
   },
   {
     title: 'Required Documents',
     fields: [
       REQUIRED_DOCS_CASE_FILES,
+      // 5-24-26: Case Search delivery unified with Case Files (TCS/Uber/Self
+      // Collection) — replaces the old courier/self_collection radio + address.
       {
         key: 'delivery_mode',
-        label: 'Delivery Mode',
+        label: 'Delivery Method',
         type: 'radio',
         required: true,
-        options: ['courier', 'self_collection'],
+        options: ['TCS', 'Uber', 'Self Collection'],
       },
       {
-        key: 'address',
+        key: 'delivery_address',
         label: 'Delivery Address',
-        type: 'textarea',
-        showWhen: { field: 'delivery_mode', value: 'courier' },
+        type: 'structured_address',
+        required: true,
+        showWhen: { field: 'delivery_mode', value: 'TCS' },
+      },
+      {
+        key: 'coordinates',
+        label: 'Uber Coordinates (lat, lng)',
+        type: 'text',
+        required: true,
+        showWhen: { field: 'delivery_mode', value: 'Uber' },
+      },
+      {
+        key: 'pickup_location',
+        label: 'Pickup Location',
+        type: 'text',
+        required: true,
+        showWhen: { field: 'delivery_mode', value: 'Self Collection' },
       },
       // 2026-05-23 B4: attested/non-attested set_type restricted to Case Files
       // only. Removed SET_TYPE_WITH_QUANTITIES spread from Case Search.
@@ -1058,7 +1142,7 @@ const caseFilingSteps: IntakeStep[] = [
       },
       {
         key: 'case_type_other',
-        label: 'Specify case type',
+        label: 'Other — type your case type',
         type: 'text',
         required: false,
         placeholder: 'Type the case type as it appears on your record',
@@ -1076,14 +1160,18 @@ const caseFilingSteps: IntakeStep[] = [
         label: 'Year',
         type: 'year_select',
         required: true,
+        // 5-24-26 #16: Lower Court never requires case number/year. Lock-step
+        // with REQUIRED_FIELDS_OPTIONAL_BY_TIER.judicial_case_filing.lower.
+        requiredByCourtTier: { lower: false },
         hint: 'Year the case was filed (per the order sheet or petition heading).',
       },
       { key: 'case_title', label: 'Case Title', type: 'text', required: true },
       {
+        // 5-24-26: judge_name now renders for both New and Pending cases
+        // (showWhen removed).
         key: 'judge_name',
         label: 'Judge Name',
         type: 'text',
-        showWhen: { field: 'case_status', value: 'Pending Case' },
       },
       {
         key: 'judge_designation',
@@ -1183,19 +1271,28 @@ const powerOfAttorneySteps: IntakeStep[] = [
       },
       {
         key: 'case_type_other',
-        label: 'Specify case type',
+        label: 'Other — type your case type',
         type: 'text',
         required: false,
         placeholder: 'Type the case type as it appears on your record',
         showWhen: { field: 'case_type', value: 'Other' },
         hint: 'Type the case category exactly as it appears on your court record.',
       },
-      { key: 'case_no', label: 'Case No', type: 'text', required: true },
+      {
+        key: 'case_no',
+        label: 'Case No',
+        type: 'text',
+        required: true,
+        // 5-24-26 #16: Lower Court never requires case number/year. BE already
+        // drops both in REQUIRED_FIELDS_OPTIONAL_BY_TIER.judicial_power_of_attorney.lower.
+        requiredByCourtTier: { lower: false },
+      },
       {
         key: 'year',
         label: 'Year',
         type: 'year_select',
         required: true,
+        requiredByCourtTier: { lower: false },
         hint: 'Year the case was filed (per the order sheet or petition heading).',
       },
       { key: 'case_title', label: 'Case Title', type: 'text', required: true },

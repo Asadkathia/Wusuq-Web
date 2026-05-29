@@ -383,6 +383,8 @@ export function JudicialServiceBlock({
   selectServiceId,
   onServiceChange,
 }: JudicialServiceBlockProps) {
+  const [forceOpen, setForceOpen] = useState(false);
+
   if (!courtTierId) return null;
 
   const single = services.length === 1 ? services[0] : null;
@@ -394,6 +396,12 @@ export function JudicialServiceBlock({
     label: s.name,
     subtext: s.isPrincipalSeat ? 'Principal seat' : undefined,
   }));
+
+  // When a service is already selected (and the tier offers multiple), collapse
+  // to a chip + "Change" button — mirroring the City picker — instead of
+  // re-rendering the full tile grid every time.
+  const selected = services.find((s) => s.id === selectServiceId) ?? null;
+  const showServiceChip = Boolean(selected) && services.length > 1 && !forceOpen;
 
   return (
     <div className="md:col-span-2 rounded-2xl border border-border-soft bg-surface-muted/50 p-5 space-y-5">
@@ -425,6 +433,27 @@ export function JudicialServiceBlock({
             Selected
           </span>
         </div>
+      ) : showServiceChip && selected ? (
+        <div>
+          <FieldLabel required>Service</FieldLabel>
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="inline-flex items-center gap-2 rounded-full border border-brand-200 bg-brand-50 px-4 py-2 text-sm font-medium text-brand-700">
+              <Building2 className="h-3.5 w-3.5" />
+              <span className="font-semibold">{selected.name}</span>
+              {selected.isPrincipalSeat ? (
+                <span className="text-brand-600/80">— Principal seat</span>
+              ) : null}
+            </span>
+            <button
+              type="button"
+              onClick={() => setForceOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-border-soft bg-surface px-3 py-1.5 text-xs font-semibold text-slate-700 transition-colors hover:bg-surface-muted"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+              Change
+            </button>
+          </div>
+        </div>
       ) : (
         <div>
           <FieldLabel required>Service</FieldLabel>
@@ -433,7 +462,10 @@ export function JudicialServiceBlock({
             value={selectServiceId}
             onChange={(id) => {
               const picked = services.find((s) => s.id === id);
-              if (picked) onServiceChange(picked);
+              if (picked) {
+                onServiceChange(picked);
+                setForceOpen(false);
+              }
             }}
             ariaLabel="Service"
           />

@@ -1,10 +1,110 @@
 'use client';
 
+import { useState } from 'react';
+import { Pencil } from 'lucide-react';
 import type { IntakeField } from '@/lib/intake-flows';
 import { parseDeliveryAddress, parseBench, formatBenchJudgeName, showWhenSatisfied, parseCities } from '@/lib/intake-flows';
 import { Select } from '@/components/ui/select';
 
 export type BenchTypeOption = { value: string; label: string; count: number };
+
+// 5-24-26 #13: single-select bundle picker that collapses to the chosen option
+// once selected (the rest disappear), mirroring the city/court pickers. Lives
+// as a component — not inline in renderField — because it owns `useState` and
+// renderField is invoked inside a .map() (rules-of-hooks).
+function CheckboxSingleField({
+  field,
+  value,
+  options,
+  labelFor,
+  onChange,
+  onBlur,
+  hasError,
+  errorMsg,
+}: {
+  field: IntakeField;
+  value: string;
+  options: string[];
+  labelFor: (o: string) => string;
+  onChange: (key: string, value: string) => void;
+  onBlur?: (key: string, value: string) => void;
+  hasError: boolean;
+  errorMsg: string;
+}) {
+  const [forceOpen, setForceOpen] = useState(false);
+  const selected = options.includes(value) ? value : '';
+
+  if (selected && !forceOpen) {
+    return (
+      <>
+        <div className="flex flex-wrap items-center gap-3 pt-1">
+          <span className="inline-flex items-center gap-2 rounded-full border border-brand-200 bg-brand-50 px-4 py-2 text-sm font-medium text-brand-700">
+            <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-md border border-brand-500 bg-brand-500 text-white">
+              <svg viewBox="0 0 12 12" className="h-2.5 w-2.5" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M2.5 6.5l2.5 2.5 4.5-5.5" />
+              </svg>
+            </span>
+            <span className="font-semibold">{labelFor(selected)}</span>
+          </span>
+          <button
+            type="button"
+            onClick={() => setForceOpen(true)}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-border-soft bg-surface px-3 py-1.5 text-xs font-semibold text-slate-700 transition-colors hover:bg-surface-muted"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+            Change
+          </button>
+        </div>
+        {hasError && <p className="mt-1 text-xs text-rose-600">{errorMsg}</p>}
+      </>
+    );
+  }
+
+  return (
+    <>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+        {options.map((o) => {
+          const active = value === o;
+          return (
+            <button
+              key={o}
+              type="button"
+              onClick={() => {
+                const next = value === o ? '' : o;
+                onChange(field.key, next);
+                onBlur?.(field.key, next);
+                // Re-collapse to the chosen bundle (no-op when cleared).
+                if (next) setForceOpen(false);
+              }}
+              className={[
+                'flex items-center gap-3 rounded-xl border px-3.5 py-3 text-left text-sm',
+                'transition-[background-color,border-color] duration-150',
+                active
+                  ? 'border-brand-500 bg-brand-50 text-brand-800'
+                  : 'border-border-soft bg-surface text-slate-700 hover:bg-surface-muted',
+              ].join(' ')}
+            >
+              <span
+                className={[
+                  'flex h-4 w-4 shrink-0 items-center justify-center rounded-md border',
+                  active ? 'border-brand-500 bg-brand-500 text-white' : 'border-slate-300 bg-surface',
+                ].join(' ')}
+              >
+                {active ? (
+                  <svg viewBox="0 0 12 12" className="h-2.5 w-2.5" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M2.5 6.5l2.5 2.5 4.5-5.5" />
+                  </svg>
+                ) : null}
+              </span>
+              <span className="min-w-0 flex-1">{labelFor(o)}</span>
+            </button>
+          );
+        })}
+      </div>
+      {hasError && <p className="mt-1 text-xs text-rose-600">{errorMsg}</p>}
+    </>
+  );
+}
 
 const YEAR_OPTIONS: string[] = (() => {
   const current = new Date().getFullYear();
@@ -282,46 +382,16 @@ export function renderField(
     const options = field.options ?? [];
     const labelFor = field.optionsLabel ? (o: string) => field.optionsLabel!(o, payload) : (o: string) => o;
     return (
-      <>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
-          {options.map((o) => {
-            const active = value === o;
-            return (
-              <button
-                key={o}
-                type="button"
-                onClick={() => {
-                  const next = value === o ? '' : o;
-                  onChange(field.key, next);
-                  onBlur?.(field.key, next);
-                }}
-                className={[
-                  'flex items-center gap-3 rounded-xl border px-3.5 py-3 text-left text-sm',
-                  'transition-[background-color,border-color] duration-150',
-                  active
-                    ? 'border-brand-500 bg-brand-50 text-brand-800'
-                    : 'border-border-soft bg-surface text-slate-700 hover:bg-surface-muted',
-                ].join(' ')}
-              >
-                <span
-                  className={[
-                    'flex h-4 w-4 shrink-0 items-center justify-center rounded-md border',
-                    active ? 'border-brand-500 bg-brand-500 text-white' : 'border-slate-300 bg-surface',
-                  ].join(' ')}
-                >
-                  {active ? (
-                    <svg viewBox="0 0 12 12" className="h-2.5 w-2.5" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M2.5 6.5l2.5 2.5 4.5-5.5" />
-                    </svg>
-                  ) : null}
-                </span>
-                <span className="min-w-0 flex-1">{labelFor(o)}</span>
-              </button>
-            );
-          })}
-        </div>
-        {hasError && <p className="mt-1 text-xs text-rose-600">{errorMsg}</p>}
-      </>
+      <CheckboxSingleField
+        field={field}
+        value={value}
+        options={options}
+        labelFor={labelFor}
+        onChange={onChange}
+        onBlur={onBlur}
+        hasError={hasError}
+        errorMsg={errorMsg ?? ''}
+      />
     );
   }
 

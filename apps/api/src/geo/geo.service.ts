@@ -8,6 +8,7 @@ import {
   CITY_FANOUT,
   LOWER_COURT_ONLY_TEHSILS,
   PROVINCE_ALIAS,
+  resolveSpecialCourtSeatCityIds,
 } from './court-alias';
 
 type CourtCityEntry = { city: string; is_principal_seat: boolean };
@@ -536,9 +537,9 @@ export class GeoService {
                   await upsertSeat(court.id, cityId, false);
                 }
               } else if (courtType === 'Special Court') {
-                // 2026-05-23: special courts are unified across ALL cities, so
-                // they're seated by the global loop after this JSON walk — not
-                // per JSON entry. Skip here to avoid double work.
+                // Special courts are seated at the district level after this
+                // JSON walk (see SPECIAL_COURT_DISTRICTS resolution below) — not
+                // from per-JSON-entry city rows. Skip here to avoid double work.
                 continue;
               } else {
                 const court = await getOrCreateCourt(
@@ -571,16 +572,22 @@ export class GeoService {
       }
     }
 
-    // 2026-05-23 unified special courts: every GeoCity exposes the full
-    // canonical catalogue. Seat all SPECIAL_COURTS on every city (idempotent).
-    const allCities = await this.prisma.geoCity.findMany({
-      select: { id: true },
-    });
+    // 2026-05-25 district-level special courts: special courts sit at the
+    // district seat only (one city per district), not in every tehsil. Resolve
+    // the canonical SPECIAL_COURT_DISTRICTS list to seat-city ids and seat the
+    // full SPECIAL_COURTS catalogue on each (idempotent).
+    const { cityIds: specialSeatCityIds, unresolved: unresolvedSpecial } =
+      resolveSpecialCourtSeatCityIds(globalCityByName);
     for (const subName of SPECIAL_COURTS) {
       const court = await getOrCreateCourt('Special Court', subName);
-      for (const c of allCities) {
-        await upsertSeat(court.id, c.id, false);
+      for (const cityId of specialSeatCityIds) {
+        await upsertSeat(court.id, cityId, false);
       }
+    }
+    if (unresolvedSpecial.length > 0) {
+      result.warnings.push(
+        `Unresolved special-court districts: ${unresolvedSpecial.join(', ')}`,
+      );
     }
 
     for (const [province, cities] of unresolved.entries()) {
