@@ -1,43 +1,25 @@
 // ─────────────────────────────────────────────
-// Pricing year bands (mirrors apps/api pricing engine v2)
+// Pricing year bands (single source: @wusuq/shared)
 // ─────────────────────────────────────────────
 
-/**
- * Canonical year-band keys understood by the pricing resolver. Keep in sync
- * with the `YEAR_BANDS` table in `apps/api/src/pricing/pricing.service.ts`.
- */
-export type YearBand =
-  | 'pending'
-  | 'current'
-  | 'y2025'
-  | 'y2024_2023'
-  | 'y2022_2020'
-  | 'y2019_2017'
-  | 'y2016_back';
+import { deriveYearBand, type YearBand as SharedYearBand } from '@wusuq/shared';
 
 /**
- * Derive the canonical {@link YearBand} for the wizard payload.
- *
- *  - Pending cases short-circuit to `pending` regardless of any year input
- *    (they have no decided year).
- *  - Empty / undefined year falls back to `current`.
- *  - Years on/after the current year map to `current`.
- *  - Earlier years bucket into the explicit historical bands.
+ * Canonical year-band keys understood by the pricing resolver. Re-exported
+ * from `@wusuq/shared` so the wizard and the API agree on one definition.
+ */
+export type YearBand = SharedYearBand;
+
+/**
+ * Derive the canonical {@link YearBand} for the wizard payload. Thin wrapper
+ * over the shared {@link deriveYearBand} so band logic lives in exactly one
+ * place (the API resolver uses the same function).
  */
 export function computeYearBand(
   year: number | undefined,
   isPending: boolean,
 ): YearBand {
-  if (isPending) return 'pending';
-  if (!year || Number.isNaN(year)) return 'current';
-  const currentYear = new Date().getFullYear();
-  if (year >= currentYear) return 'current';
-  if (year === 2025) return 'y2025';
-  if (year >= 2023 && year <= 2024) return 'y2024_2023';
-  if (year >= 2020 && year <= 2022) return 'y2022_2020';
-  if (year >= 2017 && year <= 2019) return 'y2019_2017';
-  if (year <= 2016) return 'y2016_back';
-  return 'current';
+  return deriveYearBand(isPending ? 'Pending Case' : 'Decided Case', year);
 }
 
 export type IntakeFieldType =

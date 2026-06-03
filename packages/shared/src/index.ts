@@ -446,6 +446,13 @@ export type NotificationType =
 // ── Payment model per intake flow (Spec 2, 2026-05-23) ──────────────
 export type PaymentModel = 'SPLIT' | 'ONE_TIME';
 
+// SPLIT = the four PHYSICAL-document services. Each is billed in two parts: an
+// initial (base) charge at intake, then a clerk-finalized remainder (printing /
+// attestation / delivery) after the work is done — delivery is part of that
+// second payment because these services hand the consumer a physical document
+// on completion. The four DIGITAL judicial flows (Case Information, Case Search,
+// Case Filing, Power of Attorney) are a single one-time payment with no delivery
+// leg (owner spec, 2026-06).
 export const PAYMENT_MODEL_BY_FLOW: Record<string, PaymentModel> = {
   judicial_case_files: 'SPLIT',
   non_judicial_copy_of_fir: 'SPLIT',
@@ -470,6 +477,11 @@ export interface ServiceChargeCapabilities {
   pdf: boolean;
 }
 
+// Clerk phase-2 charges apply to the four PHYSICAL-document services. Only Case
+// Files adds attestation; the three non-judicial copies carry printing /
+// delivery / pdf but not attestation. The four DIGITAL judicial flows fall
+// through to NO_CHARGES — no clerk-added charges and, crucially, no delivery
+// leg (delivery is gated on `delivery` capability in the pricing resolver).
 export const SERVICE_CHARGE_CAPABILITIES: Record<string, ServiceChargeCapabilities> = {
   judicial_case_files: { attestation: true, printing: true, delivery: true, pdf: true },
   non_judicial_copy_of_fir: { attestation: false, printing: true, delivery: true, pdf: true },
@@ -515,4 +527,224 @@ export function orderCaseDetailKeys(keys: string[]): string[] {
     .filter((k) => !rank.has(canon(k)))
     .sort((a, b) => a.localeCompare(b));
   return [...known, ...unknown];
+}
+
+// ─────────────────────────────────────────────
+// Pricing input — single source of truth
+// ─────────────────────────────────────────────
+//
+// Maps an intake payload to the pricing resolver's inputs. Consumed by BOTH
+// the wizard's live checkout preview (apps/web) and the server's
+// createIntakeTicket (apps/api) so the QUOTED price and the PERSISTED charge
+// can never drift.
+//
+// Root cause this fixes (2026-06): createIntakeTicket built its resolve input
+// by hand and had silently fallen behind the wizard — it omitted yearBand
+// (→ Pending Case Files charged on the `current` band: Rs 3,300 quote vs
+// Rs 7,300 charge), caseTitle (State-vs surcharge not charged), cityCount +
+// searchMethod (multi-city / both-method Case Search undercharged) and
+// deliveryMethod. One builder used by both sides removes the whole class.
+
+/**
+ * Canonical pricing year-band keys understood by the resolver. Keep the
+ * historical-band breakpoints in sync with the `YEAR_BAND_RANGES` seeded in
+ * apps/api/scripts/seed-pricing.ts.
+ */
+export type YearBand =
+  | 'pending'
+  | 'current'
+  | 'y2025'
+  | 'y2024_2023'
+  | 'y2022_2020'
+  | 'y2019_2017'
+  | 'y2016_back';
+
+/** A case is "pending" (no decided year) when its status reads Pending. */
+export function isPendingCaseStatus(caseStatus?: string | null): boolean {
+  return typeof caseStatus === 'string' && /pending/i.test(caseStatus);
+}
+
+/**
+ * Derive the pricing {@link YearBand} from case status + year.
+ *
+ * Pending cases short-circuit to `pending` BEFORE any year logic — they have
+ * no decided year, so a stray filing-year must not bucket them into a
+ * historical band. The resolver's seed only carries a `pending` rule for Case
+ * Files; every other flow falls back to `current`, so returning `pending`
+ * here is safe for all flows.
+ *
+ * This is the ONLY band-derivation implementation. The API resolver and the
+ * web wizard both route through it (the wizard's `computeYearBand` delegates
+ * here) so the band can't be computed two different ways.
+ */
+export function deriveYearBand(
+  caseStatus: string | undefined,
+  caseYear: number | undefined,
+  currentYear: number = new Date().getFullYear(),
+): YearBand {
+  if (isPendingCaseStatus(caseStatus)) return 'pending';
+  if (!caseYear || Number.isNaN(caseYear)) return 'current';
+  if (caseYear >= currentYear) return 'current';
+  if (caseYear === 2025) return 'y2025';
+  if (caseYear >= 2023 && caseYear <= 2024) return 'y2024_2023';
+  if (caseYear >= 2020 && caseYear <= 2022) return 'y2022_2020';
+  if (caseYear >= 2017 && caseYear <= 2019) return 'y2019_2017';
+  if (caseYear <= 2016) return 'y2016_back';
+  return 'current';
+}
+
+/**
+ * Parse the `cities` payload value (JSON-array string, real array, or a legacy
+ * single id) into a list of GeoCity ids. Used to count cities for the Case
+ * Search multi-city multiplier.
+ */
+export function parsePayloadCities(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.filter((v): v is string => typeof v === 'string' && Boolean(v));
+  }
+  if (typeof value !== 'string') return [];
+  const trimmed = value.trim();
+  if (!trimmed) return [];
+  if (trimmed.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(trimmed) as unknown;
+      if (Array.isArray(parsed)) {
+        return parsed.filter(
+          (v): v is string => typeof v === 'string' && Boolean(v),
+        );
+      }
+    } catch {
+      // fall through to single-id fallback
+    }
+  }
+  return [trimmed];
+}
+
+/** Resolver input shape produced by {@link buildPricingResolveInput}. */
+export interface PricingResolveInput {
+  flow: string;
+  courtLevel?: string;
+  caseStatus?: string;
+  caseYear?: number;
+  yearBand: YearBand;
+  setType?: string;
+  attestedQty: number;
+  nonAttestedQty: number;
+  wantPdf: boolean;
+  deliveryMethod?: string;
+  province?: string;
+  cityId?: string;
+  city?: string;
+  caseTitle?: string;
+  cityCount: number;
+  searchMethod?: string;
+  docBundle?: string;
+}
+
+/**
+ * Build the full pricing-resolver input from a raw intake payload. The single
+ * source both the wizard preview and createIntakeTicket call, so the quote and
+ * the charge are computed from identical inputs.
+ */
+export function buildPricingResolveInput(
+  flow: string,
+  payload: Record<string, string | undefined> | undefined | null,
+): PricingResolveInput {
+  const p = payload ?? {};
+
+  const caseStatus = p.case_status || undefined;
+  // Decided cases price on the decided_date year; pending/unknown on
+  // case_year/year. Prefer decided_date directly so the live preview is
+  // correct even before the wizard syncs payload.year.
+  const decidedYear = (() => {
+    const m = /^(\d{4})/.exec(p.decided_date ?? '');
+    return m && m[1] ? parseInt(m[1], 10) || undefined : undefined;
+  })();
+  const rawYear = p.case_year ?? p.year;
+  const caseYear =
+    decidedYear ?? (rawYear ? parseInt(rawYear, 10) || undefined : undefined);
+
+  const setType = p.set_type || undefined;
+  let attestedQty = 0;
+  let nonAttestedQty = 0;
+  if (setType === 'attested') {
+    attestedQty = parseInt(p.attested_qty ?? '0', 10) || 0;
+  } else if (setType === 'non_attested') {
+    nonAttestedQty = parseInt(p.non_attested_qty ?? '0', 10) || 0;
+  } else if (setType === 'both') {
+    attestedQty = parseInt(p.both_attested_qty ?? '0', 10) || 0;
+    nonAttestedQty = parseInt(p.both_non_attested_qty ?? '0', 10) || 0;
+  }
+
+  const isCaseSearch = flow === 'judicial_case_search';
+  const cityCount = isCaseSearch
+    ? Math.max(1, parsePayloadCities(p.cities).length)
+    : 1;
+
+  const deliveryMethod =
+    (p.delivery_mode || p.delivery_method || '').toLowerCase() || undefined;
+
+  return {
+    flow,
+    courtLevel: p.select_court_type || undefined,
+    caseStatus,
+    caseYear,
+    yearBand: deriveYearBand(caseStatus, caseYear),
+    setType,
+    attestedQty,
+    nonAttestedQty,
+    wantPdf: p.want_pdf_before_dispatch === 'Yes',
+    deliveryMethod,
+    province: p.province ?? p.province_capital ?? undefined,
+    cityId: p.city_id || undefined,
+    city: p.select_court_city ?? p.city ?? p.select_city ?? undefined,
+    caseTitle: p.case_title || undefined,
+    cityCount,
+    searchMethod: isCaseSearch ? p.search_method || undefined : undefined,
+    docBundle: p.required_documentations || undefined,
+  };
+}
+
+// ─────────────────────────────────────────────
+// Case Information document-bundle add-on (region-keyed)
+// ─────────────────────────────────────────────
+//
+// 2026 owner rate sheet. Case Information prices each document bundle as an
+// add-on on top of the seeded regional base fee. Single source shared by the
+// API resolver (pricing.service.ts re-exports it) and the wizard's bundle
+// picker, so the price shown next to each option and the price charged at
+// checkout can't diverge. Keyed by the canonical DocBundle value stored in
+// payload.required_documentations.
+export const CASE_INFO_BUNDLE_SURCHARGE: Record<
+  'Punjab' | 'other',
+  Record<string, number>
+> = {
+  Punjab: {
+    doc_only_petition: 500,
+    doc_petition_plus_last_order: 700,
+    doc_petition_plus_complete_order: 800,
+    doc_only_last_order: 750,
+    doc_only_complete_order_sheet: 1500,
+  },
+  other: {
+    doc_only_petition: 750,
+    doc_petition_plus_last_order: 1500,
+    doc_petition_plus_complete_order: 1500,
+    doc_only_last_order: 750,
+    doc_only_complete_order_sheet: 1200,
+  },
+};
+
+/** Resolve the Case Information bundle add-on for a region + bundle. */
+export function caseInfoBundleSurcharge(
+  flow: string,
+  region: string | undefined,
+  docBundle: string | undefined,
+): number {
+  if (flow !== 'judicial_case_information' || !docBundle) return 0;
+  const table =
+    region === 'Punjab'
+      ? CASE_INFO_BUNDLE_SURCHARGE.Punjab
+      : CASE_INFO_BUNDLE_SURCHARGE.other;
+  return table[docBundle] ?? 0;
 }

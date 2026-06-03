@@ -1059,6 +1059,195 @@ describe('TicketsService', () => {
     });
   });
 
+  // Regression guard for the 2026-06 "quote ≠ charge" bug class: createIntakeTicket
+  // must hand the resolver the SAME inputs the wizard's checkout preview sends
+  // (via the shared buildPricingResolveInput), so the persisted charge equals the
+  // quote. The hand-maintained call site previously dropped yearBand (pending
+  // overcharge), caseTitle (State-vs surcharge) and cityCount/searchMethod
+  // (multi-city Case Search undercharge).
+  describe('createIntakeTicket — full shared pricing input (quote = charge)', () => {
+    function harness(resolveOverride: Record<string, unknown> = {}) {
+      const resolveCalls: Record<string, unknown>[] = [];
+      const created: { data: Record<string, unknown> }[] = [];
+      const prisma = {
+        user: { findUnique: jest.fn().mockResolvedValue({ id: 'consumer-1' }) },
+        service: {
+          findUnique: jest
+            .fn()
+            .mockResolvedValue({ id: 'svc-1', category: 'judicial' }),
+        },
+        ticket: {
+          create: jest.fn().mockImplementation(async (args: any) => {
+            created.push(args);
+            return { id: 'tkt-new', ...args.data };
+          }),
+        },
+        ticketStatusHistory: { create: jest.fn().mockResolvedValue({}) },
+        ticketIntakeDraft: { delete: jest.fn().mockResolvedValue({}) },
+      };
+      const auditLogsService = { create: jest.fn().mockResolvedValue({}) };
+      const pricingService = {
+        resolve: jest
+          .fn()
+          .mockImplementation((input: Record<string, unknown>) => {
+            resolveCalls.push(input);
+            return Promise.resolve({
+              matched: true,
+              rulesExistForFlow: true,
+              basePrice: 1,
+              attestedCharge: 0,
+              nonAttestedCharge: 0,
+              deliveryCharge: 0,
+              serviceCost: 1,
+              total: 1,
+              clerkBaseCost: null,
+              ...resolveOverride,
+            });
+          }),
+      };
+      const geoService = { resolveProvinceByCity: jest.fn() };
+      const service = new TicketsService(
+        prisma as never,
+        auditLogsService as never,
+        pricingService as never,
+        geoService as never,
+        makeDispatcher() as never,
+      );
+      return { service, resolveCalls, created };
+    }
+
+    const actor = { actorUserId: 'consumer-1', actorEmail: 'c@x.com' };
+
+    it('Pending Case Files → yearBand=pending (not current)', async () => {
+      const { service, resolveCalls } = harness();
+      await service.createIntakeTicket(
+        {
+          consumerId: 'consumer-1',
+          serviceId: 'svc-1',
+          flow: 'judicial_case_files',
+          payload: {
+            select_service: 'x',
+            select_court: 'x',
+            select_court_city: 'Lahore',
+            select_court_type: 'lower',
+            city_id: 'city-lhr',
+            case_petition_no: '1',
+            case_year: '2024',
+            case_type: 'civil',
+            case_status: 'Pending Case',
+            case_title: 'A vs B',
+            judge_name: 'Judge Smith',
+            sets: '1',
+            set_type: 'attested',
+            delivery_mode: 'courier',
+          },
+        } as never,
+        actor,
+      );
+      // Even though case_year=2024 (a historical band), a Pending case must
+      // resolve on the 'pending' band — the root cause of the Rs 3,300 → 7,300
+      // overcharge was deriving 'current' here.
+      expect(resolveCalls[0]?.yearBand).toBe('pending');
+    });
+
+    it('forwards caseTitle so the State-vs surcharge is charged', async () => {
+      const { service, resolveCalls } = harness();
+      await service.createIntakeTicket(
+        {
+          consumerId: 'consumer-1',
+          serviceId: 'svc-1',
+          flow: 'judicial_case_files',
+          payload: {
+            select_service: 'x',
+            select_court: 'x',
+            select_court_city: 'Lahore',
+            select_court_type: 'lower',
+            case_petition_no: '1',
+            case_year: '2024',
+            case_type: 'civil',
+            case_status: 'Decided Case',
+            decided_date: '2024-03-01',
+            case_title: 'State vs Khan',
+            judge_name: 'Judge Smith',
+            sets: '1',
+            set_type: 'attested',
+            delivery_mode: 'courier',
+          },
+        } as never,
+        actor,
+      );
+      expect(resolveCalls[0]?.caseTitle).toBe('State vs Khan');
+    });
+
+    it('Case Search multi-city → forwards cityCount and searchMethod', async () => {
+      const { service, resolveCalls } = harness();
+      await service.createIntakeTicket(
+        {
+          consumerId: 'consumer-1',
+          serviceId: 'svc-1',
+          flow: 'judicial_case_search',
+          payload: {
+            select_service: 'x',
+            select_court: 'x',
+            select_court_city: 'Lahore',
+            select_court_type: 'high',
+            case_petition_no: '1',
+            case_year: '2024',
+            case_type: 'civil',
+            case_status: 'Decided Case',
+            decided_date: '2024-03-01',
+            case_title: 'A vs B',
+            delivery_mode: 'courier',
+            cities: JSON.stringify(['city-1', 'city-2', 'city-3']),
+            search_method: 'both',
+          },
+        } as never,
+        actor,
+      );
+      expect(resolveCalls[0]?.cityCount).toBe(3);
+      expect(resolveCalls[0]?.searchMethod).toBe('both');
+    });
+
+    it('SPLIT flow persists deliveryCharges=0 at intake (delivery is a 2nd-payment charge)', async () => {
+      // Resolver returns a non-zero delivery estimate, but for a SPLIT physical
+      // flow delivery is owned by finalizeRemainder (the 2nd payment), so the
+      // created ticket must persist 0 — otherwise the consumer board shows a
+      // Delivery line that isn't in totalAmount.
+      const { service, created } = harness({
+        deliveryCharge: 100,
+        serviceCost: 3000,
+        total: 3100,
+      });
+      await service.createIntakeTicket(
+        {
+          consumerId: 'consumer-1',
+          serviceId: 'svc-1',
+          flow: 'judicial_case_files',
+          payload: {
+            select_service: 'x',
+            select_court: 'x',
+            select_court_city: 'Lahore',
+            select_court_type: 'lower',
+            case_petition_no: '1',
+            case_year: '2024',
+            case_type: 'civil',
+            case_status: 'Decided Case',
+            decided_date: '2024-03-01',
+            case_title: 'A vs B',
+            judge_name: 'Judge Smith',
+            sets: '1',
+            set_type: 'attested',
+            delivery_mode: 'courier',
+          },
+        } as never,
+        actor,
+      );
+      expect(created[0]?.data.deliveryCharges).toBe(0);
+      // billedTotal is still base-only (serviceCost) for SPLIT.
+      expect(created[0]?.data.totalAmount).toBe(3000);
+    });
+  });
+
   describe('Payment gate', () => {
     // Keep the suite hermetic: the dev escape hatch must be off by default so
     // the gate assertions hold regardless of the ambient .env.
@@ -1280,23 +1469,62 @@ describe('TicketsService', () => {
 });
 
 describe('payment model + charge capabilities (Spec 2)', () => {
-  it('classifies SPLIT vs ONE_TIME flows', () => {
-    expect(paymentModelFor('judicial_case_files')).toBe('SPLIT');
-    expect(paymentModelFor('non_judicial_registry_deed')).toBe('SPLIT');
-    expect(paymentModelFor('judicial_case_information')).toBe('ONE_TIME');
+  it('splits the four physical-document services; digital judicial flows are one-time', () => {
+    // SPLIT = physical-document services (Case Files + the 3 non-judicial copies).
+    for (const flow of [
+      'judicial_case_files',
+      'non_judicial_copy_of_fir',
+      'non_judicial_registry_deed',
+      'non_judicial_criminal_record_search',
+    ]) {
+      expect(paymentModelFor(flow)).toBe('SPLIT');
+    }
+    // ONE_TIME = the four digital judicial flows.
+    for (const flow of [
+      'judicial_case_information',
+      'judicial_case_search',
+      'judicial_case_filing',
+      'judicial_power_of_attorney',
+    ]) {
+      expect(paymentModelFor(flow)).toBe('ONE_TIME');
+    }
     expect(paymentModelFor(undefined)).toBe('ONE_TIME');
   });
-  it('exposes attestation only for case files', () => {
-    expect(chargeCapabilitiesFor('judicial_case_files').attestation).toBe(true);
-    expect(chargeCapabilitiesFor('non_judicial_copy_of_fir').attestation).toBe(
-      false,
-    );
-    expect(chargeCapabilitiesFor('judicial_case_information')).toEqual({
-      attestation: false,
-      printing: false,
-      delivery: false,
-      pdf: false,
+  it('exposes clerk charges + delivery for physical flows only; attestation for case files only', () => {
+    expect(chargeCapabilitiesFor('judicial_case_files')).toEqual({
+      attestation: true,
+      printing: true,
+      delivery: true,
+      pdf: true,
     });
+    // The 3 non-judicial copies are physical (printing/delivery/pdf) but have no
+    // attestation step.
+    for (const flow of [
+      'non_judicial_copy_of_fir',
+      'non_judicial_registry_deed',
+      'non_judicial_criminal_record_search',
+    ]) {
+      expect(chargeCapabilitiesFor(flow)).toEqual({
+        attestation: false,
+        printing: true,
+        delivery: true,
+        pdf: true,
+      });
+    }
+    // Digital judicial flows: no clerk charges, no delivery leg.
+    for (const flow of [
+      'judicial_case_information',
+      'judicial_case_search',
+      'judicial_case_filing',
+      'judicial_power_of_attorney',
+    ]) {
+      expect(chargeCapabilitiesFor(flow)).toEqual({
+        attestation: false,
+        printing: false,
+        delivery: false,
+        pdf: false,
+      });
+    }
   });
 });
 
@@ -1489,7 +1717,7 @@ describe('finalizeRemainder (Task 1.4)', () => {
     expect(updateCall.data.totalAmount).toBe(8000); // 5000 + 3000
   });
 
-  it('zeroes attestation charges for flows without attestation capability', async () => {
+  it('zeroes attestation but keeps printing/delivery for non-judicial physical copies', async () => {
     const { service, prisma } = buildFinalizeHarness({
       intakeFlow: 'non_judicial_copy_of_fir',
       serviceCost: 3000,
@@ -1516,17 +1744,18 @@ describe('finalizeRemainder (Task 1.4)', () => {
 
     await service.finalizeRemainder(
       'tkt-fin',
-      { attestedCharges: 9999, printingCharges: 500 }, // attestation should be zeroed
+      { attestedCharges: 9999, printingCharges: 500, deliveryCharges: 200 },
       { actorUserId: 'admin-1' },
     );
 
     const updateCall = prisma.ticket.update.mock.calls[0][0];
-    // attestation is NOT a capability of non_judicial_copy_of_fir
+    // Copy of FIR is a physical-document service: printing + delivery are real
+    // clerk charges, but attestation is NOT a capability → zeroed.
     expect(updateCall.data.attestedCharges).toBe(0);
-    // printing IS a capability
     expect(updateCall.data.printingCharges).toBe(500);
-    // totalAmount = 3000 + 0 (attested zeroed) + 500 = 3500
-    expect(updateCall.data.totalAmount).toBe(3500);
+    expect(updateCall.data.deliveryCharges).toBe(200);
+    // totalAmount = 3000 + 0 (attested) + 500 (printing) + 200 (delivery) = 3700
+    expect(updateCall.data.totalAmount).toBe(3700);
   });
 
   it('throws NotFoundException when ticket not found', async () => {

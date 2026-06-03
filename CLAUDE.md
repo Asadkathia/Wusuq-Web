@@ -73,6 +73,8 @@ pnpm prisma:seed            # Seed default super admin (local only)
 ```bash
 cd apps/api && npx ts-node --esm scripts/seed-geo.ts
 ```
+- Special courts seat at the DISTRICT level only (`SPECIAL_COURT_DISTRICTS` + `resolveSpecialCourtSeatCityIds` in `court-alias.ts`) — one seat city per district, never every tehsil.
+- `CITY_ALIAS` maps court-JSON city names like `"Babuzai (Swat)"` to the bare `GeoCity` name; a wrong alias silently leaves a tehsil with no Lower Court. Re-run `seed-geo.ts` after editing either.
 
 ### Catalogue & pricing seeds
 ```bash
@@ -141,6 +143,23 @@ NestJS convention: create `src/<domain>/<domain>.module.ts`, `.controller.ts`, `
 **yearBand `pending` fallback.** The seed only carries `pending` set-type rules for `region='Punjab'`. For Pending Cases outside Punjab, both `availabilityFor` and `resolve` fall back to `yearBand='current'` when the requested band yields zero matches. This mirrors the wizard's implicit "pending means no decided year → use current rate" contract. Don't add ad-hoc `pending` rules for `region='other'` — fix the xlsx if the rate should genuinely differ.
 
 Set-type rules in the xlsx only cover Case Files. Information / Filing / PoA flow through the resolver with `setType=null` — don't render the Set Type picker for those services.
+
+**One source for the resolve input — `buildPricingResolveInput(flow, payload)` in `@wusuq/shared`.** BOTH the wizard's live checkout preview (`intake-wizard.tsx`) and the server's `createIntakeTicket` build the resolver input through this single mapper, so the quote and the persisted charge are derived from identical inputs. NEVER hand-extract resolve fields at a call site — that's exactly how the 2026-06 "quote ≠ charge" bugs happened (the server call had silently fallen behind the wizard, dropping `yearBand` → Pending Case Files charged on the `current` band, Rs 3,300 quote vs 7,300 charge; plus `caseTitle`/`cityCount`/`searchMethod` → State-vs + multi-city Case Search undercharges). Add any new pricing input to the shared builder, not to a caller.
+
+**Year-band derivation is `deriveYearBand(caseStatus, caseYear)` in `@wusuq/shared`** — the ONLY implementation (web `computeYearBand` delegates to it; `resolve`/`availabilityFor` default to it when `yearBand` is omitted). It returns `'pending'` for any Pending status BEFORE year bucketing; a pending case must never fall into a historical/`current` band. Only `judicial_case_files` has a distinct `pending` rule; other flows fall back to `current`, so this is safe for all flows.
+
+**Case Information pricing.** Case Information is NOT aliased to Case Files: it has its own seeded base-fee rules PLUS a region-keyed (Punjab/other) per-document-bundle add-on (`CASE_INFO_BUNDLE_SURCHARGE` + `caseInfoBundleSurcharge` in `@wusuq/shared`, re-exported from `pricing.service.ts`, keyed on `payload.required_documentations`) summed into `serviceCost`/`total`. Its delivery is digital-only → no delivery fee/charge (see physical-vs-digital model below). The wizard's bundle picker uses that same shared table and must derive region from the **selected city's province** (`geo.allCities`), NOT `payload.province` — judicial flows use `CityBlock`, which never sets `payload.province` (only the FIR `LocationBlock` does), so reading it showed the wrong region's add-on (2026-06 bug #2).
+
+**Region derivation.** `resolve`/`availabilityFor` derive region via `deriveProvinceName` (province → GeoCity-id FK → city-name fallback). Callers (`/pricing-rules/resolve`, `/availability`, `createIntakeTicket`) must pass `cityId` (`payload.city_id`); without it, court-seat names that don't match `GeoCity.name` leave `region=undefined` and ALL region-keyed rules are discarded ("No pricing rule matched") — especially outside Punjab.
+
+**Physical-document vs digital flows (owner spec, 2026-06).** Two service classes, and three things move together with the class:
+- **Physical-document services** = Case Files + the 3 non-judicial copies (Copy of FIR, Registry/Deed, Criminal Record). These are **SPLIT** payment (base at intake, then a clerk-finalized remainder), **have a delivery leg** (collected in that 2nd payment), and expose clerk phase-2 charges (Case Files adds attestation; the non-judicial copies are printing/delivery/pdf only).
+- **Digital judicial flows** = Case Information, Case Search, Case Filing, Power of Attorney. **ONE_TIME** payment, **no delivery**, no clerk charges (`NO_CHARGES`).
+- The single source for "does this flow have delivery" is the `delivery` capability (`chargeCapabilitiesFor(flow).delivery`); the resolver gates its delivery fee + static delivery charge on `isPhysicalDeliveryFlow` = that capability — do NOT add a second hardcoded list. `PAYMENT_MODEL_BY_FLOW`, `SERVICE_CHARGE_CAPABILITIES` (both in `@wusuq/shared`) and the resolver must agree on the physical set.
+
+**PDF is priced at intake, not finalize.** `resolve` folds `pdfSurcharge` into `serviceCost` when `wantPdf` (`payload.want_pdf_before_dispatch === 'Yes'`). `finalizeRemainder` must NOT re-add PDF (double-charge). The checkout shows the `PDF surcharge` line for ALL flows including SPLIT (it's billed at intake) — delivery/attested lines stay hidden for SPLIT (deferred to the 2nd payment).
+
+**Clerk cost is internal-only** — persisted on the ticket but excluded from the consumer-facing `totalAmount` (`assignClerk` / `finalizeRemainder` / clerk-submit). Consumer views use `ConsumerTicketDetail` (`consumer-ticket-board.tsx`), never the admin `TicketDetailPanel` (which exposes clerk cost / PII).
 
 ### Case-type catalogue
 `CourtCaseType` is the DB-backed case-type dropdown source, seeded from 8 JSON files in `apps/api/data/case-types/` (7 scraped sources + a hardcoded snapshot fallback). The `GET /case-types` endpoint in `apps/api/src/case-types/case-types.service.ts` implements a specificity-fallback chain: try `(courtLevel, subCourt, district, highCourtCode)` first, then drop dimensions one at a time until a non-empty cohort is found. Each cohort ends with a `code='OTHER'` row that triggers the wizard's `case_type_other` free-text input.

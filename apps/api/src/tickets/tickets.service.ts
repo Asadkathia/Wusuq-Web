@@ -19,6 +19,7 @@ import {
   paymentModelFor,
   chargeCapabilitiesFor,
   isFullyPaid,
+  buildPricingResolveInput,
 } from '@wusuq/shared';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { PricingService } from '../pricing/pricing.service';
@@ -407,53 +408,18 @@ export class TicketsService {
     // Resolve pricing BEFORE creating the ticket so a misconfigured flow
     // fails fast instead of orphaning a zero-priced row that wallet
     // auto-deduction would silently skip.
+    //
+    // The resolve input is built by the SAME shared mapper the wizard uses for
+    // its live checkout preview (buildPricingResolveInput). This is the single
+    // source of truth: the quoted price and the persisted charge are derived
+    // from identical inputs, so they can never drift. Hand-maintaining this
+    // call site previously dropped yearBand (Pending Case Files overcharge),
+    // caseTitle (State-vs surcharge), and cityCount/searchMethod (multi-city
+    // Case Search undercharge).
     const payload = (dto.payload ?? {}) as Record<string, string | undefined>;
-    const courtLevel = payload['select_court_type'];
-    const caseStatus = payload['case_status'];
-    const rawYear = payload['case_year'] ?? payload['year'];
-    const caseYear = rawYear ? parseInt(rawYear, 10) || undefined : undefined;
-    const setType = payload['set_type'];
-    let attestedQty = 0;
-    let nonAttestedQty = 0;
-    if (setType === 'attested') {
-      attestedQty = parseInt(payload['attested_qty'] ?? '0', 10) || 0;
-    } else if (setType === 'non_attested') {
-      nonAttestedQty = parseInt(payload['non_attested_qty'] ?? '0', 10) || 0;
-    } else if (setType === 'both') {
-      attestedQty = parseInt(payload['both_attested_qty'] ?? '0', 10) || 0;
-      nonAttestedQty =
-        parseInt(payload['both_non_attested_qty'] ?? '0', 10) || 0;
-    }
-
-    const province = payload['province'] ?? payload['province_capital'] ?? '';
-    const city =
-      payload['select_court_city'] ??
-      payload['city'] ??
-      payload['select_city'] ??
-      '';
-    // #26: the selected GeoCity id lets the resolver derive the pricing region
-    // via the geo FK chain instead of fragile city-name matching.
-    const cityId = payload['city_id'] ?? undefined;
-    // 5-24-26 #17: PDF is priced at intake — fold the surcharge into
-    // serviceCost when the consumer ticks "Want PDF before dispatch?" so the
-    // quoted/charged price reflects it (the resolver adds pdfSurcharge to
-    // serviceCost). It is therefore NOT re-billed at finalize.
-    const wantPdf = payload['want_pdf_before_dispatch'] === 'Yes';
-    const pricing = await this.pricingService.resolve({
-      flow: dto.flow,
-      courtLevel,
-      caseStatus,
-      caseYear,
-      setType,
-      attestedQty,
-      nonAttestedQty,
-      province,
-      cityId,
-      city,
-      wantPdf,
-      // 5-24-26 #6/#7: Case Information bundle add-on (region-keyed).
-      docBundle: payload['required_documentations'],
-    });
+    const pricing = await this.pricingService.resolve(
+      buildPricingResolveInput(dto.flow, payload),
+    );
 
     if (!pricing.matched && pricing.rulesExistForFlow) {
       // Active rules exist for this flow but none matched the supplied
@@ -488,7 +454,15 @@ export class TicketsService {
         serviceCity: inferredServiceCity,
         caseType: inferredCaseType,
         serviceCost: pricing.matched ? pricing.serviceCost : 0,
-        deliveryCharges: pricing.matched ? pricing.deliveryCharge : 0,
+        // Delivery is a phase-2 charge for SPLIT (physical-document) flows — it
+        // is set by finalizeRemainder (the 2nd payment), so persist 0 at intake.
+        // Persisting the resolver's estimate here would surface a Delivery line
+        // on the consumer board that isn't part of totalAmount (display drift).
+        // ONE_TIME flows have no delivery leg, so this is 0 there too.
+        deliveryCharges:
+          pricing.matched && paymentModelFor(dto.flow) !== 'SPLIT'
+            ? pricing.deliveryCharge
+            : 0,
         defaultClerkCost: pricing.matched
           ? (pricing.clerkBaseCost ?? null)
           : null,

@@ -1,9 +1,19 @@
 import { Injectable } from '@nestjs/common';
+import { deriveYearBand, chargeCapabilitiesFor } from '@wusuq/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatePricingRuleDto } from './dto/create-pricing-rule.dto';
 import { UpdatePricingRuleDto } from './dto/update-pricing-rule.dto';
 import { ResolvePricingDto } from './dto/resolve-pricing.dto';
 import { UpdatePricingSettingsDto } from './dto/pricing-settings.dto';
+
+// Case Information document-bundle add-on now lives in @wusuq/shared (single
+// source shared with the wizard's bundle picker). Re-exported here so existing
+// importers (case-info-bundle.spec.ts) keep working.
+export {
+  caseInfoBundleSurcharge,
+  CASE_INFO_BUNDLE_SURCHARGE,
+} from '@wusuq/shared';
+import { caseInfoBundleSurcharge } from '@wusuq/shared';
 
 const PUNJAB_NAMES = new Set(['Punjab']);
 
@@ -46,51 +56,17 @@ function deriveRegion(province?: string): 'Punjab' | 'other' | undefined {
   return PUNJAB_NAMES.has(province) ? 'Punjab' : 'other';
 }
 
-// Flows that are always delivered digitally (PDF / WhatsApp / portal) and so
-// never carry a physical delivery fee or the rule's static delivery charge.
-// Case Information has its own seeded base-fee rules (xlsx "Case Information"
-// service rows) — it is NOT aliased to Case Files; only its delivery is digital.
-function isDigitalDeliveryFlow(flow: string): boolean {
-  return flow === 'judicial_case_information';
-}
-
-// 5-24-26 #6/#7: Case Information is priced as (seeded regional base fee) +
-// (document-bundle add-on). The base fee comes from the seeded
-// judicial_case_information rules (varies by court tier / region); the add-on
-// below is region-keyed (Punjab vs other-than-Punjab) per the owner's rate
-// sheet. Keyed by the canonical DocBundle value stored in
-// payload.required_documentations. Bundles absent from a region map add 0.
-const CASE_INFO_BUNDLE_SURCHARGE: Record<
-  'Punjab' | 'other',
-  Record<string, number>
-> = {
-  Punjab: {
-    doc_only_petition: 500,
-    doc_petition_plus_last_order: 700,
-    doc_petition_plus_complete_order: 800,
-    doc_only_last_order: 750,
-    doc_only_complete_order_sheet: 1500,
-  },
-  other: {
-    doc_only_petition: 750,
-    doc_petition_plus_last_order: 1500,
-    doc_petition_plus_complete_order: 1500,
-    doc_only_last_order: 750,
-    doc_only_complete_order_sheet: 1200,
-  },
-};
-
-export function caseInfoBundleSurcharge(
-  flow: string,
-  region: string | undefined,
-  docBundle: string | undefined,
-): number {
-  if (flow !== 'judicial_case_information' || !docBundle) return 0;
-  const table =
-    region === 'Punjab'
-      ? CASE_INFO_BUNDLE_SURCHARGE.Punjab
-      : CASE_INFO_BUNDLE_SURCHARGE.other;
-  return table[docBundle] ?? 0;
+// Delivery exists ONLY for physical-document services — the flows that hand the
+// consumer a physical document on completion (Case Files + the three
+// non-judicial copies). That set is exactly the flows whose charge capabilities
+// include `delivery`, so we gate on that single source of truth rather than a
+// second hardcoded list. Digital flows (Case Information / Search / Filing /
+// Power of Attorney) never carry a delivery-guy fee or static delivery charge.
+// For these physical flows delivery is collected in the phase-2 (clerk-
+// finalized) remainder, not at intake — see SPLIT handling in
+// TicketsService.createIntakeTicket.
+function isPhysicalDeliveryFlow(flow: string): boolean {
+  return chargeCapabilitiesFor(flow).delivery;
 }
 
 // Federal Shariat Court historically reused High Court pricing in the legacy
@@ -98,26 +74,6 @@ export function caseInfoBundleSurcharge(
 // normalization is gated to courts that lack rules in the new dataset.
 function normalizeCourtLevel(courtLevel?: string): string | undefined {
   return courtLevel;
-}
-
-const YEAR_BANDS: { key: string; from: number | null; to: number | null }[] = [
-  // Pending cases never resolve from caseYear — explicit only.
-  { key: 'y2016_back', from: null, to: 2016 },
-  { key: 'y2019_2017', from: 2017, to: 2019 },
-  { key: 'y2022_2020', from: 2020, to: 2022 },
-  { key: 'y2024_2023', from: 2023, to: 2024 },
-  { key: 'y2025', from: 2025, to: 2025 },
-];
-
-function deriveYearBand(year: number | undefined): string {
-  if (!year) return 'current';
-  if (year >= new Date().getFullYear()) return 'current';
-  for (const b of YEAR_BANDS) {
-    if (b.from !== null && year < b.from) continue;
-    if (b.to !== null && year > b.to) continue;
-    return b.key;
-  }
-  return 'current';
 }
 
 @Injectable()
@@ -266,7 +222,10 @@ export class PricingService {
     });
     const region = args.region ?? deriveRegion(province);
     const effectiveCourtLevel = normalizeCourtLevel(args.courtLevel);
-    const requestedYearBand = args.yearBand ?? 'current';
+    // Mirror resolve(): a pending case without an explicit band must resolve to
+    // the 'pending' band, not 'current'.
+    const requestedYearBand =
+      args.yearBand ?? deriveYearBand(args.caseStatus, undefined);
 
     const allRules = await this.prisma.pricingRule.findMany({
       where: { isActive: true },
@@ -398,7 +357,15 @@ export class PricingService {
 
     const effectiveCourtLevel = normalizeCourtLevel(dto.courtLevel);
     const requestedSetType = dto.setType ?? null;
-    const requestedYearBand = dto.yearBand ?? deriveYearBand(dto.caseYear);
+    // Derive the band from caseStatus + caseYear when the caller didn't pass an
+    // explicit yearBand. Critical: deriveYearBand returns 'pending' for Pending
+    // cases — without consulting caseStatus a pending ticket would fall to the
+    // 'current' band and be charged the wrong (higher) Case Files rate. This is
+    // the root-cause fix for the 2026-06 "quote ≠ charge" pending overcharge:
+    // createIntakeTicket now passes a full input via buildPricingResolveInput,
+    // but deriving here too keeps any caller that omits yearBand correct.
+    const requestedYearBand =
+      dto.yearBand ?? deriveYearBand(dto.caseStatus, dto.caseYear);
 
     const allRules = await this.prisma.pricingRule.findMany({
       where: { isActive: true },
@@ -577,10 +544,11 @@ export class PricingService {
 
     // v2 surcharges: PDF + Delivery Guy fee (flat per-rule).
     const wantPdf = dto.wantPdf === true;
-    // 5-24-26 #6/#7: digital-only flows (Case Information) never incur a
-    // physical delivery fee. 'portal' / 'whatsapp' / 'other_no' are digital
-    // delivery modes and are treated like 'pickup' / 'none'.
-    const digitalDeliveryFlow = isDigitalDeliveryFlow(dto.flow);
+    // Delivery applies ONLY to physical-document flows (Case Files). Every
+    // other service is digital and never incurs a delivery fee or the rule's
+    // static delivery charge. 'portal' / 'whatsapp' / 'other_no' / 'pickup' /
+    // 'none' are non-physical delivery modes (no fee even for Case Files).
+    const physicalDeliveryFlow = isPhysicalDeliveryFlow(dto.flow);
     const NON_PHYSICAL_DELIVERY = new Set([
       'pickup',
       'none',
@@ -589,7 +557,7 @@ export class PricingService {
       'other_no',
     ]);
     const deliveryNeeded =
-      !digitalDeliveryFlow &&
+      physicalDeliveryFlow &&
       dto.deliveryMethod != null &&
       dto.deliveryMethod !== '' &&
       !NON_PHYSICAL_DELIVERY.has(dto.deliveryMethod.toLowerCase());
@@ -624,10 +592,11 @@ export class PricingService {
     const searchBothSurcharge =
       isCaseSearch && dto.searchMethod === 'both' ? SEARCH_BOTH_SURCHARGE : 0;
 
-    // Digital-only flows (Case Information) carry no static delivery charge.
-    const staticDeliveryCharge = digitalDeliveryFlow
-      ? 0
-      : Number(best.deliveryCharge);
+    // Only physical-document flows (Case Files) carry the rule's static
+    // delivery charge; every other flow is digital → 0.
+    const staticDeliveryCharge = physicalDeliveryFlow
+      ? Number(best.deliveryCharge)
+      : 0;
     const deliveryCharge = staticDeliveryCharge + deliveryFee;
     // Phase-1 consumer base = base service charge + intrinsic base modifiers
     // (State-vs title surcharge, decided-age surcharge, and — 5-24-26 #17 — the

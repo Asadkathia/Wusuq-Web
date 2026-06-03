@@ -11,6 +11,7 @@ import type { IntakeFlow, IntakeStep, CourtTier } from '@/lib/intake-flows';
 import { courtTierFromCourtType, resolveRequired, docBundleLabel, normalizeDraftPayload, isStructuredAddressComplete, computeYearBand, parseBench, showWhenSatisfied, parseCities, stringifyCities } from '@/lib/intake-flows';
 import { BENCH_TYPE_LABELS } from '@/lib/bench-types';
 import type { YearBand } from '@/lib/intake-flows';
+import { buildPricingResolveInput, CASE_INFO_BUNDLE_SURCHARGE } from '@wusuq/shared';
 
 import type { IntakeWizardProps, TicketDraft, ServiceHit, LocalUser, CityCourtGroup } from './intake-wizard/types';
 import { StepRail } from './intake-wizard/step-rail';
@@ -305,6 +306,7 @@ export function IntakeWizard({
     pdfSurcharge?: number;
     deliveryFee?: number;
     titleSurcharge?: number;
+    ageSurcharge?: number;
     bundleSurcharge?: number;
     attestedCharge: number;
     nonAttestedCharge: number;
@@ -579,64 +581,18 @@ export function IntakeWizard({
     const flow = draft.flow;
     const p = draft.payload;
     if (!flow || !p.select_court_type) { setPricingResult(null); return; }
-    const setType = p.set_type;
-    const attestedQty =
-      setType === 'attested' ? parseInt(p.attested_qty ?? '0') || 0 :
-      setType === 'both' ? parseInt(p.both_attested_qty ?? '0') || 0 : 0;
-    const nonAttestedQty =
-      setType === 'non_attested' ? parseInt(p.non_attested_qty ?? '0') || 0 :
-      setType === 'both' ? parseInt(p.both_non_attested_qty ?? '0') || 0 : 0;
-    const decidedYear = (() => {
-      if (p.decided_date) {
-        const m = /^(\d{4})/.exec(p.decided_date);
-        if (m && m[1]) return parseInt(m[1]);
-      }
-      return undefined;
-    })();
-    const caseYear = decidedYear ?? (parseInt(p.case_year ?? p.year ?? '0') || undefined);
-    const isPending = p.case_status === 'Pending Case';
-    const yearBand: YearBand = computeYearBand(caseYear, isPending);
-    const wantPdf = p.want_pdf_before_dispatch === 'Yes';
-    const deliveryMethod = (p.delivery_mode || p.delivery_method || '').toString().toLowerCase();
 
-    // PDF #36: multi-city pricing multiplier (Case Search only). At least 1.
-    const cityCount = Math.max(
-      1,
-      flow === 'judicial_case_search' ? parseCities(p.cities).length : 1,
-    );
-    // PDF #37: search-method surcharge (Case Search only). 'both' adds
-    // Rs 1,000 per city on top of the base rule.
-    const searchMethod =
-      flow === 'judicial_case_search' ? (p.search_method || undefined) : undefined;
+    // Build the resolver input with the SAME shared mapper the server uses in
+    // createIntakeTicket (buildPricingResolveInput). This guarantees the live
+    // checkout quote and the persisted charge are computed from identical
+    // inputs — no hand-maintained field list to drift (yearBand/caseTitle/
+    // cityCount/searchMethod were previously dropped server-side).
+    const resolveInput = buildPricingResolveInput(flow, p);
 
     let cancelled = false;
     const handle = setTimeout(() => {
       if (cancelled) return;
-      apiClient.post<any>('/pricing-rules/resolve', {
-        flow,
-        courtLevel: p.select_court_type || undefined,
-        caseStatus: p.case_status || undefined,
-        caseYear,
-        yearBand,
-        setType: setType || undefined,
-        attestedQty,
-        nonAttestedQty,
-        wantPdf,
-        deliveryMethod: deliveryMethod || undefined,
-        province: p.province ?? p.province_capital ?? undefined,
-        // #26: pass the selected GeoCity id so the resolver derives region via
-        // the geo FK chain instead of fragile city-name matching.
-        cityId: p.city_id || undefined,
-        city: p.select_court_city ?? p.city ?? undefined,
-        // PDF #14: title-based surcharge ("State vs <X>" → +Rs 1,000). The
-        // resolver does the regex match; we just forward whatever the user
-        // typed in Step 2.
-        caseTitle: p.case_title || '',
-        cityCount,
-        searchMethod,
-        // 5-24-26 #6/#7: Case Information document-bundle add-on (region-keyed).
-        docBundle: p.required_documentations || undefined,
-      })
+      apiClient.post<any>('/pricing-rules/resolve', resolveInput)
         .then((r) => { if (!cancelled) setPricingResult(r); })
         .catch(() => { if (!cancelled) setPricingResult(null); });
     }, 400);
@@ -1361,10 +1317,11 @@ export function IntakeWizard({
       items.push({ label: 'Service', detail: p.select_court, amount: null });
     }
 
-    // Pricing breakdown — only show when matched. For SPLIT flows only the
-    // base service cost and title surcharge are shown; surcharges for
-    // attested copies, non-attested copies, PDF, and delivery are deferred to
-    // the phase-2 clerk charge window and are not billed at checkout.
+    // Pricing breakdown — only show when matched. For SPLIT flows (Case Files)
+    // the base service cost, title/age/bundle surcharges AND the PDF surcharge
+    // are billed at intake; attested/non-attested copies and delivery are
+    // deferred to the phase-2 clerk charge window (the second payment) and are
+    // not shown here.
     if (pr?.matched && pr.available !== false) {
       if (pr.basePrice > 0) {
         items.push({ label: 'Base fee', amount: pr.basePrice });
@@ -1375,14 +1332,22 @@ export function IntakeWizard({
           amount: pr.titleSurcharge!,
         });
       }
+      // PDF #7: decided cases older than 10 years accrue Rs 1,000/year. Folded
+      // into serviceCost at intake, so show it as a line for both flow models.
+      if ((pr.ageSurcharge ?? 0) > 0) {
+        items.push({ label: 'Age surcharge (10+ yrs)', amount: pr.ageSurcharge! });
+      }
       // 5-24-26 #6/#7: Case Information document-bundle add-on (on top of base).
       if ((pr.bundleSurcharge ?? 0) > 0) {
         items.push({ label: 'Document bundle', amount: pr.bundleSurcharge! });
       }
+      // 5-24-26 #17: PDF is priced at intake (folded into serviceCost), so it is
+      // shown and billed at checkout for ALL flows — including SPLIT/Case Files
+      // — not deferred to the phase-2 clerk window like delivery/attestation.
+      if ((pr.pdfSurcharge ?? 0) > 0) {
+        items.push({ label: 'PDF surcharge', amount: pr.pdfSurcharge! });
+      }
       if (!isSplit) {
-        if ((pr.pdfSurcharge ?? 0) > 0) {
-          items.push({ label: 'PDF surcharge', amount: pr.pdfSurcharge! });
-        }
         if ((pr.deliveryFee ?? 0) > 0) {
           items.push({ label: 'Delivery fee', amount: pr.deliveryFee! });
         }
@@ -1859,23 +1824,24 @@ export function IntakeWizard({
                 // Mirrors CASE_INFO_BUNDLE_SURCHARGE in pricing.service.ts —
                 // keep the two in sync. Other flows render plain labels.
                 const showPriceHint = draft.flow === 'judicial_case_information';
+                // Region must be derived the SAME way the backend resolver
+                // derives it — from the selected city's province (geo FK chain),
+                // NOT payload.province. Judicial flows use CityBlock, which
+                // never sets payload.province (only the FIR LocationBlock does),
+                // so reading payload.province here always fell through to the
+                // "other" region and the picker showed a price that didn't match
+                // the Punjab add-on charged at checkout (2026-06 bug #2). The
+                // add-on table is the shared single source used by the resolver.
+                const selectedCityProvince = geo.allCities.find(
+                  (c) => c.id === geoIds.cityId,
+                )?.province;
                 const isPunjab =
-                  (draft.payload.province ?? draft.payload.province_capital) === 'Punjab';
+                  (selectedCityProvince ??
+                    draft.payload.province ??
+                    draft.payload.province_capital) === 'Punjab';
                 const bundleAddOn: Record<string, number> = isPunjab
-                  ? {
-                      doc_only_petition: 500,
-                      doc_petition_plus_last_order: 700,
-                      doc_petition_plus_complete_order: 800,
-                      doc_only_last_order: 750,
-                      doc_only_complete_order_sheet: 1500,
-                    }
-                  : {
-                      doc_only_petition: 750,
-                      doc_petition_plus_last_order: 1500,
-                      doc_petition_plus_complete_order: 1500,
-                      doc_only_last_order: 750,
-                      doc_only_complete_order_sheet: 1200,
-                    };
+                  ? CASE_INFO_BUNDLE_SURCHARGE.Punjab
+                  : CASE_INFO_BUNDLE_SURCHARGE.other;
                 field = {
                   ...field,
                   optionsLabel: (opt: string) => {
