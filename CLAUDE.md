@@ -75,6 +75,7 @@ cd apps/api && npx ts-node --esm scripts/seed-geo.ts
 ```
 - Special courts seat at the DISTRICT level only (`SPECIAL_COURT_DISTRICTS` + `resolveSpecialCourtSeatCityIds` in `court-alias.ts`) — one seat city per district, never every tehsil.
 - `CITY_ALIAS` maps court-JSON city names like `"Babuzai (Swat)"` to the bare `GeoCity` name; a wrong alias silently leaves a tehsil with no Lower Court. Re-run `seed-geo.ts` after editing either.
+- **City picker search is district/province-aware** (`matchesCitySearch` in `intake-wizard/service-geo-blocks.tsx` matches the tile `subtext` = `district · province`, not just the city name). This is required because ~28 districts have NO `GeoCity` named after the district (their cities are tehsils — e.g. Hunza → Aliabad/Gojal, Swat → Mingora/Babuzai); without district matching those districts are unfindable by name. Don't regress the search to label-only, and don't "fix" it by inserting synthetic district-named cities into the seed.
 
 ### Catalogue & pricing seeds
 ```bash
