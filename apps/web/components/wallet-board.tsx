@@ -50,7 +50,7 @@ export function WalletBoard() {
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const [isConsumer, setIsConsumer] = useState<boolean | null>(null);
-  const [myWallet, setMyWallet] = useState<{ balance: number; transactions: ConsumerTransaction[] } | null>(null);
+  const [myWallet, setMyWallet] = useState<{ balance: number; credit?: number; due?: number; transactions: ConsumerTransaction[] } | null>(null);
 
   const [txUserId, setTxUserId] = useState<string | null>(null);
   const [txHistory, setTxHistory] = useState<any[]>([]);
@@ -69,7 +69,7 @@ export function WalletBoard() {
     setLoading(true);
     try {
       if (isConsumer) {
-        const result = await apiClient.get<{ balance: number; transactions: ConsumerTransaction[] }>('/wallet/me');
+        const result = await apiClient.get<{ balance: number; credit?: number; due?: number; transactions: ConsumerTransaction[] }>('/wallet/me');
         setMyWallet(result);
       } else {
         const result = await apiClient.get<any>('/wallet?limit=200');
@@ -213,8 +213,17 @@ export function WalletBoard() {
         )}
 
         <PanelCard>
-          <h3 className="text-sm font-semibold text-slate-700">My Wallet Balance</h3>
-          <p className="mt-2 text-3xl font-bold text-slate-900">PKR {Number(myWallet?.balance || 0).toLocaleString()}</p>
+          <h3 className="text-sm font-semibold text-slate-700">
+            {(myWallet?.balance ?? 0) < 0 ? 'Amount owed' : 'My Wallet Balance'}
+          </h3>
+          <p className={`mt-2 text-3xl font-bold ${(myWallet?.balance ?? 0) < 0 ? 'text-rose-600' : 'text-slate-900'}`}>
+            PKR {Number(myWallet?.balance || 0).toLocaleString()}
+          </p>
+          {(myWallet?.due ?? 0) > 0 ? (
+            <p className="mt-2 text-xs text-slate-500">
+              PKR {Number(myWallet?.due || 0).toLocaleString()} owed · PKR {Number(myWallet?.credit || 0).toLocaleString()} credit
+            </p>
+          ) : null}
         </PanelCard>
 
         <PanelCard>

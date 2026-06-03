@@ -66,10 +66,12 @@ export class TicketsController {
     @CurrentUser() user: JwtUser | undefined,
   ) {
     const consumerRoles = ['consumer', 'lawyer', 'company'];
-    if (user && consumerRoles.includes(user.role)) {
+    const isConsumer = Boolean(user && consumerRoles.includes(user.role));
+    if (isConsumer && user) {
       query.consumerId = user.sub;
     }
-    return this.ticketsService.findAll(query);
+    // Consumers must never receive internal clerk-cost fields in the list.
+    return this.ticketsService.findAll(query, { forConsumer: isConsumer });
   }
 
   @RequirePermissions('tickets.read')

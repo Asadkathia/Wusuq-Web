@@ -170,7 +170,7 @@ export class TicketsService {
     private readonly walletService: WalletService,
   ) {}
 
-  async findAll(query: FilterTicketsDto) {
+  async findAll(query: FilterTicketsDto, opts?: { forConsumer?: boolean }) {
     const skip = (query.page - 1) * query.limit;
 
     const where = {
@@ -274,8 +274,14 @@ export class TicketsService {
         remainderFinalizedAt: ticket.remainderFinalizedAt,
         scheduledDate: ticket.scheduledDate,
         hearingType: ticket.hearingType,
-        clerkCost: ticket.clerkCost,
-        defaultClerkCost: ticket.defaultClerkCost,
+        // Clerk cost is internal-only (rep pay-out) — never expose it to
+        // consumers (CLAUDE.md). Admin/staff list rows still carry it.
+        ...(opts?.forConsumer
+          ? {}
+          : {
+              clerkCost: ticket.clerkCost,
+              defaultClerkCost: ticket.defaultClerkCost,
+            }),
         deliveryCharges: ticket.deliveryCharges,
         printingCharges: ticket.printingCharges,
         attestedCharges: ticket.attestedCharges,

@@ -2058,3 +2058,70 @@ describe('generateNextHearing (Task 1.3)', () => {
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 });
+
+describe('findAll — clerk cost is gated out of the consumer list', () => {
+  function harness() {
+    const ticketRow = {
+      id: 't1',
+      batchNo: 'B1',
+      consumer: { id: 'c1', name: 'C' },
+      service: { id: 's1', name: 'S', category: 'judicial', type: 'x' },
+      serviceCity: 'Lahore',
+      caseType: 'civil',
+      intakeFlow: 'judicial_case_files',
+      formPayload: {},
+      status: 'UNPAID',
+      clerkApprovalStatus: null,
+      clerkReceiptUrl: null,
+      serviceCost: 1,
+      totalAmount: 1,
+      amountPaid: 0,
+      createdBy: 'CONSUMER',
+      remainderFinalizedAt: null,
+      scheduledDate: null,
+      hearingType: null,
+      clerkCost: 500,
+      defaultClerkCost: 400,
+      deliveryCharges: 0,
+      printingCharges: 0,
+      attestedCharges: 0,
+      nonAttestedCharges: 0,
+      additionalCharges: 0,
+      assignments: [],
+      createdAt: new Date(),
+    };
+    const prisma = {
+      $transaction: jest.fn().mockResolvedValue([[ticketRow], 1]),
+      ticket: { findMany: jest.fn(), count: jest.fn() },
+    };
+    const service = new TicketsService(
+      prisma as never,
+      { create: jest.fn() } as never,
+      {} as never,
+      {} as never,
+      makeDispatcher() as never,
+    );
+    return { service };
+  }
+
+  const query = { page: 1, limit: 20 } as never;
+
+  it('omits clerkCost/defaultClerkCost when forConsumer', async () => {
+    const { service } = harness();
+    const res = await service.findAll(query, { forConsumer: true });
+    const row = res.items[0] as Record<string, unknown>;
+    expect('clerkCost' in row).toBe(false);
+    expect('defaultClerkCost' in row).toBe(false);
+    // Consumer-safe fields are still present.
+    expect(row.totalAmount).toBe(1);
+    expect(row.payload).toEqual({});
+  });
+
+  it('includes clerkCost for admin/staff (no forConsumer flag)', async () => {
+    const { service } = harness();
+    const res = await service.findAll(query);
+    const row = res.items[0] as Record<string, unknown>;
+    expect(row.clerkCost).toBe(500);
+    expect(row.defaultClerkCost).toBe(400);
+  });
+});
