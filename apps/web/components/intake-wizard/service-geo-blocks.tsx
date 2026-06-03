@@ -31,20 +31,29 @@ const CITY_SEARCH_ALIASES: Record<string, string[]> = {
 
 /**
  * Returns true if the tile option should match the search query. Matches
- * against the option label directly OR against any alias resolution. Both
- * sides are lowercased before comparison.
+ * against the option label (city/tehsil name), the subtext (district ·
+ * province), OR an alias resolution. Both sides are lowercased before compare.
+ *
+ * Matching the subtext lets a user find a tehsil by its DISTRICT name even when
+ * no GeoCity is literally named after the district — e.g. typing "Hunza"
+ * surfaces its tehsils Aliabad & Gojal (Hunza's only cities). Most districts
+ * never hit this because their HQ city shares the district name; Hunza, Nagar,
+ * Kharmang, etc. are the outliers.
  */
 function matchesCitySearch(option: TileOption, query: string): boolean {
   const q = query.trim().toLowerCase();
   if (!q) return true;
   const name = option.label.toLowerCase();
-  if (name.includes(q)) return true;
+  // subtext is "district · province" (see CityBlock cityOptions).
+  const region = (option.subtext ?? '').toLowerCase();
+  if (name.includes(q) || region.includes(q)) return true;
   // Alias check: any of the alias targets for the query token must appear in
-  // the city name. We split the query on whitespace so the user can type
-  // "rwp courts" and still match Rawalpindi-courts entries.
+  // the city name or its district/province. We split the query on whitespace so
+  // the user can type "rwp courts" and still match Rawalpindi-courts entries.
   for (const token of q.split(/\s+/)) {
     const targets = CITY_SEARCH_ALIASES[token];
-    if (targets && targets.some((t) => name.includes(t))) return true;
+    if (targets && targets.some((t) => name.includes(t) || region.includes(t)))
+      return true;
   }
   return false;
 }
