@@ -44,7 +44,9 @@ type Transaction = {
 };
 
 type MyWallet = {
-  balance: number;
+  balance: number; // net = credit − outstanding dues (can be negative)
+  credit?: number; // prepaid top-up credit (>= 0)
+  due?: number; // outstanding ticket dues
   transactions: Transaction[];
 };
 
@@ -112,7 +114,9 @@ export function ConsumerWalletBoard() {
           <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/10 ring-1 ring-inset ring-white/20">
             <WalletIcon className="h-4 w-4" />
           </span>
-          <p className="text-xs font-medium uppercase tracking-[0.2em]">Current balance</p>
+          <p className="text-xs font-medium uppercase tracking-[0.2em]">
+            {(data?.balance ?? 0) < 0 ? 'Amount owed' : 'Current balance'}
+          </p>
         </div>
 
         <div className="relative mt-4">
@@ -123,8 +127,18 @@ export function ConsumerWalletBoard() {
               PKR <span className="font-mono">{formatPKR(data?.balance ?? 0)}</span>
             </p>
           )}
+          {/* Breakdown: prepaid credit vs outstanding ticket dues. */}
+          {!loading && (data?.due ?? 0) > 0 ? (
+            <p className="mt-3 inline-flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg bg-white/10 px-3 py-1.5 text-xs ring-1 ring-inset ring-white/20">
+              <span className="tabular-nums">PKR {formatPKR(data?.due ?? 0)} owed</span>
+              <span className="text-brand-100/60">·</span>
+              <span className="tabular-nums">PKR {formatPKR(data?.credit ?? 0)} credit</span>
+            </p>
+          ) : null}
           <p className="mt-2 text-xs text-brand-100/80">
-            Funds are used automatically to settle new tickets on completion.
+            {(data?.balance ?? 0) < 0
+              ? 'Top up to clear your dues — tickets are released for processing once paid.'
+              : 'Funds are used automatically to settle new tickets on completion.'}
           </p>
         </div>
       </div>

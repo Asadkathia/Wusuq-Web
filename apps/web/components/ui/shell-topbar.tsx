@@ -169,7 +169,12 @@ export function ShellTopbar({ variant, walletHref, profileHref = '/profile', onS
         {variant === 'consumer' && walletBalance !== null ? (
           <Link
             href={walletHref ?? '/consumer/my-wallet'}
-            className="hidden sm:inline-flex items-center gap-2 rounded-lg bg-brand-50 px-3 py-1.5 text-sm font-semibold text-brand-700 ring-1 ring-inset ring-brand-100 transition-colors hover:bg-brand-100"
+            title={walletBalance < 0 ? 'You owe this amount — tap to pay' : 'Wallet balance'}
+            className={`hidden sm:inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-semibold ring-1 ring-inset transition-colors ${
+              walletBalance < 0
+                ? 'bg-rose-50 text-rose-700 ring-rose-100 hover:bg-rose-100'
+                : 'bg-brand-50 text-brand-700 ring-brand-100 hover:bg-brand-100'
+            }`}
           >
             <Wallet className="h-4 w-4" />
             <span className="tabular-nums">PKR {new Intl.NumberFormat('en-PK').format(walletBalance)}</span>

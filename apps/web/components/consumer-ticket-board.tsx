@@ -7,13 +7,18 @@ import { startTransition, useCallback, useEffect, useMemo, useState } from 'reac
 import {
   ArrowRight,
   ArrowUpRight,
+  CalendarDays,
   Clock,
   FileText,
+  Hash,
+  Landmark,
   MapPin,
   RefreshCw,
+  Scale,
   Search,
   Ticket as TicketIcon,
 } from 'lucide-react';
+import { FLOW_LABELS, isFlowKey } from '@wusuq/shared';
 import { apiClient } from '@/lib/api-client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -57,7 +62,43 @@ type TicketRow = {
   service: { id: string; name: string; category: string; type: string };
   payload?: Record<string, string> | null;
   intakeFlow?: string | null;
+  scheduledDate?: string | null;
 };
+
+// Lifecycle order for the compact progress strip on each card.
+const LIFECYCLE: TicketStatus[] = [
+  'UNPAID',
+  'PAID',
+  'ASSIGNED',
+  'IN_PROGRESS',
+  'WAITING_APPROVAL',
+  'COMPLETED',
+];
+
+// First present value among the given payload keys (handles canonical + alias
+// names, e.g. case_petition_no / case_no, case_year / year).
+function payloadVal(
+  payload: Record<string, string> | null | undefined,
+  keys: string[],
+): string | null {
+  if (!payload) return null;
+  for (const k of keys) {
+    const v = payload[k];
+    if (v != null && String(v).trim() !== '') return String(v).trim();
+  }
+  return null;
+}
+
+function formatDate(value?: string | null): string | null {
+  if (!value) return null;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleDateString(undefined, {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+}
 
 function statusVariant(status: TicketStatus) {
   if (status === 'COMPLETED' || status === 'DELIVERED') return 'success' as const;
@@ -308,6 +349,23 @@ function TicketCard({ ticket, onOpen }: { ticket: TicketRow; onOpen: () => void 
     !isFullyPaid &&
     remaining > 0;
 
+  // ── Detail surface (Feature: max ticket details on cards) ──────────────────
+  const p = ticket.payload;
+  const caseNo = payloadVal(p, ['case_petition_no', 'case_no', 'fir_no', 'doc_no']);
+  const caseYear = payloadVal(p, ['case_year', 'year']);
+  const caseTitle = payloadVal(p, ['case_title', 'title']);
+  const courtName = payloadVal(p, ['select_court', 'select_court_type']);
+  const flowLabel =
+    ticket.intakeFlow && isFlowKey(ticket.intakeFlow) ? FLOW_LABELS[ticket.intakeFlow] : null;
+  const cat = (ticket.service?.category ?? '').toLowerCase();
+  const categoryLabel = cat ? (cat.includes('non') ? 'Non-Judicial' : 'Judicial') : null;
+  const createdStr = formatDate(ticket.createdAt);
+  const hearingStr = formatDate(ticket.scheduledDate);
+  // Lifecycle position for the status-step strip (DELIVERED = fully complete).
+  const lifePos =
+    ticket.status === 'DELIVERED' ? LIFECYCLE.length : Math.max(0, LIFECYCLE.indexOf(ticket.status));
+  const payPct = total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : 0;
+
   return (
     <div
       role="button"
@@ -337,28 +395,86 @@ function TicketCard({ ticket, onOpen }: { ticket: TicketRow; onOpen: () => void 
         <ArrowUpRight className="h-4 w-4 shrink-0 text-slate-300 transition-[transform,color] duration-200 group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-slate-500" />
       </div>
 
-      <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-slate-500">
+      {/* Case identifiers */}
+      {caseNo || caseTitle ? (
+        <div className="mt-3 flex flex-wrap items-center gap-1.5">
+          {caseNo ? (
+            <span className="inline-flex items-center gap-1 rounded-md bg-surface-muted px-2 py-0.5 text-[11px] font-medium text-slate-600">
+              <Hash className="h-3 w-3" />Case {caseNo}{caseYear ? `/${caseYear}` : ''}
+            </span>
+          ) : null}
+          {caseTitle ? (
+            <span className="inline-flex max-w-full items-center truncate rounded-md bg-surface-muted px-2 py-0.5 text-[11px] font-medium text-slate-600">
+              {caseTitle}
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+
+      {/* Court · service · category */}
+      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-slate-500">
         {ticket.serviceCity ? (
           <span className="inline-flex items-center gap-1"><MapPin className="h-3 w-3" />{ticket.serviceCity}</span>
+        ) : null}
+        {courtName ? (
+          <span className="inline-flex items-center gap-1"><Landmark className="h-3 w-3" />{courtName}</span>
         ) : null}
         {ticket.caseType ? (
           <span className="inline-flex items-center gap-1"><FileText className="h-3 w-3" />{ticket.caseType}</span>
         ) : null}
+        {flowLabel ? (
+          <span className="inline-flex items-center gap-1">
+            <Scale className="h-3 w-3" />{flowLabel}{categoryLabel ? ` · ${categoryLabel}` : ''}
+          </span>
+        ) : null}
       </div>
 
-      <div className="mt-4 flex items-center justify-between gap-3">
+      {/* Status-step lifecycle strip */}
+      <div className="mt-4 flex items-center gap-1" aria-hidden>
+        {LIFECYCLE.map((stage, i) => (
+          <span
+            key={stage}
+            className={`h-1 flex-1 rounded-full ${
+              i < lifePos ? 'bg-brand-500' : i === lifePos ? 'bg-brand-300' : 'bg-border-soft'
+            }`}
+          />
+        ))}
+      </div>
+
+      <div className="mt-3 flex items-center justify-between gap-3">
         <StatusPill dot label={statusLabel(ticket.status)} variant={statusVariant(ticket.status)} />
         {total > 0 ? (
           <div className="text-right">
             <p className="text-sm font-semibold tabular-nums text-slate-900">PKR {formatPKR(total)}</p>
             {remaining > 0 ? (
-              <p className="text-[11px] tabular-nums text-amber-600">PKR {formatPKR(remaining)} due</p>
-            ) : total > 0 ? (
+              <p className="text-[11px] tabular-nums text-amber-600">
+                PKR {formatPKR(remaining)} due{paid > 0 ? ` · PKR ${formatPKR(paid)} paid` : ''}
+              </p>
+            ) : (
               <p className="text-[11px] text-emerald-600">Fully paid</p>
-            ) : null}
+            )}
           </div>
         ) : null}
       </div>
+
+      {/* Payment progress bar */}
+      {total > 0 && remaining > 0 ? (
+        <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-border-soft" aria-hidden>
+          <span className="block h-full rounded-full bg-emerald-500" style={{ width: `${payPct}%` }} />
+        </div>
+      ) : null}
+
+      {/* Dates */}
+      {createdStr || hearingStr ? (
+        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-400">
+          {createdStr ? (
+            <span className="inline-flex items-center gap-1"><CalendarDays className="h-3 w-3" />Created {createdStr}</span>
+          ) : null}
+          {hearingStr ? (
+            <span className="inline-flex items-center gap-1"><Clock className="h-3 w-3" />Hearing {hearingStr}</span>
+          ) : null}
+        </div>
+      ) : null}
 
       {showFinalPayment ? (
         <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 flex items-center justify-between gap-3">

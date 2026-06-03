@@ -430,3 +430,76 @@ describe('WalletService.verifyTopup auto-deduction', () => {
     expect(modes.every((m: string) => m === 'EASY_PAISA')).toBe(true);
   });
 });
+
+describe('WalletService.getMyWallet — dynamic net balance', () => {
+  function build(
+    walletBalance: number,
+    tickets: Array<{
+      totalAmount: number;
+      amountPaid: number;
+      status?: string;
+    }>,
+  ) {
+    const auditLogsService = { create: jest.fn() };
+    const prisma: any = {
+      user: {
+        findUniqueOrThrow: jest.fn().mockResolvedValue({
+          id: 'u-1',
+          name: 'C',
+          email: 'c@x.com',
+          walletBalance,
+        }),
+      },
+      walletTransaction: { findMany: jest.fn().mockResolvedValue([]) },
+      ticket: {
+        findMany: jest.fn().mockResolvedValue(
+          tickets.map((t) => ({
+            totalAmount: t.totalAmount,
+            amountPaid: t.amountPaid,
+          })),
+        ),
+      },
+    };
+    const service = new WalletService(
+      prisma as never,
+      auditLogsService as never,
+      makeDispatcher() as never,
+    );
+    return { service, prisma };
+  }
+
+  it('net = credit − outstanding dues; goes negative when owing', async () => {
+    const { service } = build(0, [{ totalAmount: 3300, amountPaid: 0 }]);
+    const res = await service.getMyWallet('u-1');
+    expect(res.credit).toBe(0);
+    expect(res.due).toBe(3300);
+    expect(res.balance).toBe(-3300);
+  });
+
+  it('prepaid credit offsets dues', async () => {
+    const { service } = build(5000, [
+      { totalAmount: 3300, amountPaid: 0 },
+      { totalAmount: 1000, amountPaid: 400 }, // remaining 600
+    ]);
+    const res = await service.getMyWallet('u-1');
+    expect(res.due).toBe(3900); // 3300 + 600
+    expect(res.balance).toBe(1100); // 5000 − 3900
+  });
+
+  it('excludes zero-priced tickets and only counts positive remainders', async () => {
+    const { service, prisma } = build(0, [
+      { totalAmount: 0, amountPaid: 0 }, // free → ignored
+      { totalAmount: 2000, amountPaid: 2000 }, // fully paid → 0
+      { totalAmount: 1500, amountPaid: 0 }, // owed
+    ]);
+    const res = await service.getMyWallet('u-1');
+    expect(res.due).toBe(1500);
+    expect(res.balance).toBe(-1500);
+    // DELIVERED tickets are excluded at the query level.
+    expect(prisma.ticket.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { consumerId: 'u-1', status: { not: 'DELIVERED' } },
+      }),
+    );
+  });
+});

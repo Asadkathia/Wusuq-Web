@@ -12,6 +12,7 @@ import { PanelCard } from '@/components/ui/panel-card';
 import { Button } from '@/components/ui/button';
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
+import { useToast } from '@/components/ui/toast';
 
 interface TicketSummary {
   id: string;
@@ -69,6 +70,7 @@ function computeFullUpfrontAmount(ticket: TicketSummary): number {
 export default function PayTicketPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
+  const toast = useToast();
   const ticketId = params?.id;
 
   const [ticket, setTicket] = useState<TicketSummary | null>(null);
@@ -179,6 +181,16 @@ export default function PayTicketPage() {
   };
 
   const handlePayLater = () => {
+    // "Pay later" doesn't change the ticket — it stays UNPAID and its remaining
+    // amount shows as a due in the wallet (negative net balance). Confirm so the
+    // consumer understands where the amount went.
+    const due = ticket ? computeDueNow(ticket) : 0;
+    if (due > 0) {
+      toast.info(
+        `PKR ${formatPKR(due)} added to your wallet as due`,
+        'Pay anytime from My Wallet — your ticket is released for processing once paid.',
+      );
+    }
     router.push('/consumer/dashboard');
   };
 

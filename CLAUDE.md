@@ -162,6 +162,8 @@ Set-type rules in the xlsx only cover Case Files. Information / Filing / PoA flo
 
 **Clerk cost is internal-only** — persisted on the ticket but excluded from the consumer-facing `totalAmount` (`assignClerk` / `finalizeRemainder` / clerk-submit). Consumer views use `ConsumerTicketDetail` (`consumer-ticket-board.tsx`), never the admin `TicketDetailPanel` (which exposes clerk cost / PII).
 
+**Wallet net balance is dynamic.** `User.walletBalance` is the **prepaid credit only** (>= 0, never negative — `clearPendingTickets` floors deductions at 0). The consumer-facing balance is computed on read in `WalletService.getMyWallet` as `net = credit − outstandingDues`, where `due = Σ max(0, totalAmount − amountPaid)` over the consumer's non-`DELIVERED`, positively-priced tickets. It goes **negative** when they owe (e.g. after "Pay later") — the ticket stays `UNPAID` (payment gate holds); verified top-ups auto-settle FIFO and the net rises back toward >= 0. Don't store the negative; don't change the admin wallet `list` (kept as prepaid). FE reads `{ balance, credit, due }` from `/wallet/me` (header chip in `shell-topbar.tsx`, hero in `consumer-wallet-board.tsx`).
+
 ### Case-type catalogue
 `CourtCaseType` is the DB-backed case-type dropdown source, seeded from 8 JSON files in `apps/api/data/case-types/` (7 scraped sources + a hardcoded snapshot fallback). The `GET /case-types` endpoint in `apps/api/src/case-types/case-types.service.ts` implements a specificity-fallback chain: try `(courtLevel, subCourt, district, highCourtCode)` first, then drop dimensions one at a time until a non-empty cohort is found. Each cohort ends with a `code='OTHER'` row that triggers the wizard's `case_type_other` free-text input.
 

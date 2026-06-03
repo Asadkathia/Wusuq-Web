@@ -300,14 +300,44 @@ export class WalletService {
       },
     });
 
+    // Dynamic balance: prepaid credit (walletBalance, never < 0) minus the
+    // consumer's outstanding ticket dues. Goes negative when they owe more than
+    // they've topped up — e.g. after choosing "Pay later". Every non-delivered,
+    // positively-priced ticket with a remaining amount counts toward dues (not
+    // only ones explicitly deferred). Verified top-ups auto-settle tickets
+    // (clearPendingTickets), so dues shrink and the net rises back toward >= 0.
+    const credit = Number(user.walletBalance || 0);
+    const due = await this.outstandingDuesForUser(userId);
+
     return {
-      balance: Number(user.walletBalance || 0),
+      balance: credit - due,
+      credit,
+      due,
       transactions: transactions.map((transaction) => ({
         ...transaction,
         amount: Number(transaction.amount || 0),
         referenceNo: transaction.id,
       })),
     };
+  }
+
+  /**
+   * Sum of remaining amounts (totalAmount − amountPaid) across a consumer's
+   * tickets that are not yet DELIVERED and carry a positive price. This is the
+   * amount the consumer still owes; the wallet net balance subtracts it from
+   * prepaid credit.
+   */
+  private async outstandingDuesForUser(userId: string): Promise<number> {
+    const tickets = await this.prisma.ticket.findMany({
+      where: { consumerId: userId, status: { not: 'DELIVERED' } },
+      select: { totalAmount: true, amountPaid: true },
+    });
+    return tickets.reduce((sum, t) => {
+      const total = Number(t.totalAmount);
+      if (total <= 0) return sum;
+      const remaining = total - Number(t.amountPaid);
+      return remaining > 0 ? sum + remaining : sum;
+    }, 0);
   }
 
   async isReceiptOwnedBy(filename: string, userId: string): Promise<boolean> {
