@@ -2179,6 +2179,19 @@ describe('ticket workflow streamline — review / send-back / dispatch / deliver
     expect(data?.clerkApprovalStatus).toBe('SUBMITTED');
   });
 
+  it('submitClerkReceipt re-submit at WAITING_APPROVAL leaves status untouched', async () => {
+    const { service, updates, histories } = harness({
+      id: 'tkt-1',
+      status: 'WAITING_APPROVAL',
+      clerkApprovalStatus: 'SUBMITTED',
+    });
+    await service.submitClerkReceipt('tkt-1', '/path/receipt-2.pdf', actor);
+    const data = updates[0]?.data;
+    expect(data).not.toHaveProperty('status'); // no spurious transition
+    expect(data?.clerkApprovalStatus).toBe('SUBMITTED');
+    expect(histories).toHaveLength(0); // no status-history row written
+  });
+
   it('reviewAndComplete: digital flow fully paid → auto DELIVERED', async () => {
     const { service, updates } = harness({
       id: 'tkt-1',

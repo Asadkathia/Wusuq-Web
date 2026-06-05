@@ -178,9 +178,6 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
   const [dispatching, setDispatching] = useState(false);
   const receiptInputRef = useRef<HTMLInputElement>(null);
   // Admin: verify clerk receipt
-  const [verifyTicket, setVerifyTicket] = useState<TicketRow | null>(null);
-  const [verifyRejectReason, setVerifyRejectReason] = useState('');
-  const [isVerifyRejectMode, setIsVerifyRejectMode] = useState(false);
   const [costsTicket, setCostsTicket] = useState<TicketRow | null>(null);
   const [clerkCosts, setClerkCosts] = useState<ClerkCostsForm>(EMPTY_CLERK_COSTS);
   const [rejectTicket, setRejectTicket] = useState<TicketRow | null>(null);
@@ -194,14 +191,12 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
     nonAttestedCharges: string;
     printingCharges: string;
     deliveryCharges: string;
-    pdfCharges: string;
   };
   const EMPTY_FINALIZE: FinalizeForm = {
     attestedCharges: '',
     nonAttestedCharges: '',
     printingCharges: '',
     deliveryCharges: '',
-    pdfCharges: '',
   };
   const [finalizeTicket, setFinalizeTicket] = useState<TicketRow | null>(null);
   const [finalizeForm, setFinalizeForm] = useState<FinalizeForm>(EMPTY_FINALIZE);
@@ -209,14 +204,11 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
 
   const openFinalizeModal = (ticket: TicketRow) => {
     setFinalizeTicket(ticket);
-    const caps = chargeCapabilitiesFor(ticket.intakeFlow);
-    const consumerWantsPdf = ticket.payload?.want_pdf_before_dispatch === 'Yes';
     setFinalizeForm({
       attestedCharges: ticket.attestedCharges ? String(ticket.attestedCharges) : '',
       nonAttestedCharges: ticket.nonAttestedCharges ? String(ticket.nonAttestedCharges) : '',
       printingCharges: ticket.printingCharges ? String(ticket.printingCharges) : '',
       deliveryCharges: ticket.deliveryCharges ? String(ticket.deliveryCharges) : '',
-      pdfCharges: caps.pdf && consumerWantsPdf ? '300' : '',
     });
   };
 
@@ -513,23 +505,6 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
       setMessage(error.message || 'Dispatch failed');
     } finally {
       setDispatching(false);
-    }
-  };
-
-  const handleVerifyClerkReceipt = async (decision: 'VERIFIED' | 'REJECTED') => {
-    if (!verifyTicket) return;
-    try {
-      await apiClient.post(`/tickets/${verifyTicket.id}/clerk-receipt/verify`, {
-        decision,
-        reason: decision === 'REJECTED' ? verifyRejectReason || undefined : undefined,
-      });
-      setMessage(`Receipt ${decision.toLowerCase()}`);
-      setVerifyTicket(null);
-      setVerifyRejectReason('');
-      setIsVerifyRejectMode(false);
-      loadTickets();
-    } catch (error: any) {
-      setMessage(error.message || 'Verify failed');
     }
   };
 
@@ -1473,52 +1448,6 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
         </PanelCard>
       )}
 
-      {/* Admin: Verify Clerk Receipt Panel */}
-      {verifyTicket && (
-        <PanelCard className="mt-6 border-amber-200 bg-amber-50/30">
-          <div className="flex items-start justify-between">
-            <SectionHeader title={`Verify Clerk Receipt — ${verifyTicket.batchNo}`} description="Approve or reject the clerk's submitted payment receipt." />
-            <button onClick={() => { setVerifyTicket(null); setVerifyRejectReason(''); setIsVerifyRejectMode(false); }} className="p-1.5 text-slate-400 hover:text-slate-700 rounded-md transition-colors"><X className="h-5 w-5" /></button>
-          </div>
-          {isVerifyRejectMode && (
-            <label className="mt-4 block">
-              <span className="text-sm font-medium text-slate-700">Rejection Reason</span>
-              <textarea
-                rows={3}
-                value={verifyRejectReason}
-                onChange={(e) => setVerifyRejectReason(e.target.value)}
-                className="mt-2 block w-full rounded-xl border-0 px-3 py-2.5 text-slate-900 ring-1 ring-inset ring-border-soft placeholder:text-slate-400 focus:ring-2 focus:ring-rose-500 sm:text-sm"
-                placeholder="Explain what the clerk needs to fix before resubmitting."
-              />
-            </label>
-          )}
-          <div className="mt-4 flex gap-3">
-            <button
-              onClick={() => handleVerifyClerkReceipt('VERIFIED')}
-              className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-500 transition-colors"
-            >
-              Approve
-            </button>
-            {isVerifyRejectMode ? (
-              <button
-                onClick={() => handleVerifyClerkReceipt('REJECTED')}
-                className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-rose-500 transition-colors"
-              >
-                Confirm Reject
-              </button>
-            ) : (
-              <button
-                onClick={() => setIsVerifyRejectMode(true)}
-                className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-rose-500 transition-colors"
-              >
-                Reject
-              </button>
-            )}
-            <button onClick={() => { setVerifyTicket(null); setVerifyRejectReason(''); setIsVerifyRejectMode(false); }} className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm ring-1 ring-inset ring-border-soft hover:bg-slate-50 transition-colors">Cancel</button>
-          </div>
-        </PanelCard>
-      )}
-
       {sendBackTicket && (
         <PanelCard className="mt-6 border-amber-200 bg-amber-50/30">
           <div className="flex items-start justify-between">
@@ -1607,13 +1536,6 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
                         onChange={(e) => setFinalizeForm((f) => ({ ...f, deliveryCharges: e.target.value }))} />
                     </FormField>
                   )}
-                  {caps.pdf && (
-                    <FormField label="PDF Charges" htmlFor="fin-pdf">
-                      <Input id="fin-pdf" type="number" min="0" placeholder="0"
-                        value={finalizeForm.pdfCharges}
-                        onChange={(e) => setFinalizeForm((f) => ({ ...f, pdfCharges: e.target.value }))} />
-                    </FormField>
-                  )}
                 </div>
                 <div className="rounded-lg bg-slate-50 px-4 py-3 text-sm text-slate-700">
                   <span className="font-medium">Base (service cost):</span>{' '}
@@ -1623,8 +1545,7 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
                   PKR {(
                     (caps.attestation ? (Number(finalizeForm.attestedCharges) || 0) + (Number(finalizeForm.nonAttestedCharges) || 0) : 0) +
                     (caps.printing ? (Number(finalizeForm.printingCharges) || 0) : 0) +
-                    (caps.delivery ? (Number(finalizeForm.deliveryCharges) || 0) : 0) +
-                    (caps.pdf ? (Number(finalizeForm.pdfCharges) || 0) : 0)
+                    (caps.delivery ? (Number(finalizeForm.deliveryCharges) || 0) : 0)
                   ).toLocaleString()}
                 </div>
               </div>
