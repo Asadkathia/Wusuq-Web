@@ -91,6 +91,15 @@ enum ClerkApprovalStatus {
   REJECTED
 }
 
+// Physical-document dispatch sub-state (Case Files + the 3 non-judicial copies).
+// The clerk marks DISPATCHED (with proof); the admin's "Confirm delivered" is
+// the verification, so there is no VERIFIED state here — DELIVERED (the main
+// ticket status) is terminal. Digital flows stay PENDING.
+enum DeliveryStatus {
+  PENDING
+  DISPATCHED
+}
+
 enum ElectionStatus {
   DRAFT
   ACTIVE
@@ -210,6 +219,12 @@ model Ticket {
   defaultClerkCost      Decimal?
   clerkApprovalStatus   ClerkApprovalStatus @default(PENDING)
   clerkReceiptUrl       String?
+  // Physical-dispatch trail (physical-document flows only): the clerk marks
+  // DISPATCHED with a courier proof + tracking no; the admin then confirms
+  // delivery (→ DELIVERED). Digital flows leave these untouched.
+  deliveryStatus        DeliveryStatus      @default(PENDING)
+  dispatchProofUrl      String?
+  trackingNo            String?
   remainderFinalizedAt       DateTime?
   remainderFinalizedByUserId String?
   totalAmount           Decimal             @default(0)

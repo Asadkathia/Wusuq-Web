@@ -26,7 +26,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { UserCircle, MapPin, Tag, RefreshCw, CheckSquare, Clock, History, FileOutput, Eye, PlayCircle, Upload, X, XCircle, CreditCard } from 'lucide-react';
+import { UserCircle, MapPin, Tag, RefreshCw, CheckSquare, Clock, History, FileOutput, Eye, PlayCircle, Upload, X, XCircle } from 'lucide-react';
 import { TicketDetailPanel } from './ticket-detail-panel';
 
 type TicketBoardProps = {
@@ -42,6 +42,9 @@ type TicketRow = {
   status: TicketStatus;
   clerkApprovalStatus?: 'PENDING' | 'SUBMITTED' | 'VERIFIED' | 'REJECTED';
   clerkReceiptUrl?: string | null;
+  deliveryStatus?: 'PENDING' | 'DISPATCHED' | null;
+  trackingNo?: string | null;
+  dispatchProofUrl?: string | null;
   serviceCost?: number | string | null;
   totalAmount?: number | string | null;
   amountPaid?: number | string | null;
@@ -167,6 +170,12 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
   const [receiptTicket, setReceiptTicket] = useState<TicketRow | null>(null);
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const [submittingReceipt, setSubmittingReceipt] = useState(false);
+  // Clerk dispatch (physical flows): mark a completed ticket dispatched with a
+  // courier proof + tracking no.
+  const [dispatchTicket, setDispatchTicket] = useState<TicketRow | null>(null);
+  const [dispatchFile, setDispatchFile] = useState<File | null>(null);
+  const [dispatchTracking, setDispatchTracking] = useState('');
+  const [dispatching, setDispatching] = useState(false);
   const receiptInputRef = useRef<HTMLInputElement>(null);
   // Admin: verify clerk receipt
   const [verifyTicket, setVerifyTicket] = useState<TicketRow | null>(null);
@@ -211,25 +220,40 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
     });
   };
 
+  // Admin "Review & Complete": one step — verify the clerk receipt, finalize
+  // any phase-2 charges, and complete the ticket (digital flows auto-deliver).
   const submitFinalize = async () => {
     if (!finalizeTicket) return;
     setFinalizing(true);
     try {
-      await paymentsClient.finalizeRemainder(finalizeTicket.id, {
+      await paymentsClient.reviewAndComplete(finalizeTicket.id, {
         attestedCharges: Number(finalizeForm.attestedCharges) || 0,
         nonAttestedCharges: Number(finalizeForm.nonAttestedCharges) || 0,
         printingCharges: Number(finalizeForm.printingCharges) || 0,
         deliveryCharges: Number(finalizeForm.deliveryCharges) || 0,
-        pdfCharges: Number(finalizeForm.pdfCharges) || 0,
       });
-      setMessage(`Phase-2 charges finalized for ${finalizeTicket.batchNo}`);
+      setMessage(`Ticket ${finalizeTicket.batchNo} reviewed & completed.`);
       setFinalizeTicket(null);
       setFinalizeForm(EMPTY_FINALIZE);
       loadTickets();
     } catch (error: any) {
-      setMessage(error.message || 'Finalize failed');
+      setMessage(error.message || 'Review & complete failed');
     } finally {
       setFinalizing(false);
+    }
+  };
+
+  // Admin "Confirm delivered" — only for a physical ticket the clerk dispatched.
+  const confirmDelivered = async (ticket: TicketRow) => {
+    if (!confirm(`Confirm ${ticket.batchNo} delivered to the consumer?`)) return;
+    try {
+      await apiClient.patch(`/tickets/${ticket.id}/status`, {
+        status: 'DELIVERED',
+      });
+      setMessage(`Ticket ${ticket.batchNo} marked delivered.`);
+      loadTickets();
+    } catch (error: any) {
+      setMessage(error.message || 'Failed to mark delivered');
     }
   };
 
@@ -441,32 +465,6 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
     }
   };
 
-  // Admin: mark a single IN_PROGRESS ticket as completed
-  const completeTicket = async (ticket: TicketRow) => {
-    if (!confirm(`Mark ticket ${ticket.batchNo} as Completed?`)) return;
-    try {
-      const updated = await apiClient.patch<{
-        caseId?: string | null;
-        caseRecommendations?: Array<{ next: string; priority: number; reason?: string }>;
-      }>(`/tickets/${ticket.id}/status`, { status: 'COMPLETED' });
-      const recs = updated.caseRecommendations ?? [];
-      if (updated.caseId && recs.length > 0) {
-        const { FLOW_LABELS, isFlowKey } = await import('@wusuq/shared');
-        const labels = recs
-          .slice(0, 2)
-          .map((r) => (isFlowKey(r.next) ? FLOW_LABELS[r.next] : r.next));
-        setMessage(
-          `✅ ${ticket.batchNo} completed. Suggested next on this case: ${labels.join(', ')}.`,
-        );
-      } else {
-        setMessage(`Ticket ${ticket.batchNo} marked as Completed.`);
-      }
-      loadTickets();
-    } catch (error: any) {
-      setMessage(error.message || 'Failed to complete ticket');
-    }
-  };
-
   // Clerk: accept assigned ticket → IN_PROGRESS
   const acceptTicket = async (ticket: TicketRow) => {
     if (!confirm(`Accept ticket ${ticket.batchNo}? This will move it to In Progress.`)) return;
@@ -494,6 +492,27 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
       setMessage(error.message || 'Receipt submission failed');
     } finally {
       setSubmittingReceipt(false);
+    }
+  };
+
+  // Clerk: mark a completed physical ticket dispatched (courier proof + tracking).
+  const submitDispatch = async () => {
+    if (!dispatchTicket) return;
+    setDispatching(true);
+    try {
+      const formData = new FormData();
+      if (dispatchFile) formData.append('file', dispatchFile);
+      if (dispatchTracking.trim()) formData.append('trackingNo', dispatchTracking.trim());
+      await apiClient.post(`/tickets/${dispatchTicket.id}/dispatch`, formData);
+      setMessage(`Ticket ${dispatchTicket.batchNo} marked dispatched.`);
+      setDispatchTicket(null);
+      setDispatchFile(null);
+      setDispatchTracking('');
+      loadTickets();
+    } catch (error: any) {
+      setMessage(error.message || 'Dispatch failed');
+    } finally {
+      setDispatching(false);
     }
   };
 
@@ -555,10 +574,10 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
   const sendBackToClerk = async () => {
     if (!sendBackTicket) return;
     try {
-      await apiClient.patch(`/tickets/${sendBackTicket.id}/status`, {
-        status: 'IN_PROGRESS',
-        note: sendBackReason || undefined,
-      });
+      await paymentsClient.sendBackToClerk(
+        sendBackTicket.id,
+        sendBackReason || undefined,
+      );
       setMessage(`Ticket ${sendBackTicket.batchNo} sent back to clerk.`);
       setSendBackTicket(null);
       setSendBackReason('');
@@ -903,6 +922,16 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
                             <CheckSquare className="h-3.5 w-3.5" /> Submit to Admin
                           </button>
                         )}
+                        {status === 'COMPLETED' &&
+                          chargeCapabilitiesFor(ticket.intakeFlow).delivery &&
+                          ticket.deliveryStatus !== 'DISPATCHED' && (
+                            <button
+                              onClick={() => { setDispatchTicket(ticket); setDispatchFile(null); setDispatchTracking(''); }}
+                              className="text-indigo-600 hover:text-indigo-900 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-md flex items-center gap-1"
+                            >
+                              <Upload className="h-3.5 w-3.5" /> Mark Dispatched
+                            </button>
+                          )}
                       </>
                     ) : (
                       <>
@@ -911,37 +940,15 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
                             <CheckSquare className="h-3.5 w-3.5" /> Assign
                           </button>
                         )}
-                        {status === 'IN_PROGRESS' && ticket.clerkApprovalStatus === 'SUBMITTED' && (
-                          <>
-                            <button onClick={() => { setVerifyTicket(ticket); setVerifyRejectReason(''); setIsVerifyRejectMode(false); }} className="text-amber-600 hover:text-amber-900 bg-amber-50 hover:bg-amber-100 px-3 py-1.5 rounded-md flex items-center gap-1">
-                              <Eye className="h-3.5 w-3.5" /> Verify Receipt
-                            </button>
-                          </>
-                        )}
                         {status === 'WAITING_APPROVAL' && (
                           <>
-                            {ticket.clerkApprovalStatus === 'SUBMITTED' ? (
-                              <button onClick={() => { setVerifyTicket(ticket); setVerifyRejectReason(''); setIsVerifyRejectMode(false); }} className="text-amber-600 hover:text-amber-900 bg-amber-50 hover:bg-amber-100 px-3 py-1.5 rounded-md flex items-center gap-1">
-                                <Eye className="h-3.5 w-3.5" /> Verify Receipt
-                              </button>
-                            ) : null}
-                            {(() => {
-                              const caps = chargeCapabilitiesFor(ticket.intakeFlow);
-                              const hasAnyCap = caps.attestation || caps.printing || caps.delivery || caps.pdf;
-                              return hasAnyCap && !ticket.remainderFinalizedAt ? (
-                                <button
-                                  onClick={() => openFinalizeModal(ticket)}
-                                  className="text-violet-600 hover:text-violet-900 bg-violet-50 hover:bg-violet-100 px-3 py-1.5 rounded-md flex items-center gap-1"
-                                >
-                                  <CreditCard className="h-3.5 w-3.5" /> Finalize Charges
-                                </button>
-                              ) : null;
-                            })()}
+                            {/* One step: verify the clerk receipt + finalize any
+                                charges + complete (digital auto-delivers). */}
                             <button
-                              onClick={() => completeTicket(ticket)}
+                              onClick={() => openFinalizeModal(ticket)}
                               className="text-emerald-600 hover:text-emerald-900 bg-emerald-50 hover:bg-emerald-100 px-3 py-1.5 rounded-md flex items-center gap-1"
                             >
-                              <PlayCircle className="h-3.5 w-3.5" /> Approve & Complete
+                              <PlayCircle className="h-3.5 w-3.5" /> Review &amp; Complete
                             </button>
                             <button
                               onClick={() => {
@@ -950,10 +957,25 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
                               }}
                               className="text-amber-700 hover:text-amber-900 bg-amber-50 hover:bg-amber-100 px-3 py-1.5 rounded-md flex items-center gap-1"
                             >
-                              <History className="h-3.5 w-3.5" /> Send Back to Clerk
+                              <History className="h-3.5 w-3.5" /> Send Back
                             </button>
                           </>
                         )}
+                        {status === 'COMPLETED' &&
+                          chargeCapabilitiesFor(ticket.intakeFlow).delivery &&
+                          ticket.deliveryStatus === 'DISPATCHED' && (
+                            <button
+                              onClick={() => confirmDelivered(ticket)}
+                              className="text-emerald-600 hover:text-emerald-900 bg-emerald-50 hover:bg-emerald-100 px-3 py-1.5 rounded-md flex items-center gap-1"
+                              title={
+                                ticket.trackingNo
+                                  ? `Dispatched · tracking ${ticket.trackingNo}`
+                                  : 'Confirm the consumer received the dispatched files'
+                              }
+                            >
+                              <CheckSquare className="h-3.5 w-3.5" /> Confirm Delivered
+                            </button>
+                          )}
                         <button onClick={() => openTimeline(ticket.id)} className="text-slate-600 hover:text-slate-900 bg-slate-100 px-3 py-1.5 rounded-md flex items-center gap-1">
                           <History className="h-3.5 w-3.5" /> Timeline
                         </button>
@@ -1410,6 +1432,47 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
         </PanelCard>
       )}
 
+      {/* Clerk: Mark Dispatched (physical flows) */}
+      {dispatchTicket && (
+        <PanelCard className="mt-6">
+          <div className="flex items-start justify-between">
+            <SectionHeader title={`Mark Dispatched — ${dispatchTicket.batchNo}`} description="Confirm you sent the physical files for delivery. Attach a courier receipt and/or tracking number." />
+            <button onClick={() => { setDispatchTicket(null); setDispatchFile(null); setDispatchTracking(''); }} className="p-1.5 text-slate-400 hover:text-slate-700 rounded-md transition-colors"><X className="h-5 w-5" /></button>
+          </div>
+          <div className="mt-4 space-y-4">
+            <label className="block">
+              <span className="text-sm font-medium text-slate-700">Tracking number</span>
+              <input
+                type="text"
+                value={dispatchTracking}
+                onChange={(e) => setDispatchTracking(e.target.value)}
+                placeholder="e.g. TCS-123456789"
+                className="mt-2 block w-full rounded-xl border-0 px-3 py-2.5 text-slate-900 ring-1 ring-inset ring-border-soft placeholder:text-slate-400 focus:ring-2 focus:ring-indigo-500 sm:text-sm"
+              />
+            </label>
+            <label className="block">
+              <span className="text-sm font-medium text-slate-700">Courier proof <span className="font-normal text-slate-400">(optional)</span></span>
+              <p className="text-xs text-slate-500 mt-0.5">Allowed: JPG, PNG, PDF — max 10 MB</p>
+              <input
+                type="file"
+                accept=".jpg,.jpeg,.png,.pdf"
+                className="mt-2 block w-full text-sm text-slate-700 file:mr-4 file:rounded-lg file:border-0 file:bg-indigo-50 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-indigo-700 hover:file:bg-indigo-100"
+                onChange={(e) => setDispatchFile(e.target.files?.[0] ?? null)}
+              />
+            </label>
+            {dispatchFile && (
+              <p className="text-xs text-slate-500">Selected: <span className="font-medium text-slate-800">{dispatchFile.name}</span></p>
+            )}
+            <div className="flex gap-3">
+              <button onClick={submitDispatch} disabled={dispatching || (!dispatchFile && !dispatchTracking.trim())} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 disabled:opacity-50 transition-colors">
+                {dispatching ? 'Saving…' : 'Mark Dispatched'}
+              </button>
+              <button onClick={() => { setDispatchTicket(null); setDispatchFile(null); setDispatchTracking(''); }} className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm ring-1 ring-inset ring-border-soft hover:bg-slate-50 transition-colors">Cancel</button>
+            </div>
+          </div>
+        </PanelCard>
+      )}
+
       {/* Admin: Verify Clerk Receipt Panel */}
       {verifyTicket && (
         <PanelCard className="mt-6 border-amber-200 bg-amber-50/30">
@@ -1500,13 +1563,21 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
       <Dialog open={Boolean(finalizeTicket)} onOpenChange={(open) => { if (!open) { setFinalizeTicket(null); setFinalizeForm(EMPTY_FINALIZE); } }}>
         <DialogContent size="xl">
           <DialogHeader>
-            <DialogTitle>Finalize phase-2 charges{finalizeTicket ? ` — ${finalizeTicket.batchNo}` : ''}</DialogTitle>
-            <DialogDescription>Review and edit the clerk-entered charges, then finalize. The consumer will be billed the remainder.</DialogDescription>
+            <DialogTitle>Review &amp; Complete{finalizeTicket ? ` — ${finalizeTicket.batchNo}` : ''}</DialogTitle>
+            <DialogDescription>Verify the clerk&rsquo;s submission, finalize any phase-2 charges, and complete the ticket. Digital services are delivered automatically once fully paid.</DialogDescription>
           </DialogHeader>
           {finalizeTicket && (() => {
             const caps = chargeCapabilitiesFor(finalizeTicket.intakeFlow);
+            const hasAnyCap = caps.attestation || caps.printing || caps.delivery || caps.pdf;
             return (
               <div className="space-y-4">
+                <div className="flex items-center gap-2 rounded-lg bg-emerald-50 px-4 py-2.5 text-sm text-emerald-800 ring-1 ring-inset ring-emerald-100">
+                  <CheckSquare className="h-4 w-4 shrink-0" />
+                  {finalizeTicket.clerkReceiptUrl
+                    ? 'Clerk receipt submitted.'
+                    : 'No clerk receipt on file.'}
+                  {!hasAnyCap ? ' No phase-2 charges for this service.' : ''}
+                </div>
                 <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3">
                   {caps.attestation && (
                     <>
@@ -1561,8 +1632,20 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
           })()}
           <DialogFooter>
             <Button variant="ghost" onClick={() => { setFinalizeTicket(null); setFinalizeForm(EMPTY_FINALIZE); }}>Cancel</Button>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                const t = finalizeTicket;
+                setFinalizeTicket(null);
+                setFinalizeForm(EMPTY_FINALIZE);
+                if (t) { setSendBackTicket(t); setSendBackReason(''); }
+              }}
+              disabled={finalizing}
+            >
+              Send back to clerk
+            </Button>
             <Button variant="primary" onClick={submitFinalize} disabled={finalizing}>
-              {finalizing ? 'Finalizing…' : 'Finalize & notify consumer'}
+              {finalizing ? 'Completing…' : 'Approve & Complete'}
             </Button>
           </DialogFooter>
         </DialogContent>

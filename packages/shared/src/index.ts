@@ -748,3 +748,22 @@ export function caseInfoBundleSurcharge(
       : CASE_INFO_BUNDLE_SURCHARGE.other;
   return table[docBundle] ?? 0;
 }
+
+// ─────────────────────────────────────────────
+// Ticket document labels
+// ─────────────────────────────────────────────
+//
+// Consumer-facing label for a ticket document's *kind* (the "sort" of
+// document). The DB `category` enum is WORK_DOCUMENT | DELIVERABLE_PDF. The
+// stored `type` is the file MIME type (not a human label), so UIs must use this
+// for the document heading instead of `type`.
+export function documentCategoryLabel(category?: string | null): string {
+  switch (category) {
+    case 'DELIVERABLE_PDF':
+      return 'Final document';
+    case 'WORK_DOCUMENT':
+      return 'Supporting document';
+    default:
+      return 'Document';
+  }
+}

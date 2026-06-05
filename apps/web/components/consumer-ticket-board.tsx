@@ -9,6 +9,7 @@ import {
   ArrowUpRight,
   CalendarDays,
   Clock,
+  Download,
   FileText,
   Hash,
   Landmark,
@@ -17,8 +18,9 @@ import {
   Scale,
   Search,
   Ticket as TicketIcon,
+  Truck,
 } from 'lucide-react';
-import { FLOW_LABELS, isFlowKey } from '@wusuq/shared';
+import { FLOW_LABELS, isFlowKey, documentCategoryLabel } from '@wusuq/shared';
 import { apiClient } from '@/lib/api-client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -63,6 +65,8 @@ type TicketRow = {
   payload?: Record<string, string> | null;
   intakeFlow?: string | null;
   scheduledDate?: string | null;
+  deliveryStatus?: 'PENDING' | 'DISPATCHED' | null;
+  trackingNo?: string | null;
 };
 
 // Lifecycle order for the compact progress strip on each card.
@@ -464,6 +468,15 @@ function TicketCard({ ticket, onOpen }: { ticket: TicketRow; onOpen: () => void 
         </div>
       ) : null}
 
+      {/* Out-for-delivery (physical files dispatched) */}
+      {ticket.deliveryStatus === 'DISPATCHED' ? (
+        <div className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-indigo-50 px-2.5 py-1 text-[11px] font-medium text-indigo-700 ring-1 ring-inset ring-indigo-100">
+          <Truck className="h-3.5 w-3.5" />
+          Out for delivery
+          {ticket.trackingNo ? <span className="font-mono text-indigo-500">· {ticket.trackingNo}</span> : null}
+        </div>
+      ) : null}
+
       {/* Dates */}
       {createdStr || hearingStr ? (
         <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-400">
@@ -716,8 +729,15 @@ export function ConsumerTicketDetail({
                 <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-50 text-brand-500">
                   <FileText className="h-4 w-4" />
                 </span>
-                <span className="min-w-0 flex-1 truncate text-sm text-slate-800">{doc.name ?? 'Document'}</span>
-                <span className="text-[10px] uppercase tracking-[0.08em] text-slate-400">{doc.type ?? ''}</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-medium text-slate-800">
+                    {documentCategoryLabel(doc.category)}
+                  </span>
+                  <span className="block truncate text-[11px] text-slate-400">
+                    {doc.caption || doc.name || 'Document'}
+                  </span>
+                </span>
+                <Download className="h-4 w-4 shrink-0 text-slate-400" />
               </button>
             ))}
           </div>

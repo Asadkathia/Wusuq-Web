@@ -117,8 +117,10 @@ Helmet → CORS → Body parser (10 MB) → ValidationPipe (whitelist, transform
 
 ### Database Schema Key Points
 - Geo hierarchy: `GeoProvince → GeoDistrict → GeoCity → CourtSeat`
-- Ticket lifecycle: `PENDING → ASSIGNED → IN_PROGRESS → WAITING_APPROVAL → COMPLETED`
+- Ticket lifecycle: `PENDING → ASSIGNED → IN_PROGRESS → WAITING_APPROVAL → COMPLETED → DELIVERED`
 - Clerk approval: separate state machine `PENDING → SUBMITTED → VERIFIED / REJECTED`
+- **Streamlined review tail (2026-06).** Clerk "Submit to Admin" (`submitClerkReceipt`) advances `IN_PROGRESS → WAITING_APPROVAL`. The admin then does ONE `reviewAndComplete` (the "Review & Complete" button) that verifies the receipt + finalizes phase-2 charges (reuses `finalizeRemainder` math) + completes — and auto-advances **digital** flows to `DELIVERED` when fully paid. `sendBackToClerk` (WAITING_APPROVAL → IN_PROGRESS) is the reject path. Don't reintroduce separate Verify-Receipt / Finalize / Approve buttons.
+- **Physical-dispatch sub-state (2026-06).** `Ticket.deliveryStatus` enum `PENDING → DISPATCHED` (+ `dispatchProofUrl`, `trackingNo`) tracks the clerk sending physical files. Clerk `dispatchDelivery` (from `COMPLETED`, physical flow only) sets `DISPATCHED`; the admin's "Confirm delivered" (→ `DELIVERED`) is the verification. The `DELIVERED` gate requires `deliveryStatus = DISPATCHED` AND `isFullyPaid` for physical flows; `isFullyPaid` only for digital. Only physical-document flows (`chargeCapabilitiesFor(flow).delivery`) use this.
 - Every sensitive auth action is written to `AuditLog`
 
 ### Frontend Route Structure

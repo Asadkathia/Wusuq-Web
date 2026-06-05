@@ -419,6 +419,86 @@ export class TicketsController {
     });
   }
 
+  // Admin "Review & Complete": verify clerk receipt + finalize charges +
+  // complete (+ auto-deliver digital) in one step. Replaces the separate
+  // verify / finalize / approve actions.
+  @RequirePermissions('finance.write')
+  @Post(':id/review-complete')
+  reviewAndComplete(
+    @Param('id') id: string,
+    @Body() dto: FinalizeRemainderDto,
+    @CurrentUser() actor: JwtUser | undefined,
+  ) {
+    return this.ticketsService.reviewAndComplete(id, dto, {
+      actorUserId: actor?.sub,
+      actorEmail: actor?.email,
+    });
+  }
+
+  @RequirePermissions('tickets.write')
+  @Post(':id/send-back')
+  sendBackToClerk(
+    @Param('id') id: string,
+    @Body() dto: RejectAssignmentDto,
+    @CurrentUser() actor: JwtUser | undefined,
+  ) {
+    return this.ticketsService.sendBackToClerk(id, dto.reason, {
+      actorUserId: actor?.sub,
+      actorEmail: actor?.email,
+    });
+  }
+
+  // Clerk "Mark dispatched" for a physical-document flow. Optional courier
+  // proof (JPG/PNG/PDF) + tracking no. Reuses the clerk-receipts bucket.
+  @RequirePermissions('tickets.write')
+  @Post(':id/dispatch')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: diskStorage({
+        destination: (_req, _file, cb) =>
+          cb(null, getUploadsBucketDir(UPLOADS_BUCKETS.clerkReceipts)),
+        filename: (_req, file, callback) => {
+          const sanitized = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
+          const ext = extname(sanitized);
+          callback(
+            null,
+            `${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`,
+          );
+        },
+      }),
+      limits: { fileSize: MAX_UPLOAD_SIZE_BYTES },
+      fileFilter: (_req, file, callback) => {
+        const allowedExt = new Set(['.jpg', '.jpeg', '.png', '.pdf']);
+        const allowedMime = new Set([
+          'image/jpeg',
+          'image/png',
+          'application/pdf',
+        ]);
+        const ext = extname(file.originalname).toLowerCase();
+        if (!allowedMime.has(file.mimetype) || !allowedExt.has(ext)) {
+          callback(
+            new BadRequestException('Allowed formats: JPG, PNG, PDF'),
+            false,
+          );
+          return;
+        }
+        callback(null, true);
+      },
+    }),
+  )
+  dispatchDelivery(
+    @Param('id') id: string,
+    @UploadedFile() file: { path: string } | undefined,
+    @Body('trackingNo') trackingNo: string | undefined,
+    @CurrentUser() actor: JwtUser | undefined,
+  ) {
+    return this.ticketsService.dispatchDelivery(
+      id,
+      { proofUrl: file?.path, trackingNo },
+      { actorUserId: actor?.sub, actorEmail: actor?.email },
+    );
+  }
+
   @RequirePermissions('tickets.write')
   @Post('assign-bulk')
   assignBulk(

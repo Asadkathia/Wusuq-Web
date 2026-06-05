@@ -2125,3 +2125,163 @@ describe('findAll — clerk cost is gated out of the consumer list', () => {
     expect(row.defaultClerkCost).toBe(400);
   });
 });
+
+describe('ticket workflow streamline — review / send-back / dispatch / delivery', () => {
+  function harness(ticket: Record<string, unknown>) {
+    const updates: { data: Record<string, unknown> }[] = [];
+    const histories: { data: Record<string, unknown> }[] = [];
+    const prisma: any = {
+      ticket: {
+        findUnique: jest.fn().mockResolvedValue({
+          documents: [],
+          assignments: [],
+          history: [],
+          consumer: {},
+          service: {},
+          ...ticket,
+        }),
+        update: jest.fn().mockImplementation(async (a: any) => {
+          updates.push(a);
+          return { id: 'tkt-1', ...ticket, ...a.data };
+        }),
+      },
+      ticketStatusHistory: {
+        create: jest.fn().mockImplementation(async (a: any) => {
+          histories.push(a);
+          return {};
+        }),
+      },
+    };
+    const wallet = {
+      settleTicketsForUser: jest.fn().mockResolvedValue(undefined),
+    };
+    const service = new TicketsService(
+      prisma as never,
+      { create: jest.fn() } as never,
+      {} as never,
+      {} as never,
+      makeDispatcher() as never,
+      wallet as never,
+    );
+    return { service, prisma, updates, histories };
+  }
+  const actor = { actorUserId: 'admin-1' };
+
+  it('submitClerkReceipt advances IN_PROGRESS → WAITING_APPROVAL + SUBMITTED', async () => {
+    const { service, updates } = harness({
+      id: 'tkt-1',
+      status: 'IN_PROGRESS',
+      clerkApprovalStatus: 'PENDING',
+    });
+    await service.submitClerkReceipt('tkt-1', '/path/receipt.pdf', actor);
+    const data = updates[0]?.data;
+    expect(data?.status).toBe('WAITING_APPROVAL');
+    expect(data?.clerkApprovalStatus).toBe('SUBMITTED');
+  });
+
+  it('reviewAndComplete: digital flow fully paid → auto DELIVERED', async () => {
+    const { service, updates } = harness({
+      id: 'tkt-1',
+      status: 'WAITING_APPROVAL',
+      clerkApprovalStatus: 'SUBMITTED',
+      intakeFlow: 'judicial_case_information', // digital (no delivery cap)
+      remainderFinalizedAt: null,
+      totalAmount: 3500,
+      amountPaid: 3500,
+    });
+    await service.reviewAndComplete('tkt-1', {} as never, actor);
+    const statuses = updates.map((u) => u.data.status);
+    expect(statuses).toContain('COMPLETED');
+    expect(statuses).toContain('DELIVERED'); // auto-delivered
+  });
+
+  it('reviewAndComplete: physical flow stays COMPLETED (not auto-delivered)', async () => {
+    const { service, updates } = harness({
+      id: 'tkt-1',
+      status: 'WAITING_APPROVAL',
+      clerkApprovalStatus: 'SUBMITTED',
+      intakeFlow: 'judicial_case_files', // physical (has delivery cap)
+      remainderFinalizedAt: new Date(), // already finalized → skip finalize math
+      totalAmount: 3000,
+      amountPaid: 3000,
+      consumerId: 'c1',
+      serviceCost: 3000,
+    });
+    await service.reviewAndComplete('tkt-1', {} as never, actor);
+    const statuses = updates.map((u) => u.data.status);
+    expect(statuses).toContain('COMPLETED');
+    expect(statuses).not.toContain('DELIVERED');
+  });
+
+  it('reviewAndComplete rejects when not awaiting review', async () => {
+    const { service } = harness({ id: 'tkt-1', status: 'IN_PROGRESS' });
+    await expect(
+      service.reviewAndComplete('tkt-1', {} as never, actor),
+    ).rejects.toThrow('not awaiting review');
+  });
+
+  it('sendBackToClerk → IN_PROGRESS + REJECTED', async () => {
+    const { service, updates } = harness({
+      id: 'tkt-1',
+      status: 'WAITING_APPROVAL',
+    });
+    await service.sendBackToClerk('tkt-1', 'redo the copy', actor);
+    const data = updates[0]?.data;
+    expect(data?.status).toBe('IN_PROGRESS');
+    expect(data?.clerkApprovalStatus).toBe('REJECTED');
+  });
+
+  it('dispatchDelivery: physical from COMPLETED → DISPATCHED', async () => {
+    const { service, updates } = harness({
+      id: 'tkt-1',
+      status: 'COMPLETED',
+      intakeFlow: 'judicial_case_files',
+      dispatchProofUrl: null,
+      trackingNo: null,
+    });
+    await service.dispatchDelivery(
+      'tkt-1',
+      { proofUrl: '/p.pdf', trackingNo: 'TRK-9' },
+      actor,
+    );
+    const data = updates[0]?.data;
+    expect(data?.deliveryStatus).toBe('DISPATCHED');
+    expect(data?.trackingNo).toBe('TRK-9');
+  });
+
+  it('dispatchDelivery rejects a digital flow', async () => {
+    const { service } = harness({
+      id: 'tkt-1',
+      status: 'COMPLETED',
+      intakeFlow: 'judicial_case_search', // digital, no delivery
+    });
+    await expect(service.dispatchDelivery('tkt-1', {}, actor)).rejects.toThrow(
+      'no physical delivery',
+    );
+  });
+
+  it('dispatchDelivery rejects before COMPLETED', async () => {
+    const { service } = harness({
+      id: 'tkt-1',
+      status: 'IN_PROGRESS',
+      intakeFlow: 'judicial_case_files',
+    });
+    await expect(service.dispatchDelivery('tkt-1', {}, actor)).rejects.toThrow(
+      'must be completed',
+    );
+  });
+
+  it('DELIVERED gate: physical flow not dispatched is blocked', async () => {
+    const { service } = harness({
+      id: 'tkt-1',
+      status: 'COMPLETED',
+      intakeFlow: 'judicial_case_files',
+      deliveryStatus: 'PENDING',
+      totalAmount: 3000,
+      amountPaid: 3000, // fully paid, so the dispatch gate is what trips
+    });
+    await expect(
+      service.updateStatus('tkt-1', 'DELIVERED', undefined, actor),
+    ).rejects.toThrow('dispatched before confirming delivery');
+  });
+});

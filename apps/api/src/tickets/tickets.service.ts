@@ -274,6 +274,10 @@ export class TicketsService {
         remainderFinalizedAt: ticket.remainderFinalizedAt,
         scheduledDate: ticket.scheduledDate,
         hearingType: ticket.hearingType,
+        // Physical-dispatch trail. deliveryStatus + trackingNo are consumer-safe
+        // ("Out for delivery" chip); the proof file path is admin-only.
+        deliveryStatus: ticket.deliveryStatus,
+        trackingNo: ticket.trackingNo,
         // Clerk cost is internal-only (rep pay-out) — never expose it to
         // consumers (CLAUDE.md). Admin/staff list rows still carry it.
         ...(opts?.forConsumer
@@ -281,6 +285,7 @@ export class TicketsService {
           : {
               clerkCost: ticket.clerkCost,
               defaultClerkCost: ticket.defaultClerkCost,
+              dispatchProofUrl: ticket.dispatchProofUrl,
             }),
         deliveryCharges: ticket.deliveryCharges,
         printingCharges: ticket.printingCharges,
@@ -697,6 +702,18 @@ export class TicketsService {
 
     if (status === 'DELIVERED' && !isFullyPaid(ticket)) {
       throw new ForbiddenException('Final payment required before delivery.');
+    }
+
+    // Physical-document flows must be dispatched (clerk sent the files) before
+    // the admin can confirm delivery. Digital flows have no dispatch step.
+    if (
+      status === 'DELIVERED' &&
+      chargeCapabilitiesFor(ticket.intakeFlow).delivery &&
+      ticket.deliveryStatus !== 'DISPATCHED'
+    ) {
+      throw new BadRequestException(
+        'Mark the package dispatched before confirming delivery.',
+      );
     }
 
     const updated = await this.prisma.ticket.update({
@@ -1276,10 +1293,28 @@ export class TicketsService {
     });
     if (!ticket) throw new NotFoundException('Ticket not found');
 
+    // Submitting the work receipt advances the ticket into the admin's review
+    // queue (WAITING_APPROVAL). The admin's single "Review & Complete" step then
+    // verifies + finalizes + completes — no separate verify gate.
+    const advance = ticket.status === 'IN_PROGRESS';
     const updated = await this.prisma.ticket.update({
       where: { id: ticketId },
-      data: { clerkReceiptUrl: receiptUrl, clerkApprovalStatus: 'SUBMITTED' },
+      data: {
+        clerkReceiptUrl: receiptUrl,
+        clerkApprovalStatus: 'SUBMITTED',
+        ...(advance ? { status: 'WAITING_APPROVAL' as const } : {}),
+      },
     });
+    if (advance) {
+      await this.prisma.ticketStatusHistory.create({
+        data: {
+          ticketId,
+          from: ticket.status,
+          to: 'WAITING_APPROVAL',
+          note: 'Clerk submitted work receipt',
+        },
+      });
+    }
 
     await this.auditLogsService.create({
       action: 'TICKET_CLERK_RECEIPT_SUBMITTED',
@@ -1343,6 +1378,183 @@ export class TicketsService {
       .ticketClerkReceiptDecided(ticketId, decision)
       .catch(() => undefined);
 
+    return updated;
+  }
+
+  /**
+   * Admin "Review & Complete" — the single step that replaces the old
+   * Verify-Receipt → Finalize-Charges → Approve sequence. From WAITING_APPROVAL:
+   * verifies the clerk receipt, finalizes phase-2 charges (if the flow has
+   * them), completes the ticket, and auto-delivers digital flows that are
+   * already fully paid.
+   */
+  async reviewAndComplete(
+    ticketId: string,
+    dto: FinalizeRemainderDto,
+    actor?: { actorUserId?: string; actorEmail?: string },
+  ) {
+    const ticket = await this.prisma.ticket.findUnique({
+      where: { id: ticketId },
+    });
+    if (!ticket) throw new NotFoundException('Ticket not found');
+    if (ticket.status !== 'WAITING_APPROVAL') {
+      throw new BadRequestException('Ticket is not awaiting review');
+    }
+
+    // 1. Apply phase-2 charges (reuses the caps-gated finalize math) when the
+    //    flow has them and they weren't finalized already.
+    const caps = chargeCapabilitiesFor(ticket.intakeFlow);
+    const hasCaps =
+      caps.attestation || caps.printing || caps.delivery || caps.pdf;
+    if (hasCaps && !ticket.remainderFinalizedAt) {
+      await this.finalizeRemainder(ticketId, dto, {
+        actorUserId: actor?.actorUserId,
+        actorEmail: actor?.actorEmail,
+      });
+    }
+
+    // 2. Verify the clerk receipt (if submitted) + complete.
+    await this.prisma.ticket.update({
+      where: { id: ticketId },
+      data: {
+        ...(ticket.clerkApprovalStatus === 'SUBMITTED'
+          ? { clerkApprovalStatus: 'VERIFIED' as const }
+          : {}),
+        status: 'COMPLETED',
+      },
+    });
+    await this.prisma.ticketStatusHistory.create({
+      data: {
+        ticketId,
+        from: 'WAITING_APPROVAL',
+        to: 'COMPLETED',
+        note: 'Reviewed & completed',
+      },
+    });
+    await this.auditLogsService.create({
+      action: 'TICKET_REVIEWED_COMPLETED',
+      entity: 'TICKET',
+      entityId: ticketId,
+      actorUserId: actor?.actorUserId,
+      actorEmail: actor?.actorEmail,
+    });
+
+    // 3. Digital flows (no physical delivery leg) auto-advance to DELIVERED when
+    //    fully paid — the consumer already has the deliverable PDFs.
+    const fresh = await this.prisma.ticket.findUnique({
+      where: { id: ticketId },
+      select: { intakeFlow: true, totalAmount: true, amountPaid: true },
+    });
+    let finalStatus: TicketStatus = 'COMPLETED';
+    if (
+      fresh &&
+      !chargeCapabilitiesFor(fresh.intakeFlow).delivery &&
+      isFullyPaid(fresh)
+    ) {
+      finalStatus = 'DELIVERED';
+      await this.prisma.ticket.update({
+        where: { id: ticketId },
+        data: { status: 'DELIVERED' },
+      });
+      await this.prisma.ticketStatusHistory.create({
+        data: {
+          ticketId,
+          from: 'COMPLETED',
+          to: 'DELIVERED',
+          note: 'Auto-delivered — digital deliverables available',
+        },
+      });
+    }
+
+    await this.dispatcher
+      .ticketStatusChanged(ticketId, 'WAITING_APPROVAL', finalStatus)
+      .catch(() => undefined);
+    return this.findOne(ticketId);
+  }
+
+  /**
+   * Admin "Send back to clerk" from WAITING_APPROVAL → IN_PROGRESS. Replaces the
+   * old verify-reject + standalone send-back.
+   */
+  async sendBackToClerk(
+    ticketId: string,
+    reason?: string,
+    actor?: { actorUserId?: string; actorEmail?: string },
+  ) {
+    const ticket = await this.prisma.ticket.findUnique({
+      where: { id: ticketId },
+    });
+    if (!ticket) throw new NotFoundException('Ticket not found');
+    if (ticket.status !== 'WAITING_APPROVAL') {
+      throw new BadRequestException('Ticket is not awaiting review');
+    }
+
+    await this.prisma.ticket.update({
+      where: { id: ticketId },
+      data: { status: 'IN_PROGRESS', clerkApprovalStatus: 'REJECTED' },
+    });
+    await this.prisma.ticketStatusHistory.create({
+      data: {
+        ticketId,
+        from: 'WAITING_APPROVAL',
+        to: 'IN_PROGRESS',
+        note: reason,
+      },
+    });
+    await this.auditLogsService.create({
+      action: 'TICKET_SENT_BACK_TO_CLERK',
+      entity: 'TICKET',
+      entityId: ticketId,
+      actorUserId: actor?.actorUserId,
+      actorEmail: actor?.actorEmail,
+      metadata: { reason },
+    });
+    await this.dispatcher
+      .ticketStatusChanged(ticketId, 'WAITING_APPROVAL', 'IN_PROGRESS')
+      .catch(() => undefined);
+    return this.findOne(ticketId);
+  }
+
+  /**
+   * Clerk "Mark dispatched" for a physical-document flow (Case Files + the 3
+   * non-judicial copies) once COMPLETED: records the courier proof + tracking
+   * no and sets deliveryStatus = DISPATCHED. The admin then confirms delivery.
+   */
+  async dispatchDelivery(
+    ticketId: string,
+    payload: { proofUrl?: string; trackingNo?: string },
+    actor?: { actorUserId?: string; actorEmail?: string },
+  ) {
+    const ticket = await this.prisma.ticket.findUnique({
+      where: { id: ticketId },
+    });
+    if (!ticket) throw new NotFoundException('Ticket not found');
+    if (!chargeCapabilitiesFor(ticket.intakeFlow).delivery) {
+      throw new BadRequestException('This service has no physical delivery.');
+    }
+    if (ticket.status !== 'COMPLETED') {
+      throw new BadRequestException(
+        'Ticket must be completed before it can be dispatched.',
+      );
+    }
+
+    const trimmedTracking = payload.trackingNo?.trim();
+    const updated = await this.prisma.ticket.update({
+      where: { id: ticketId },
+      data: {
+        deliveryStatus: 'DISPATCHED',
+        dispatchProofUrl: payload.proofUrl ?? ticket.dispatchProofUrl,
+        trackingNo: trimmedTracking || ticket.trackingNo,
+      },
+    });
+    await this.auditLogsService.create({
+      action: 'TICKET_DISPATCHED',
+      entity: 'TICKET',
+      entityId: ticketId,
+      actorUserId: actor?.actorUserId,
+      actorEmail: actor?.actorEmail,
+      metadata: { trackingNo: trimmedTracking ?? null },
+    });
     return updated;
   }
 

@@ -10,11 +10,14 @@ import { PanelCard } from '@/components/ui/panel-card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { StatusPill } from '@/components/ui/status-pill';
 import { useToast } from '@/components/ui/toast';
+import { documentCategoryLabel } from '@wusuq/shared';
 
 type DocumentItem = {
   id: string;
   name: string;
   type: string;
+  category?: string | null;
+  caption?: string | null;
   fileUrl: string;
   createdAt: string;
   ticket?: {
@@ -30,6 +33,16 @@ function iconFor(type: string) {
   if (t.includes('image') || t.includes('png') || t.includes('jpg') || t.includes('jpeg'))
     return <FileImage className="h-5 w-5 text-indigo-500" />;
   return <File className="h-5 w-5 text-slate-400" />;
+}
+
+// Short file-kind badge from the MIME type (PDF / Image / File) — complements
+// the document-category heading without repeating it.
+function fileKindLabel(type: string): string {
+  const t = (type ?? '').toLowerCase();
+  if (t.includes('pdf')) return 'PDF';
+  if (t.includes('image') || t.includes('png') || t.includes('jpg') || t.includes('jpeg')) return 'Image';
+  if (t.includes('word') || t.includes('doc')) return 'Doc';
+  return 'File';
 }
 
 export function ConsumerDocumentsBoard() {
@@ -124,7 +137,13 @@ export function ConsumerDocumentsBoard() {
                   {iconFor(doc.type)}
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold text-slate-900">{doc.name}</p>
+                  <p className="truncate text-sm font-semibold text-slate-900">
+                    {documentCategoryLabel(doc.category)}
+                  </p>
+                  {doc.caption ? (
+                    <p className="truncate text-xs text-slate-600">{doc.caption}</p>
+                  ) : null}
+                  <p className="mt-0.5 truncate text-xs text-slate-400">{doc.name}</p>
                   <p className="mt-0.5 text-xs text-slate-500">
                     {doc.ticket?.batchNo ? (
                       <>
@@ -136,7 +155,7 @@ export function ConsumerDocumentsBoard() {
                 </div>
               </div>
               <div className="mt-3 flex items-center justify-between">
-                <StatusPill dot label={doc.type || 'Document'} variant="brand" />
+                <StatusPill dot label={fileKindLabel(doc.type)} variant="brand" />
                 <button
                   type="button"
                   disabled={!doc.ticket?.id}

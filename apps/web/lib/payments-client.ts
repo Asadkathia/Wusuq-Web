@@ -102,4 +102,23 @@ export const paymentsClient = {
   overrideStatus(ticketId: string, status: string): Promise<unknown> {
     return apiClient.patch(`/tickets/${ticketId}/status-override`, { status });
   },
+
+  // Admin "Review & Complete": verify clerk receipt + finalize charges +
+  // complete (+ auto-deliver digital) in one step.
+  reviewAndComplete(
+    ticketId: string,
+    charges: {
+      attestedCharges?: number;
+      nonAttestedCharges?: number;
+      printingCharges?: number;
+      deliveryCharges?: number;
+    },
+  ): Promise<unknown> {
+    return apiClient.post(`/tickets/${ticketId}/review-complete`, charges);
+  },
+
+  // Admin: send a ticket back to the clerk from review (with a reason).
+  sendBackToClerk(ticketId: string, reason?: string): Promise<unknown> {
+    return apiClient.post(`/tickets/${ticketId}/send-back`, { reason });
+  },
 };
