@@ -327,6 +327,12 @@ export function renderField(
 
   if (field.type === 'radio') {
     const options = field.options ?? [];
+    // Resolve the option label: runtime optionsLabel fn → serializable
+    // optionsLabels map → default humanisation. `capitalize` is only applied
+    // to the default form so custom labels (e.g. "I have an FIR number") are
+    // rendered verbatim rather than title-cased.
+    const customLabel = (o: string) =>
+      field.optionsLabel?.(o, payload) ?? field.optionsLabels?.[o];
     return (
       <fieldset>
         <legend className="sr-only">{field.label}</legend>
@@ -364,7 +370,9 @@ export function renderField(
                         : 'border-slate-300',
                     ].join(' ')}
                   />
-                  <span className="capitalize">{o.replace(/_/g, ' ')}</span>
+                  <span className={customLabel(o) ? undefined : 'capitalize'}>
+                    {customLabel(o) ?? o.replace(/_/g, ' ')}
+                  </span>
                 </button>
                 {disabled && optMeta?.hint ? (
                   <span className="mt-1 text-[11px] text-slate-500">{optMeta.hint}</span>
@@ -380,7 +388,8 @@ export function renderField(
 
   if (field.type === 'checkbox_single') {
     const options = field.options ?? [];
-    const labelFor = field.optionsLabel ? (o: string) => field.optionsLabel!(o, payload) : (o: string) => o;
+    const labelFor = (o: string) =>
+      field.optionsLabel?.(o, payload) ?? field.optionsLabels?.[o] ?? o;
     return (
       <CheckboxSingleField
         field={field}

@@ -200,8 +200,24 @@ export type IntakeField = {
    * stored payload value remains the raw option string; only presentation
    * changes. Used by `required_documentations` to swap Petition/Paperbook
    * based on the active court tier.
+   *
+   * ⚠️ RUNTIME-ONLY. A function is NOT serializable across the React Server
+   * Components boundary, so it must NEVER appear in the static flow data that
+   * `[flowKey]/page.tsx` (a Server Component) spreads into the client
+   * `IntakeWizard` — doing so throws "An error occurred in the Server
+   * Components render" and 500s the whole route. This field is reserved for
+   * the wizard injecting a label fn on a *client-side* field copy at render
+   * time (see intake-wizard.tsx). For static per-option labels in flow data,
+   * use the serializable {@link optionsLabels} map instead.
    */
   optionsLabel?: (opt: string, payload: Record<string, string>) => string;
+  /**
+   * Serializable per-option label overrides (`{ rawOption: displayLabel }`).
+   * Safe to declare in static flow data because it crosses the RSC boundary
+   * as plain JSON. Resolved after {@link optionsLabel} and before the default
+   * `raw.replace(/_/g, ' ')` humanisation.
+   */
+  optionsLabels?: Record<string, string>;
   /**
    * Optional regex pattern enforced on non-empty values. The `regex` string is
    * compiled with `new RegExp(...)` and the field is rejected with `message`
@@ -1336,10 +1352,12 @@ const copyOfFirSteps: IntakeStep[] = [
         required: true,
         defaultValue: 'have_fir_number',
         options: ['have_fir_number', 'search_by_cnic'],
-        optionsLabel: (opt) =>
-          opt === 'have_fir_number'
-            ? 'I have an FIR number'
-            : 'Search criminal records by CNIC',
+        // Serializable map (not a function) — a function here crosses the RSC
+        // server→client boundary and 500s the whole route. See optionsLabels.
+        optionsLabels: {
+          have_fir_number: 'I have an FIR number',
+          search_by_cnic: 'Search criminal records by CNIC',
+        },
       },
       // province/district/police station handled by dedicated wizard geo block
       { key: 'province', label: 'Province', type: 'text', required: true },
