@@ -170,7 +170,7 @@ export function RepresentativesBoard() {
   const resolveGeoForEdit = useCallback(async (provName: string | null, distName: string | null) => {
     setProvinceId(''); setDistrictId(''); setDistricts([]); setCities([]);
     if (!provName) return;
-    let provs = await apiClient.get<GeoOpt[]>('/geo/provinces').catch(() => [] as GeoOpt[]);
+    const provs = await apiClient.get<GeoOpt[]>('/geo/provinces').catch(() => [] as GeoOpt[]);
     setProvinces(provs ?? []);
     const prov = (provs ?? []).find((p) => p.name === provName);
     if (!prov) return;
