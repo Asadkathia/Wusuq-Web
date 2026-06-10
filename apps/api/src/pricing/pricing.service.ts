@@ -27,6 +27,24 @@ export const STATE_VS_PATTERN = /^\s*state\s+vs\b/i;
 // number of cities (PDF #36).
 export const SEARCH_BOTH_SURCHARGE = 1000;
 
+// Owner 2026-06 rate change: Case Search (judicial_case_search) is now priced
+// by case age — Rs 2,000 per year of age, per city — REPLACING the seeded base
+// rule. Example: an 11-year-old case = 11 × 2,000 = Rs 22,000 per city. Pending
+// or unknown-year cases (no caseYear, or caseYear in the present/future) charge
+// the 1-year minimum = Rs 2,000. The "both methods" surcharge (+Rs 1,000/city)
+// and the cityCount multiplier still apply on top. Because the per-year base
+// already encodes age, the legacy decided-age surcharge is suppressed for this
+// flow (see resolve()).
+export const CASE_SEARCH_PER_YEAR_RATE = 2000;
+
+export function computeCaseSearchBase(
+  caseYear: number | undefined,
+  currentYear = new Date().getFullYear(),
+): number {
+  const age = caseYear && caseYear < currentYear ? currentYear - caseYear : 1;
+  return Math.max(1, age) * CASE_SEARCH_PER_YEAR_RATE;
+}
+
 // PDF #7 / QA 5-10-26: decided cases older than 10 years pick up Rs 1,000 per
 // extra year on top of the rule-based price. Example: in 2026 a 2016 case
 // resolves to its banded base; 2015 = base + 1,000; 2014 = base + 2,000.
@@ -509,7 +527,15 @@ export class PricingService {
     // bundle is picked; returns the seeded base for every other flow
     // (caseInfoBundleBase yields 0 outside Case Information).
     const caseInfoBase = caseInfoBundleBase(dto.flow, region, dto.docBundle);
-    const basePrice = caseInfoBase > 0 ? caseInfoBase : Number(best.basePrice);
+    // Owner 2026-06: Case Search replaces the seeded base with an age-derived
+    // per-year base (Rs 2,000 × years of age). Other flows keep the Case
+    // Information bundle base (when set) or the seeded rule base.
+    const isCaseSearch = dto.flow === 'judicial_case_search';
+    const basePrice = isCaseSearch
+      ? computeCaseSearchBase(dto.caseYear)
+      : caseInfoBase > 0
+        ? caseInfoBase
+        : Number(best.basePrice);
 
     // Per-set rates from rule are overridden by global settings, which are
     // themselves overridden by a clerk-side report when one exists for the
@@ -577,7 +603,11 @@ export class PricingService {
     // PDF #7: Decided cases beyond 10 years old accrue Rs 1,000/year on top
     // of the banded rule. Lives in the resolver as a derived surcharge so the
     // pricing sheet only needs the banded rules — no per-year rows.
-    const ageSurcharge = computeAgeSurcharge(dto.caseStatus, dto.caseYear);
+    // Case Search's per-year base already encodes age (Rs 2,000/yr); suppress
+    // the legacy decided-age surcharge for it to avoid double-counting.
+    const ageSurcharge = isCaseSearch
+      ? 0
+      : computeAgeSurcharge(dto.caseStatus, dto.caseYear);
 
     // 2026-06 #4/#5: Case Information's document bundle is folded into the base
     // fee above (see basePrice). There is no separate bundle add-on line, so
@@ -586,8 +616,8 @@ export class PricingService {
     const bundleSurcharge = 0;
 
     // PDF #36 / #37 — Case Search-specific multipliers. Other flows ignore
-    // both: cityCount stays 1 and searchBothSurcharge stays 0.
-    const isCaseSearch = dto.flow === 'judicial_case_search';
+    // both: cityCount stays 1 and searchBothSurcharge stays 0. (isCaseSearch is
+    // computed above, alongside the per-year base.)
     const cityCount = isCaseSearch ? Math.max(1, dto.cityCount ?? 1) : 1;
     const searchBothSurcharge =
       isCaseSearch && dto.searchMethod === 'both' ? SEARCH_BOTH_SURCHARGE : 0;
