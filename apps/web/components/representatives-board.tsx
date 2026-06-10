@@ -93,6 +93,7 @@ type RepData = {
   email: string;
   phone: string | null;
   address: string | null;
+  province: string | null;
   city: string | null;
   district: string | null;
   court: string | null;
@@ -111,11 +112,14 @@ const emptyForm = {
   serviceId: '',      // internal – drives court dropdown
   court: '',
   courtCity: '',
+  province: '',
   district: '',
   city: '',
 };
 
 type FormState = typeof emptyForm;
+
+type GeoOpt = { id: string; name: string };
 
 const INPUT_CLS =
   'mt-1 block w-full rounded-lg border-0 py-2 px-3 text-slate-900 ring-1 ring-inset ring-border-soft focus:ring-2 focus:ring-primary-600 sm:text-sm';
@@ -136,6 +140,49 @@ export function RepresentativesBoard() {
   const [form, setForm] = useState<FormState>(emptyForm);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');
+
+  // Cascading geo dropdowns for the clerk's territory: Province → District →
+  // City/Tehsil. Driven by GeoCity ids; the form stores the chosen NAMES
+  // (matching how district/city were stored as free text before).
+  const [provinces, setProvinces] = useState<GeoOpt[]>([]);
+  const [districts, setDistricts] = useState<GeoOpt[]>([]);
+  const [cities, setCities] = useState<GeoOpt[]>([]);
+  const [provinceId, setProvinceId] = useState('');
+  const [districtId, setDistrictId] = useState('');
+
+  // Effects only FETCH on a truthy id (no synchronous setState in the body —
+  // see the react-hooks/set-state-in-effect convention). Clearing happens in
+  // the select onChange handlers and openCreate/openEdit.
+  useEffect(() => {
+    apiClient.get<GeoOpt[]>('/geo/provinces').then((p) => setProvinces(p ?? [])).catch(() => {});
+  }, []);
+  useEffect(() => {
+    if (!provinceId) return;
+    apiClient.get<GeoOpt[]>(`/geo/provinces/${provinceId}/districts`).then((d) => setDistricts(d ?? [])).catch(() => {});
+  }, [provinceId]);
+  useEffect(() => {
+    if (!districtId) return;
+    apiClient.get<GeoOpt[]>(`/geo/districts/${districtId}/cities`).then((c) => setCities(c ?? [])).catch(() => {});
+  }, [districtId]);
+
+  // Edit pre-fill: resolve stored province/district NAMES back to ids so the
+  // dependent dropdowns populate and show the saved values.
+  const resolveGeoForEdit = useCallback(async (provName: string | null, distName: string | null) => {
+    setProvinceId(''); setDistrictId(''); setDistricts([]); setCities([]);
+    if (!provName) return;
+    let provs = await apiClient.get<GeoOpt[]>('/geo/provinces').catch(() => [] as GeoOpt[]);
+    setProvinces(provs ?? []);
+    const prov = (provs ?? []).find((p) => p.name === provName);
+    if (!prov) return;
+    setProvinceId(prov.id);
+    const dists = (await apiClient.get<GeoOpt[]>(`/geo/provinces/${prov.id}/districts`).catch(() => [] as GeoOpt[])) ?? [];
+    setDistricts(dists);
+    const dist = dists.find((d) => d.name === distName);
+    if (!dist) return;
+    setDistrictId(dist.id);
+    const cs = (await apiClient.get<GeoOpt[]>(`/geo/districts/${dist.id}/cities`).catch(() => [] as GeoOpt[])) ?? [];
+    setCities(cs);
+  }, []);
 
   // Courts filtered by selected service
   const availableCourts = useMemo(
@@ -176,6 +223,7 @@ export function RepresentativesBoard() {
   const openCreate = () => {
     setEditRep(null);
     setForm(emptyForm);
+    setProvinceId(''); setDistrictId(''); setDistricts([]); setCities([]);
     setFormError('');
     setShowModal(true);
   };
@@ -193,9 +241,11 @@ export function RepresentativesBoard() {
       serviceId: sid,
       court: rep.court ?? '',
       courtCity: rep.courtCity ?? '',
+      province: rep.province ?? '',
       district: rep.district ?? '',
       city: rep.city ?? '',
     });
+    resolveGeoForEdit(rep.province, rep.district);
     setFormError('');
     setShowModal(true);
   };
@@ -236,6 +286,7 @@ export function RepresentativesBoard() {
           serviceFocus: form.serviceFocus,
           court: form.court,
           courtCity: form.courtCity,
+          province: form.province,
           district: form.district,
           city: form.city,
         };
@@ -252,6 +303,7 @@ export function RepresentativesBoard() {
           serviceFocus: form.serviceFocus || undefined,
           court: form.court || undefined,
           courtCity: form.courtCity || undefined,
+          province: form.province || undefined,
           district: form.district || undefined,
           city: form.city || undefined,
         });
@@ -514,9 +566,64 @@ export function RepresentativesBoard() {
               {/* ── Court City ── */}
               {textField('Court City', 'courtCity')}
 
-              {/* ── Location ── */}
-              {textField('District', 'district')}
-              {textField('City', 'city')}
+              {/* ── Clerk territory: Province → District → City/Tehsil ── */}
+              <label className="block">
+                <span className="text-sm font-medium text-slate-700">Province</span>
+                <select
+                  className={SELECT_CLS}
+                  value={provinceId}
+                  onChange={(e) => {
+                    const id = e.target.value;
+                    const name = provinces.find((p) => p.id === id)?.name ?? '';
+                    setProvinceId(id);
+                    setDistrictId('');
+                    setDistricts([]);
+                    setCities([]);
+                    setForm((c) => ({ ...c, province: name, district: '', city: '' }));
+                  }}
+                >
+                  <option value="">— Select Province —</option>
+                  {provinces.map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="block">
+                <span className="text-sm font-medium text-slate-700">District</span>
+                <select
+                  className={`${SELECT_CLS} disabled:bg-slate-50 disabled:text-slate-400`}
+                  value={districtId}
+                  disabled={!provinceId}
+                  onChange={(e) => {
+                    const id = e.target.value;
+                    const name = districts.find((d) => d.id === id)?.name ?? '';
+                    setDistrictId(id);
+                    setCities([]);
+                    setForm((c) => ({ ...c, district: name, city: '' }));
+                  }}
+                >
+                  <option value="">{provinceId ? '— Select District —' : 'Select a province first'}</option>
+                  {districts.map((d) => (
+                    <option key={d.id} value={d.id}>{d.name}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="block">
+                <span className="text-sm font-medium text-slate-700">City / Tehsil</span>
+                <select
+                  className={`${SELECT_CLS} disabled:bg-slate-50 disabled:text-slate-400`}
+                  value={form.city}
+                  disabled={!districtId}
+                  onChange={(e) => setField('city', e.target.value)}
+                >
+                  <option value="">{districtId ? '— Select City/Tehsil —' : 'Select a district first'}</option>
+                  {cities.map((c) => (
+                    <option key={c.id} value={c.name}>{c.name}</option>
+                  ))}
+                </select>
+              </label>
 
               {/* ── Address (full width) ── */}
               <label className="block md:col-span-2">

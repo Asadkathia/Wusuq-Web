@@ -106,6 +106,7 @@ export class UsersService {
         serviceFocus: dto.serviceFocus,
         court: dto.court,
         courtCity: dto.courtCity,
+        province: dto.province,
         district: dto.district,
         city: dto.city,
         passwordHash: await hash(dto.password, 10),

@@ -29,6 +29,10 @@ export class CreateRepresentativeDto {
 
   @IsOptional()
   @IsString()
+  province?: string;
+
+  @IsOptional()
+  @IsString()
   district?: string;
 
   @IsOptional()
