@@ -328,6 +328,19 @@ export function IntakeWizard({
   // fetched yet" from "fetched, result was empty" so the UI can render a
   // loading state instead of a misleading "No courts available" message.
   const [cityCourtsLoading, setCityCourtsLoading] = useState(false);
+  // Whether the courts fetch for the CURRENT city has RESOLVED (vs. not-started
+  // or in-flight). An empty `cityCourtGroups` is otherwise ambiguous — "still
+  // loading" vs. "this city genuinely has no courts" — which made the picker
+  // spin forever on court-less cities (e.g. the stray district-named "Hunza"
+  // city whose seats actually live on Aliabad/Gojal). Reset to false at the
+  // start of every courts fetch; set true in each fetch's finally.
+  const [cityCourtsLoaded, setCityCourtsLoaded] = useState(false);
+  // Monotonic request counter for the courts fetch. Each fetch captures the
+  // current value; its .then/.finally only apply state when still the latest.
+  // Closes a stale-response race: rapidly switching city A→B (A court-less, B
+  // not) could otherwise let A's later-arriving empty response overwrite B's
+  // courts, mis-rendering "No courts available in B".
+  const cityCourtsReqRef = useRef(0);
   // QA: autosave/submit race guard. The 5s debounced autosave fires from a
   // closure that captures the pre-submit draft. If it lands at the server
   // AFTER the submit-side draft delete, it upserts a phantom draft with the
@@ -825,14 +838,20 @@ export function IntakeWizard({
         }));
         if (p.city_id) {
           setCityCourtsLoading(true);
+          setCityCourtsLoaded(false);
+          const reqSeq = ++cityCourtsReqRef.current;
+          const stillCurrent = () => !cancelled && reqSeq === cityCourtsReqRef.current;
           apiClient
             .get<CityCourtGroup[]>(`/geo/cities/${p.city_id}/courts`)
             .then((groups) => {
-              if (!cancelled) setCityCourtGroups(groups ?? []);
+              if (stillCurrent()) setCityCourtGroups(groups ?? []);
             })
             .catch(() => {})
             .finally(() => {
-              if (!cancelled) setCityCourtsLoading(false);
+              if (stillCurrent()) {
+                setCityCourtsLoading(false);
+                setCityCourtsLoaded(true);
+              }
             });
         }
         try {
@@ -915,6 +934,8 @@ export function IntakeWizard({
     // for the duration of the /geo/cities/<id>/courts fetch — the bug
     // reported in the 5-14-26 addendum (#8 / N6).
     setCityCourtGroups([]);
+    setCityCourtsLoaded(false);
+    const reqSeq = ++cityCourtsReqRef.current;
     if (!cityId) {
       setCityCourtsLoading(false);
       return;
@@ -922,9 +943,17 @@ export function IntakeWizard({
     setCityCourtsLoading(true);
     apiClient
       .get<CityCourtGroup[]>(`/geo/cities/${cityId}/courts`)
-      .then((r) => setCityCourtGroups(r ?? []))
-      .catch(() => setCityCourtGroups([]))
-      .finally(() => setCityCourtsLoading(false));
+      .then((r) => {
+        if (reqSeq === cityCourtsReqRef.current) setCityCourtGroups(r ?? []);
+      })
+      .catch(() => {
+        if (reqSeq === cityCourtsReqRef.current) setCityCourtGroups([]);
+      })
+      .finally(() => {
+        if (reqSeq !== cityCourtsReqRef.current) return;
+        setCityCourtsLoading(false);
+        setCityCourtsLoaded(true);
+      });
   };
 
   // Auto-pick the single available service for non-judicial slugs whose
@@ -1606,14 +1635,28 @@ export function IntakeWizard({
                     }));
                     if (primaryId && primaryId !== previousPrimary) {
                       setCityCourtsLoading(true);
+                      setCityCourtsLoaded(false);
+                      const reqSeq = ++cityCourtsReqRef.current;
                       apiClient
                         .get<CityCourtGroup[]>(`/geo/cities/${primaryId}/courts`)
-                        .then((r) => setCityCourtGroups(r ?? []))
-                        .catch(() => setCityCourtGroups([]))
-                        .finally(() => setCityCourtsLoading(false));
+                        .then((r) => {
+                          if (reqSeq === cityCourtsReqRef.current)
+                            setCityCourtGroups(r ?? []);
+                        })
+                        .catch(() => {
+                          if (reqSeq === cityCourtsReqRef.current)
+                            setCityCourtGroups([]);
+                        })
+                        .finally(() => {
+                          if (reqSeq !== cityCourtsReqRef.current) return;
+                          setCityCourtsLoading(false);
+                          setCityCourtsLoaded(true);
+                        });
                     } else if (!primaryId) {
                       setCityCourtGroups([]);
+                      setCityCourtsLoaded(false);
                       setCityCourtsLoading(false);
+                      cityCourtsReqRef.current++;
                     }
                   }}
                 />
@@ -1626,15 +1669,17 @@ export function IntakeWizard({
                     <p className="mt-1 rounded-xl bg-surface-muted/50 p-3 text-sm text-slate-500 ring-1 ring-inset ring-border-soft">
                       Select a city above to see available courts.
                     </p>
-                  ) : cityCourtsLoading || (cityCourtGroups.length === 0 && draft.payload.city) ? (
-                    // QA cosmetic: show a loading state while /geo/cities/:id/courts
-                    // is in flight. Previously the wizard fell through to the
-                    // "No courts available" branch during the fetch window,
-                    // which read as a hard "this city has no courts" instead
-                    // of "wait one second". cityCourtGroups.length === 0 plus
-                    // a city selected always means we haven't received the
-                    // response yet (truly empty cities don't exist in the
-                    // seed), so we treat both as loading.
+                  ) : cityCourtsLoading || (!cityCourtsLoaded && draft.payload.city) ? (
+                    // Show a loading state while /geo/cities/:id/courts is
+                    // in-flight OR hasn't started yet for the selected city
+                    // (`!cityCourtsLoaded` covers the mount/hydration window
+                    // before the fetch is kicked off, avoiding a "No courts"
+                    // flash). Once the fetch RESOLVES, a still-empty
+                    // `cityCourtGroups` means the city genuinely has no courts
+                    // and we fall through to the "No courts available" branch
+                    // below — previously this clause keyed on
+                    // `cityCourtGroups.length === 0`, which made court-less
+                    // cities (e.g. the stray "Hunza" city) spin forever.
                     <p className="mt-1 flex items-center gap-2 rounded-xl bg-surface-muted/50 p-3 text-sm text-slate-500 ring-1 ring-inset ring-border-soft">
                       <span className="inline-block h-3 w-3 animate-pulse rounded-full bg-brand-400" aria-hidden />
                       Loading courts for {draft.payload.city}…
