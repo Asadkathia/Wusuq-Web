@@ -76,6 +76,12 @@ const REQUIRED_FIELDS_BY_FLOW: Record<string, string[]> = {
     'case_status',
     'case_title',
     'judge_name',
+    // 2026-06 #4/#5: the document bundle IS the Case Information base fee, so a
+    // submission without it has no real price — the resolver would fall back to
+    // the seeded placeholder base and mischarge. Require it server-side (the
+    // wizard already does) so non-wizard / stale-draft submissions are rejected
+    // rather than silently mispriced.
+    'required_documentations',
   ],
   judicial_case_search: [
     'select_service',

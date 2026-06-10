@@ -706,16 +706,16 @@ export function buildPricingResolveInput(
 }
 
 // ─────────────────────────────────────────────
-// Case Information document-bundle add-on (region-keyed)
+// Case Information document-bundle base fee (region-keyed)
 // ─────────────────────────────────────────────
 //
-// 2026 owner rate sheet. Case Information prices each document bundle as an
-// add-on on top of the seeded regional base fee. Single source shared by the
-// API resolver (pricing.service.ts re-exports it) and the wizard's bundle
-// picker, so the price shown next to each option and the price charged at
-// checkout can't diverge. Keyed by the canonical DocBundle value stored in
-// payload.required_documentations.
-export const CASE_INFO_BUNDLE_SURCHARGE: Record<
+// 2026-06 owner rate sheet. For Case Information the chosen document bundle IS
+// the base fee — there is no separate "Document bundle" add-on line. The price
+// per bundle is region-keyed (Punjab vs every other province). Single source
+// shared by the API resolver (pricing.service.ts re-exports it) and the
+// wizard, so the live quote and the persisted charge can't diverge. Keyed by
+// the canonical DocBundle value stored in payload.required_documentations.
+export const CASE_INFO_BUNDLE_BASE: Record<
   'Punjab' | 'other',
   Record<string, number>
 > = {
@@ -723,11 +723,11 @@ export const CASE_INFO_BUNDLE_SURCHARGE: Record<
     doc_only_petition: 500,
     doc_petition_plus_last_order: 700,
     doc_petition_plus_complete_order: 800,
-    doc_only_last_order: 750,
-    doc_only_complete_order_sheet: 1500,
+    doc_only_last_order: 350,
+    doc_only_complete_order_sheet: 500,
   },
   other: {
-    doc_only_petition: 750,
+    doc_only_petition: 1200,
     doc_petition_plus_last_order: 1500,
     doc_petition_plus_complete_order: 1500,
     doc_only_last_order: 750,
@@ -735,8 +735,12 @@ export const CASE_INFO_BUNDLE_SURCHARGE: Record<
   },
 };
 
-/** Resolve the Case Information bundle add-on for a region + bundle. */
-export function caseInfoBundleSurcharge(
+/**
+ * Resolve the Case Information base fee for a region + selected bundle.
+ * Returns 0 for non-Case-Information flows or when no/unknown bundle is given
+ * (callers fall back to the seeded base fee in that case).
+ */
+export function caseInfoBundleBase(
   flow: string,
   region: string | undefined,
   docBundle: string | undefined,
@@ -744,8 +748,8 @@ export function caseInfoBundleSurcharge(
   if (flow !== 'judicial_case_information' || !docBundle) return 0;
   const table =
     region === 'Punjab'
-      ? CASE_INFO_BUNDLE_SURCHARGE.Punjab
-      : CASE_INFO_BUNDLE_SURCHARGE.other;
+      ? CASE_INFO_BUNDLE_BASE.Punjab
+      : CASE_INFO_BUNDLE_BASE.other;
   return table[docBundle] ?? 0;
 }
 

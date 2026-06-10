@@ -6,14 +6,14 @@ import { UpdatePricingRuleDto } from './dto/update-pricing-rule.dto';
 import { ResolvePricingDto } from './dto/resolve-pricing.dto';
 import { UpdatePricingSettingsDto } from './dto/pricing-settings.dto';
 
-// Case Information document-bundle add-on now lives in @wusuq/shared (single
+// Case Information document-bundle base fee now lives in @wusuq/shared (single
 // source shared with the wizard's bundle picker). Re-exported here so existing
 // importers (case-info-bundle.spec.ts) keep working.
 export {
-  caseInfoBundleSurcharge,
-  CASE_INFO_BUNDLE_SURCHARGE,
+  caseInfoBundleBase,
+  CASE_INFO_BUNDLE_BASE,
 } from '@wusuq/shared';
-import { caseInfoBundleSurcharge } from '@wusuq/shared';
+import { caseInfoBundleBase } from '@wusuq/shared';
 
 const PUNJAB_NAMES = new Set(['Punjab']);
 
@@ -506,7 +506,13 @@ export class PricingService {
       };
     }
 
-    const basePrice = Number(best.basePrice);
+    // 2026-06 #4/#5: For Case Information the chosen document bundle IS the
+    // base fee (region-keyed) — it replaces the seeded base, and there is no
+    // separate "Document bundle" line. Falls back to the seeded base before a
+    // bundle is picked; returns the seeded base for every other flow
+    // (caseInfoBundleBase yields 0 outside Case Information).
+    const caseInfoBase = caseInfoBundleBase(dto.flow, region, dto.docBundle);
+    const basePrice = caseInfoBase > 0 ? caseInfoBase : Number(best.basePrice);
 
     // Per-set rates from rule are overridden by global settings, which are
     // themselves overridden by a clerk-side report when one exists for the
@@ -576,14 +582,11 @@ export class PricingService {
     // pricing sheet only needs the banded rules — no per-year rows.
     const ageSurcharge = computeAgeSurcharge(dto.caseStatus, dto.caseYear);
 
-    // 5-24-26 #6/#7: Case Information add-on for the chosen document bundle,
-    // on TOP of the seeded regional base fee. Region-keyed (Punjab vs other).
-    // Zero for every other flow / when no bundle is chosen.
-    const bundleSurcharge = caseInfoBundleSurcharge(
-      dto.flow,
-      region,
-      dto.docBundle,
-    );
+    // 2026-06 #4/#5: Case Information's document bundle is folded into the base
+    // fee above (see basePrice). There is no separate bundle add-on line, so
+    // this stays 0 — kept for back-compat with the breakdown shape. Other
+    // flows never carried a bundle surcharge.
+    const bundleSurcharge = 0;
 
     // PDF #36 / #37 — Case Search-specific multipliers. Other flows ignore
     // both: cityCount stays 1 and searchBothSurcharge stays 0.
