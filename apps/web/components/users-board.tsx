@@ -18,7 +18,9 @@ const USER_ROLES = [
 
 type UserData = {
   id: string;
-  name: string;
+  // Nullable: phone-signup users have no name until they set one. The API
+  // returns null for them, so every consumer of `name` must guard it.
+  name: string | null;
   email: string;
   phone: string | null;
   cnic: string | null;
@@ -63,16 +65,17 @@ export function UsersBoard() {
 
   useEffect(() => { load(); }, [load]);
 
+  const q = search.toLowerCase();
   const filtered = users.filter((u) =>
     (roleFilter === 'all' || u.role === roleFilter) &&
-    (u.name.toLowerCase().includes(search.toLowerCase()) ||
-     u.email.toLowerCase().includes(search.toLowerCase()) ||
-     u.role.toLowerCase().includes(search.toLowerCase()))
+    ((u.name ?? '').toLowerCase().includes(q) ||
+     (u.email ?? '').toLowerCase().includes(q) ||
+     (u.role ?? '').toLowerCase().includes(q))
   );
 
   const openCreate = () => { setForm(emptyForm); setShowCreate(true); setEditUser(null); };
   const openEdit = (u: UserData) => {
-    setForm({ name: u.name, email: u.email, phone: u.phone || '', cnic: u.cnic || '',
+    setForm({ name: u.name ?? '', email: u.email, phone: u.phone || '', cnic: u.cnic || '',
       password: '', role: u.role, address: '', province: '', district: '', city: '' });
     setEditUser(u);
     setShowCreate(true);
@@ -130,7 +133,7 @@ export function UsersBoard() {
         paymentMode: topupMode,
         currency: 'PKR',
       });
-      setMessage(`Topup of ${topupAmount} PKR created for ${topupUser.name}.`);
+      setMessage(`Topup of ${topupAmount} PKR created for ${topupUser.name ?? topupUser.email}.`);
       setTopupUser(null);
       setTopupAmount('');
     } catch (error: any) {
@@ -141,7 +144,7 @@ export function UsersBoard() {
   };
 
   const impersonate = async (targetUser: UserData) => {
-    if (!confirm(`Impersonate ${targetUser.name}? You will be logged in as them.`)) return;
+    if (!confirm(`Impersonate ${targetUser.name ?? targetUser.email}? You will be logged in as them.`)) return;
     try {
       const result = await apiClient.post<any>(`/auth/impersonate/${targetUser.id}`);
       // Stash current admin session so we can restore it later
@@ -240,7 +243,7 @@ export function UsersBoard() {
       {topupUser && (
         <PanelCard className="p-6 border-emerald-200">
           <div className="flex items-center justify-between mb-6 border-b border-slate-100 pb-4">
-            <h3 className="text-lg font-semibold text-slate-900">Topup Wallet ({topupUser.name})</h3>
+            <h3 className="text-lg font-semibold text-slate-900">Topup Wallet ({topupUser.name ?? topupUser.email})</h3>
             <button onClick={() => setTopupUser(null)}><X className="h-5 w-5 text-slate-400 hover:text-slate-700" /></button>
           </div>
           <form onSubmit={submitTopup} onKeyDown={advanceOnEnter} className="space-y-4 max-w-sm">
@@ -301,10 +304,10 @@ export function UsersBoard() {
                 <td className="px-6 py-4">
                   <div className="flex items-center gap-3">
                     <div className="h-9 w-9 flex-shrink-0 rounded-full bg-primary-100 flex items-center justify-center font-bold text-primary-700 text-sm">
-                      {user.name.charAt(0).toUpperCase()}
+                      {(user.name?.charAt(0) ?? user.email.charAt(0)).toUpperCase()}
                     </div>
                     <div>
-                      <div className="text-sm font-medium text-slate-900">{user.name}</div>
+                      <div className="text-sm font-medium text-slate-900">{user.name ?? '—'}</div>
                       <div className="text-xs text-slate-500 flex items-center gap-1 mt-0.5"><Mail className="h-3 w-3" />{user.email}</div>
                     </div>
                   </div>
