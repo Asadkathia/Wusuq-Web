@@ -47,7 +47,11 @@ describe('caseInfoBundleBase', () => {
 
   it('returns 0 for non-Case-Information flows', () => {
     expect(
-      caseInfoBundleBase('judicial_case_files', 'Punjab', 'doc_only_last_order'),
+      caseInfoBundleBase(
+        'judicial_case_files',
+        'Punjab',
+        'doc_only_last_order',
+      ),
     ).toBe(0);
   });
 

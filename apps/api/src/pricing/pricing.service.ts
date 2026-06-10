@@ -9,10 +9,7 @@ import { UpdatePricingSettingsDto } from './dto/pricing-settings.dto';
 // Case Information document-bundle base fee now lives in @wusuq/shared (single
 // source shared with the wizard's bundle picker). Re-exported here so existing
 // importers (case-info-bundle.spec.ts) keep working.
-export {
-  caseInfoBundleBase,
-  CASE_INFO_BUNDLE_BASE,
-} from '@wusuq/shared';
+export { caseInfoBundleBase, CASE_INFO_BUNDLE_BASE } from '@wusuq/shared';
 import { caseInfoBundleBase } from '@wusuq/shared';
 
 const PUNJAB_NAMES = new Set(['Punjab']);
