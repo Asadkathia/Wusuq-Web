@@ -446,6 +446,20 @@ export function IntakeWizard({
     activeStep?.fields.some((f) => f.key === 'case_status') &&
     activeStep?.fields.some((f) => f.key === 'future_date'),
   );
+  // The case_status header + CaseDateBlock render together. Gate them on the
+  // case_status field's own showWhen so Case Search — which only shows
+  // case_status (and the date block) for search_method = details/both — keeps
+  // the block hidden for CNIC-only searches. Case Files / Case Information have
+  // no showWhen on case_status, so this is always true for them. NOTE: the flat
+  // field loop's DATE_HANDLED_KEYS skip below stays keyed on `stepHasCaseDate`
+  // so those keys never fall through to the flat renderer when the block is
+  // hidden (they simply don't render — correct for a CNIC-only search).
+  const caseDateBlockVisible =
+    stepHasCaseDate &&
+    (() => {
+      const csf = activeStep?.fields.find((f) => f.key === 'case_status');
+      return !csf || showWhenSatisfied(csf, draft.payload);
+    })();
 
   // The court types the selected city supports — used to filter judicial
   // services to those whose tier actually has a court in this city.
@@ -1742,7 +1756,7 @@ export function IntakeWizard({
             />
           )}
 
-          {stepHasCaseDate && (() => {
+          {caseDateBlockVisible && (() => {
             const caseStatusField = activeStep?.fields.find((f) => f.key === 'case_status');
             if (!caseStatusField) return null;
             const errorMsg = touched['case_status'] ? (errors['case_status'] ?? '') : '';
@@ -1771,7 +1785,7 @@ export function IntakeWizard({
             );
           })()}
 
-          {stepHasCaseDate && (
+          {caseDateBlockVisible && (
             <CaseDateBlock
               caseStatus={draft.payload.case_status ?? ''}
               isUnknown={draft.payload.case_date_status === 'Unknown'}

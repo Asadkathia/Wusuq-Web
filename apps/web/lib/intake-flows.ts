@@ -587,13 +587,17 @@ const caseFilesSteps: IntakeStep[] = [
         // PDF #23-#27: year is required only for Special Court (#25).
         requiredByCourtTier: { lower: false, high: false, special: true, shariat: false, supreme: false, fcc: false },
         hint: 'Year the case was filed (per the order sheet or petition heading).',
-        // 5-19-26 #6: for Decided cases the year that drives pricing is
-        // `decided_date`, not this filing-year input. Two inputs on the same
-        // step produced silent disagreement (year=2025 + decided_date=2024-XX
-        // → pricing used 2024 → wrong band). Hide for Decided; the wizard
-        // syncs payload.year = decided_date.slice(0,4) so backend validators
-        // (REQUIRED_FIELDS_BY_FLOW) still see a year.
-        showWhen: { field: 'case_status', valueIn: ['Pending Case', 'Unknown Case'] },
+        // 6-9-26 doc #2 (owner request): the Year field is now ALSO shown for
+        // Decided cases (previously hidden — see the old 5-19-26 #6 note). A
+        // Decided case therefore shows BOTH Year and Decided Date.
+        // This is safe for pricing because:
+        //   • For Decided, the resolver still derives the priced year from
+        //     `decided_date` — buildPricingResolveInput prefers the decided_date
+        //     year over payload.year.
+        //   • `withDerivedYear` only fills payload.year from decided_date when
+        //     `year` is empty, so a user-entered Year is preserved and never
+        //     overwritten. The two inputs no longer silently disagree.
+        showWhen: { field: 'case_status', valueIn: ['Pending Case', 'Decided Case', 'Unknown Case'] },
       },
       {
         key: 'case_title',
@@ -738,7 +742,9 @@ const caseInformationSteps: IntakeStep[] = [
         label: 'Case Status',
         type: 'radio',
         required: true,
-        options: ['Pending Case', 'Decided Case', 'Unknown Case'],
+        // Case Information only supports pending/unknown cases: a decided case
+        // has no live "information" to fetch, so 'Decided Case' is omitted here.
+        options: ['Pending Case', 'Unknown Case'],
         defaultValue: 'Pending Case',
         hint: 'Choose the option that best matches the latest status shown on the court file.',
       },
@@ -929,6 +935,26 @@ const caseSearchSteps: IntakeStep[] = [
         type: 'date',
         showWhen: { field: 'case_status', valueIn: ['Pending Case', 'Unknown Case'] },
         hint: 'Date of the last hearing or order, if known.',
+      },
+      // 6-9-26 doc #7: make the Case Search date render via the rich
+      // CaseDateBlock (with the "Mark date as unknown" toggle) like Case Files /
+      // Case Information, instead of a flat date input. That block only renders
+      // when the step exposes the full triad (case_status + case_date +
+      // future_date), and it drives the toggle off `case_date_status` — so add
+      // BOTH fields here. case_date_status / future_date are consumed by
+      // CaseDateBlock (DATE_HANDLED_KEYS), not the flat field loop.
+      {
+        key: 'case_date_status',
+        label: 'Case Date Status',
+        type: 'radio',
+        options: ['Known', 'Unknown'],
+        hint: "Pick 'Unknown' if you can't find the date on your papers — we'll do our best with what we have.",
+      },
+      {
+        key: 'future_date',
+        label: 'Future Date',
+        type: 'date',
+        hint: "Date of the upcoming hearing. We'll have the documents ready before then.",
       },
       {
         key: 'decided_date',
