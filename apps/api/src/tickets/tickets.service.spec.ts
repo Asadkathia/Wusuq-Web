@@ -887,6 +887,7 @@ describe('TicketsService', () => {
             case_status: 'Pending Case',
             case_title: 'A vs B',
             judge_name: 'Judge Smith',
+            required_documentations: 'doc_only_petition',
           },
         } as never,
         { actorUserId: 'consumer-1', actorEmail: 'c@x.com' },
@@ -911,6 +912,7 @@ describe('TicketsService', () => {
             case_status: 'Pending Case',
             case_title: 'A vs B',
             judge_name: 'Judge Smith',
+            required_documentations: 'doc_only_petition',
           },
         } as never,
         { actorUserId: 'admin-1', actorEmail: 'a@x.com' },
@@ -934,6 +936,7 @@ describe('TicketsService', () => {
           case_status: 'Pending Case',
           case_title: 'A vs B',
           judge_name: 'Judge Smith',
+          required_documentations: 'doc_only_petition',
         },
       } as never);
       expect(created[0]?.data.createdBy).toBe('ADMIN_STAFF');
@@ -1050,6 +1053,7 @@ describe('TicketsService', () => {
             case_status: 'Pending Case',
             case_title: 'A vs B',
             judge_name: 'Judge Smith',
+            required_documentations: 'doc_only_petition',
           },
         } as never,
         { actorUserId: 'consumer-1', actorEmail: 'c@x.com' },

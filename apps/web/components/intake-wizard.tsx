@@ -11,7 +11,7 @@ import type { IntakeFlow, IntakeStep, CourtTier } from '@/lib/intake-flows';
 import { courtTierFromCourtType, resolveRequired, docBundleLabel, normalizeDraftPayload, isStructuredAddressComplete, computeYearBand, parseBench, showWhenSatisfied, parseCities, stringifyCities } from '@/lib/intake-flows';
 import { BENCH_TYPE_LABELS } from '@/lib/bench-types';
 import type { YearBand } from '@/lib/intake-flows';
-import { buildPricingResolveInput, CASE_INFO_BUNDLE_SURCHARGE } from '@wusuq/shared';
+import { buildPricingResolveInput } from '@wusuq/shared';
 
 import type { IntakeWizardProps, TicketDraft, ServiceHit, LocalUser, CityCourtGroup } from './intake-wizard/types';
 import { StepRail } from './intake-wizard/step-rail';
@@ -1337,10 +1337,6 @@ export function IntakeWizard({
       if ((pr.ageSurcharge ?? 0) > 0) {
         items.push({ label: 'Age surcharge (10+ yrs)', amount: pr.ageSurcharge! });
       }
-      // 5-24-26 #6/#7: Case Information document-bundle add-on (on top of base).
-      if ((pr.bundleSurcharge ?? 0) > 0) {
-        items.push({ label: 'Document bundle', amount: pr.bundleSurcharge! });
-      }
       // 5-24-26 #17: PDF is priced at intake (folded into serviceCost), so it is
       // shown and billed at checkout for ALL flows — including SPLIT/Case Files
       // — not deferred to the phase-2 clerk window like delivery/attestation.
@@ -1818,38 +1814,14 @@ export function IntakeWizard({
               // Petition / Paperbook based on the active court tier while
               // keeping the canonical DocBundle key as the stored value.
               if (field.key === 'required_documentations') {
-                // 5-24-26 #6/#7: Case Information prices each document bundle as
-                // a region-keyed add-on on top of the base fee. Surface the
-                // add-on next to each label so the consumer doesn't pick blind.
-                // Mirrors CASE_INFO_BUNDLE_SURCHARGE in pricing.service.ts —
-                // keep the two in sync. Other flows render plain labels.
-                const showPriceHint = draft.flow === 'judicial_case_information';
-                // Region must be derived the SAME way the backend resolver
-                // derives it — from the selected city's province (geo FK chain),
-                // NOT payload.province. Judicial flows use CityBlock, which
-                // never sets payload.province (only the FIR LocationBlock does),
-                // so reading payload.province here always fell through to the
-                // "other" region and the picker showed a price that didn't match
-                // the Punjab add-on charged at checkout (2026-06 bug #2). The
-                // add-on table is the shared single source used by the resolver.
-                const selectedCityProvince = geo.allCities.find(
-                  (c) => c.id === geoIds.cityId,
-                )?.province;
-                const isPunjab =
-                  (selectedCityProvince ??
-                    draft.payload.province ??
-                    draft.payload.province_capital) === 'Punjab';
-                const bundleAddOn: Record<string, number> = isPunjab
-                  ? CASE_INFO_BUNDLE_SURCHARGE.Punjab
-                  : CASE_INFO_BUNDLE_SURCHARGE.other;
+                // 2026-06 #4: no inline price hint. For Case Information the
+                // selected bundle's price IS the Base fee shown in the checkout
+                // panel (folded into base server-side), so the picker shows
+                // clean tier-aware labels only — Petition / Paperbook by tier.
                 field = {
                   ...field,
-                  optionsLabel: (opt: string) => {
-                    const base = docBundleLabel(opt, activeCourtTier);
-                    return showPriceHint && bundleAddOn[opt]
-                      ? `${base} — +Rs ${bundleAddOn[opt].toLocaleString()}`
-                      : base;
-                  },
+                  optionsLabel: (opt: string) =>
+                    docBundleLabel(opt, activeCourtTier),
                 };
               }
               const dynamicOpts =
