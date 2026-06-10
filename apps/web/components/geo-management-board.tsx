@@ -1,10 +1,10 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { SectionHeader } from '@/components/ui/section-header';
 import { PanelCard } from '@/components/ui/panel-card';
-import { ChevronDown, ChevronRight, MapPin, Plus, RefreshCw, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Copy, MapPin, Plus, RefreshCw, Trash2 } from 'lucide-react';
 
 type GeoCity = { id: string; name: string };
 type GeoDistrict = { id: string; name: string; cities: GeoCity[] };
@@ -20,6 +20,21 @@ export function GeoManagementBoard() {
   const [newProvince, setNewProvince] = useState('');
   const [newDistrict, setNewDistrict] = useState<Record<string, string>>({});
   const [newCity, setNewCity] = useState<Record<string, string>>({});
+
+  // Copy-courts form
+  const [copyTarget, setCopyTarget] = useState('');
+  const [copySource, setCopySource] = useState('');
+  const [copying, setCopying] = useState(false);
+
+  // Flat, labelled city list for the copy-courts selectors.
+  const allCities = useMemo(() => {
+    const out: { id: string; label: string }[] = [];
+    for (const p of provinces)
+      for (const d of p.districts)
+        for (const c of d.cities)
+          out.push({ id: c.id, label: `${c.name} — ${d.name}, ${p.name}` });
+    return out.sort((a, b) => a.label.localeCompare(b.label));
+  }, [provinces]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -121,6 +136,23 @@ export function GeoManagementBoard() {
     } catch (e: unknown) { msg(e instanceof Error ? e.message : 'Failed'); }
   };
 
+  const copyCourts = async () => {
+    if (!copyTarget || !copySource || copyTarget === copySource) return;
+    setCopying(true);
+    try {
+      const res = await apiClient.post<{ message: string }>(
+        `/geo/cities/${copyTarget}/copy-courts`,
+        { sourceCityId: copySource },
+      );
+      msg(res.message);
+      load();
+    } catch (e: unknown) {
+      msg(e instanceof Error ? e.message : 'Copy failed');
+    } finally {
+      setCopying(false);
+    }
+  };
+
   const toggle = (id: string) => setExpanded(p => ({ ...p, [id]: !p[id] }));
 
   return (
@@ -178,6 +210,50 @@ export function GeoManagementBoard() {
             className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 transition-colors"
           >
             <Plus className="h-4 w-4" /> Add
+          </button>
+        </div>
+      </PanelCard>
+
+      {/* Copy courts to a city */}
+      <PanelCard className="p-4">
+        <h3 className="text-sm font-semibold text-slate-700 mb-1">Copy courts to a city</h3>
+        <p className="text-xs text-slate-500 mb-3">
+          Give a city the same courts as another — e.g. copy the district seat&apos;s
+          courts onto a city you just added. Additive: existing courts are kept.
+        </p>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+          <label className="flex-1 block">
+            <span className="text-xs font-medium text-slate-600">Target city (gets courts)</span>
+            <select
+              className="mt-1 block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-primary-600"
+              value={copyTarget}
+              onChange={e => setCopyTarget(e.target.value)}
+            >
+              <option value="">— Select target city —</option>
+              {allCities.map(c => (
+                <option key={c.id} value={c.id}>{c.label}</option>
+              ))}
+            </select>
+          </label>
+          <label className="flex-1 block">
+            <span className="text-xs font-medium text-slate-600">Copy courts from</span>
+            <select
+              className="mt-1 block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-primary-600"
+              value={copySource}
+              onChange={e => setCopySource(e.target.value)}
+            >
+              <option value="">— Select source city —</option>
+              {allCities.map(c => (
+                <option key={c.id} value={c.id}>{c.label}</option>
+              ))}
+            </select>
+          </label>
+          <button
+            onClick={copyCourts}
+            disabled={!copyTarget || !copySource || copyTarget === copySource || copying}
+            className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50 transition-colors"
+          >
+            <Copy className="h-4 w-4" /> {copying ? 'Copying…' : 'Copy courts'}
           </button>
         </div>
       </PanelCard>

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PAKISTAN_GEO, RAW_POLICE_STATIONS_BY_PROVINCE } from './pakistan-seed';
 import courtsJson from './pakistan-courts.json';
@@ -133,6 +133,56 @@ export class GeoService {
     }
 
     return Array.from(groups.values());
+  }
+
+  /**
+   * Copy every CourtSeat from a source city onto a target city. Idempotent
+   * (skipDuplicates against the @@unique([courtId, cityId])). Used by the admin
+   * geo manager so a freshly-added city (e.g. a district-named one) can inherit
+   * the district seat's courts without a code change.
+   */
+  async copyCourtSeats(targetCityId: string, sourceCityId: string) {
+    if (!sourceCityId) {
+      throw new NotFoundException('A source city is required');
+    }
+    if (targetCityId === sourceCityId) {
+      throw new NotFoundException('Source and target cannot be the same city');
+    }
+    const [target, source] = await Promise.all([
+      this.prisma.geoCity.findUnique({ where: { id: targetCityId } }),
+      this.prisma.geoCity.findUnique({ where: { id: sourceCityId } }),
+    ]);
+    if (!target) throw new NotFoundException('Target city not found');
+    if (!source) throw new NotFoundException('Source city not found');
+
+    const sourceSeats = await this.prisma.courtSeat.findMany({
+      where: { cityId: sourceCityId },
+    });
+    if (sourceSeats.length === 0) {
+      return {
+        copied: 0,
+        source: source.name,
+        target: target.name,
+        message: `${source.name} has no courts to copy.`,
+        courts: await this.courts(targetCityId),
+      };
+    }
+    const res = await this.prisma.courtSeat.createMany({
+      data: sourceSeats.map((s) => ({
+        courtId: s.courtId,
+        cityId: targetCityId,
+        isPrincipalSeat: s.isPrincipalSeat,
+      })),
+      skipDuplicates: true,
+    });
+    return {
+      copied: res.count,
+      available: sourceSeats.length,
+      source: source.name,
+      target: target.name,
+      message: `Copied ${res.count} of ${sourceSeats.length} court seat(s) from ${source.name} to ${target.name}.`,
+      courts: await this.courts(targetCityId),
+    };
   }
 
   policeStations(cityId: string) {

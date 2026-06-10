@@ -106,4 +106,14 @@ export class GeoController {
   deleteCity(@Param('id') id: string) {
     return this.geoService.deleteCity(id);
   }
+
+  // Copy court seats from a source city onto this city (additive, idempotent).
+  @RequirePermissions('costs.write')
+  @Post('cities/:id/copy-courts')
+  copyCourts(
+    @Param('id') id: string,
+    @Body('sourceCityId') sourceCityId: string,
+  ) {
+    return this.geoService.copyCourtSeats(id, sourceCityId);
+  }
 }
