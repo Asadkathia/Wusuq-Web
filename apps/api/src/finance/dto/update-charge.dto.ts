@@ -57,6 +57,12 @@ export class UpdateChargeDto {
   discountPrice?: number;
 
   @IsOptional()
+  @Transform(({ value }) => (value !== undefined ? Number(value) : undefined))
+  @IsNumber({ allowInfinity: false, allowNaN: false })
+  @Min(0)
+  promoDiscount?: number;
+
+  @IsOptional()
   @IsString()
   note?: string;
 }

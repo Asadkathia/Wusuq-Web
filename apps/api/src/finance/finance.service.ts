@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { InvoiceStatus, Prisma, TicketStatus } from '@prisma/client';
 import PDFDocument from 'pdfkit';
-import { isBaseCovered } from '@wusuq/shared';
+import { computeTicketTotal, isBaseCovered } from '@wusuq/shared';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { FinanceQueryDto } from './dto/finance-query.dto';
@@ -235,22 +235,33 @@ export class FinanceService {
       dto.additionalServiceCost ?? toNumber(ticket.additionalServiceCost);
     const discountPrice = dto.discountPrice ?? toNumber(ticket.discountPrice);
 
-    // Auto-compute totalAmount from formula; explicit `amount` overrides formula
-    const computedTotal =
-      serviceCost +
-      deliveryCharges +
-      printingCharges +
-      attestedCharges +
-      nonAttestedCharges +
-      additionalCharges +
-      additionalServiceCost -
-      discountPrice;
-    const totalAmount = dto.amount ?? Math.max(computedTotal, 0);
-    if (totalAmount < Number(serviceCost ?? 0)) {
-      throw new BadRequestException(
-        'Total charges cannot be less than the service cost',
-      );
+    const promoDiscount = dto.promoDiscount ?? toNumber(ticket.promoDiscount);
+    const taxRate = toNumber(ticket.taxRate);
+
+    const money = computeTicketTotal({
+      charges: {
+        serviceCost,
+        deliveryCharges,
+        printingCharges,
+        attestedCharges,
+        nonAttestedCharges,
+        additionalCharges,
+        additionalServiceCost,
+      },
+      discountPrice,
+      promoDiscount,
+      taxRate,
+    });
+
+    // A staff discount or promo may legitimately push the total below
+    // serviceCost, so the old `total >= serviceCost` gate is gone. The discount
+    // may not exceed the charges subtotal, and the total may never drop below
+    // what the consumer has already paid (the surplus-credit path on finalize
+    // handles intentional downward corrections after a settlement).
+    if (money.discountTotal > money.chargesSubtotal) {
+      throw new BadRequestException('Discount cannot exceed the charges subtotal');
     }
+    const totalAmount = dto.amount ?? money.totalAmount;
 
     const amountPaid = toNumber(ticket.amountPaid);
     if (totalAmount < amountPaid) {
@@ -270,6 +281,8 @@ export class FinanceService {
         additionalCharges,
         additionalServiceCost,
         discountPrice,
+        promoDiscount,
+        taxAmount: money.taxAmount,
         totalAmount,
       },
     });
