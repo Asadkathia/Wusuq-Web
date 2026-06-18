@@ -38,6 +38,7 @@ import { SaveTicketIntakeDraftDto } from './dto/save-ticket-intake-draft.dto';
 import { SubmitClerkCostsDto } from './dto/submit-clerk-costs.dto';
 import { UpdateTicketDto } from './dto/update-ticket.dto';
 import { FinalizeRemainderDto } from './dto/finalize-remainder.dto';
+import { RepriceTicketDto } from './dto/reprice-ticket.dto';
 import { NotificationDispatcher } from '../notifications/notification-dispatcher.service';
 import { WalletService } from '../wallet/wallet.service';
 import { SettingsService } from '../settings/settings.service';
@@ -2977,5 +2978,168 @@ export class TicketsService {
     });
 
     return cloned;
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Reprice helpers
+  // ─────────────────────────────────────────────────────────────────────────
+
+  private buildRepriceResult(
+    ticket: {
+      intakeFlow: string | null;
+      formPayload: unknown;
+      printingCharges: unknown;
+      attestedCharges: unknown;
+      nonAttestedCharges: unknown;
+      deliveryCharges: unknown;
+      additionalCharges: unknown;
+      additionalServiceCost: unknown;
+      discountPrice: unknown;
+      promoDiscount: unknown;
+    },
+    resolved: Awaited<ReturnType<PricingService['resolve']>>,
+    taxRate: number,
+    dto: RepriceTicketDto,
+  ) {
+    const flow = ticket.intakeFlow ?? '';
+    const isSplit = paymentModelFor(flow) === 'SPLIT';
+    const o = dto.overrides ?? {};
+    const num = (v: unknown) => Number(v ?? 0);
+    const charges = {
+      serviceCost: resolved.matched ? resolved.serviceCost : num(0),
+      deliveryCharges:
+        o.deliveryCharges ??
+        (isSplit ? num(ticket.deliveryCharges) : resolved.deliveryCharge),
+      printingCharges: o.printingCharges ?? num(ticket.printingCharges),
+      attestedCharges: o.attestedCharges ?? num(ticket.attestedCharges),
+      nonAttestedCharges:
+        o.nonAttestedCharges ?? num(ticket.nonAttestedCharges),
+      additionalCharges: o.additionalCharges ?? num(ticket.additionalCharges),
+      additionalServiceCost:
+        o.additionalServiceCost ?? num(ticket.additionalServiceCost),
+    };
+    const money = computeTicketTotal({
+      charges,
+      discountPrice: dto.discountPrice ?? num(ticket.discountPrice),
+      promoDiscount: num(ticket.promoDiscount),
+      taxRate,
+    });
+    return { resolver: resolved, charges, money };
+  }
+
+  private mergedPayload(
+    ticket: { formPayload: unknown },
+    dto: RepriceTicketDto,
+  ) {
+    const base = (ticket.formPayload ?? {}) as Record<
+      string,
+      string | undefined
+    >;
+    return { ...base, ...(dto.payload ?? {}) } as Record<
+      string,
+      string | undefined
+    >;
+  }
+
+  async repricePreview(id: string, dto: RepriceTicketDto) {
+    const ticket = await this.prisma.ticket.findUnique({ where: { id } });
+    if (!ticket) throw new NotFoundException('Ticket not found');
+    const payload = this.mergedPayload(ticket, dto);
+    const resolved = await this.pricingService.resolve(
+      buildPricingResolveInput(ticket.intakeFlow ?? '', payload),
+    );
+    const taxRate = (await this.settingsService?.getTaxRate?.()) ?? 0;
+    return this.buildRepriceResult(ticket, resolved, taxRate, dto);
+  }
+
+  async repriceTicket(
+    id: string,
+    dto: RepriceTicketDto,
+    actor: { actorUserId?: string; actorEmail?: string },
+  ) {
+    const existing = await this.prisma.ticket.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException('Ticket not found');
+    if (existing.status === 'DELIVERED') {
+      throw new BadRequestException(
+        'A delivered ticket can no longer be repriced',
+      );
+    }
+    const payload = this.mergedPayload(existing, dto);
+    const resolved = await this.pricingService.resolve(
+      buildPricingResolveInput(existing.intakeFlow ?? '', payload),
+    );
+    if (!resolved.matched && resolved.rulesExistForFlow) {
+      throw new BadRequestException(
+        'No pricing rule matched the edited case details',
+      );
+    }
+    const taxRate = (await this.settingsService?.getTaxRate?.()) ?? 0;
+    const result = this.buildRepriceResult(existing, resolved, taxRate, dto);
+    const total = result.money.totalAmount;
+
+    // USER row lock BEFORE ticket lock — same order as finalizeRemainderCore
+    // to prevent deadlocks with wallet settlement.
+    await this.prisma.$transaction(async (tx) => {
+      const amountPaid = Number(existing.amountPaid);
+      const surplus = Math.max(0, amountPaid - total);
+      if (surplus > 0) {
+        await tx.user.update({
+          where: { id: existing.consumerId },
+          data: { walletBalance: { increment: surplus } },
+        });
+        await tx.walletTransaction.create({
+          data: {
+            userId: existing.consumerId,
+            ticketId: id,
+            amount: surplus,
+            paymentMode: 'BANK_TRANSFER',
+            currency: 'PKR',
+            status: 'VERIFIED',
+            type: 'ADMIN_ADJUSTMENT',
+            verifiedAt: new Date(),
+            reviewedByUserId: actor.actorUserId ?? null,
+            note: `Reprice surplus: new total (${total}) below amount paid (${amountPaid})`,
+          },
+        });
+      }
+      await tx.ticket.updateMany({
+        where: { id },
+        data: {
+          serviceCost: result.charges.serviceCost,
+          deliveryCharges: result.charges.deliveryCharges,
+          printingCharges: result.charges.printingCharges,
+          attestedCharges: result.charges.attestedCharges,
+          nonAttestedCharges: result.charges.nonAttestedCharges,
+          additionalCharges: result.charges.additionalCharges,
+          additionalServiceCost: result.charges.additionalServiceCost,
+          discountPrice: dto.discountPrice ?? existing.discountPrice,
+          taxRate,
+          taxAmount: result.money.taxAmount,
+          totalAmount: total,
+          ...(surplus > 0 ? { amountPaid: total } : {}),
+          formPayload: payload as Prisma.InputJsonValue,
+          priceBreakdown: {
+            resolver: result.resolver,
+            applied: result.money,
+            taxRate,
+          } as unknown as Prisma.InputJsonValue,
+        },
+      });
+    });
+
+    await this.auditLogsService.create({
+      action: 'TICKET_REPRICE',
+      entity: 'TICKET',
+      entityId: id,
+      actorUserId: actor.actorUserId,
+      actorEmail: actor.actorEmail,
+      metadata: {
+        total,
+        taxRate,
+        payloadKeys: Object.keys(dto.payload ?? {}),
+      },
+    });
+
+    return this.findOne(id);
   }
 }

@@ -34,6 +34,7 @@ import { SubmitClerkCostsDto } from './dto/submit-clerk-costs.dto';
 import { FinalizeRemainderDto } from './dto/finalize-remainder.dto';
 import { RecordNextHearingDto } from './dto/record-next-hearing.dto';
 import { RejectAssignmentDto } from './dto/reject-assignment.dto';
+import { RepriceTicketDto } from './dto/reprice-ticket.dto';
 import { StatusOverrideDto } from './dto/status-override.dto';
 import { UpdateTicketStatusDto } from './dto/update-ticket-status.dto';
 import { UpdateTicketDto } from './dto/update-ticket.dto';
@@ -726,6 +727,28 @@ export class TicketsController {
     @CurrentUser() actor: JwtUser | undefined,
   ) {
     return this.ticketsService.generateNextHearing(id, {
+      actorUserId: actor?.sub,
+      actorEmail: actor?.email,
+    });
+  }
+
+  @RequirePermissions('tickets.write')
+  @Post(':id/reprice/preview')
+  repricePreview(
+    @Param('id') id: string,
+    @Body() dto: RepriceTicketDto,
+  ) {
+    return this.ticketsService.repricePreview(id, dto);
+  }
+
+  @RequirePermissions('tickets.write')
+  @Patch(':id/reprice')
+  reprice(
+    @Param('id') id: string,
+    @Body() dto: RepriceTicketDto,
+    @CurrentUser() actor: JwtUser | undefined,
+  ) {
+    return this.ticketsService.repriceTicket(id, dto, {
       actorUserId: actor?.sub,
       actorEmail: actor?.email,
     });
