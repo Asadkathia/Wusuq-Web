@@ -3068,9 +3068,9 @@ export class TicketsService {
     const resolved = await this.pricingService.resolve(
       buildPricingResolveInput(existing.intakeFlow ?? '', payload),
     );
-    if (!resolved.matched && resolved.rulesExistForFlow) {
+    if (!resolved.matched) {
       throw new BadRequestException(
-        'No pricing rule matched the edited case details',
+        'Cannot reprice: no active pricing rule matched the edited case details',
       );
     }
     const taxRate = (await this.settingsService?.getTaxRate?.()) ?? 0;
@@ -3080,7 +3080,14 @@ export class TicketsService {
     // USER row lock BEFORE ticket lock — same order as finalizeRemainderCore
     // to prevent deadlocks with wallet settlement.
     await this.prisma.$transaction(async (tx) => {
-      const amountPaid = Number(existing.amountPaid);
+      // Re-read amountPaid INSIDE the transaction to avoid clobbering a
+      // concurrent payment webhook that increments amountPaid between the
+      // outer findUnique and this write.
+      const fresh = await tx.ticket.findUnique({
+        where: { id },
+        select: { amountPaid: true },
+      });
+      const amountPaid = Number(fresh?.amountPaid ?? 0);
       const surplus = Math.max(0, amountPaid - total);
       if (surplus > 0) {
         await tx.user.update({

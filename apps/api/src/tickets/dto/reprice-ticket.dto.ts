@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsNumber, IsObject, IsOptional, Min } from 'class-validator';
+import { IsNumber, IsObject, IsOptional, Min, ValidateNested } from 'class-validator';
 
 class RepriceOverridesDto {
   @IsOptional() @IsNumber() @Min(0) printingCharges?: number;
@@ -14,7 +14,7 @@ export class RepriceTicketDto {
   @IsOptional() @IsObject()
   payload?: Record<string, string>;
 
-  @IsOptional() @Type(() => RepriceOverridesDto)
+  @IsOptional() @ValidateNested() @Type(() => RepriceOverridesDto)
   overrides?: RepriceOverridesDto;
 
   @IsOptional() @IsNumber() @Min(0)
