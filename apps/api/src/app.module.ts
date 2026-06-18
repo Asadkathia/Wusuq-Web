@@ -32,6 +32,7 @@ import { PersonalFilesModule } from './personal-files/personal-files.module';
 import { CaseTypesModule } from './case-types/case-types.module';
 import { PaymentSettingsModule } from './payment-settings/payment-settings.module';
 import { SettingsModule } from './settings/settings.module';
+import { PromosModule } from './promos/promos.module';
 
 @Module({
   imports: [
@@ -84,6 +85,7 @@ import { SettingsModule } from './settings/settings.module';
     CaseTypesModule,
     PaymentSettingsModule,
     SettingsModule,
+    PromosModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },
