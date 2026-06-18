@@ -69,4 +69,11 @@ describe('PromosService.validate', () => {
     expect(r.valid).toBe(false);
     expect(r.reason).toMatch(/limit/i);
   });
+
+  it('rejects when the total usage limit is reached', async () => {
+    const svc = build({ ...BASE, totalUsageLimit: 3, perUserLimit: null }, { total: 3, user: 0 });
+    const r = await svc.validate({ code: 'SAVE10', userId: 'u1', flow: 'x', subtotal: 1000 });
+    expect(r.valid).toBe(false);
+    expect(r.reason).toMatch(/limit/i);
+  });
 });

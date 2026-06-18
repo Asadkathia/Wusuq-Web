@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { round2 } from '@wusuq/shared';
 import { PrismaService } from '../prisma/prisma.service';
@@ -88,7 +88,9 @@ export class PromosService {
     return this.prisma.promoCode.findMany({ orderBy: { createdAt: 'desc' } });
   }
 
-  deactivate(id: string) {
+  async deactivate(id: string) {
+    const existing = await this.prisma.promoCode.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException('Promo code not found');
     return this.prisma.promoCode.update({ where: { id }, data: { active: false } });
   }
 }

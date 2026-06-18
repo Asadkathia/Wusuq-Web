@@ -1,9 +1,9 @@
 import {
   ArrayUnique,
   IsArray,
-  IsBoolean,
   IsIn,
   IsInt,
+  IsISO8601,
   IsNumber,
   IsOptional,
   IsString,
@@ -29,11 +29,11 @@ export class CreatePromoDto {
   maxDiscount?: number;
 
   @IsOptional()
-  @IsString()
+  @IsISO8601()
   startsAt?: string;
 
   @IsOptional()
-  @IsString()
+  @IsISO8601()
   endsAt?: string;
 
   @IsOptional()
