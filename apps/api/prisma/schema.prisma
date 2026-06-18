@@ -145,6 +145,11 @@ enum AssignmentStatus {
   SUPERSEDED
 }
 
+enum PromoType {
+  PERCENT
+  FIXED
+}
+
 model User {
   id                 String      @id @default(cuid())
   name               String?
@@ -216,6 +221,14 @@ model Ticket {
   nonAttestedCharges    Decimal             @default(0)
   additionalCharges     Decimal             @default(0)
   discountPrice         Decimal             @default(0)
+  promoCodeId           String?
+  promoDiscount         Decimal             @default(0)
+  taxRate               Decimal             @default(0)
+  taxAmount             Decimal             @default(0)
+  // Structured price-breakdown snapshot (resolver lines + discount/promo/tax),
+  // written at intake, reprice, and finalize. Powers invoices/audit; flat
+  // columns remain the source of truth for math.
+  priceBreakdown        Json?
   additionalServiceCost Decimal             @default(0)
   clerkCost             Decimal             @default(0)
   // Resolved default clerk cost (PricingRule.clerkBaseCost) captured at creation;
@@ -294,6 +307,46 @@ model TicketClerkReport {
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
   ticket                 Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+}
+
+model AppSetting {
+  key             String   @id
+  value           String
+  updatedByUserId String?
+  updatedAt       DateTime @updatedAt
+}
+
+model PromoCode {
+  id              String   @id @default(cuid())
+  code            String   @unique
+  type            PromoType
+  value           Decimal
+  maxDiscount     Decimal?
+  startsAt        DateTime?
+  endsAt          DateTime?
+  totalUsageLimit Int?
+  perUserLimit    Int?
+  serviceScope    String[]
+  active          Boolean  @default(true)
+  createdByUserId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  redemptions     PromoRedemption[]
+
+  @@index([active])
+}
+
+model PromoRedemption {
+  id          String    @id @default(cuid())
+  promoCodeId String
+  userId      String
+  ticketId    String
+  amount      Decimal
+  createdAt   DateTime  @default(now())
+  promoCode   PromoCode @relation(fields: [promoCodeId], references: [id])
+
+  @@unique([promoCodeId, ticketId])
+  @@index([promoCodeId, userId])
 }
 
 model Election {
