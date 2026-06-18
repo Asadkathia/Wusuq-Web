@@ -82,6 +82,9 @@ export const PERMISSIONS = [
   'audit.read',
   'cases.read',
   'cases.write',
+  'settings.read',
+  'settings.write',
+  'promos.write',
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
@@ -106,6 +109,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, readonly Permission[]> = {
     'audit.read',
     'cases.read',
     'cases.write',
+    'settings.read',
+    'settings.write',
+    'promos.write',
   ],
   'staff-admin': [
     'users.read',
@@ -124,6 +130,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, readonly Permission[]> = {
     'audit.read',
     'cases.read',
     'cases.write',
+    'settings.read',
+    'settings.write',
+    'promos.write',
   ],
   'lead-admin': [
     'tickets.read',
@@ -137,6 +146,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, readonly Permission[]> = {
     'audit.read',
     'cases.read',
     'cases.write',
+    'settings.read',
   ],
   lawyer: ['tickets.read', 'tickets.create', 'wallet.read', 'wallet.topup', 'documents.read', 'cases.read', 'cases.write', 'elections.read', 'elections.vote'],
   consumer: ['tickets.read', 'tickets.create', 'wallet.read', 'wallet.topup', 'documents.read', 'cases.read', 'elections.read', 'elections.vote'],
@@ -668,6 +678,70 @@ export function parsePayloadCities(value: unknown): string[] {
     }
   }
   return [trimmed];
+}
+
+// ─────────────────────────────────────────────
+// Canonical money math — single source of truth
+// ─────────────────────────────────────────────
+
+/** Round to 2 decimals (PKR). Avoids binary-float drift on persisted money. */
+export function round2(n: number): number {
+  return Math.round((n + Number.EPSILON) * 100) / 100;
+}
+
+export type PromoType = 'PERCENT' | 'FIXED';
+
+export interface TicketChargeComponents {
+  serviceCost: number;
+  deliveryCharges: number;
+  printingCharges: number;
+  attestedCharges: number;
+  nonAttestedCharges: number;
+  additionalCharges: number;
+  additionalServiceCost: number;
+}
+
+export interface TicketMoneyInput {
+  charges: TicketChargeComponents;
+  /** Staff-applied discount (Ticket.discountPrice). */
+  discountPrice?: number;
+  /** Promo-code discount (Ticket.promoDiscount). */
+  promoDiscount?: number;
+  /** Tax rate as a fraction (e.g. 0.17). 0 / undefined = no tax. */
+  taxRate?: number;
+}
+
+export interface TicketMoneyResult {
+  chargesSubtotal: number;
+  discountTotal: number;
+  taxableBase: number;
+  taxAmount: number;
+  totalAmount: number;
+}
+
+/**
+ * THE single source for a ticket's total. Order: sum charges → subtract staff
+ * discount + promo → tax the remainder → add tax. Every server site that writes
+ * Ticket.totalAmount (createIntakeTicket, finance.updateCharge,
+ * finalizeRemainderCore, reprice) and the wizard's checkout preview call this,
+ * so the quote and the charge cannot drift.
+ */
+export function computeTicketTotal(input: TicketMoneyInput): TicketMoneyResult {
+  const c = input.charges;
+  const chargesSubtotal = round2(
+    c.serviceCost +
+      c.deliveryCharges +
+      c.printingCharges +
+      c.attestedCharges +
+      c.nonAttestedCharges +
+      c.additionalCharges +
+      c.additionalServiceCost,
+  );
+  const discountTotal = round2((input.discountPrice ?? 0) + (input.promoDiscount ?? 0));
+  const taxableBase = Math.max(0, round2(chargesSubtotal - discountTotal));
+  const taxAmount = round2(taxableBase * (input.taxRate ?? 0));
+  const totalAmount = round2(taxableBase + taxAmount);
+  return { chargesSubtotal, discountTotal, taxableBase, taxAmount, totalAmount };
 }
 
 /** Resolver input shape produced by {@link buildPricingResolveInput}. */
