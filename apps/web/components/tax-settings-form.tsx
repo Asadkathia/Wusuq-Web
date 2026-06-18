@@ -38,8 +38,9 @@ export function TaxSettingsForm() {
         setEnabled(data.enabled);
         setLoading(false);
       });
-    } catch {
+    } catch (error: unknown) {
       startTransition(() => setLoading(false));
+      msg((error as { message?: string }).message ?? 'Failed to load tax settings.', false);
     }
   }, []);
 

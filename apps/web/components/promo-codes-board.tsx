@@ -123,6 +123,7 @@ export function PromoCodesBoard() {
     if (!form.code.trim()) { msg('Code is required.', false); return; }
     const val = parseFloat(form.value);
     if (isNaN(val) || val <= 0) { msg('Value must be a positive number.', false); return; }
+    if (form.type === 'PERCENT' && val > 100) { msg('Percent value must be between 0 and 100.', false); return; }
 
     setSaving(true);
     try {
@@ -132,8 +133,8 @@ export function PromoCodesBoard() {
         value: val,
       };
       if (form.maxDiscount) payload.maxDiscount = parseFloat(form.maxDiscount);
-      if (form.startsAt) payload.startsAt = form.startsAt;
-      if (form.endsAt) payload.endsAt = form.endsAt;
+      if (form.startsAt) payload.startsAt = new Date(form.startsAt).toISOString();
+      if (form.endsAt)   payload.endsAt   = new Date(form.endsAt).toISOString();
       if (form.totalUsageLimit) payload.totalUsageLimit = parseInt(form.totalUsageLimit, 10);
       if (form.perUserLimit) payload.perUserLimit = parseInt(form.perUserLimit, 10);
       if (form.serviceScope.trim()) {
@@ -163,6 +164,7 @@ export function PromoCodesBoard() {
       await apiClient.post(`/promos/${id}/deactivate`);
       msg('Promo code deactivated.');
       setItems(prev => prev.map(p => p.id === id ? { ...p, active: false } : p));
+      load();
     } catch (error: any) {
       msg(error.message || 'Deactivation failed.', false);
     } finally {
