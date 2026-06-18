@@ -24,6 +24,8 @@ type TicketRow = {
     additionalCharges: number;
     additionalServiceCost: number;
     discountPrice: number;
+    taxAmount: number;
+    promoDiscount: number;
   };
   totalAmount: number;
   amountPaid: number;
@@ -361,6 +363,18 @@ export function TicketChargesBoard() {
                               <div className="flex items-center justify-between rounded-lg bg-emerald-50 border border-emerald-100 px-3 py-2">
                                 <span className="text-xs text-emerald-600">Discount</span>
                                 <span className="text-sm font-semibold text-emerald-700">− PKR {item.charges.discountPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                              </div>
+                            )}
+                            {item.charges.promoDiscount > 0 && (
+                              <div className="flex items-center justify-between rounded-lg bg-emerald-50 border border-emerald-100 px-3 py-2">
+                                <span className="text-xs text-emerald-600">Promo</span>
+                                <span className="text-sm font-semibold text-emerald-700">− PKR {item.charges.promoDiscount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                              </div>
+                            )}
+                            {item.charges.taxAmount > 0 && (
+                              <div className="flex items-center justify-between rounded-lg bg-amber-50 border border-amber-100 px-3 py-2">
+                                <span className="text-xs text-amber-700">Tax</span>
+                                <span className="text-sm font-semibold text-amber-800">PKR {item.charges.taxAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                               </div>
                             )}
                           </div>

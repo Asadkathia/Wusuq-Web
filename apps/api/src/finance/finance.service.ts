@@ -91,6 +91,8 @@ export class FinanceService {
             additionalCharges: toNumber(ticket.additionalCharges),
             additionalServiceCost: toNumber(ticket.additionalServiceCost),
             discountPrice: toNumber(ticket.discountPrice),
+            taxAmount: toNumber(ticket.taxAmount),
+            promoDiscount: toNumber(ticket.promoDiscount),
           },
           totalAmount,
           amountPaid,
@@ -308,6 +310,8 @@ export class FinanceService {
         additionalCharges: toNumber(updated.additionalCharges),
         additionalServiceCost: toNumber(updated.additionalServiceCost),
         discountPrice: toNumber(updated.discountPrice),
+        taxAmount: toNumber(updated.taxAmount),
+        promoDiscount: toNumber(updated.promoDiscount),
       },
       remaining: toNumber(updated.totalAmount) - amountPaid,
       clerkPayout:

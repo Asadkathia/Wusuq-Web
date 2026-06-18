@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { parseDeliveryAddress, parseBench } from '@/lib/intake-flows';
 import { BENCH_TYPE_LABELS } from '@/lib/bench-types';
+import { TicketRepriceDialog } from '@/components/ticket-reprice-dialog';
 
 type Props = {
   ticketId: string;
@@ -35,6 +36,7 @@ export function TicketDetailPanel({ ticketId, onClose, isClerkView = false }: Pr
   const [rejectReason, setRejectReason] = useState('');
   const [actionBusy, setActionBusy] = useState(false);
   const [actionError, setActionError] = useState('');
+  const [repriceOpen, setRepriceOpen] = useState(false);
 
   useEffect(() => {
     try {
@@ -187,6 +189,14 @@ export function TicketDetailPanel({ ticketId, onClose, isClerkView = false }: Pr
                   Reject
                 </button>
               </div>
+            )}
+            {!isClerkView && ticket && (
+              <button
+                onClick={() => setRepriceOpen(true)}
+                className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+              >
+                Edit ticket
+              </button>
             )}
             <button onClick={onClose} className="rounded-full p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors">
               <X className="h-5 w-5" />
@@ -642,6 +652,16 @@ export function TicketDetailPanel({ ticketId, onClose, isClerkView = false }: Pr
             </div>
           </div>
         </div>
+      )}
+
+      {repriceOpen && ticket && (
+        <TicketRepriceDialog
+          ticketId={ticketId}
+          formPayload={(ticket.formPayload as Record<string, unknown>) ?? {}}
+          currentTotalAmount={Number(ticket.totalAmount || 0)}
+          onClose={() => setRepriceOpen(false)}
+          onSaved={() => { setRepriceOpen(false); void load(); }}
+        />
       )}
     </div>
   );
