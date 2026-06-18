@@ -1,4 +1,5 @@
 import { jest } from '@jest/globals';
+import { ConflictException } from '@nestjs/common';
 import { PromosService } from './promos.service';
 
 const BASE = {
@@ -75,5 +76,44 @@ describe('PromosService.validate', () => {
     const r = await svc.validate({ code: 'SAVE10', userId: 'u1', flow: 'x', subtotal: 1000 });
     expect(r.valid).toBe(false);
     expect(r.reason).toMatch(/limit/i);
+  });
+});
+
+describe('PromosService.assertWithinLimits', () => {
+  function buildTx(promo: any, redemptionCounts = { total: 0, user: 0 }) {
+    const tx: any = {
+      $executeRaw: jest.fn(async () => undefined),
+      promoCode: {
+        findUnique: jest.fn(async () => promo),
+      },
+      promoRedemption: {
+        count: jest.fn(async ({ where }: any) =>
+          where.userId ? redemptionCounts.user : redemptionCounts.total,
+        ),
+      },
+    };
+    return tx;
+  }
+
+  it('resolves and acquires the row lock when within both limits', async () => {
+    const svc = new PromosService({} as never);
+    const promo = { ...BASE, totalUsageLimit: 10, perUserLimit: 3 };
+    const tx = buildTx(promo, { total: 5, user: 1 });
+    await expect(svc.assertWithinLimits(tx, 'promo-1', 'u1')).resolves.toBeUndefined();
+    expect(tx.$executeRaw).toHaveBeenCalledTimes(1);
+  });
+
+  it('throws ConflictException when totalUsageLimit is reached', async () => {
+    const svc = new PromosService({} as never);
+    const promo = { ...BASE, totalUsageLimit: 5, perUserLimit: null };
+    const tx = buildTx(promo, { total: 5, user: 0 });
+    await expect(svc.assertWithinLimits(tx, 'promo-1', 'u1')).rejects.toThrow(ConflictException);
+  });
+
+  it('throws ConflictException when perUserLimit is reached', async () => {
+    const svc = new PromosService({} as never);
+    const promo = { ...BASE, totalUsageLimit: null, perUserLimit: 1 };
+    const tx = buildTx(promo, { total: 3, user: 1 });
+    await expect(svc.assertWithinLimits(tx, 'promo-1', 'u1')).rejects.toThrow(ConflictException);
   });
 });

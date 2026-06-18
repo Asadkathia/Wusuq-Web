@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { round2 } from '@wusuq/shared';
 import { PrismaService } from '../prisma/prisma.service';
@@ -65,6 +65,35 @@ export class PromosService {
     }
     discount = round2(Math.min(discount, subtotal));
     return { valid: true, discount, promoCodeId: promo.id };
+  }
+
+  /**
+   * Enforces totalUsageLimit / perUserLimit atomically inside a transaction.
+   * Acquires a FOR UPDATE row lock on the PromoCode row so concurrent
+   * redemptions of the same code serialize and cannot both pass the count check.
+   * Throws ConflictException when either limit is exceeded.
+   */
+  async assertWithinLimits(
+    tx: Prisma.TransactionClient,
+    promoCodeId: string,
+    userId: string,
+  ): Promise<void> {
+    // Lock the PromoCode row so concurrent redemptions of the same code serialize.
+    await tx.$executeRaw`SELECT id FROM "PromoCode" WHERE id = ${promoCodeId} FOR UPDATE`;
+    const promo = await tx.promoCode.findUnique({ where: { id: promoCodeId } });
+    if (!promo) throw new NotFoundException('Promo code not found');
+    if (promo.totalUsageLimit != null) {
+      const total = await tx.promoRedemption.count({ where: { promoCodeId } });
+      if (total >= promo.totalUsageLimit) {
+        throw new ConflictException('Promo code usage limit reached');
+      }
+    }
+    if (promo.perUserLimit != null) {
+      const mine = await tx.promoRedemption.count({ where: { promoCodeId, userId } });
+      if (mine >= promo.perUserLimit) {
+        throw new ConflictException('Promo code per-user limit reached');
+      }
+    }
   }
 
   create(dto: CreatePromoDto, actorUserId?: string) {
