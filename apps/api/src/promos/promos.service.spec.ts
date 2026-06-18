@@ -1,5 +1,5 @@
 import { jest } from '@jest/globals';
-import { ConflictException } from '@nestjs/common';
+import { ConflictException, NotFoundException } from '@nestjs/common';
 import { PromosService } from './promos.service';
 
 const BASE = {
@@ -115,5 +115,11 @@ describe('PromosService.assertWithinLimits', () => {
     const promo = { ...BASE, totalUsageLimit: null, perUserLimit: 1 };
     const tx = buildTx(promo, { total: 3, user: 1 });
     await expect(svc.assertWithinLimits(tx, 'promo-1', 'u1')).rejects.toThrow(ConflictException);
+  });
+
+  it('throws NotFoundException when promo is deleted after the lock', async () => {
+    const svc = new PromosService({} as never);
+    const tx = buildTx(null); // findUnique returns null — promo deleted mid-transaction
+    await expect(svc.assertWithinLimits(tx, 'promo-1', 'u1')).rejects.toThrow(NotFoundException);
   });
 });
