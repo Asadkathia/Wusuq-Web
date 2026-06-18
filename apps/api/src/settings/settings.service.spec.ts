@@ -13,6 +13,7 @@ function build(rows: Record<string, string> = {}) {
         return { key: where.key, value: store[where.key] };
       }),
     },
+    $transaction: jest.fn(async (ops: Promise<unknown>[]) => Promise.all(ops)),
   };
   return { service: new SettingsService(prisma as never), store };
 }
@@ -49,6 +50,16 @@ describe('SettingsService tax config', () => {
 
   it('returns rate 0 effectively when disabled', async () => {
     const { service } = build({ 'tax.rate': '0.17', 'tax.enabled': 'false' });
+    expect(await service.getTaxRate()).toBe(0);
+  });
+
+  it('clamps a DB rate above 1 down to 1', async () => {
+    const { service } = build({ 'tax.rate': '1.5' });
+    expect(await service.getTaxRate()).toBe(1);
+  });
+
+  it('clamps a DB rate below 0 up to 0', async () => {
+    const { service } = build({ 'tax.rate': '-0.1' });
     expect(await service.getTaxRate()).toBe(0);
   });
 });

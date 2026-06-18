@@ -41,16 +41,18 @@ export class SettingsService {
     actorUserId?: string,
   ): Promise<{ rate: number; enabled: boolean }> {
     const clamped = clampRate(rate);
-    await this.prisma.appSetting.upsert({
-      where: { key: TAX_RATE_KEY },
-      create: { key: TAX_RATE_KEY, value: String(clamped), updatedByUserId: actorUserId },
-      update: { value: String(clamped), updatedByUserId: actorUserId },
-    });
-    await this.prisma.appSetting.upsert({
-      where: { key: TAX_ENABLED_KEY },
-      create: { key: TAX_ENABLED_KEY, value: String(enabled), updatedByUserId: actorUserId },
-      update: { value: String(enabled), updatedByUserId: actorUserId },
-    });
+    await this.prisma.$transaction([
+      this.prisma.appSetting.upsert({
+        where: { key: TAX_RATE_KEY },
+        create: { key: TAX_RATE_KEY, value: String(clamped), updatedByUserId: actorUserId },
+        update: { value: String(clamped), updatedByUserId: actorUserId },
+      }),
+      this.prisma.appSetting.upsert({
+        where: { key: TAX_ENABLED_KEY },
+        create: { key: TAX_ENABLED_KEY, value: String(enabled), updatedByUserId: actorUserId },
+        update: { value: String(enabled), updatedByUserId: actorUserId },
+      }),
+    ]);
     return { rate: clamped, enabled };
   }
 }
