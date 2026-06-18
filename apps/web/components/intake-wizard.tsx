@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 'use client';
 
-import { useMemo, useEffect, useState, useCallback, useRef } from 'react';
+import { useMemo, useEffect, useState, useCallback, useRef, startTransition } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { buildFutureTicketsPayload } from '@/lib/future-tickets';
@@ -11,7 +11,7 @@ import type { IntakeFlow, IntakeStep, CourtTier } from '@/lib/intake-flows';
 import { courtTierFromCourtType, resolveRequired, docBundleLabel, normalizeDraftPayload, isStructuredAddressComplete, computeYearBand, parseBench, showWhenSatisfied, parseCities, stringifyCities } from '@/lib/intake-flows';
 import { BENCH_TYPE_LABELS } from '@/lib/bench-types';
 import type { YearBand } from '@/lib/intake-flows';
-import { buildPricingResolveInput } from '@wusuq/shared';
+import { buildPricingResolveInput, computeTicketTotal } from '@wusuq/shared';
 
 import type { IntakeWizardProps, TicketDraft, ServiceHit, LocalUser, CityCourtGroup } from './intake-wizard/types';
 import { StepRail } from './intake-wizard/step-rail';
@@ -249,6 +249,14 @@ export function IntakeWizard({
   const [isDraggingFiles, setIsDraggingFiles] = useState(false);
   const [documentsPanelOpen, setDocumentsPanelOpen] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
+  // Tax rate fetched from /settings/tax on mount (0 = disabled / not configured).
+  const [taxRate, setTaxRate] = useState(0);
+  // Promo-code state: the code the user typed, the validated discount amount,
+  // and any validation error message.
+  const [promoCode, setPromoCode] = useState('');
+  const [promoDiscount, setPromoDiscount] = useState(0);
+  const [promoError, setPromoError] = useState('');
+  const [promoLoading, setPromoLoading] = useState(false);
 
   useEffect(() => {
     stepHeadingRef.current?.focus();
@@ -377,6 +385,14 @@ export function IntakeWizard({
       .catch(() => setServices([]));
   }, [serviceCategory]);
 
+  // Fetch the platform tax rate once on wizard mount. startTransition avoids
+  // the React 19 "setState synchronously in effect body" lint rule.
+  useEffect(() => {
+    apiClient.get<{ rate: number; enabled: boolean }>('/settings/tax')
+      .then((r) => { startTransition(() => setTaxRate(r.enabled ? r.rate : 0)); })
+      .catch(() => {});
+  }, []);
+
   // Clear a stale "Non Attested" selection when the user flips to Decided Case,
   // since that option is hidden in this configuration.
   useEffect(() => {
@@ -401,6 +417,40 @@ export function IntakeWizard({
     },
     [],
   );
+
+  // Validate a promo code against the server. On success, sets promoDiscount
+  // so the checkout total updates immediately. On failure, shows the reason and
+  // resets the discount to 0.
+  const validatePromo = useCallback(async () => {
+    if (!promoCode.trim()) return;
+    setPromoLoading(true);
+    setPromoError('');
+    const matchedAndAvailable = pricingResult?.matched && pricingResult.available !== false;
+    const billedBase = matchedAndAvailable
+      ? (paymentModelFor(draft.flow) === 'SPLIT' ? pricingResult!.serviceCost : pricingResult!.total)
+      : 0;
+    try {
+      const r = await apiClient.post<{ valid: boolean; reason?: string; discount: number }>(
+        '/promos/validate',
+        { code: promoCode.trim(), flow: draft.flow, subtotal: billedBase },
+      );
+      if (r.valid) {
+        startTransition(() => setPromoDiscount(r.discount));
+      } else {
+        startTransition(() => {
+          setPromoDiscount(0);
+          setPromoError(r.reason ?? 'Invalid promo code');
+        });
+      }
+    } catch (e: any) {
+      startTransition(() => {
+        setPromoDiscount(0);
+        setPromoError(e.message ?? 'Could not validate promo code');
+      });
+    } finally {
+      setPromoLoading(false);
+    }
+  }, [promoCode, draft.flow, pricingResult]);
 
   // Apply any per-field `defaultValue` declared in the flow to the payload
   // when the flow changes, so radios/selects start preselected.
@@ -1439,6 +1489,9 @@ export function IntakeWizard({
     setUploadError('');
     setDocumentsPanelOpen(false);
     setLastSavedAt(null);
+    setPromoCode('');
+    setPromoDiscount(0);
+    setPromoError('');
   };
 
   // Checkout summary — derives display items from draft payload. When a pricing
@@ -1535,18 +1588,49 @@ export function IntakeWizard({
     const matchedAndAvailable = pr?.matched && pr.available !== false;
     // For SPLIT flows, the checkout total is the base service cost only.
     // The remainder (attested/non-attested/PDF/delivery) is billed after
-    // the clerk enters phase-2 charges.
-    const displayTotal = matchedAndAvailable
+    // the clerk enters phase-2 charges. billedBase is the pre-tax /
+    // pre-promo subtotal that computeTicketTotal works from.
+    const billedBase = matchedAndAvailable
       ? (isSplit ? pr!.serviceCost : pr!.total)
       : null;
+
+    // Promo discount line — shown when a valid code has been applied.
+    if (billedBase !== null && promoDiscount > 0) {
+      items.push({ label: 'Discount', amount: -promoDiscount });
+    }
+
+    // Use computeTicketTotal (same function the server uses for createIntakeTicket
+    // and finalizeRemainderCore) so the checkout quote cannot drift from the
+    // persisted charge: promo + tax math is in exactly one place.
+    const money = billedBase !== null
+      ? computeTicketTotal({
+          charges: {
+            serviceCost: billedBase,
+            deliveryCharges: 0,
+            printingCharges: 0,
+            attestedCharges: 0,
+            nonAttestedCharges: 0,
+            additionalCharges: 0,
+            additionalServiceCost: 0,
+          },
+          promoDiscount,
+          taxRate,
+        })
+      : null;
+
+    // Tax line — shown only when a non-zero tax rate is configured.
+    if (money && taxRate > 0) {
+      items.push({ label: `Tax (${Math.round(taxRate * 100)}%)`, amount: money.taxAmount });
+    }
+
     return {
       items,
-      subtotal: matchedAndAvailable ? pr!.serviceCost : null,
+      subtotal: billedBase,
       fees: null,
-      total: displayTotal,
+      total: money ? money.totalAmount : null,
       currency: 'PKR',
     };
-  }, [draft.payload, draft.flow, pricingResult, selectedFlow]);
+  }, [draft.payload, draft.flow, pricingResult, selectedFlow, promoDiscount, taxRate]);
 
   const submitTicket = async () => {
     if (!selectedFlow || !validateAllSteps()) return;
@@ -1610,6 +1694,9 @@ export function IntakeWizard({
         payload: { ...p, sets, source: 'next-web-intake' },
         // Atomic case linkage when the wizard is launched from a case page.
         ...(caseId ? { caseId } : {}),
+        // Server re-validates and redeems the promo code so the discount
+        // cannot be fabricated client-side.
+        ...(promoCode ? { promoCode } : {}),
       });
       // The ticket now EXISTS — this is the commit point. Attachment uploads
       // are best-effort: a failed upload must NOT throw out to the catch and
@@ -2271,7 +2358,51 @@ export function IntakeWizard({
       ) : null}
 
         </div>
-        <CheckoutPanel summary={checkoutSummary} hasFlow={Boolean(draft.flow)} />
+        <CheckoutPanel
+          summary={checkoutSummary}
+          hasFlow={Boolean(draft.flow)}
+          promoSlot={
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-slate-700">Promo code</p>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={promoCode}
+                  onChange={(e) => { setPromoCode(e.target.value); setPromoError(''); }}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && promoDiscount === 0) { void validatePromo(); } }}
+                  placeholder="Enter code"
+                  disabled={promoDiscount > 0}
+                  aria-label="Promo code"
+                  className="min-w-0 flex-1 rounded-xl border-0 py-2 px-3 text-sm text-slate-900 shadow-sm ring-1 ring-inset ring-border-soft placeholder:text-slate-400 focus:ring-2 focus:ring-brand-500 disabled:bg-slate-50 disabled:text-slate-500"
+                />
+                {promoDiscount > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => { setPromoDiscount(0); setPromoCode(''); setPromoError(''); }}
+                    className="shrink-0 rounded-xl border border-border-soft px-3 py-2 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40"
+                  >
+                    Clear
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => { void validatePromo(); }}
+                    disabled={promoLoading || !promoCode.trim()}
+                    className="shrink-0 rounded-xl bg-brand-500 px-3 py-2 text-xs font-semibold text-white shadow-elev-1 transition-colors hover:bg-brand-600 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40"
+                  >
+                    {promoLoading ? '…' : 'Apply'}
+                  </button>
+                )}
+              </div>
+              {promoError ? (
+                <p className="text-xs text-rose-600">{promoError}</p>
+              ) : null}
+              {promoDiscount > 0 ? (
+                <p className="text-xs text-emerald-600">Promo applied — discount deducted above.</p>
+              ) : null}
+            </div>
+          }
+        />
       </div>
     </div>
   );

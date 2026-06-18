@@ -1,5 +1,6 @@
 'use client';
 
+import { type ReactNode } from 'react';
 import { Receipt } from 'lucide-react';
 
 export type CheckoutItem = {
@@ -24,6 +25,12 @@ type CheckoutPanelProps = {
   summary: CheckoutSummary;
   /** When true and total is null, show a "no rule matched" notice instead of the generic placeholder note. */
   hasFlow?: boolean;
+  /**
+   * Optional slot rendered between the line-items list and the subtotal/total
+   * footer. Used by IntakeWizard to embed the promo-code input inside the
+   * sticky checkout sidebar without coupling state to this component.
+   */
+  promoSlot?: ReactNode;
 };
 
 function formatAmount(amount: number | null, currency: string): string {
@@ -39,7 +46,7 @@ function formatAmount(amount: number | null, currency: string): string {
   }
 }
 
-export function CheckoutPanel({ summary, hasFlow }: CheckoutPanelProps) {
+export function CheckoutPanel({ summary, hasFlow, promoSlot }: CheckoutPanelProps) {
   const { items, subtotal, fees, total, currency } = summary;
 
   return (
@@ -68,12 +75,12 @@ export function CheckoutPanel({ summary, hasFlow }: CheckoutPanelProps) {
               {items.map((item, index) => (
                 <li key={`${item.label}-${index}`} className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-slate-900">{item.label}</p>
+                    <p className={`text-sm font-medium ${item.amount !== null && item.amount < 0 ? 'text-emerald-700' : 'text-slate-900'}`}>{item.label}</p>
                     {item.detail ? (
                       <p className="mt-0.5 truncate text-xs text-slate-500">{item.detail}</p>
                     ) : null}
                   </div>
-                  <p className="shrink-0 text-sm font-semibold tabular-nums text-slate-900">
+                  <p className={`shrink-0 text-sm font-semibold tabular-nums ${item.amount !== null && item.amount < 0 ? 'text-emerald-700' : 'text-slate-900'}`}>
                     {formatAmount(item.amount, currency)}
                   </p>
                 </li>
@@ -81,6 +88,12 @@ export function CheckoutPanel({ summary, hasFlow }: CheckoutPanelProps) {
             </ul>
           )}
         </div>
+
+        {promoSlot ? (
+          <div className="border-t border-border-soft px-5 py-4">
+            {promoSlot}
+          </div>
+        ) : null}
 
         <footer className="space-y-2 border-t border-border-soft px-5 py-4 text-sm">
           <div className="flex items-center justify-between text-slate-600">
