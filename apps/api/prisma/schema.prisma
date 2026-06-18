@@ -270,6 +270,7 @@ model Ticket {
   consumer        User                @relation(fields: [consumerId], references: [id])
   service         Service             @relation(fields: [serviceId], references: [id])
   case            Case?               @relation(fields: [caseId], references: [id], onDelete: SetNull)
+  promoCode       PromoCode?          @relation(fields: [promoCodeId], references: [id], onDelete: SetNull)
   history         TicketStatusHistory[]
   assignments     Assignment[]
   documents       TicketDocument[]
@@ -332,6 +333,7 @@ model PromoCode {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   redemptions     PromoRedemption[]
+  tickets         Ticket[]
 
   @@index([active])
 }
