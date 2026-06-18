@@ -184,14 +184,24 @@ export class DashboardService {
           updatedAt: { gte: prevStart, lt: prevEnd },
         },
       }),
+      // Audit 1.11: revenue = money applied to tickets, which is exactly the
+      // TICKET_DEBIT rows (wallet settlement + finance reconcile). TOPUP and
+      // TICKET_PAYMENT rows are the consumer handing us money — verifying a
+      // TICKET_PAYMENT immediately writes a TICKET_DEBIT for the applied
+      // amount, so counting both would double-count.
       this.prisma.walletTransaction.aggregate({
-        where: { verifiedAt: { gte: startDate }, status: 'VERIFIED' },
+        where: {
+          verifiedAt: { gte: startDate },
+          status: 'VERIFIED',
+          type: 'TICKET_DEBIT',
+        },
         _sum: { amount: true },
       }),
       this.prisma.walletTransaction.aggregate({
         where: {
           verifiedAt: { gte: prevStart, lt: prevEnd },
           status: 'VERIFIED',
+          type: 'TICKET_DEBIT',
         },
         _sum: { amount: true },
       }),

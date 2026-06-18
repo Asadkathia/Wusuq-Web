@@ -6,7 +6,8 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { UserRole, type Prisma } from '@prisma/client';
+import { randomInt } from 'node:crypto';
+import { Prisma, UserRole } from '@prisma/client';
 import type { TicketStatus } from '@wusuq/shared';
 import {
   PAYLOAD_FIELD_ALIASES as SHARED_ALIASES,
@@ -20,6 +21,8 @@ import {
   chargeCapabilitiesFor,
   isFullyPaid,
   buildPricingResolveInput,
+  isConsumerRole,
+  isStaffRole,
 } from '@wusuq/shared';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { PricingService } from '../pricing/pricing.service';
@@ -180,6 +183,8 @@ export class TicketsService {
     const skip = (query.page - 1) * query.limit;
 
     const where = {
+      // Audit 4.2: archived (soft-deleted) tickets never appear in lists.
+      archivedAt: null,
       ...(query.status ? { status: query.status } : {}),
       ...(query.serviceCity
         ? {
@@ -352,14 +357,63 @@ export class TicketsService {
       throw new NotFoundException('Ticket not found');
     }
 
-    if (caller?.role === 'CONSUMER') {
-      const completed = ticket.status === 'COMPLETED';
-      (ticket as { documents: typeof ticket.documents }).documents = completed
-        ? (ticket.documents ?? []).filter((d) => d.visibleToConsumer)
-        : [];
+    // Consumer-class callers only ever see their own tickets — 404 (not 403)
+    // so foreign ticket ids cannot be probed for existence. Representatives
+    // are scoped to tickets they have an assignment on. (Audit 3.1/3.3d; the
+    // previous guard compared against the uppercase Prisma spelling
+    // 'CONSUMER' and never matched.)
+    if (caller && isConsumerRole(caller.role)) {
+      if (ticket.consumerId !== caller.userId || ticket.archivedAt) {
+        throw new NotFoundException('Ticket not found');
+      }
+      return this.redactTicketForConsumer(ticket);
+    }
+    if (caller?.role === 'representative') {
+      const assigned = await this.prisma.assignment.findFirst({
+        where: { ticketId: id, representativeId: caller.userId },
+        select: { id: true },
+      });
+      if (!assigned) {
+        throw new NotFoundException('Ticket not found');
+      }
     }
 
     return ticket;
+  }
+
+  /**
+   * Consumer view of a ticket: internal clerk-payout fields, the clerk
+   * report, the dispatch proof path and the representative's phone number
+   * are all back-office data (CLAUDE.md: clerk cost is internal-only).
+   * Documents stay hidden until completion, then only consumer-visible ones.
+   */
+  private redactTicketForConsumer<
+    T extends {
+      status: string;
+      documents?: { visibleToConsumer: boolean }[] | null;
+      assignments?: { representative?: Record<string, unknown> | null }[];
+    },
+  >(ticket: T) {
+    const safe: Record<string, unknown> = { ...ticket };
+    delete safe.clerkCost;
+    delete safe.defaultClerkCost;
+    delete safe.clerkReport;
+    delete safe.dispatchProofUrl;
+    // DELIVERED included: auto-deliver (digital flows) and the admin's
+    // delivery confirmation are terminal — the consumer must keep access to
+    // the deliverables they paid for after COMPLETED.
+    const completed =
+      ticket.status === 'COMPLETED' || ticket.status === 'DELIVERED';
+    safe.documents = completed
+      ? (ticket.documents ?? []).filter((d) => d.visibleToConsumer)
+      : [];
+    safe.assignments = (ticket.assignments ?? []).map((assignment) => {
+      if (!assignment.representative) return assignment;
+      const representative = { ...assignment.representative };
+      delete representative.phone;
+      return { ...assignment, representative };
+    });
+    return safe as T;
   }
 
   async update(
@@ -448,6 +502,22 @@ export class TicketsService {
           `Check court level, region, year and set type, or update pricing rules.`,
       );
     }
+    // Audit 1.4: a flow with NO rules at all used to create the ticket free
+    // of charge with only a logger.warn — three whole non-judicial services
+    // were fulfilled end-to-end with zero revenue. Fail loudly unless ops
+    // explicitly opts into free intake (escape hatch for environments where
+    // the pricing seed hasn't run yet).
+    if (
+      !pricing.matched &&
+      !pricing.rulesExistForFlow &&
+      process.env.ALLOW_UNPRICED_INTAKE !== 'true'
+    ) {
+      throw new BadRequestException(
+        `Flow "${dto.flow}" has no active pricing rules — intake would create ` +
+          'a free ticket. Seed pricing rules for this flow (or set ' +
+          'ALLOW_UNPRICED_INTAKE=true to permit free intake explicitly).',
+      );
+    }
 
     // SPLIT flows (e.g. judicial_case_files) bill base only at creation;
     // phase-2 surcharges (attested, printing, delivery, pdf) are added at
@@ -458,51 +528,86 @@ export class TicketsService {
         : pricing.total
       : 0;
 
-    const ticket = await this.prisma.ticket.create({
-      data: {
-        batchNo: this.generateBatchNo(),
-        consumerId: dto.consumerId,
-        serviceId: dto.serviceId,
-        status: 'UNPAID',
-        createdBy:
-          actor?.actorUserId && actor.actorUserId === dto.consumerId
-            ? 'CONSUMER'
-            : 'ADMIN_STAFF',
-        serviceCity: inferredServiceCity,
-        caseType: inferredCaseType,
-        serviceCost: pricing.matched ? pricing.serviceCost : 0,
-        // Delivery is a phase-2 charge for SPLIT (physical-document) flows — it
-        // is set by finalizeRemainder (the 2nd payment), so persist 0 at intake.
-        // Persisting the resolver's estimate here would surface a Delivery line
-        // on the consumer board that isn't part of totalAmount (display drift).
-        // ONE_TIME flows have no delivery leg, so this is 0 there too.
-        deliveryCharges:
-          pricing.matched && paymentModelFor(dto.flow) !== 'SPLIT'
-            ? pricing.deliveryCharge
-            : 0,
-        defaultClerkCost: pricing.matched
-          ? (pricing.clerkBaseCost ?? null)
-          : null,
-        totalAmount: billedTotal,
-        intakeFlow: dto.flow,
-        formPayload: dto.payload as Prisma.InputJsonValue | undefined,
-        // Atomic case linkage + scheduling. Replaces the prior two-step
-        // pattern in cases.service.ts (create then update).
-        caseId: dto.caseId,
-        scheduledDate: dto.scheduledDate
-          ? new Date(dto.scheduledDate)
-          : undefined,
-        hearingType: dto.hearingType,
-      },
-    });
+    let ticket;
+    try {
+      // Ticket + initial history row are atomic (audit 1.9) — a crash between
+      // the two used to orphan a ticket without its creation history.
+      ticket = await this.prisma.$transaction(async (tx) => {
+        const createdTicket = await tx.ticket.create({
+          data: {
+            batchNo: this.generateBatchNo(),
+            consumerId: dto.consumerId,
+            serviceId: dto.serviceId,
+            status: 'UNPAID',
+            // Client idempotency key: a replayed submit hits the unique index
+            // and is resolved to the original ticket in the catch below.
+            intakeRequestId: dto.requestId ?? null,
+            createdBy:
+              actor?.actorUserId && actor.actorUserId === dto.consumerId
+                ? 'CONSUMER'
+                : 'ADMIN_STAFF',
+            serviceCity: inferredServiceCity,
+            caseType: inferredCaseType,
+            serviceCost: pricing.matched ? pricing.serviceCost : 0,
+            // Delivery is a phase-2 charge for SPLIT (physical-document) flows — it
+            // is set by finalizeRemainder (the 2nd payment), so persist 0 at intake.
+            // Persisting the resolver's estimate here would surface a Delivery line
+            // on the consumer board that isn't part of totalAmount (display drift).
+            // ONE_TIME flows have no delivery leg, so this is 0 there too.
+            deliveryCharges:
+              pricing.matched && paymentModelFor(dto.flow) !== 'SPLIT'
+                ? pricing.deliveryCharge
+                : 0,
+            defaultClerkCost: pricing.matched
+              ? (pricing.clerkBaseCost ?? null)
+              : null,
+            totalAmount: billedTotal,
+            intakeFlow: dto.flow,
+            formPayload: dto.payload as Prisma.InputJsonValue | undefined,
+            // Atomic case linkage + scheduling. Replaces the prior two-step
+            // pattern in cases.service.ts (create then update).
+            caseId: dto.caseId,
+            scheduledDate: dto.scheduledDate
+              ? new Date(dto.scheduledDate)
+              : undefined,
+            hearingType: dto.hearingType,
+          },
+        });
 
-    await this.prisma.ticketStatusHistory.create({
-      data: {
-        ticketId: ticket.id,
-        to: 'UNPAID',
-        note: 'Ticket created via intake flow',
-      },
-    });
+        await tx.ticketStatusHistory.create({
+          data: {
+            ticketId: createdTicket.id,
+            to: 'UNPAID',
+            note: 'Ticket created via intake flow',
+          },
+        });
+
+        return createdTicket;
+      });
+    } catch (error) {
+      // Idempotent replay: the unique intakeRequestId already has a ticket —
+      // return it instead of duplicating (audit 1.9). batchNo collisions and
+      // other P2002s still surface as errors.
+      if (
+        dto.requestId &&
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002' &&
+        (error.meta?.target as string[] | string | undefined)
+          ?.toString()
+          .includes('intakeRequestId')
+      ) {
+        const existing = await this.prisma.ticket.findUnique({
+          where: { intakeRequestId: dto.requestId },
+        });
+        // The key is client-supplied: only treat the collision as a replay
+        // when it is the SAME consumer's ticket — otherwise returning it
+        // would leak another tenant's ticket to whoever guessed the key.
+        if (existing && existing.consumerId === dto.consumerId) {
+          return existing;
+        }
+      }
+      throw error;
+    }
 
     if (!pricing.matched) {
       // Free flow (no rules configured). Surface for ops awareness.
@@ -722,11 +827,32 @@ export class TicketsService {
       );
     }
 
-    const updated = await this.prisma.ticket.update({
+    // Audit 2.1: conditional transition — only flip when the row is still in
+    // the status we validated against, and write the history row atomically.
+    // A concurrent action that moved the ticket first turns this into a 409,
+    // never a silent last-write-wins.
+    await this.prisma.$transaction(async (tx) => {
+      const transitioned = await tx.ticket.updateMany({
+        where: { id, status: ticket.status },
+        data: { status },
+      });
+      if (transitioned.count !== 1) {
+        throw new ConflictException(
+          `Ticket is no longer in ${ticket.status} — reload and retry`,
+        );
+      }
+      await tx.ticketStatusHistory.create({
+        data: {
+          ticketId: id,
+          from: ticket.status,
+          to: status,
+          note,
+        },
+      });
+    });
+
+    const updated = await this.prisma.ticket.findUniqueOrThrow({
       where: { id },
-      data: {
-        status,
-      },
       include: {
         consumer: {
           select: { id: true, name: true, phone: true, email: true },
@@ -767,15 +893,6 @@ export class TicketsService {
       // events; values are never overwritten.
       await this.applyTicketCompletionToCase(updated.caseId, id, actor);
     }
-
-    await this.prisma.ticketStatusHistory.create({
-      data: {
-        ticketId: id,
-        from: ticket.status,
-        to: status,
-        note,
-      },
-    });
 
     await this.auditLogsService.create({
       action: 'TICKET_STATUS_UPDATED',
@@ -822,24 +939,63 @@ export class TicketsService {
   async overrideStatus(
     ticketId: string,
     status: TicketStatus,
-    actor: { actorUserId?: string; actorEmail?: string },
+    actor: { actorUserId?: string; actorEmail?: string; actorRole?: string },
   ) {
     const ticket = await this.prisma.ticket.findUnique({
       where: { id: ticketId },
-      select: { id: true, status: true },
+      select: {
+        id: true,
+        status: true,
+        intakeFlow: true,
+        totalAmount: true,
+        amountPaid: true,
+        deliveryStatus: true,
+      },
     });
     if (!ticket) throw new NotFoundException('Ticket not found');
-    const updated = await this.prisma.ticket.update({
-      where: { id: ticketId },
-      data: { status },
-    });
-    await this.prisma.ticketStatusHistory.create({
-      data: {
-        ticketId,
-        from: ticket.status,
-        to: status,
-        note: `Admin override from ${ticket.status}`,
-      },
+
+    // Audit 2.2: an override may skip transition ORDER, but never the money /
+    // dispatch gates — overriding an unpaid ticket to DELIVERED also silently
+    // erased the consumer's outstanding due from the wallet net balance.
+    // Owner decision 2026-06-12: super-admin (and ONLY super-admin) may
+    // bypass even these gates; the bypass is stamped into the audit row.
+    const superAdminBypass =
+      actor.actorRole === 'super-admin' && status === 'DELIVERED';
+    if (status === 'DELIVERED' && !superAdminBypass) {
+      if (!isFullyPaid(ticket)) {
+        throw new ForbiddenException(
+          'Final payment required before delivery — even via override.',
+        );
+      }
+      if (
+        chargeCapabilitiesFor(ticket.intakeFlow).delivery &&
+        ticket.deliveryStatus !== 'DISPATCHED'
+      ) {
+        throw new BadRequestException(
+          'Mark the package dispatched before confirming delivery — even via override.',
+        );
+      }
+    }
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const transitioned = await tx.ticket.updateMany({
+        where: { id: ticketId, status: ticket.status },
+        data: { status },
+      });
+      if (transitioned.count !== 1) {
+        throw new ConflictException(
+          `Ticket is no longer in ${ticket.status} — reload and retry`,
+        );
+      }
+      await tx.ticketStatusHistory.create({
+        data: {
+          ticketId,
+          from: ticket.status,
+          to: status,
+          note: `Admin override from ${ticket.status}`,
+        },
+      });
+      return tx.ticket.findUniqueOrThrow({ where: { id: ticketId } });
     });
     await this.auditLogsService.create({
       action: 'TICKET_STATUS_OVERRIDDEN',
@@ -847,7 +1003,7 @@ export class TicketsService {
       entityId: ticketId,
       actorUserId: actor.actorUserId,
       actorEmail: actor.actorEmail,
-      metadata: { from: ticket.status, to: status },
+      metadata: { from: ticket.status, to: status, superAdminBypass },
     });
     return updated;
   }
@@ -910,33 +1066,41 @@ export class TicketsService {
       orderBy: { createdAt: 'desc' },
       select: { representativeId: true },
     });
-    await this.prisma.$transaction([
-      this.prisma.ticket.update({
-        where: { id },
+    // Audit 2.1: the status flip is conditional on the status we validated
+    // against — a concurrent transition turns this into a 409 instead of a
+    // silent overwrite of someone else's state change.
+    await this.prisma.$transaction(async (tx) => {
+      const transitioned = await tx.ticket.updateMany({
+        where: { id, status: ticket.status },
         data: {
           clerkCost,
           totalAmount: nextTotalAmount,
           status: 'ASSIGNED',
         },
-      }),
-      this.prisma.assignment.updateMany({
+      });
+      if (transitioned.count !== 1) {
+        throw new ConflictException(
+          `Ticket is no longer in ${ticket.status} — reload and retry`,
+        );
+      }
+      await tx.assignment.updateMany({
         where: { ticketId: id, status: 'ACTIVE' },
         data: { status: 'SUPERSEDED' },
-      }),
-      this.prisma.assignment.create({
+      });
+      await tx.assignment.create({
         data: {
           ticketId: id,
           representativeId: dto.representativeId,
         },
-      }),
-      this.prisma.ticketStatusHistory.create({
+      });
+      await tx.ticketStatusHistory.create({
         data: {
           ticketId: id,
           from: ticket.status,
           to: 'ASSIGNED',
         },
-      }),
-    ]);
+      });
+    });
 
     await this.auditLogsService.create({
       action: 'TICKET_ASSIGNED',
@@ -1069,8 +1233,13 @@ export class TicketsService {
     }
 
     if (dto.action === 'delete') {
-      await this.prisma.ticket.deleteMany({
-        where: { id: { in: dto.ticketIds } },
+      // Audit 4.2: soft archive, never hard delete. deleteMany hit ON DELETE
+      // RESTRICT children (every ticket has status history) and — had it ever
+      // succeeded — would have orphaned WalletTransaction money rows via
+      // SET NULL. Archived tickets drop out of lists and wallet dues.
+      await this.prisma.ticket.updateMany({
+        where: { id: { in: dto.ticketIds }, archivedAt: null },
+        data: { archivedAt: new Date() },
       });
     }
     await this.auditLogsService.create({
@@ -1100,12 +1269,22 @@ export class TicketsService {
       mimetype: string;
       path: string;
     },
-    actor?: { actorUserId?: string; actorEmail?: string },
+    actor?: { actorUserId?: string; actorEmail?: string; actorRole?: string },
     caption?: string,
     visibleToConsumer: boolean = false,
     category: 'WORK_DOCUMENT' | 'DELIVERABLE_PDF' = 'WORK_DOCUMENT',
   ) {
-    await this.ensureTicketExists(ticketId);
+    const target = await this.ensureTicketExists(ticketId);
+    // Authorization lives here, not in the route permission: consumers
+    // attach files to their OWN tickets at intake, representatives upload
+    // work documents to their ASSIGNED tickets, staff to any.
+    if (actor?.actorUserId && isConsumerRole(actor.actorRole)) {
+      if (target.consumerId !== actor.actorUserId) {
+        throw new NotFoundException('Ticket not found');
+      }
+    } else {
+      await this.ensureClerkActionAllowed(ticketId, actor);
+    }
 
     const trimmedCaption = caption?.trim();
     const consumerVisible =
@@ -1146,7 +1325,7 @@ export class TicketsService {
     ticketId: string,
     documentId: string,
     dto: { visibleToConsumer: boolean },
-    actor?: { actorUserId?: string; actorEmail?: string },
+    actor?: { actorUserId?: string; actorEmail?: string; actorRole?: string },
   ) {
     const doc = await this.prisma.ticketDocument.findFirst({
       where: { id: documentId, ticketId },
@@ -1154,6 +1333,9 @@ export class TicketsService {
     if (!doc) {
       throw new NotFoundException('Document not found');
     }
+    // Representatives may only toggle visibility on their assigned ticket;
+    // staff are exempt (ensureClerkActionAllowed handles both).
+    await this.ensureClerkActionAllowed(ticketId, actor);
     const updated = await this.prisma.ticketDocument.update({
       where: { id: documentId },
       data: { visibleToConsumer: dto.visibleToConsumer },
@@ -1184,19 +1366,51 @@ export class TicketsService {
     });
     if (!doc) throw new NotFoundException('Document not found');
 
-    const isConsumer = caller.role === 'CONSUMER';
-    if (isConsumer) {
+    if (isConsumerRole(caller.role)) {
       if (doc.ticket.consumerId !== caller.consumerId) {
         throw new ForbiddenException('Not your ticket');
       }
       if (!doc.visibleToConsumer) {
         throw new ForbiddenException('Document not visible to consumer');
       }
-      if (doc.ticket.status !== 'COMPLETED') {
+      if (
+        doc.ticket.status !== 'COMPLETED' &&
+        doc.ticket.status !== 'DELIVERED'
+      ) {
         throw new ForbiddenException('Document available after completion');
+      }
+    } else if (caller.role === 'representative') {
+      const assigned = await this.prisma.assignment.findFirst({
+        where: { ticketId, representativeId: caller.userId },
+        select: { id: true },
+      });
+      if (!assigned) {
+        throw new ForbiddenException('Not your assignment');
       }
     }
     return { filePath: doc.fileUrl, name: doc.name, type: doc.type };
+  }
+
+  /**
+   * Clerk lifecycle actions (receipt, costs, charges, dispatch, reject) must
+   * come from the representative who holds the ticket's current assignment;
+   * staff are exempt. Mirrors acceptAssignment's binding (audit 3.3e).
+   */
+  private async ensureClerkActionAllowed(
+    ticketId: string,
+    actor?: { actorUserId?: string; actorRole?: string },
+  ) {
+    if (!actor?.actorUserId || isStaffRole(actor.actorRole)) return;
+    const current = await this.prisma.assignment.findFirst({
+      where: { ticketId, status: { in: ['ACTIVE', 'ACCEPTED'] } },
+      orderBy: { createdAt: 'desc' },
+      select: { representativeId: true },
+    });
+    if (!current || current.representativeId !== actor.actorUserId) {
+      throw new ForbiddenException(
+        'Only the assigned representative can perform this action',
+      );
+    }
   }
 
   async timeline(ticketId: string) {
@@ -1237,39 +1451,108 @@ export class TicketsService {
       throw new NotFoundException('Ticket not found');
     }
 
-    const cloned = await this.prisma.ticket.create({
-      data: {
-        batchNo: this.generateBatchNo(),
-        consumerId: original.consumerId,
-        serviceId: original.serviceId,
-        status: 'UNPAID',
-        createdBy: original.createdBy ?? 'ADMIN_STAFF',
-        serviceCity: original.serviceCity,
-        caseType: original.caseType,
-        intakeFlow: original.intakeFlow,
-        formPayload: (original.formPayload ?? undefined) as
-          | Prisma.InputJsonValue
-          | undefined,
-        serviceCost: original.serviceCost,
-        deliveryCharges: original.deliveryCharges,
-        printingCharges: original.printingCharges,
-        attestedCharges: original.attestedCharges,
-        nonAttestedCharges: original.nonAttestedCharges,
-        additionalCharges: original.additionalCharges,
-        additionalServiceCost: original.additionalServiceCost,
-        discountPrice: original.discountPrice,
-        clerkCost: original.clerkCost,
-        totalAmount: original.totalAmount,
-        amountPaid: original.amountPaid,
-      },
-    });
+    // Owner decision 2026-06-12: a regenerated ticket is a NEW sale at the
+    // CURRENT price list — re-resolve through the same shared input builder
+    // intake uses (quote = charge), reset the phase-2 clerk charge columns,
+    // and start unpaid (audit 1.8: the clone has no backing money rows).
+    // Legacy tickets without an intake flow/payload can't be re-priced —
+    // they fall back to the copied totals.
+    let pricingData: Record<string, unknown> = {
+      serviceCost: original.serviceCost,
+      deliveryCharges: original.deliveryCharges,
+      printingCharges: original.printingCharges,
+      attestedCharges: original.attestedCharges,
+      nonAttestedCharges: original.nonAttestedCharges,
+      additionalCharges: original.additionalCharges,
+      additionalServiceCost: original.additionalServiceCost,
+      discountPrice: original.discountPrice,
+      clerkCost: original.clerkCost,
+      defaultClerkCost: original.defaultClerkCost,
+      totalAmount: original.totalAmount,
+    };
+    if (original.intakeFlow && original.formPayload) {
+      const payload = original.formPayload as Record<
+        string,
+        string | undefined
+      >;
+      const pricing = await this.pricingService.resolve(
+        buildPricingResolveInput(original.intakeFlow, payload),
+      );
+      if (!pricing.matched && pricing.rulesExistForFlow) {
+        throw new BadRequestException(
+          `Cannot regenerate: no pricing rule matches ticket ${original.batchNo}'s ` +
+            'criteria under the current price list. Update pricing rules first.',
+        );
+      }
+      if (
+        !pricing.matched &&
+        !pricing.rulesExistForFlow &&
+        process.env.ALLOW_UNPRICED_INTAKE !== 'true'
+      ) {
+        throw new BadRequestException(
+          `Cannot regenerate: flow "${original.intakeFlow}" has no active ` +
+            'pricing rules — the clone would be free. Seed rules first.',
+        );
+      }
+      const billedTotal = pricing.matched
+        ? paymentModelFor(original.intakeFlow) === 'SPLIT'
+          ? pricing.serviceCost
+          : pricing.total
+        : 0;
+      pricingData = {
+        serviceCost: pricing.matched ? pricing.serviceCost : 0,
+        // Same shape as createIntakeTicket: phase-2 charges start clean —
+        // the clerk re-enters them for the new fulfilment.
+        deliveryCharges:
+          pricing.matched && paymentModelFor(original.intakeFlow) !== 'SPLIT'
+            ? pricing.deliveryCharge
+            : 0,
+        printingCharges: 0,
+        attestedCharges: 0,
+        nonAttestedCharges: 0,
+        additionalCharges: 0,
+        additionalServiceCost: 0,
+        discountPrice: 0,
+        clerkCost: 0,
+        defaultClerkCost: pricing.matched
+          ? (pricing.clerkBaseCost ?? null)
+          : null,
+        totalAmount: billedTotal,
+      };
+    }
 
-    await this.prisma.ticketStatusHistory.create({
-      data: {
-        ticketId: cloned.id,
-        to: 'UNPAID',
-        note: `Regenerated from ${original.batchNo}`,
-      },
+    // Clone + initial history row are atomic (mirrors createIntakeTicket,
+    // audit 1.9) — a crash between the two would otherwise orphan a
+    // regenerated ticket with no creation-history row.
+    const cloned = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.ticket.create({
+        data: {
+          batchNo: this.generateBatchNo(),
+          consumerId: original.consumerId,
+          serviceId: original.serviceId,
+          status: 'UNPAID',
+          createdBy: original.createdBy ?? 'ADMIN_STAFF',
+          serviceCity: original.serviceCity,
+          caseType: original.caseType,
+          intakeFlow: original.intakeFlow,
+          formPayload: (original.formPayload ?? undefined) as
+            | Prisma.InputJsonValue
+            | undefined,
+          ...pricingData,
+          // Audit 1.8: the clone has no backing WalletTransaction/Payment rows —
+          // copying amountPaid let a regenerated ticket sail to DELIVERED with
+          // zero money collected. It starts unpaid (cf. generateNextHearing).
+          amountPaid: 0,
+        },
+      });
+      await tx.ticketStatusHistory.create({
+        data: {
+          ticketId: created.id,
+          to: 'UNPAID',
+          note: `Regenerated from ${original.batchNo}`,
+        },
+      });
+      return created;
     });
 
     await this.auditLogsService.create({
@@ -1292,35 +1575,56 @@ export class TicketsService {
   async submitClerkReceipt(
     ticketId: string,
     receiptUrl: string,
-    actor?: { actorUserId?: string; actorEmail?: string },
+    actor?: { actorUserId?: string; actorEmail?: string; actorRole?: string },
   ) {
     const ticket = await this.prisma.ticket.findUnique({
       where: { id: ticketId },
     });
     if (!ticket) throw new NotFoundException('Ticket not found');
+    await this.ensureClerkActionAllowed(ticketId, actor);
 
     // Submitting the work receipt advances the ticket into the admin's review
     // queue (WAITING_APPROVAL). The admin's single "Review & Complete" step then
     // verifies + finalizes + completes — no separate verify gate.
-    const advance = ticket.status === 'IN_PROGRESS';
-    const updated = await this.prisma.ticket.update({
-      where: { id: ticketId },
-      data: {
-        clerkReceiptUrl: receiptUrl,
-        clerkApprovalStatus: 'SUBMITTED',
-        ...(advance ? { status: 'WAITING_APPROVAL' as const } : {}),
-      },
-    });
-    if (advance) {
-      await this.prisma.ticketStatusHistory.create({
+    // Audit 2.1: both paths are conditional updates — a receipt can only land
+    // while the ticket is IN_PROGRESS (advance) or already WAITING_APPROVAL
+    // (re-submit); anything else is a 409.
+    await this.prisma.$transaction(async (tx) => {
+      const advanced = await tx.ticket.updateMany({
+        where: { id: ticketId, status: 'IN_PROGRESS' },
         data: {
-          ticketId,
-          from: ticket.status,
-          to: 'WAITING_APPROVAL',
-          note: 'Clerk submitted work receipt',
+          clerkReceiptUrl: receiptUrl,
+          clerkApprovalStatus: 'SUBMITTED',
+          status: 'WAITING_APPROVAL',
         },
       });
-    }
+      if (advanced.count === 1) {
+        await tx.ticketStatusHistory.create({
+          data: {
+            ticketId,
+            from: 'IN_PROGRESS',
+            to: 'WAITING_APPROVAL',
+            note: 'Clerk submitted work receipt',
+          },
+        });
+        return;
+      }
+      const resubmitted = await tx.ticket.updateMany({
+        where: { id: ticketId, status: 'WAITING_APPROVAL' },
+        data: {
+          clerkReceiptUrl: receiptUrl,
+          clerkApprovalStatus: 'SUBMITTED',
+        },
+      });
+      if (resubmitted.count !== 1) {
+        throw new ConflictException(
+          'Ticket is not accepting a clerk receipt in its current state',
+        );
+      }
+    });
+    const updated = await this.prisma.ticket.findUniqueOrThrow({
+      where: { id: ticketId },
+    });
 
     await this.auditLogsService.create({
       action: 'TICKET_CLERK_RECEIPT_SUBMITTED',
@@ -1332,56 +1636,6 @@ export class TicketsService {
 
     await this.dispatcher
       .ticketClerkReceiptSubmitted(ticketId)
-      .catch(() => undefined);
-
-    return updated;
-  }
-
-  async verifyClerkReceipt(
-    ticketId: string,
-    decision: 'VERIFIED' | 'REJECTED',
-    reason?: string,
-    actor?: { actorUserId?: string; actorEmail?: string },
-  ) {
-    const ticket = await this.prisma.ticket.findUnique({
-      where: { id: ticketId },
-    });
-    if (!ticket) throw new NotFoundException('Ticket not found');
-    if (ticket.clerkApprovalStatus !== 'SUBMITTED') {
-      throw new BadRequestException('No submitted receipt to verify');
-    }
-
-    const nextStatus: TicketStatus =
-      decision === 'VERIFIED' ? 'WAITING_APPROVAL' : 'IN_PROGRESS';
-
-    const updated = await this.prisma.ticket.update({
-      where: { id: ticketId },
-      data: {
-        clerkApprovalStatus: decision,
-        status: nextStatus,
-      },
-    });
-
-    await this.prisma.ticketStatusHistory.create({
-      data: {
-        ticketId,
-        from: ticket.status,
-        to: nextStatus,
-        note: reason,
-      },
-    });
-
-    await this.auditLogsService.create({
-      action: `TICKET_CLERK_RECEIPT_${decision}`,
-      entity: 'TICKET',
-      entityId: ticketId,
-      actorUserId: actor?.actorUserId,
-      actorEmail: actor?.actorEmail,
-      metadata: { reason, from: ticket.status, to: nextStatus },
-    });
-
-    await this.dispatcher
-      .ticketClerkReceiptDecided(ticketId, decision)
       .catch(() => undefined);
 
     return updated;
@@ -1399,44 +1653,106 @@ export class TicketsService {
     dto: FinalizeRemainderDto,
     actor?: { actorUserId?: string; actorEmail?: string },
   ) {
-    const ticket = await this.prisma.ticket.findUnique({
-      where: { id: ticketId },
-    });
-    if (!ticket) throw new NotFoundException('Ticket not found');
-    if (ticket.status !== 'WAITING_APPROVAL') {
-      throw new BadRequestException('Ticket is not awaiting review');
-    }
+    // Audit 2.3: finalize + verify + complete (+ auto-deliver) are ONE
+    // transaction — a crash mid-way can no longer leave charges finalized on
+    // a ticket stuck in WAITING_APPROVAL. Audit 2.1: each status flip is a
+    // conditional update, so a racing sendBackToClerk / second review gets a
+    // 409 instead of last-write-wins.
+    const review = await this.prisma.$transaction(async (tx) => {
+      // user -> ticket lock order (see finalizeRemainder): the finalize core
+      // below may credit a surplus back to the consumer's wallet.
+      const ref = await tx.ticket.findUnique({
+        where: { id: ticketId },
+        select: { consumerId: true },
+      });
+      if (!ref) throw new NotFoundException('Ticket not found');
+      await tx.$executeRaw`SELECT id FROM "User" WHERE id = ${ref.consumerId} FOR UPDATE`;
+      await tx.$executeRaw`SELECT id FROM "Ticket" WHERE id = ${ticketId} FOR UPDATE`;
+      const ticket = await tx.ticket.findUnique({
+        where: { id: ticketId },
+      });
+      if (!ticket) throw new NotFoundException('Ticket not found');
+      if (ticket.status !== 'WAITING_APPROVAL') {
+        throw new BadRequestException('Ticket is not awaiting review');
+      }
 
-    // 1. Apply phase-2 charges (reuses the caps-gated finalize math) when the
-    //    flow has them and they weren't finalized already.
-    const caps = chargeCapabilitiesFor(ticket.intakeFlow);
-    const hasCaps =
-      caps.attestation || caps.printing || caps.delivery || caps.pdf;
-    if (hasCaps && !ticket.remainderFinalizedAt) {
-      await this.finalizeRemainder(ticketId, dto, {
+      // 1. Apply phase-2 charges (reuses the caps-gated finalize math) when
+      //    the flow has them and they weren't finalized already.
+      const caps = chargeCapabilitiesFor(ticket.intakeFlow);
+      const hasCaps =
+        caps.attestation || caps.printing || caps.delivery || caps.pdf;
+      let finalized: Awaited<
+        ReturnType<TicketsService['finalizeRemainderCore']>
+      > | null = null;
+      if (hasCaps && !ticket.remainderFinalizedAt) {
+        finalized = await this.finalizeRemainderCore(tx, ticketId, dto, {
+          actorUserId: actor?.actorUserId,
+        });
+      }
+
+      // 2. Verify the clerk receipt (if submitted) + complete.
+      const completed = await tx.ticket.updateMany({
+        where: { id: ticketId, status: 'WAITING_APPROVAL' },
+        data: {
+          ...(ticket.clerkApprovalStatus === 'SUBMITTED'
+            ? { clerkApprovalStatus: 'VERIFIED' as const }
+            : {}),
+          status: 'COMPLETED',
+        },
+      });
+      if (completed.count !== 1) {
+        throw new ConflictException(
+          'Ticket is no longer awaiting review — reload and retry',
+        );
+      }
+      await tx.ticketStatusHistory.create({
+        data: {
+          ticketId,
+          from: 'WAITING_APPROVAL',
+          to: 'COMPLETED',
+          note: 'Reviewed & completed',
+        },
+      });
+
+      // 3. Digital flows (no physical delivery leg) auto-advance to DELIVERED
+      //    when fully paid — the consumer already has the deliverable PDFs.
+      const fresh = await tx.ticket.findUnique({
+        where: { id: ticketId },
+        select: { intakeFlow: true, totalAmount: true, amountPaid: true },
+      });
+      let finalStatus: TicketStatus = 'COMPLETED';
+      if (
+        fresh &&
+        !chargeCapabilitiesFor(fresh.intakeFlow).delivery &&
+        isFullyPaid(fresh)
+      ) {
+        const delivered = await tx.ticket.updateMany({
+          where: { id: ticketId, status: 'COMPLETED' },
+          data: { status: 'DELIVERED' },
+        });
+        if (delivered.count === 1) {
+          finalStatus = 'DELIVERED';
+          await tx.ticketStatusHistory.create({
+            data: {
+              ticketId,
+              from: 'COMPLETED',
+              to: 'DELIVERED',
+              note: 'Auto-delivered — digital deliverables available',
+            },
+          });
+        }
+      }
+
+      return { finalStatus, finalized };
+    });
+
+    if (review.finalized) {
+      await this.afterRemainderFinalized(ticketId, review.finalized, {
         actorUserId: actor?.actorUserId,
         actorEmail: actor?.actorEmail,
       });
     }
 
-    // 2. Verify the clerk receipt (if submitted) + complete.
-    await this.prisma.ticket.update({
-      where: { id: ticketId },
-      data: {
-        ...(ticket.clerkApprovalStatus === 'SUBMITTED'
-          ? { clerkApprovalStatus: 'VERIFIED' as const }
-          : {}),
-        status: 'COMPLETED',
-      },
-    });
-    await this.prisma.ticketStatusHistory.create({
-      data: {
-        ticketId,
-        from: 'WAITING_APPROVAL',
-        to: 'COMPLETED',
-        note: 'Reviewed & completed',
-      },
-    });
     await this.auditLogsService.create({
       action: 'TICKET_REVIEWED_COMPLETED',
       entity: 'TICKET',
@@ -1445,35 +1761,8 @@ export class TicketsService {
       actorEmail: actor?.actorEmail,
     });
 
-    // 3. Digital flows (no physical delivery leg) auto-advance to DELIVERED when
-    //    fully paid — the consumer already has the deliverable PDFs.
-    const fresh = await this.prisma.ticket.findUnique({
-      where: { id: ticketId },
-      select: { intakeFlow: true, totalAmount: true, amountPaid: true },
-    });
-    let finalStatus: TicketStatus = 'COMPLETED';
-    if (
-      fresh &&
-      !chargeCapabilitiesFor(fresh.intakeFlow).delivery &&
-      isFullyPaid(fresh)
-    ) {
-      finalStatus = 'DELIVERED';
-      await this.prisma.ticket.update({
-        where: { id: ticketId },
-        data: { status: 'DELIVERED' },
-      });
-      await this.prisma.ticketStatusHistory.create({
-        data: {
-          ticketId,
-          from: 'COMPLETED',
-          to: 'DELIVERED',
-          note: 'Auto-delivered — digital deliverables available',
-        },
-      });
-    }
-
     await this.dispatcher
-      .ticketStatusChanged(ticketId, 'WAITING_APPROVAL', finalStatus)
+      .ticketStatusChanged(ticketId, 'WAITING_APPROVAL', review.finalStatus)
       .catch(() => undefined);
     return this.findOne(ticketId);
   }
@@ -1495,17 +1784,26 @@ export class TicketsService {
       throw new BadRequestException('Ticket is not awaiting review');
     }
 
-    await this.prisma.ticket.update({
-      where: { id: ticketId },
-      data: { status: 'IN_PROGRESS', clerkApprovalStatus: 'REJECTED' },
-    });
-    await this.prisma.ticketStatusHistory.create({
-      data: {
-        ticketId,
-        from: 'WAITING_APPROVAL',
-        to: 'IN_PROGRESS',
-        note: reason,
-      },
+    // Audit 2.1: conditional — racing against reviewAndComplete must 409,
+    // not pull a just-completed ticket back to IN_PROGRESS.
+    await this.prisma.$transaction(async (tx) => {
+      const transitioned = await tx.ticket.updateMany({
+        where: { id: ticketId, status: 'WAITING_APPROVAL' },
+        data: { status: 'IN_PROGRESS', clerkApprovalStatus: 'REJECTED' },
+      });
+      if (transitioned.count !== 1) {
+        throw new ConflictException(
+          'Ticket is no longer awaiting review — reload and retry',
+        );
+      }
+      await tx.ticketStatusHistory.create({
+        data: {
+          ticketId,
+          from: 'WAITING_APPROVAL',
+          to: 'IN_PROGRESS',
+          note: reason,
+        },
+      });
     });
     await this.auditLogsService.create({
       action: 'TICKET_SENT_BACK_TO_CLERK',
@@ -1529,12 +1827,13 @@ export class TicketsService {
   async dispatchDelivery(
     ticketId: string,
     payload: { proofUrl?: string; trackingNo?: string },
-    actor?: { actorUserId?: string; actorEmail?: string },
+    actor?: { actorUserId?: string; actorEmail?: string; actorRole?: string },
   ) {
     const ticket = await this.prisma.ticket.findUnique({
       where: { id: ticketId },
     });
     if (!ticket) throw new NotFoundException('Ticket not found');
+    await this.ensureClerkActionAllowed(ticketId, actor);
     if (!chargeCapabilitiesFor(ticket.intakeFlow).delivery) {
       throw new BadRequestException('This service has no physical delivery.');
     }
@@ -1545,13 +1844,23 @@ export class TicketsService {
     }
 
     const trimmedTracking = payload.trackingNo?.trim();
-    const updated = await this.prisma.ticket.update({
-      where: { id: ticketId },
+    // Audit 2.1: conditional on status AND deliveryStatus — a concurrent
+    // dispatch (or a status change) turns this into a 409.
+    const dispatched = await this.prisma.ticket.updateMany({
+      where: { id: ticketId, status: 'COMPLETED', deliveryStatus: 'PENDING' },
       data: {
         deliveryStatus: 'DISPATCHED',
         dispatchProofUrl: payload.proofUrl ?? ticket.dispatchProofUrl,
         trackingNo: trimmedTracking || ticket.trackingNo,
       },
+    });
+    if (dispatched.count !== 1) {
+      throw new ConflictException(
+        'Ticket was already dispatched or changed state — reload and retry',
+      );
+    }
+    const updated = await this.prisma.ticket.findUniqueOrThrow({
+      where: { id: ticketId },
     });
     await this.auditLogsService.create({
       action: 'TICKET_DISPATCHED',
@@ -1561,13 +1870,16 @@ export class TicketsService {
       actorEmail: actor?.actorEmail,
       metadata: { trackingNo: trimmedTracking ?? null },
     });
+    // Audit 2.3: the 2026-06-05 spec's "notify the admin on dispatch" was
+    // never wired — only the audit row existed.
+    await this.dispatcher.ticketDispatched(ticketId).catch(() => undefined);
     return updated;
   }
 
   async submitClerkCosts(
     ticketId: string,
     dto: SubmitClerkCostsDto,
-    actor?: { actorUserId?: string; actorEmail?: string },
+    actor?: { actorUserId?: string; actorEmail?: string; actorRole?: string },
   ) {
     const ticket = await this.prisma.ticket.findUnique({
       where: { id: ticketId },
@@ -1575,6 +1887,7 @@ export class TicketsService {
     if (!ticket) {
       throw new NotFoundException('Ticket not found');
     }
+    await this.ensureClerkActionAllowed(ticketId, actor);
 
     if (
       ticket.status !== 'IN_PROGRESS' &&
@@ -1609,18 +1922,51 @@ export class TicketsService {
       Number(ticket.additionalServiceCost) -
       Number(ticket.discountPrice);
 
-    const updated = await this.prisma.ticket.update({
+    if (ticket.remainderFinalizedAt) {
+      throw new ConflictException(
+        'Charges have already been finalized for this ticket — clerk cost ' +
+          'resubmission is closed',
+      );
+    }
+
+    // Audit 2.1: conditional on the status we validated against (IN_PROGRESS
+    // or WAITING_APPROVAL resubmit) — a concurrent transition 409s. The
+    // remainderFinalizedAt guard repeats in the where clause so a finalize
+    // racing this resubmit can't be overwritten either.
+    await this.prisma.$transaction(async (tx) => {
+      const transitioned = await tx.ticket.updateMany({
+        where: {
+          id: ticketId,
+          status: ticket.status,
+          remainderFinalizedAt: null,
+        },
+        data: {
+          deliveryCharges,
+          printingCharges,
+          attestedCharges,
+          nonAttestedCharges,
+          additionalCharges,
+          totalAmount,
+          clerkApprovalStatus: 'SUBMITTED',
+          status: 'WAITING_APPROVAL',
+        },
+      });
+      if (transitioned.count !== 1) {
+        throw new ConflictException(
+          `Ticket is no longer in ${ticket.status} — reload and retry`,
+        );
+      }
+      await tx.ticketStatusHistory.create({
+        data: {
+          ticketId,
+          from: ticket.status,
+          to: 'WAITING_APPROVAL',
+          note: dto.rejectionReason,
+        },
+      });
+    });
+    const updated = await this.prisma.ticket.findUniqueOrThrow({
       where: { id: ticketId },
-      data: {
-        deliveryCharges,
-        printingCharges,
-        attestedCharges,
-        nonAttestedCharges,
-        additionalCharges,
-        totalAmount,
-        clerkApprovalStatus: 'SUBMITTED',
-        status: 'WAITING_APPROVAL',
-      },
     });
 
     // Persist clerk-side files-availability report if any clerk-report field
@@ -1669,15 +2015,6 @@ export class TicketsService {
         },
       });
     }
-
-    await this.prisma.ticketStatusHistory.create({
-      data: {
-        ticketId,
-        from: ticket.status,
-        to: 'WAITING_APPROVAL',
-        note: dto.rejectionReason,
-      },
-    });
 
     await this.auditLogsService.create({
       action: 'TICKET_CLERK_COSTS_SUBMITTED',
@@ -1743,25 +2080,34 @@ export class TicketsService {
       );
     }
 
-    const txResult = await this.prisma.$transaction([
-      this.prisma.ticket.update({
-        where: { id: ticketId },
+    // Audit 2.1: conditional transition — a concurrent reassignment/rejection
+    // turns this into a 409 instead of overwriting it.
+    await this.prisma.$transaction(async (tx) => {
+      const transitioned = await tx.ticket.updateMany({
+        where: { id: ticketId, status: 'ASSIGNED' },
         data: { status: 'IN_PROGRESS' },
-      }),
-      this.prisma.assignment.update({
+      });
+      if (transitioned.count !== 1) {
+        throw new ConflictException(
+          'Ticket is no longer ASSIGNED — reload and retry',
+        );
+      }
+      await tx.assignment.update({
         where: { id: activeAssignment.id },
         data: { status: 'ACCEPTED', acceptedAt: new Date() },
-      }),
-      this.prisma.ticketStatusHistory.create({
+      });
+      await tx.ticketStatusHistory.create({
         data: {
           ticketId,
           from: 'ASSIGNED',
           to: 'IN_PROGRESS',
           note: 'Assignment accepted',
         },
-      }),
-    ]);
-    const updated = txResult[0];
+      });
+    });
+    const updated = await this.prisma.ticket.findUniqueOrThrow({
+      where: { id: ticketId },
+    });
 
     await this.auditLogsService.create({
       action: 'TICKET_ASSIGNMENT_ACCEPTED',
@@ -1782,7 +2128,7 @@ export class TicketsService {
   async rejectAssignment(
     ticketId: string,
     reason: string,
-    actor?: { actorUserId?: string; actorEmail?: string },
+    actor?: { actorUserId?: string; actorEmail?: string; actorRole?: string },
   ) {
     if (!reason || reason.trim().length < 3) {
       throw new BadRequestException(
@@ -1799,43 +2145,46 @@ export class TicketsService {
     if (ticket.status !== 'ASSIGNED') {
       throw new BadRequestException('Only assigned tickets can be rejected');
     }
+    await this.ensureClerkActionAllowed(ticketId, actor);
 
     const activeAssignment = await this.prisma.assignment.findFirst({
       where: { ticketId, status: 'ACTIVE' },
       orderBy: { createdAt: 'desc' },
     });
 
-    const txOps: Prisma.PrismaPromise<unknown>[] = [
-      this.prisma.ticket.update({
-        where: { id: ticketId },
+    // Audit 2.1: conditional transition (ASSIGNED → PAID).
+    await this.prisma.$transaction(async (tx) => {
+      const transitioned = await tx.ticket.updateMany({
+        where: { id: ticketId, status: 'ASSIGNED' },
         data: { status: 'PAID' },
-      }),
-    ];
-    if (activeAssignment) {
-      txOps.push(
-        this.prisma.assignment.update({
+      });
+      if (transitioned.count !== 1) {
+        throw new ConflictException(
+          'Ticket is no longer ASSIGNED — reload and retry',
+        );
+      }
+      if (activeAssignment) {
+        await tx.assignment.update({
           where: { id: activeAssignment.id },
           data: {
             status: 'REJECTED',
             rejectedAt: new Date(),
             rejectionReason: trimmedReason,
           },
-        }),
-      );
-    }
-    txOps.push(
-      this.prisma.ticketStatusHistory.create({
+        });
+      }
+      await tx.ticketStatusHistory.create({
         data: {
           ticketId,
           from: 'ASSIGNED',
           to: 'PAID',
           note: trimmedReason,
         },
-      }),
-    );
-
-    const txResult = await this.prisma.$transaction(txOps);
-    const updated = txResult[0];
+      });
+    });
+    const updated = await this.prisma.ticket.findUniqueOrThrow({
+      where: { id: ticketId },
+    });
 
     await this.auditLogsService.create({
       action: 'TICKET_ASSIGNMENT_REJECTED',
@@ -1863,13 +2212,14 @@ export class TicketsService {
   async saveClerkCharges(
     ticketId: string,
     dto: FinalizeRemainderDto,
-    actor?: { actorUserId?: string; actorEmail?: string },
+    actor?: { actorUserId?: string; actorEmail?: string; actorRole?: string },
   ) {
     const ticket = await this.prisma.ticket.findUnique({
       where: { id: ticketId },
       select: { id: true, intakeFlow: true },
     });
     if (!ticket) throw new NotFoundException('Ticket not found');
+    await this.ensureClerkActionAllowed(ticketId, actor);
 
     const caps = chargeCapabilitiesFor(ticket.intakeFlow);
     await this.prisma.ticket.update({
@@ -1906,37 +2256,107 @@ export class TicketsService {
    * Admin finalize: recompute totalAmount from capability-gated, admin-edited
    * charges; set remainderFinalizedAt; trigger wallet settlement so any excess
    * balance auto-covers the new total.
+   *
+   * Audit 1.5 guards: runs inside a transaction with the user row locked
+   * BEFORE the ticket row (wallet-settlement order — see the surplus credit
+   * below); charge fields default to the PERSISTED clerk-entered values (an
+   * empty admin body must not zero them); only once (conditional update on
+   * remainderFinalizedAt IS NULL); and only from the review queue
+   * (WAITING_APPROVAL) or a COMPLETED-but-not-yet-dispatched ticket.
+   *
+   * Owner decision 2026-06-12: when the finalized total drops BELOW the
+   * amount already paid (charges corrected down after a wallet settlement),
+   * the surplus auto-credits back to the consumer's wallet as a VERIFIED
+   * ADMIN_ADJUSTMENT and the ticket's amountPaid steps down to the new total
+   * — there is no on-ticket refund, the money returns to wallet credit.
    */
   async finalizeRemainder(
     ticketId: string,
     dto: FinalizeRemainderDto,
     actor: { actorUserId?: string; actorEmail?: string },
   ) {
-    const ticket = await this.prisma.ticket.findUnique({
+    const outcome = await this.prisma.$transaction(async (tx) => {
+      // Lock ordering matches wallet settlement (user -> ticket) so a
+      // concurrent settleTicketsForUser can never deadlock against the
+      // surplus auto-credit inside the core.
+      const ref = await tx.ticket.findUnique({
+        where: { id: ticketId },
+        select: { consumerId: true },
+      });
+      if (!ref) throw new NotFoundException('Ticket not found');
+      await tx.$executeRaw`SELECT id FROM "User" WHERE id = ${ref.consumerId} FOR UPDATE`;
+      await tx.$executeRaw`SELECT id FROM "Ticket" WHERE id = ${ticketId} FOR UPDATE`;
+      return this.finalizeRemainderCore(tx, ticketId, dto, actor);
+    });
+
+    await this.afterRemainderFinalized(ticketId, outcome, actor);
+
+    return this.findOne(ticketId);
+  }
+
+  /**
+   * Finalize internals shared by finalizeRemainder (standalone endpoint) and
+   * reviewAndComplete (audit 2.3 — one transaction for finalize + verify +
+   * complete). The caller must hold the ticket row lock.
+   */
+  private async finalizeRemainderCore(
+    tx: Prisma.TransactionClient,
+    ticketId: string,
+    dto: FinalizeRemainderDto,
+    actor: { actorUserId?: string },
+  ) {
+    const ticket = await tx.ticket.findUnique({
       where: { id: ticketId },
       select: {
         id: true,
         consumerId: true,
+        status: true,
+        deliveryStatus: true,
         serviceCost: true,
         clerkCost: true,
+        attestedCharges: true,
+        nonAttestedCharges: true,
+        printingCharges: true,
+        deliveryCharges: true,
         additionalCharges: true,
         additionalServiceCost: true,
         discountPrice: true,
         amountPaid: true,
         intakeFlow: true,
+        remainderFinalizedAt: true,
       },
     });
     if (!ticket) throw new NotFoundException('Ticket not found');
+    if (ticket.remainderFinalizedAt) {
+      throw new ConflictException(
+        'Charges have already been finalized for this ticket',
+      );
+    }
+    const canFinalize =
+      ticket.status === 'WAITING_APPROVAL' ||
+      (ticket.status === 'COMPLETED' && ticket.deliveryStatus !== 'DISPATCHED');
+    if (!canFinalize) {
+      throw new BadRequestException(
+        'Charges can only be finalized while the ticket is awaiting review (or completed but not yet dispatched)',
+      );
+    }
 
     const caps = chargeCapabilitiesFor(ticket.intakeFlow);
     // Attestation / printing / delivery have NO default rates — they are the
-    // amounts the clerk entered (and the admin edited) for this ticket.
-    const attested = caps.attestation ? Number(dto.attestedCharges ?? 0) : 0;
-    const nonAttested = caps.attestation
-      ? Number(dto.nonAttestedCharges ?? 0)
+    // amounts the clerk entered (and the admin may edit). Absent dto fields
+    // fall back to the persisted columns, never to 0.
+    const attested = caps.attestation
+      ? Number(dto.attestedCharges ?? ticket.attestedCharges ?? 0)
       : 0;
-    const printing = caps.printing ? Number(dto.printingCharges ?? 0) : 0;
-    const delivery = caps.delivery ? Number(dto.deliveryCharges ?? 0) : 0;
+    const nonAttested = caps.attestation
+      ? Number(dto.nonAttestedCharges ?? ticket.nonAttestedCharges ?? 0)
+      : 0;
+    const printing = caps.printing
+      ? Number(dto.printingCharges ?? ticket.printingCharges ?? 0)
+      : 0;
+    const delivery = caps.delivery
+      ? Number(dto.deliveryCharges ?? ticket.deliveryCharges ?? 0)
+      : 0;
     // 5-24-26 #17: PDF is now priced at intake (folded into serviceCost by the
     // pricing resolver when want_pdf_before_dispatch=Yes), so it is NOT
     // re-added at finalize — doing so would double-bill the PDF surcharge.
@@ -1953,21 +2373,88 @@ export class TicketsService {
       printing +
       delivery;
 
-    await this.prisma.ticket.update({
-      where: { id: ticketId },
+    // Owner decision 2026-06-12: when the finalized total drops below what
+    // the consumer already paid (charges corrected down after a wallet
+    // settlement), the surplus auto-credits back to their wallet as a
+    // recorded ADMIN_ADJUSTMENT and the ticket finalizes exactly fully paid.
+    // Requires the caller to hold the USER row lock, taken BEFORE the ticket
+    // lock — the same order wallet settlement uses.
+    const surplus = Math.max(0, Number(ticket.amountPaid) - total);
+    if (surplus > 0) {
+      await tx.user.update({
+        where: { id: ticket.consumerId },
+        data: { walletBalance: { increment: surplus } },
+      });
+      await tx.walletTransaction.create({
+        data: {
+          userId: ticket.consumerId,
+          ticketId,
+          amount: surplus,
+          paymentMode: 'BANK_TRANSFER',
+          currency: 'PKR',
+          status: 'VERIFIED',
+          type: 'ADMIN_ADJUSTMENT',
+          verifiedAt: new Date(),
+          reviewedByUserId: actor.actorUserId ?? null,
+          note: `Auto-credit: finalized total (${total}) below amount paid (${Number(
+            ticket.amountPaid,
+          )})`,
+        },
+      });
+    }
+
+    const updated = await tx.ticket.updateMany({
+      where: { id: ticketId, remainderFinalizedAt: null },
       data: {
         attestedCharges: attested,
         nonAttestedCharges: nonAttested,
         printingCharges: printing,
         deliveryCharges: delivery,
         totalAmount: total,
+        // The surplus moved to the wallet; the ticket books stay exact.
+        ...(surplus > 0 ? { amountPaid: total } : {}),
         remainderFinalizedAt: new Date(),
         remainderFinalizedByUserId: actor.actorUserId ?? null,
       },
     });
+    if (updated.count !== 1) {
+      throw new ConflictException(
+        'Charges have already been finalized for this ticket',
+      );
+    }
 
+    return {
+      consumerId: ticket.consumerId,
+      total,
+      attested,
+      nonAttested,
+      printing,
+      delivery,
+      surplusCredited: surplus,
+    };
+  }
+
+  /**
+   * Post-commit side effects of a finalized remainder: wallet settlement,
+   * consumer notification, audit row. Deliberately outside the transaction —
+   * settlement takes its own user/ticket locks and would deadlock against
+   * the finalize lock.
+   */
+  private async afterRemainderFinalized(
+    ticketId: string,
+    outcome: {
+      consumerId: string;
+      total: number;
+      attested: number;
+      nonAttested: number;
+      printing: number;
+      delivery: number;
+      surplusCredited: number;
+    },
+    actor: { actorUserId?: string; actorEmail?: string },
+  ) {
     // Auto-cover from any wallet excess, then notify if a balance remains.
-    await this.walletService.settleTicketsForUser(ticket.consumerId);
+    await this.walletService.settleTicketsForUser(outcome.consumerId);
     await this.dispatcher.paymentRemainderDue(ticketId).catch(() => undefined);
 
     await this.auditLogsService.create({
@@ -1976,15 +2463,23 @@ export class TicketsService {
       entityId: ticketId,
       actorUserId: actor.actorUserId,
       actorEmail: actor.actorEmail,
-      metadata: { total, attested, nonAttested, printing, delivery },
+      metadata: {
+        total: outcome.total,
+        attested: outcome.attested,
+        nonAttested: outcome.nonAttested,
+        printing: outcome.printing,
+        delivery: outcome.delivery,
+        surplusCredited: outcome.surplusCredited,
+      },
     });
-
-    return this.findOne(ticketId);
   }
 
   private generateBatchNo() {
     const stamp = Date.now().toString().slice(-8);
-    const rand = Math.floor(Math.random() * 9000 + 1000);
+    // Audit 4.4: 4 digits of Math.random() collided under burst load and the
+    // unique constraint surfaced as an unhandled P2002/500. Six CSPRNG digits
+    // on top of the millisecond stamp make a same-ms collision negligible.
+    const rand = randomInt(100000, 1000000);
     return `TKT-${stamp}-${rand}`;
   }
 
@@ -2116,12 +2611,13 @@ export class TicketsService {
   private async ensureTicketExists(id: string) {
     const ticket = await this.prisma.ticket.findUnique({
       where: { id },
-      select: { id: true },
+      select: { id: true, consumerId: true },
     });
 
     if (!ticket) {
       throw new NotFoundException('Ticket not found');
     }
+    return ticket;
   }
 
   /**

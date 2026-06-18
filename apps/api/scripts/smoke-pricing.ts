@@ -49,18 +49,51 @@ async function main() {
       body: { flow: 'judicial_case_files', courtLevel: 'Lower Court', region: 'Punjab', yearBand: 'y2022_2020' },
       expectAvailability: true,
     },
+    {
+      // Owner rates 2026-06-12: non-judicial copies are flat, region-agnostic.
+      // No delivery method passed → total == base == serviceCost.
+      label: 'Non-judicial Copy of FIR (flat Rs 2,000)',
+      body: { flow: 'non_judicial_copy_of_fir', province: 'Punjab', city: 'Lahore' },
+      expectAvailability: true,
+      expectTotal: 2000,
+    },
+    {
+      label: 'Non-judicial Registry/Deed (flat Rs 3,500)',
+      body: { flow: 'non_judicial_registry_deed', province: 'Sindh', city: 'Karachi' },
+      expectAvailability: true,
+      expectTotal: 3500,
+    },
+    {
+      label: 'Non-judicial Criminal Record Search (flat Rs 2,000)',
+      body: { flow: 'non_judicial_criminal_record_search', province: 'Punjab', city: 'Lahore' },
+      expectAvailability: true,
+      expectTotal: 2000,
+    },
   ];
 
+  // Audit 6.3: this smoke test used to assert almost nothing on positive
+  // cases and ALWAYS exit 0 — useless as a gate. Positive cases must match
+  // AND be available; any FAIL exits 1.
+  let failures = 0;
   for (const c of cases) {
     const r = await svc.resolve(c.body);
     const ok =
-      (c.expectAvailability === false ? r.available === false : true) &&
+      (c.expectAvailability === false
+        ? r.matched === true && r.available === false
+        : r.matched === true && r.available === true) &&
       (c.expectTotal != null ? r.total === c.expectTotal : true);
+    if (!ok) failures++;
     console.log(`\n[${ok ? 'PASS' : 'FAIL'}] ${c.label}`);
     console.log(JSON.stringify(r, null, 2));
   }
 
   await prisma.$disconnect();
+
+  if (failures > 0) {
+    console.error(`\n${failures} smoke case(s) FAILED.`);
+    process.exit(1);
+  }
+  console.log(`\nAll ${cases.length} smoke cases passed.`);
 }
 
 main().catch((e) => {

@@ -148,7 +148,12 @@ describe('WalletService.adjustWallet (Task 1.5)', () => {
 
     const tx: any = {
       $executeRaw: jest.fn(),
-      user: { update: userUpdate },
+      user: {
+        update: userUpdate,
+        findUnique: jest
+          .fn()
+          .mockResolvedValue({ id: 'u-1', walletBalance: 500 }),
+      },
       walletTransaction: { create: walletTransactionCreate },
       ticket: {
         findMany: ticketFindMany,
@@ -209,7 +214,13 @@ describe('WalletService.adjustWallet (Task 1.5)', () => {
       .mockResolvedValue({ id: 'wtx-adj' });
 
     const tx: any = {
-      user: { update: userUpdate },
+      $executeRaw: jest.fn(),
+      user: {
+        update: userUpdate,
+        findUnique: jest
+          .fn()
+          .mockResolvedValue({ id: 'u-1', walletBalance: 500 }),
+      },
       walletTransaction: { create: walletTransactionCreate },
       ticket: { findMany: ticketFindMany },
     };
@@ -498,7 +509,11 @@ describe('WalletService.getMyWallet — dynamic net balance', () => {
     // DELIVERED tickets are excluded at the query level.
     expect(prisma.ticket.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { consumerId: 'u-1', status: { not: 'DELIVERED' } },
+        where: {
+          consumerId: 'u-1',
+          status: { not: 'DELIVERED' },
+          archivedAt: null,
+        },
       }),
     );
   });

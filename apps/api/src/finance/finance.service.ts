@@ -1,3 +1,4 @@
+import { randomInt } from 'node:crypto';
 import {
   BadRequestException,
   Injectable,
@@ -172,6 +173,10 @@ export class FinanceService {
             paymentMode: dto.paymentMode,
             currency: dto.currency ?? 'PKR',
             status: 'VERIFIED',
+            // Audit 1.11: this row pays a ticket — without the explicit type
+            // it defaulted to TOPUP and the dashboard counted the money twice
+            // (once as a top-up, once as the ticket debit).
+            type: 'TICKET_DEBIT',
             verifiedAt: new Date(),
             reviewedByUserId: actor?.actorUserId,
             note: dto.note,
@@ -623,7 +628,9 @@ export class FinanceService {
 
   private generateInvoiceNo() {
     const stamp = Date.now().toString().slice(-8);
-    const rand = Math.floor(Math.random() * 9000 + 1000);
+    // Audit 4.4: see generateBatchNo — CSPRNG + wider range to avoid burst
+    // collisions on the unique column.
+    const rand = randomInt(100000, 1000000);
     return `INV-${stamp}-${rand}`;
   }
 }

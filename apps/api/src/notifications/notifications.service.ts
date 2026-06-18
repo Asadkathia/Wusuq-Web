@@ -63,11 +63,14 @@ export class NotificationsService {
     return { count };
   }
 
-  async markRead(id: string) {
-    return this.prisma.notification.update({
-      where: { id },
+  async markRead(id: string, userId: string) {
+    // Audit 4.4 (3.4): scoped to the owner — any user could previously mark
+    // any notification read by id.
+    const result = await this.prisma.notification.updateMany({
+      where: { id, userId },
       data: { isRead: true },
     });
+    return { updated: result.count === 1 };
   }
 
   async markAllRead(userId: string) {

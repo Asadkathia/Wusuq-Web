@@ -62,20 +62,6 @@ export const paymentsClient = {
     return apiClient.post(`/wallet/transactions/${id}/reject`, { note });
   },
 
-  // Admin: post phase-2 clerk charges and finalize the remainder
-  finalizeRemainder(
-    ticketId: string,
-    charges: {
-      attestedCharges?: number;
-      nonAttestedCharges?: number;
-      printingCharges?: number;
-      deliveryCharges?: number;
-      pdfCharges?: number;
-    },
-  ): Promise<unknown> {
-    return apiClient.post(`/tickets/${ticketId}/finalize-remainder`, charges);
-  },
-
   // Admin: bulk-assign multiple tickets to a representative
   assignBulk(dto: {
     ticketIds: string[];

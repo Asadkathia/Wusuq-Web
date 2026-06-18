@@ -308,6 +308,8 @@ export function IntakeWizard({
     titleSurcharge?: number;
     ageSurcharge?: number;
     bundleSurcharge?: number;
+    searchBothSurcharge?: number;
+    cityCount?: number;
     attestedCharge: number;
     nonAttestedCharge: number;
     deliveryCharge: number;
@@ -349,6 +351,11 @@ export function IntakeWizard({
   // the submit POST blocks the autosave from firing during and after the
   // submit; resetForm() clears it so the next intake can autosave normally.
   const submittingRef = useRef(false);
+  // Idempotency key for the CURRENT submission attempt. Minted on the first
+  // submit of a draft and kept across failed retries (so a re-click after a
+  // lost response replays the SAME key and the server returns the original
+  // ticket instead of duplicating); cleared on success via resetForm.
+  const submitRequestIdRef = useRef<string | null>(null);
   // QA: when the wizard hydrates an existing server draft on mount we surface
   // a "Resumed your previous draft" banner so the restore behaviour is
   // explicit. Dismissed automatically as soon as the user opens Start Fresh
@@ -607,7 +614,17 @@ export function IntakeWizard({
   useEffect(() => {
     const flow = draft.flow;
     const p = draft.payload;
-    if (!flow || !p.select_court_type) { setPricingResult(null); return; }
+    // Audit 1.4: the gate is per-flow — non-judicial flows have no
+    // select_court_type, so gating every flow on it left their checkout
+    // permanently quote-less ("—") while the server billed whatever the
+    // resolver said. Judicial flows still wait for a court tier (the
+    // resolver needs it); non-judicial flows resolve as soon as the flow is
+    // known and re-resolve as location fields land.
+    const needsCourtType = flow.startsWith('judicial');
+    if (!flow || (needsCourtType && !p.select_court_type)) {
+      setPricingResult(null);
+      return;
+    }
 
     // Build the resolver input with the SAME shared mapper the server uses in
     // createIntakeTicket (buildPricingResolveInput). This guarantees the live
@@ -629,6 +646,11 @@ export function IntakeWizard({
     draft.payload.select_court_type,
     draft.payload.select_court_city,
     draft.payload.city,
+    // Audit 5.5: the shared builder reads city_id / province /
+    // province_capital — omitting them risked a stale quote one edit away.
+    draft.payload.city_id,
+    draft.payload.province,
+    draft.payload.province_capital,
     draft.payload.case_status,
     draft.payload.case_year,
     draft.payload.year,
@@ -777,16 +799,40 @@ export function IntakeWizard({
         // (one step is replaced, not added), so the last step number equals the
         // flow's step count. Future-tickets only triggers for judicial flows.
         const flowSteps = selectedFlow?.steps ?? [];
-        const finalStepNum = Math.max(flowSteps.length, 1);
+        // Audit 5.4: land on the FIRST step with a missing required field
+        // (the prefill deliberately clears set_type / delivery_mode / doc
+        // selections) instead of the final step — landing at the end let the
+        // user submit past the cleared fields straight into a server 400.
+        const tier = courtTierFromCourtType(nextPayload.select_court_type);
+        let landStepNum = Math.max(flowSteps.length, 1);
+        for (let i = 1; i < flowSteps.length; i++) {
+          const incomplete = flowSteps[i]!.fields.some(
+            (f) =>
+              resolveRequired(f, tier) &&
+              showWhenSatisfied(f, nextPayload) &&
+              !GEO_HANDLED_KEYS.has(f.key) &&
+              !hasValue(nextPayload[f.key]),
+          );
+          if (incomplete) {
+            landStepNum = i + 1; // display steps are 1-indexed
+            break;
+          }
+        }
         setDraft((current) => ({
           ...current,
           // Drop the previous draftId so the next autosave creates a fresh
           // row rather than mutating whatever active draft was loaded.
           draftId: undefined,
           flow: (source.intakeFlow as typeof current.flow) ?? current.flow,
-          step: finalStepNum,
+          step: landStepNum,
           payload: nextPayload,
         }));
+        // Hydrate geoIds from the copied payload (city_id is whitelisted in
+        // buildFutureTicketsPayload) so the location step — which the
+        // submit-time all-steps validator now re-checks — is satisfied.
+        if (nextPayload.city_id) {
+          setGeoIds((g) => ({ ...g, cityId: nextPayload.city_id! }));
+        }
         // Mark hydration as done so the autosave effect doesn't immediately
         // trample the prefilled state.
         didHydrateRef.current = true;
@@ -1159,17 +1205,32 @@ export function IntakeWizard({
     setErrors((e) => ({ ...e, [key]: err }));
   };
 
-  const validateCurrentStep = (): boolean => {
-    setApiError('');
-    if (isCityCourtStep) return validateLocationStep() && validateServiceStep();
-
-    if (!activeStep) return true;
-
+  // Per-step field validation, extracted so both the step-by-step Continue
+  // gate and the whole-form submit gate (audit 5.4) share one rule set.
+  const stepFieldErrors = (step: IntakeStep) => {
     const newErrors: Record<string, string> = {};
     const newTouched: Record<string, boolean> = {};
     let firstInvalidKey: string | null = null;
 
-    for (const f of activeStep.fields) {
+    for (const f of step.fields) {
+      // Audit 5.2: city_type and station_id are committed by the geo chips
+      // (which bypass per-field onBlur validation) but are BE-required for
+      // the non-judicial flows — validate them here instead of skipping them
+      // with the purely-geo keys.
+      if (f.key === 'city_type' || f.key === 'station_id') {
+        if (!resolveRequired(f, activeCourtTier)) continue;
+        if (!showWhenSatisfied(f, draft.payload)) continue;
+        newTouched[f.key] = true;
+        const satisfied =
+          f.key === 'station_id'
+            ? hasValue(draft.payload.station_id) || hasValue(draft.payload.police_station)
+            : hasValue(draft.payload.city_type);
+        if (!satisfied) {
+          newErrors[f.key] = `${f.label} is required`;
+          if (!firstInvalidKey) firstInvalidKey = f.key;
+        }
+        continue;
+      }
       if (GEO_HANDLED_KEYS.has(f.key)) continue;
       // Special case: case_type_other is conditionally required when the user
       // picks "Other" from the Case Type dropdown.
@@ -1189,17 +1250,6 @@ export function IntakeWizard({
 
       newTouched[f.key] = true;
 
-      if (
-        (draft.flow === 'non_judicial_copy_of_fir' ||
-          draft.flow === 'non_judicial_criminal_record_search') &&
-        f.key === 'station_id'
-      ) {
-        if (!hasValue(draft.payload.station_id) && !hasValue(draft.payload.police_station)) {
-          newErrors[f.key] = `${f.label} is required`;
-          if (!firstInvalidKey) firstInvalidKey = f.key;
-        }
-        continue;
-      }
       if (f.type === 'structured_address') {
         if (!isStructuredAddressComplete(draft.payload[f.key])) {
           newErrors[f.key] = 'Please complete the delivery address';
@@ -1233,6 +1283,17 @@ export function IntakeWizard({
       }
     }
 
+    return { newErrors, newTouched, firstInvalidKey };
+  };
+
+  const validateCurrentStep = (): boolean => {
+    setApiError('');
+    if (isCityCourtStep) return validateLocationStep() && validateServiceStep();
+
+    if (!activeStep) return true;
+
+    const { newErrors, newTouched, firstInvalidKey } = stepFieldErrors(activeStep);
+
     setTouched((t) => ({ ...t, ...newTouched }));
     setErrors((e) => ({ ...e, ...newErrors }));
 
@@ -1242,6 +1303,32 @@ export function IntakeWizard({
         el?.focus();
       }
       return false;
+    }
+    return true;
+  };
+
+  // Audit 5.4: submit used to validate only the ACTIVE step, so a prefill
+  // (future tickets) or a hydrated draft landing on the last step sailed past
+  // earlier steps with cleared BE-required fields and 400'd server-side.
+  // Validate every display step and bounce the user to the first failing one.
+  const validateAllSteps = (): boolean => {
+    setApiError('');
+    if (!validateLocationStep() || !validateServiceStep()) {
+      setDraft((c) => (c.step === 1 ? c : { ...c, step: 1 }));
+      return false;
+    }
+    for (let i = 1; i < displaySteps.length; i++) {
+      const step = displaySteps[i];
+      if (!step) continue;
+      const { newErrors, newTouched } = stepFieldErrors(step);
+      if (Object.values(newErrors).some(Boolean)) {
+        setTouched((t) => ({ ...t, ...newTouched }));
+        setErrors((e) => ({ ...e, ...newErrors }));
+        const stepNum = i + 1; // draft.step is 1-indexed
+        setDraft((c) => (c.step === stepNum ? c : { ...c, step: stepNum }));
+        setApiError('Please complete the highlighted required fields before submitting.');
+        return false;
+      }
     }
     return true;
   };
@@ -1264,15 +1351,23 @@ export function IntakeWizard({
         step: draft.step,
         payload: withDerivedYear(draft.payload),
       });
-      setDraft((c) => (c.draftId === r.id ? c : { ...c, draftId: r.id }));
-      setLastSavedAt(Date.now());
-      setInfoMsg('Saved · just now');
-      localStorage.setItem(`wusuq_intake_draft_id:${variant}:${draft.flow}`, r.id);
+      // Audit 2.4 (related Low): an in-flight autosave response landing after
+      // submit/Start Fresh must not re-write the just-removed localStorage
+      // pointer, and a server-suppressed save has no id — storing it would
+      // corrupt the pointer with a useless value.
+      const staleAutosave = mode === 'auto' && submittingRef.current;
+      const savedForReal = !staleAutosave && !r?.suppressed && Boolean(r?.id);
+      if (savedForReal) {
+        setDraft((c) => (c.draftId === r.id ? c : { ...c, draftId: r.id }));
+        setLastSavedAt(Date.now());
+        setInfoMsg('Saved · just now');
+        localStorage.setItem(`wusuq_intake_draft_id:${variant}:${draft.flow}`, r.id);
+      }
       // QA 5-14-26 #1: manual Save Draft should park the current draft in the
       // Drafts folder and hand the user a fresh, empty wizard so they can
       // start the next ticket without manually reloading. Auto-save keeps the
       // user on the current step.
-      if (mode === 'manual') {
+      if (mode === 'manual' && savedForReal) {
         localStorage.removeItem(`wusuq_intake_draft_id:${variant}:${draft.flow}`);
         resetForm();
         setInfoMsg('Draft saved — start a new ticket below.');
@@ -1291,6 +1386,16 @@ export function IntakeWizard({
   // restore the discarded payload (QA cosmetic follow-up).
   const startFresh = async () => {
     if (!window.confirm('Discard the current draft and start a new ticket? This cannot be undone.')) return;
+    // Audit 2.4: mirror submitTicket — set the discard guard and clear any
+    // armed autosave BEFORE the awaited DELETE, or a 5s timer firing
+    // mid-delete re-upserts the payload we're discarding (the server's 30s
+    // belt only suppresses after ticket creation, not draft deletion).
+    // resetForm() below clears the guard for the next intake.
+    submittingRef.current = true;
+    if (autosaveTimerRef.current) {
+      clearTimeout(autosaveTimerRef.current);
+      autosaveTimerRef.current = null;
+    }
     try {
       localStorage.removeItem(`wusuq_intake_draft_id:${variant}:${draft.flow}`);
     } catch {
@@ -1313,6 +1418,8 @@ export function IntakeWizard({
   const resetForm = () => {
     // Clear the submission guard so the next intake's autosave can fire.
     submittingRef.current = false;
+    // New draft → new idempotency key on its first submit.
+    submitRequestIdRef.current = null;
     // Tear down the "Resumed draft" banner — the user is on a fresh form now.
     setResumedDraftAt(null);
     setDraft({
@@ -1386,6 +1493,21 @@ export function IntakeWizard({
       if ((pr.pdfSurcharge ?? 0) > 0) {
         items.push({ label: 'PDF surcharge', amount: pr.pdfSurcharge! });
       }
+      // Case Search: surface the search-both surcharge and the per-city
+      // multiplication so the line items actually sum to the billed total.
+      if ((pr.searchBothSurcharge ?? 0) > 0) {
+        items.push({
+          label: 'Both search methods',
+          amount: pr.searchBothSurcharge!,
+        });
+      }
+      if ((pr.cityCount ?? 1) > 1) {
+        items.push({
+          label: `Cities searched × ${pr.cityCount}`,
+          detail: 'Per-city rate applies to each selected city',
+          amount: null,
+        });
+      }
       if (!isSplit) {
         if ((pr.deliveryFee ?? 0) > 0) {
           items.push({ label: 'Delivery fee', amount: pr.deliveryFee! });
@@ -1427,7 +1549,7 @@ export function IntakeWizard({
   }, [draft.payload, draft.flow, pricingResult, selectedFlow]);
 
   const submitTicket = async () => {
-    if (!selectedFlow || !validateCurrentStep()) return;
+    if (!selectedFlow || !validateAllSteps()) return;
     // QA: flip the submission guard BEFORE any await, and clear any pending
     // autosave timer. Both are required to prevent the autosave from
     // resurrecting the draft we're about to delete server-side.
@@ -1435,6 +1557,13 @@ export function IntakeWizard({
     if (autosaveTimerRef.current) {
       clearTimeout(autosaveTimerRef.current);
       autosaveTimerRef.current = null;
+    }
+    if (
+      !submitRequestIdRef.current &&
+      typeof crypto !== 'undefined' &&
+      'randomUUID' in crypto
+    ) {
+      submitRequestIdRef.current = crypto.randomUUID();
     }
     setLoading(true); setApiError('');
     try {
@@ -1444,11 +1573,10 @@ export function IntakeWizard({
         p.set_type === 'non_attested' ? (p.non_attested_qty ?? '') :
         p.set_type === 'both' ? (p.both_attested_qty ?? '') :
         '';
-      // The Case Information service only supports pending cases — make the
-      // implicit assumption explicit in the persisted payload so downstream
-      // consumers (pricing, dispatch, reporting) can rely on it.
-      const flowDefaults =
-        draft.flow === 'judicial_case_information' ? { case_status: 'Pending Case' } : {};
+      // Audit 1.3: the POSTed payload must be byte-identical to the payload
+      // the live preview priced. The old `flowDefaults` spread (a relic from
+      // when Case Information was pending-only) overwrote case_status at
+      // submit, so the server priced a different band than the quote.
       // 5-14-26 addendum: the Copy-of-FIR landing tile now hosts both the
       // "I have an FIR number" and "Search by CNIC" modes (see
       // `copyOfFirSteps` in lib/intake-flows.ts). When the user picks
@@ -1466,6 +1594,11 @@ export function IntakeWizard({
       const ticket = await apiClient.post<any>(submitEndpoint, {
         consumerId: draft.consumerId,
         serviceId: submitServiceId,
+        // Audit 1.9: one idempotency key per submission attempt (stable
+        // across user retries of the same draft) — a network retry or
+        // re-click replays the same key and the API returns the
+        // already-created ticket instead of a duplicate.
+        requestId: submitRequestIdRef.current ?? undefined,
         serviceCity:
           p.city ??
           p.select_court_city ??
@@ -1474,18 +1607,29 @@ export function IntakeWizard({
         caseType: isCriminalRecordSearch
           ? (p.subject_full_name ?? p.subject_cnic ?? '')
           : (p.case_type ?? p.offence ?? p.case_title ?? ''),
-        payload: { ...p, ...flowDefaults, sets, source: 'next-web-intake' },
+        payload: { ...p, sets, source: 'next-web-intake' },
         // Atomic case linkage when the wizard is launched from a case page.
         ...(caseId ? { caseId } : {}),
       });
+      // The ticket now EXISTS — this is the commit point. Attachment uploads
+      // are best-effort: a failed upload must NOT throw out to the catch and
+      // leave the user to re-submit the whole form, because the stable
+      // requestId would replay the same (already-created) ticket while the
+      // file loop re-ran from the top, duplicating every document. Collect
+      // failures and surface a soft note instead.
+      let uploadFailures = 0;
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
         if (!file) continue;
-        const fd = new FormData();
-        fd.append('file', file);
-        const caption = (fileCaptions[i] ?? '').trim();
-        if (caption) fd.append('caption', caption);
-        await apiClient.post(`/tickets/${ticket.id}/documents/upload`, fd);
+        try {
+          const fd = new FormData();
+          fd.append('file', file);
+          const caption = (fileCaptions[i] ?? '').trim();
+          if (caption) fd.append('caption', caption);
+          await apiClient.post(`/tickets/${ticket.id}/documents/upload`, fd);
+        } catch {
+          uploadFailures++;
+        }
       }
       // The backend deletes the (consumerId, flow) draft after a ticket is
       // created. Clear the matching localStorage pointer so the next intake
@@ -1493,7 +1637,11 @@ export function IntakeWizard({
       try {
         localStorage.removeItem(`wusuq_intake_draft_id:${variant}:${draft.flow}`);
       } catch {}
-      setInfoMsg('✅ Ticket created successfully! Batch No: ' + ticket.batchNo);
+      setInfoMsg(
+        uploadFailures > 0
+          ? `✅ Ticket created (Batch No: ${ticket.batchNo}). ${uploadFailures} attachment(s) didn't upload — you can add them on the ticket page.`
+          : '✅ Ticket created successfully! Batch No: ' + ticket.batchNo,
+      );
       resetForm();
       // 5-24-26 #18: land on the ticket detail page after creation so the
       // consumer can review what they requested (it carries the Pay-now action

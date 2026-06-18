@@ -14,6 +14,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Throttle } from '@nestjs/throttler';
+import { isConsumerRole } from '@wusuq/shared';
 import type { Response } from 'express';
 import { createReadStream } from 'node:fs';
 import { diskStorage } from 'multer';
@@ -65,16 +66,25 @@ export class TicketsController {
     @Query() query: FilterTicketsDto,
     @CurrentUser() user: JwtUser | undefined,
   ) {
-    const consumerRoles = ['consumer', 'lawyer', 'company'];
-    const isConsumer = Boolean(user && consumerRoles.includes(user.role));
+    const isConsumer = Boolean(user && isConsumerRole(user.role));
     if (isConsumer && user) {
       query.consumerId = user.sub;
     }
+    // Representatives are not staff: they only see tickets they are (or were)
+    // assigned to, with the same internal-field redaction as consumers
+    // (audit 3.3d).
+    const isRepresentative = user?.role === 'representative';
+    if (isRepresentative && user) {
+      query.representativeId = user.sub;
+    }
     // Consumers must never receive internal clerk-cost fields in the list.
-    return this.ticketsService.findAll(query, { forConsumer: isConsumer });
+    return this.ticketsService.findAll(query, {
+      forConsumer: isConsumer || isRepresentative,
+    });
   }
 
-  @RequirePermissions('tickets.read')
+  // Staff-only: exposes every representative's contact details (audit 3.3c).
+  @RequirePermissions('tickets.write')
   @Get('representatives')
   representativeCandidates(
     @Query('city') city?: string,
@@ -96,7 +106,7 @@ export class TicketsController {
     });
   }
 
-  @RequirePermissions('tickets.write')
+  @RequirePermissions('tickets.create')
   @Post('intake')
   createIntake(
     @Body() dto: CreateTicketIntakeDto,
@@ -108,7 +118,7 @@ export class TicketsController {
     });
   }
 
-  @RequirePermissions('tickets.write')
+  @RequirePermissions('tickets.create')
   @Post('intake/judicial/case-files')
   createJudicialCaseFiles(
     @Body() dto: Omit<CreateTicketIntakeDto, 'flow'>,
@@ -124,7 +134,7 @@ export class TicketsController {
     );
   }
 
-  @RequirePermissions('tickets.write')
+  @RequirePermissions('tickets.create')
   @Post('intake/judicial/case-information')
   createJudicialCaseInformation(
     @Body() dto: Omit<CreateTicketIntakeDto, 'flow'>,
@@ -140,7 +150,7 @@ export class TicketsController {
     );
   }
 
-  @RequirePermissions('tickets.write')
+  @RequirePermissions('tickets.create')
   @Post('intake/judicial/case-search')
   createJudicialCaseSearch(
     @Body() dto: Omit<CreateTicketIntakeDto, 'flow'>,
@@ -156,7 +166,7 @@ export class TicketsController {
     );
   }
 
-  @RequirePermissions('tickets.write')
+  @RequirePermissions('tickets.create')
   @Post('intake/judicial/case-filing')
   createJudicialCaseFiling(
     @Body() dto: Omit<CreateTicketIntakeDto, 'flow'>,
@@ -172,7 +182,7 @@ export class TicketsController {
     );
   }
 
-  @RequirePermissions('tickets.write')
+  @RequirePermissions('tickets.create')
   @Post('intake/judicial/power-of-attorney')
   createJudicialPowerOfAttorney(
     @Body() dto: Omit<CreateTicketIntakeDto, 'flow'>,
@@ -188,7 +198,7 @@ export class TicketsController {
     );
   }
 
-  @RequirePermissions('tickets.write')
+  @RequirePermissions('tickets.create')
   @Post('intake/non-judicial/copy-of-fir')
   createNonJudicialCopyOfFir(
     @Body() dto: Omit<CreateTicketIntakeDto, 'flow'>,
@@ -204,7 +214,7 @@ export class TicketsController {
     );
   }
 
-  @RequirePermissions('tickets.write')
+  @RequirePermissions('tickets.create')
   @Post('intake/non-judicial/registry-deed')
   createNonJudicialRegistryDeed(
     @Body() dto: Omit<CreateTicketIntakeDto, 'flow'>,
@@ -220,7 +230,7 @@ export class TicketsController {
     );
   }
 
-  @RequirePermissions('tickets.write')
+  @RequirePermissions('tickets.create')
   @Post('intake/non-judicial/criminal-record-search')
   createNonJudicialCriminalRecordSearch(
     @Body() dto: Omit<CreateTicketIntakeDto, 'flow'>,
@@ -236,7 +246,7 @@ export class TicketsController {
     );
   }
 
-  @RequirePermissions('tickets.write')
+  @RequirePermissions('tickets.create')
   @Post('intake-drafts')
   saveDraft(
     @Body() dto: SaveTicketIntakeDraftDto,
@@ -281,7 +291,7 @@ export class TicketsController {
     return this.ticketsService.getIntakeDraft(id);
   }
 
-  @RequirePermissions('tickets.write')
+  @RequirePermissions('tickets.create')
   @Delete('intake-drafts/active')
   deleteActiveDraft(
     @Query('flow') flow: string,
@@ -339,6 +349,7 @@ export class TicketsController {
     return this.ticketsService.overrideStatus(id, dto.status, {
       actorUserId: actor?.sub,
       actorEmail: actor?.email,
+      actorRole: actor?.role,
     });
   }
 
@@ -355,7 +366,7 @@ export class TicketsController {
     });
   }
 
-  @RequirePermissions('tickets.write')
+  @RequirePermissions('tickets.clerk')
   @Post(':id/clerk-charges')
   saveClerkCharges(
     @Param('id') id: string,
@@ -365,6 +376,7 @@ export class TicketsController {
     return this.ticketsService.saveClerkCharges(id, dto, {
       actorUserId: actor?.sub,
       actorEmail: actor?.email,
+      actorRole: actor?.role,
     });
   }
 
@@ -381,7 +393,7 @@ export class TicketsController {
     });
   }
 
-  @RequirePermissions('tickets.write')
+  @RequirePermissions('tickets.clerk')
   @Post(':id/clerk-costs')
   submitClerkCosts(
     @Param('id') id: string,
@@ -391,10 +403,11 @@ export class TicketsController {
     return this.ticketsService.submitClerkCosts(id, dto, {
       actorUserId: actor?.sub,
       actorEmail: actor?.email,
+      actorRole: actor?.role,
     });
   }
 
-  @RequirePermissions('tickets.write')
+  @RequirePermissions('tickets.clerk')
   @Post(':id/accept-assignment')
   acceptAssignment(
     @Param('id') id: string,
@@ -406,7 +419,7 @@ export class TicketsController {
     });
   }
 
-  @RequirePermissions('tickets.write')
+  @RequirePermissions('tickets.clerk')
   @Post(':id/reject-assignment')
   rejectAssignment(
     @Param('id') id: string,
@@ -416,6 +429,7 @@ export class TicketsController {
     return this.ticketsService.rejectAssignment(id, dto.reason, {
       actorUserId: actor?.sub,
       actorEmail: actor?.email,
+      actorRole: actor?.role,
     });
   }
 
@@ -450,7 +464,7 @@ export class TicketsController {
 
   // Clerk "Mark dispatched" for a physical-document flow. Optional courier
   // proof (JPG/PNG/PDF) + tracking no. Reuses the clerk-receipts bucket.
-  @RequirePermissions('tickets.write')
+  @RequirePermissions('tickets.clerk')
   @Post(':id/dispatch')
   @UseInterceptors(
     FileInterceptor('file', {
@@ -495,7 +509,11 @@ export class TicketsController {
     return this.ticketsService.dispatchDelivery(
       id,
       { proofUrl: file?.path, trackingNo },
-      { actorUserId: actor?.sub, actorEmail: actor?.email },
+      {
+        actorUserId: actor?.sub,
+        actorEmail: actor?.email,
+        actorRole: actor?.role,
+      },
     );
   }
 
@@ -523,7 +541,10 @@ export class TicketsController {
     });
   }
 
-  @RequirePermissions('tickets.write')
+  // Authorization is enforced in the service (consumer → own ticket,
+  // representative → assigned ticket, staff → any), so the route permission
+  // is the broad read grant every authenticated ticket role holds.
+  @RequirePermissions('tickets.read')
   @Throttle({ upload: { limit: 10, ttl: 60_000 } })
   @Post(':id/documents/upload')
   @UseInterceptors(
@@ -578,6 +599,7 @@ export class TicketsController {
       {
         actorUserId: actor?.sub,
         actorEmail: actor?.email,
+        actorRole: actor?.role,
       },
       typeof caption === 'string' ? caption.slice(0, 200) : undefined,
       visibleToConsumer === 'true',
@@ -610,7 +632,7 @@ export class TicketsController {
     return createReadStream(filePath).pipe(res);
   }
 
-  @RequirePermissions('tickets.write')
+  @RequirePermissions('tickets.clerk')
   @Patch(':id/documents/:docId')
   patchDocument(
     @Param('id') id: string,
@@ -621,6 +643,7 @@ export class TicketsController {
     return this.ticketsService.patchDocument(id, docId, dto, {
       actorUserId: actor?.sub,
       actorEmail: actor?.email,
+      actorRole: actor?.role,
     });
   }
 
@@ -636,7 +659,7 @@ export class TicketsController {
     });
   }
 
-  @RequirePermissions('tickets.write')
+  @RequirePermissions('tickets.clerk')
   @Throttle({ upload: { limit: 10, ttl: 60_000 } })
   @Post(':id/clerk-receipt')
   @UseInterceptors(
@@ -683,24 +706,11 @@ export class TicketsController {
     return this.ticketsService.submitClerkReceipt(id, file.path, {
       actorUserId: actor?.sub,
       actorEmail: actor?.email,
+      actorRole: actor?.role,
     });
   }
 
-  @RequirePermissions('tickets.write')
-  @Post(':id/clerk-receipt/verify')
-  verifyClerkReceipt(
-    @Param('id') id: string,
-    @Body('decision') decision: 'VERIFIED' | 'REJECTED',
-    @CurrentUser() actor: JwtUser | undefined,
-    @Body('reason') reason?: string,
-  ) {
-    return this.ticketsService.verifyClerkReceipt(id, decision, reason, {
-      actorUserId: actor?.sub,
-      actorEmail: actor?.email,
-    });
-  }
-
-  @RequirePermissions('tickets.write')
+  @RequirePermissions('tickets.clerk')
   @Post(':id/next-hearing')
   recordNextHearing(
     @Param('id') id: string,

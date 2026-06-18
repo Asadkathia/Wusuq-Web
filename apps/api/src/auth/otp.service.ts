@@ -5,6 +5,7 @@ import {
   HttpException,
   HttpStatus,
 } from '@nestjs/common';
+import { randomInt } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthService } from './auth.service';
 
@@ -26,7 +27,8 @@ function normalizePhone(input: string): string {
 function generateCode(): string {
   const min = Math.pow(10, OTP_LENGTH - 1);
   const max = Math.pow(10, OTP_LENGTH) - 1;
-  return String(Math.floor(min + Math.random() * (max - min + 1)));
+  // Audit 3.4: CSPRNG, not Math.random() — OTPs are auth material.
+  return String(randomInt(min, max + 1));
 }
 
 @Injectable()

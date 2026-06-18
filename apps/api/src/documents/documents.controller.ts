@@ -1,4 +1,5 @@
 import { Controller, Get, Query, Res } from '@nestjs/common';
+import { isConsumerRole } from '@wusuq/shared';
 import type { Response } from 'express';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { JwtUser } from '../auth/types/jwt-user.type';
@@ -16,8 +17,7 @@ export class DocumentsController {
     @Query() query: PaginationQueryDto,
     @CurrentUser() user: JwtUser | undefined,
   ) {
-    const consumerRoles = ['consumer', 'lawyer', 'company'];
-    if (user && consumerRoles.includes(user.role)) {
+    if (user && isConsumerRole(user.role)) {
       query.consumerId = user.sub;
     }
     return this.documentsService.list(query);
@@ -25,10 +25,17 @@ export class DocumentsController {
 
   @RequirePermissions('documents.read')
   @Get('export')
-  async export(@Query('format') format: string, @Res() res: Response) {
+  async export(
+    @Query('format') format: string,
+    @CurrentUser() user: JwtUser | undefined,
+    @Res() res: Response,
+  ) {
+    // Same consumer scoping as `list` — without it the export dumped every
+    // consumer's documents to any documents.read holder (audit 3.3a).
     const data = await this.documentsService.list({
       page: 1,
       limit: 5000,
+      ...(user && isConsumerRole(user.role) ? { consumerId: user.sub } : {}),
     } as PaginationQueryDto);
     const rows = data.items;
 

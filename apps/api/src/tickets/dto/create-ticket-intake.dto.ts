@@ -1,8 +1,22 @@
-import { IsDateString, IsObject, IsOptional, IsString } from 'class-validator';
+import {
+  IsDateString,
+  IsObject,
+  IsOptional,
+  IsString,
+  MaxLength,
+} from 'class-validator';
 
 export class CreateTicketIntakeDto {
   @IsString()
   flow!: string;
+
+  // Client-supplied idempotency key (one UUID per submit attempt). Stored on
+  // the unique Ticket.intakeRequestId column; a replay (double-click, network
+  // retry) returns the already-created ticket instead of duplicating it.
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  requestId?: string;
 
   @IsString()
   consumerId!: string;

@@ -10,8 +10,18 @@ import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { NotificationDispatcher } from '../notifications/notification-dispatcher.service';
 
 const makePrisma = () => ({
-  ticket: { findUnique: jest.fn(), update: jest.fn() },
-  payment: { create: jest.fn(), findUnique: jest.fn(), update: jest.fn() },
+  $executeRaw: jest.fn(),
+  ticket: {
+    findUnique: jest.fn(),
+    update: jest.fn(),
+    updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+  },
+  payment: {
+    create: jest.fn(),
+    findUnique: jest.fn(),
+    update: jest.fn(),
+    updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+  },
   invoice: { upsert: jest.fn() },
   $transaction: jest.fn(async (cb: any) => cb(prisma)),
 });
@@ -57,6 +67,7 @@ describe('PaymentsService', () => {
         id: 'tkt_1',
         consumerId: 'usr_1',
         totalAmount: new Decimal('500'),
+        amountPaid: new Decimal('0'),
         status: 'UNPAID',
       });
       prisma.payment.create.mockResolvedValue({
@@ -125,8 +136,15 @@ describe('PaymentsService', () => {
           id: 'tkt_1',
           totalAmount: new Decimal('500'),
           serviceCost: new Decimal('500'),
+          amountPaid: new Decimal('0'),
           status: 'UNPAID',
         },
+      });
+      prisma.ticket.update.mockResolvedValue({
+        amountPaid: new Decimal('500'),
+        totalAmount: new Decimal('500'),
+        serviceCost: new Decimal('500'),
+        status: 'UNPAID',
       });
 
       await service.handleWebhook(
@@ -135,9 +153,19 @@ describe('PaymentsService', () => {
         { 'x-mock-signature': 'mock-signed' },
       );
 
+      // Paid amount is INCREMENTED (audit 1.6), then the UNPAID → PAID flip is
+      // a separate conditional update.
       expect(prisma.ticket.update).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { id: 'tkt_1' },
+          data: expect.objectContaining({
+            amountPaid: { increment: expect.anything() },
+          }),
+        }),
+      );
+      expect(prisma.ticket.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'tkt_1', status: 'UNPAID' },
           data: expect.objectContaining({ status: 'PAID' }),
         }),
       );

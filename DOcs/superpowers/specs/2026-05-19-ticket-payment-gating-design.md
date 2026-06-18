@@ -1,6 +1,14 @@
 # Ticket Payment Gating (Mock Pakistani Gateway)
 
-**Status:** Draft
+> **⚠️ PARTIALLY SUPERSEDED (2026-06-12).** The 2026-05-23 unified-ticket-status
+> design replaced this spec's gating model: there is no `paymentStatus` column
+> and no admin-origin exemption — payment state derives from amounts and the
+> `UNPAID → PAID` transition IS the gate, for every ticket origin. The mock
+> gateway/webhook sections remain the reference for the payments module
+> (hardened 2026-06: remaining-due initiate, locked increment webhook,
+> production guard on the mock provider).
+
+**Status:** Draft (superseded in part — see banner)
 **Date:** 2026-05-19
 **Owner:** Consumer-experience track
 

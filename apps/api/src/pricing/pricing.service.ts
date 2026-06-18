@@ -1,5 +1,9 @@
 import { Injectable } from '@nestjs/common';
-import { deriveYearBand, chargeCapabilitiesFor } from '@wusuq/shared';
+import {
+  deriveYearBand,
+  chargeCapabilitiesFor,
+  paymentModelFor,
+} from '@wusuq/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatePricingRuleDto } from './dto/create-pricing-rule.dto';
 import { UpdatePricingRuleDto } from './dto/update-pricing-rule.dto';
@@ -10,6 +14,10 @@ import { UpdatePricingSettingsDto } from './dto/pricing-settings.dto';
 // source shared with the wizard's bundle picker). Re-exported here so existing
 // importers (case-info-bundle.spec.ts) keep working.
 export { caseInfoBundleBase, CASE_INFO_BUNDLE_BASE } from '@wusuq/shared';
+// Non-judicial flat base rates (owner 2026-06-12) — re-exported so the seed
+// and tests share one source. Used by seed-pricing.ts, not the resolver
+// directly (the resolver reads the seeded PricingRule rows).
+export { NON_JUDICIAL_BASE_RATES } from '@wusuq/shared';
 import { caseInfoBundleBase } from '@wusuq/shared';
 
 const PUNJAB_NAMES = new Set(['Punjab']);
@@ -628,16 +636,6 @@ export class PricingService {
       ? Number(best.deliveryCharge)
       : 0;
     const deliveryCharge = staticDeliveryCharge + deliveryFee;
-    // Phase-1 consumer base = base service charge + intrinsic base modifiers
-    // (State-vs title surcharge, decided-age surcharge, and — 5-24-26 #17 — the
-    // PDF surcharge, which is now priced at intake rather than deferred to the
-    // phase-2 finalize). Attestation / non-attestation remain phase-2 charges.
-    const serviceCost =
-      basePrice +
-      titleSurcharge +
-      ageSurcharge +
-      pdfSurcharge +
-      bundleSurcharge;
     // For Case Search the per-city block (base + searchBoth + title + pdf +
     // deliveryFee + ageSurcharge) is multiplied by the city count. Per-set
     // rates and the rule's flat deliveryCharge are NOT multiplied — they're
@@ -654,6 +652,24 @@ export class PricingService {
     // Attestation / non-attestation excluded — phase-2 charges, not part of the
     // resolved consumer price.
     const total = perCityBlock * cityCount + staticDeliveryCharge;
+    // Phase-1 consumer base. Audit 1.2: for ONE_TIME (digital) flows this is
+    // the FULL intake-billed amount — the Case Search city multiplier and
+    // search-both surcharge are folded in, so serviceCost === total (digital
+    // flows carry no delivery components) and every downstream component-sum
+    // recompute of totalAmount (assign, finance.updateCharge) plus the
+    // isBaseCovered PAID gate stay consistent with the quoted price. SPLIT
+    // (physical) flows keep the un-multiplied phase-1 base: base service
+    // charge + intrinsic modifiers (State-vs title surcharge, decided-age
+    // surcharge, and — 5-24-26 #17 — the PDF surcharge, priced at intake).
+    // Attestation / non-attestation / delivery remain phase-2 charges.
+    const serviceCost =
+      paymentModelFor(dto.flow) === 'ONE_TIME'
+        ? perCityBlock * cityCount
+        : basePrice +
+          titleSurcharge +
+          ageSurcharge +
+          pdfSurcharge +
+          bundleSurcharge;
 
     return {
       matched: true,

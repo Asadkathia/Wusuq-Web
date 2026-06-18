@@ -25,15 +25,20 @@ type ScrapedRow = {
 
 const DATA_DIR = join(__dirname, '..', 'data', 'case-types');
 
-const SOURCES = [
-  'scp.json',
-  'fcc.json',
-  'ihc.json',
-  'shc.json',
-  'dsj-lahore.json',
-  'lhc.json',
-  'phc.json',
-  'bhc.json',
+// Audit 6.3: per-source row floors enforced at SEED time too — the scrapers
+// refuse to write a truncated file, but a hand-edited/corrupted committed
+// JSON (or a deleted source) used to seed happily, silently shifting whole
+// cohorts onto the hardcoded fallback. Floor 0 = source is optional (LHC has
+// no public source; see scrape-lhc.ts's probe trail).
+const SOURCES: { file: string; minRows: number }[] = [
+  { file: 'scp.json', minRows: 15 },
+  { file: 'fcc.json', minRows: 15 },
+  { file: 'ihc.json', minRows: 20 },
+  { file: 'shc.json', minRows: 20 },
+  { file: 'dsj-lahore.json', minRows: 50 },
+  { file: 'lhc.json', minRows: 0 },
+  { file: 'phc.json', minRows: 15 },
+  { file: 'bhc.json', minRows: 10 },
 ];
 
 function loadJsonOrEmpty(filename: string): ScrapedRow[] {
@@ -79,9 +84,17 @@ function expandDsjBySubCourt(rows: ScrapedRow[]): ScrapedRow[] {
 async function main() {
   // 1. Load all sources.
   const scrapedRaw: ScrapedRow[] = [];
-  for (const src of SOURCES) {
-    const rows = loadJsonOrEmpty(src);
-    console.log(`  ${src}: ${rows.length} rows`);
+  for (const { file, minRows } of SOURCES) {
+    const rows = loadJsonOrEmpty(file);
+    console.log(`  ${file}: ${rows.length} rows`);
+    if (minRows > 0 && rows.length < minRows) {
+      console.error(
+        `  ${file} has ${rows.length} rows (< floor of ${minRows}) — the ` +
+          'committed JSON is truncated or missing. Refusing to seed; re-run ' +
+          'the scraper or restore the file.',
+      );
+      process.exit(1);
+    }
     scrapedRaw.push(...rows);
   }
   const scraped = expandDsjBySubCourt(scrapedRaw);

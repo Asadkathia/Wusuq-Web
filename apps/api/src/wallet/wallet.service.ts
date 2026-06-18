@@ -227,23 +227,52 @@ export class WalletService {
     payload: { note?: string },
     actor?: { actorUserId?: string; actorEmail?: string },
   ) {
-    const transaction = await this.prisma.walletTransaction.findUnique({
-      where: { id: transactionId },
+    // Mirrors verifyTopup (audit 1.1): lock + conditional update so a late or
+    // concurrent reject can never flip an already-VERIFIED (credited, possibly
+    // spent) top-up to REJECTED — there is no reversal path for the credit.
+    const result = await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT id FROM "WalletTransaction" WHERE id = ${transactionId} FOR UPDATE`;
+
+      const locked = await tx.walletTransaction.findUnique({
+        where: { id: transactionId },
+      });
+      if (!locked) {
+        throw new NotFoundException('Transaction not found');
+      }
+      if (locked.status !== 'PENDING_VERIFICATION') {
+        return { alreadyProcessed: true, transaction: locked };
+      }
+
+      const updateResult = await tx.walletTransaction.updateMany({
+        where: { id: transactionId, status: 'PENDING_VERIFICATION' },
+        data: {
+          status: 'REJECTED',
+          reviewedByUserId: actor?.actorUserId,
+          note: payload.note,
+        },
+      });
+      if (updateResult.count !== 1) {
+        const fresh = await tx.walletTransaction.findUniqueOrThrow({
+          where: { id: transactionId },
+        });
+        return { alreadyProcessed: true, transaction: fresh };
+      }
+
+      const rejected = await tx.walletTransaction.findUniqueOrThrow({
+        where: { id: transactionId },
+      });
+      return { alreadyProcessed: false, transaction: rejected };
     });
 
-    if (!transaction) {
-      throw new NotFoundException('Transaction not found');
+    if (result.alreadyProcessed) {
+      return {
+        success: true,
+        alreadyProcessed: true,
+        transaction: result.transaction,
+      };
     }
 
-    const rejected = await this.prisma.walletTransaction.update({
-      where: { id: transactionId },
-      data: {
-        status: 'REJECTED',
-        reviewedByUserId: actor?.actorUserId,
-        note: payload.note,
-      },
-    });
-
+    const rejected = result.transaction;
     await this.auditLogsService.create({
       action: 'WALLET_TOPUP_REJECTED',
       entity: 'WALLET_TRANSACTION',
@@ -251,8 +280,8 @@ export class WalletService {
       actorUserId: actor?.actorUserId,
       actorEmail: actor?.actorEmail,
       metadata: {
-        userId: transaction.userId,
-        amount: Number(transaction.amount),
+        userId: rejected.userId,
+        amount: Number(rejected.amount),
       },
     });
 
@@ -266,7 +295,7 @@ export class WalletService {
         .catch(() => undefined);
     }
 
-    return { success: true, transaction: rejected };
+    return { success: true, alreadyProcessed: false, transaction: rejected };
   }
 
   async history(userId: string) {
@@ -329,7 +358,12 @@ export class WalletService {
    */
   private async outstandingDuesForUser(userId: string): Promise<number> {
     const tickets = await this.prisma.ticket.findMany({
-      where: { consumerId: userId, status: { not: 'DELIVERED' } },
+      // Audit 4.2: archived tickets no longer owe anything.
+      where: {
+        consumerId: userId,
+        status: { not: 'DELIVERED' },
+        archivedAt: null,
+      },
       select: { totalAmount: true, amountPaid: true },
     });
     return tickets.reduce((sum, t) => {
@@ -406,6 +440,25 @@ export class WalletService {
     adminId?: string,
   ) {
     const result = await this.prisma.$transaction(async (tx) => {
+      // Audit 1.7: walletBalance is prepaid credit and must never go negative
+      // (clearPendingTickets floors deductions at 0; this path must too).
+      // Lock the user row so a concurrent settlement can't invalidate the
+      // check between read and increment.
+      await tx.$executeRaw`SELECT id FROM "User" WHERE id = ${userId} FOR UPDATE`;
+      const current = await tx.user.findUnique({
+        where: { id: userId },
+        select: { walletBalance: true },
+      });
+      if (!current) {
+        throw new NotFoundException('User not found');
+      }
+      if (Number(current.walletBalance) + amount < 0) {
+        throw new BadRequestException(
+          `Adjustment would make the wallet balance negative (current credit: ${Number(
+            current.walletBalance,
+          )})`,
+        );
+      }
       const user = await tx.user.update({
         where: { id: userId },
         data: { walletBalance: { increment: amount } },
@@ -460,6 +513,8 @@ export class WalletService {
       where: {
         consumerId: userId,
         status: { notIn: ['DELIVERED'] },
+        // Audit 4.2: never auto-settle an archived ticket.
+        archivedAt: null,
       },
       orderBy: { createdAt: 'asc' },
       select: { id: true },

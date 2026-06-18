@@ -247,24 +247,23 @@ export class NotificationDispatcher {
     }
   }
 
-  async ticketClerkReceiptDecided(
-    ticketId: string,
-    decision: 'VERIFIED' | 'REJECTED',
-  ): Promise<void> {
-    const t = await this.loadTicket(ticketId);
-    if (!t) return;
-    const assigneeId = await this.activeAssigneeId(ticketId);
-    if (!assigneeId) return;
-    const copy = T.ticketClerkReceiptDecidedForAssignee(t.batchNo, decision);
-    await this.notifications.create({
-      userId: assigneeId,
-      ...copy,
-      type:
-        decision === 'VERIFIED'
-          ? NOTIFICATION_TYPES.TICKET_CLERK_RECEIPT_VERIFIED
-          : NOTIFICATION_TYPES.TICKET_CLERK_RECEIPT_REJECTED,
-      metadata: { ticketId: t.id, batchNo: t.batchNo },
+  // Audit 2.3: clerk marked a physical package dispatched — the admins who
+  // confirm delivery need to know (previously only an audit row was written).
+  async ticketDispatched(ticketId: string): Promise<void> {
+    const t = await this.prisma.ticket.findUnique({
+      where: { id: ticketId },
+      select: { id: true, batchNo: true, trackingNo: true },
     });
+    if (!t) return;
+    const copy = T.ticketDispatchedForAdmin(t.batchNo, t.trackingNo);
+    for (const id of await this.adminIds()) {
+      await this.notifications.create({
+        userId: id,
+        ...copy,
+        type: NOTIFICATION_TYPES.TICKET_DISPATCHED,
+        metadata: { ticketId: t.id, batchNo: t.batchNo },
+      });
+    }
   }
 
   async ticketDocumentUploaded(ticketId: string): Promise<void> {

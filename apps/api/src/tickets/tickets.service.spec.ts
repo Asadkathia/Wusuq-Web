@@ -28,13 +28,14 @@ function makeDispatcher() {
     ticketClerkReceiptDecided: jest.fn().mockResolvedValue(undefined),
     ticketDocumentUploaded: jest.fn().mockResolvedValue(undefined),
     ticketRegenerated: jest.fn().mockResolvedValue(undefined),
+    ticketDispatched: jest.fn().mockResolvedValue(undefined),
     paymentRemainderDue: jest.fn().mockResolvedValue(undefined),
     caseDriftDetected: jest.fn().mockResolvedValue(undefined),
   };
 }
 
 describe('TicketsService', () => {
-  it('preserves financial fields when regenerating a ticket', async () => {
+  it('re-resolves the price and zeroes amountPaid when regenerating (audit 1.8)', async () => {
     const original = {
       id: 'ticket-1',
       batchNo: 'TKT-1',
@@ -43,7 +44,7 @@ describe('TicketsService', () => {
       serviceCity: 'Karachi',
       caseType: 'civil',
       intakeFlow: 'judicial_case_files',
-      formPayload: { sample: true },
+      formPayload: { select_court_type: 'Lower Court' },
       serviceCost: 100,
       deliveryCharges: 5,
       printingCharges: 2,
@@ -54,7 +55,7 @@ describe('TicketsService', () => {
       amountPaid: 20,
     };
 
-    const prisma = {
+    const prisma: any = {
       ticket: {
         findUnique: jest.fn().mockResolvedValue(original),
         create: jest.fn().mockResolvedValue({ id: 'ticket-2' }),
@@ -63,16 +64,24 @@ describe('TicketsService', () => {
         create: jest.fn().mockResolvedValue({ id: 'history-1' }),
       },
     };
+    prisma.$transaction = jest.fn(async (arg: any) =>
+      typeof arg === 'function' ? arg(prisma) : Promise.all(arg),
+    );
     const auditLogsService = { create: jest.fn().mockResolvedValue({}) };
+    // Owner decision 2026-06-12: a regenerated ticket is a NEW sale at the
+    // CURRENT price list — the price is re-resolved, not copied.
     const pricingService = {
       resolve: jest.fn().mockResolvedValue({
-        matched: false,
-        basePrice: 0,
+        matched: true,
+        available: true,
+        rulesExistForFlow: true,
+        basePrice: 150,
         attestedCharge: 0,
         nonAttestedCharge: 0,
-        deliveryCharge: 0,
-        serviceCost: 0,
-        total: 0,
+        deliveryCharge: 30,
+        clerkBaseCost: 40,
+        serviceCost: 150,
+        total: 180,
       }),
     };
     const geoService = { resolveProvinceByCity: jest.fn() };
@@ -88,18 +97,83 @@ describe('TicketsService', () => {
 
     await service.regenerate('ticket-1');
 
+    expect(pricingService.resolve).toHaveBeenCalled();
+    expect(prisma.ticket.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          // SPLIT flow (Case Files): base billed at intake, phase-2 charges
+          // start clean for the clerk to re-enter.
+          serviceCost: 150,
+          totalAmount: 150,
+          deliveryCharges: 0,
+          printingCharges: 0,
+          attestedCharges: 0,
+          nonAttestedCharges: 0,
+          additionalCharges: 0,
+          additionalServiceCost: 0,
+          discountPrice: 0,
+          defaultClerkCost: 40,
+          // The clone has no backing money — it must start unpaid (audit 1.8).
+          amountPaid: 0,
+          status: 'UNPAID',
+        }),
+      }),
+    );
+  });
+
+  it('falls back to the copied totals when the original cannot be re-priced (no flow)', async () => {
+    const original = {
+      id: 'ticket-legacy',
+      batchNo: 'TKT-L',
+      consumerId: 'consumer-1',
+      serviceId: 'service-1',
+      serviceCity: 'Karachi',
+      caseType: 'civil',
+      intakeFlow: null,
+      formPayload: null,
+      serviceCost: 100,
+      deliveryCharges: 5,
+      printingCharges: 2,
+      attestedCharges: 3,
+      nonAttestedCharges: 0,
+      additionalCharges: 0,
+      discountPrice: 0,
+      additionalServiceCost: 10,
+      clerkCost: 10,
+      totalAmount: 120,
+      amountPaid: 20,
+    };
+    const prisma: any = {
+      ticket: {
+        findUnique: jest.fn().mockResolvedValue(original),
+        create: jest.fn().mockResolvedValue({ id: 'ticket-2' }),
+      },
+      ticketStatusHistory: {
+        create: jest.fn().mockResolvedValue({ id: 'history-1' }),
+      },
+    };
+    prisma.$transaction = jest.fn(async (arg: any) =>
+      typeof arg === 'function' ? arg(prisma) : Promise.all(arg),
+    );
+    const pricingService = { resolve: jest.fn() };
+    const service = new TicketsService(
+      prisma as never,
+      { create: jest.fn().mockResolvedValue({}) } as never,
+      pricingService as never,
+      { resolveProvinceByCity: jest.fn() } as never,
+      makeDispatcher() as never,
+      { settleTicketsForUser: jest.fn().mockResolvedValue(undefined) } as never,
+    );
+
+    await service.regenerate('ticket-legacy');
+
+    expect(pricingService.resolve).not.toHaveBeenCalled();
     expect(prisma.ticket.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
           serviceCost: 100,
-          deliveryCharges: 5,
-          printingCharges: 2,
-          attestedCharges: 3,
-          additionalServiceCost: 10,
-          clerkCost: 10,
           totalAmount: 120,
-          amountPaid: 20,
-          status: 'UNPAID',
+          amountPaid: 0,
         }),
       }),
     );
@@ -178,7 +252,14 @@ describe('TicketsService', () => {
           : ticket;
       const activeAssignment =
         opts.activeAssignment === undefined
-          ? { id: 'assignment-1', ticketId: 'ticket-1', status: 'ACTIVE' }
+          ? {
+              id: 'assignment-1',
+              ticketId: 'ticket-1',
+              status: 'ACTIVE',
+              // The acting clerk owns the assignment (the assignee-binding
+              // guard rejects anyone else).
+              representativeId: 'clerk-1',
+            }
           : opts.activeAssignment;
       const updatedAssignment = activeAssignment
         ? {
@@ -192,7 +273,9 @@ describe('TicketsService', () => {
       const prisma = {
         ticket: {
           findUnique: jest.fn().mockResolvedValue(ticket),
+          findUniqueOrThrow: jest.fn().mockResolvedValue(updatedTicket),
           update: jest.fn().mockResolvedValue(updatedTicket),
+          updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         },
         assignment: {
           findFirst: jest.fn().mockResolvedValue(activeAssignment),
@@ -210,11 +293,13 @@ describe('TicketsService', () => {
                 : opts.assigningAuditLog,
             ),
         },
-        $transaction: jest.fn().mockImplementation(async (ops: unknown[]) => {
-          // Return the resolved values from each Prisma promise. In our
-          // implementation the first op is the ticket update.
-          return Promise.all(ops as Promise<unknown>[]);
-        }),
+        $transaction: jest
+          .fn()
+          .mockImplementation(async (arg: unknown) =>
+            typeof arg === 'function'
+              ? (arg as (tx: unknown) => unknown)(prisma)
+              : Promise.all(arg as Promise<unknown>[]),
+          ),
       };
       const auditLogsService = { create: jest.fn().mockResolvedValue({}) };
       const pricingService = {
@@ -248,8 +333,8 @@ describe('TicketsService', () => {
         { actorUserId: 'clerk-1', actorEmail: 'clerk-1@example.com' },
       );
 
-      expect(prisma.ticket.update).toHaveBeenCalledWith({
-        where: { id: 'ticket-1' },
+      expect(prisma.ticket.updateMany).toHaveBeenCalledWith({
+        where: { id: 'ticket-1', status: 'ASSIGNED' },
         data: { status: 'PAID' },
       });
       expect(prisma.assignment.update).toHaveBeenCalledWith(
@@ -334,7 +419,9 @@ describe('TicketsService', () => {
       const prisma = {
         ticket: {
           findUnique: jest.fn().mockResolvedValue(ticket),
+          findUniqueOrThrow: jest.fn().mockResolvedValue(updatedTicket),
           update: jest.fn().mockResolvedValue(updatedTicket),
+          updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         },
         assignment: {
           findFirst: jest.fn().mockResolvedValue(activeAssignment),
@@ -343,9 +430,13 @@ describe('TicketsService', () => {
         ticketStatusHistory: {
           create: jest.fn().mockResolvedValue({ id: 'h-1' }),
         },
-        $transaction: jest.fn().mockImplementation(async (ops: unknown[]) => {
-          return Promise.all(ops as Promise<unknown>[]);
-        }),
+        $transaction: jest
+          .fn()
+          .mockImplementation(async (arg: unknown) =>
+            typeof arg === 'function'
+              ? (arg as (tx: unknown) => unknown)(prisma)
+              : Promise.all(arg as Promise<unknown>[]),
+          ),
       };
       const auditLogsService = { create: jest.fn().mockResolvedValue({}) };
       const pricingService = { resolve: jest.fn() };
@@ -369,8 +460,8 @@ describe('TicketsService', () => {
         actorEmail: 'clerk-1@example.com',
       });
 
-      expect(prisma.ticket.update).toHaveBeenCalledWith({
-        where: { id: 'ticket-1' },
+      expect(prisma.ticket.updateMany).toHaveBeenCalledWith({
+        where: { id: 'ticket-1', status: 'ASSIGNED' },
         data: { status: 'IN_PROGRESS' },
       });
       expect(prisma.assignment.update).toHaveBeenCalledWith(
@@ -456,6 +547,7 @@ describe('TicketsService', () => {
             return updated;
           }),
         },
+        assignment: { findFirst: jest.fn().mockResolvedValue(null) },
       };
       const auditLogsService = { create: jest.fn().mockResolvedValue({}) };
       const pricingService = { resolve: jest.fn() };
@@ -480,7 +572,7 @@ describe('TicketsService', () => {
           mimetype: 'application/pdf',
           path: '/uploads/a.pdf',
         },
-        { actorUserId: 'clerk-1' },
+        { actorUserId: 'admin-1', actorRole: 'staff-admin' },
         undefined,
         true,
       );
@@ -493,7 +585,7 @@ describe('TicketsService', () => {
           mimetype: 'application/pdf',
           path: '/uploads/b.pdf',
         },
-        { actorUserId: 'clerk-1' },
+        { actorUserId: 'admin-1', actorRole: 'staff-admin' },
       );
       expect(doc2.visibleToConsumer).toBe(false);
     });
@@ -507,13 +599,13 @@ describe('TicketsService', () => {
           mimetype: 'application/pdf',
           path: '/uploads/a.pdf',
         },
-        { actorUserId: 'clerk-1' },
+        { actorUserId: 'admin-1', actorRole: 'staff-admin' },
       );
       const updated = await service.patchDocument(
         'ticket-1',
         doc.id,
         { visibleToConsumer: true },
-        { actorUserId: 'clerk-1' },
+        { actorUserId: 'admin-1', actorRole: 'staff-admin' },
       );
       expect(updated.visibleToConsumer).toBe(true);
       expect(auditLogsService.create).toHaveBeenCalledWith(
@@ -580,7 +672,7 @@ describe('TicketsService', () => {
       });
       const result = await service.resolveDocumentDownload(ticketId, docId, {
         userId: 'staff-1',
-        role: 'CLERK',
+        role: 'staff-admin',
         consumerId: null,
       });
       expect(result.filePath).toMatch(/uploads/);
@@ -593,7 +685,7 @@ describe('TicketsService', () => {
       });
       const result = await service.resolveDocumentDownload(ticketId, docId, {
         userId: consumerId,
-        role: 'CONSUMER',
+        role: 'consumer',
         consumerId,
       });
       expect(result.filePath).toBeDefined();
@@ -607,7 +699,7 @@ describe('TicketsService', () => {
       await expect(
         service.resolveDocumentDownload(ticketId, docId, {
           userId: consumerId,
-          role: 'CONSUMER',
+          role: 'consumer',
           consumerId,
         }),
       ).rejects.toThrow(ForbiddenException);
@@ -621,7 +713,7 @@ describe('TicketsService', () => {
       await expect(
         service.resolveDocumentDownload(ticketId, docId, {
           userId: consumerId,
-          role: 'CONSUMER',
+          role: 'consumer',
           consumerId,
         }),
       ).rejects.toThrow(ForbiddenException);
@@ -635,7 +727,7 @@ describe('TicketsService', () => {
       await expect(
         service.resolveDocumentDownload(ticketId, 'missing-doc', {
           userId: 'staff-1',
-          role: 'CLERK',
+          role: 'staff-admin',
           consumerId: null,
         }),
       ).rejects.toThrow(NotFoundException);
@@ -710,7 +802,7 @@ describe('TicketsService', () => {
       );
 
       const asConsumer = await service.findOne(ticketId, {
-        role: 'CONSUMER',
+        role: 'consumer',
         userId: consumerId,
       });
       expect(asConsumer.documents).toHaveLength(1);
@@ -723,7 +815,7 @@ describe('TicketsService', () => {
         docs: [{ visibleToConsumer: true }, { visibleToConsumer: false }],
       });
       const asStaff = await staffService.findOne(ticketId, {
-        role: 'CLERK',
+        role: 'staff-admin',
         userId: 'staff-1',
       });
       expect(asStaff.documents).toHaveLength(2);
@@ -735,7 +827,7 @@ describe('TicketsService', () => {
         'IN_PROGRESS',
       );
       const asConsumer = await service.findOne(ticketId, {
-        role: 'CONSUMER',
+        role: 'consumer',
         userId: consumerId,
       });
       expect(asConsumer.documents).toHaveLength(0);
@@ -775,10 +867,12 @@ describe('TicketsService', () => {
         },
       ];
 
-      const prisma = {
+      const prisma: any = {
         ticket: {
           findUnique: jest.fn().mockResolvedValue(ticketBefore),
+          findUniqueOrThrow: jest.fn().mockResolvedValue(ticketAfter),
           update: jest.fn().mockResolvedValue(ticketAfter),
+          updateMany: jest.fn().mockResolvedValue({ count: 1 }),
           findMany: jest.fn().mockResolvedValue([]),
         },
         caseEvent: { create: jest.fn().mockResolvedValue({}) },
@@ -792,6 +886,9 @@ describe('TicketsService', () => {
         },
         ticketStatusHistory: { create: jest.fn().mockResolvedValue({}) },
       };
+      prisma.$transaction = jest.fn(async (arg: any) =>
+        typeof arg === 'function' ? arg(prisma) : Promise.all(arg),
+      );
       const auditLogsService = { create: jest.fn().mockResolvedValue({}) };
       const pricingService = { resolve: jest.fn() };
       const geoService = { resolveProvinceByCity: jest.fn() };
@@ -844,18 +941,25 @@ describe('TicketsService', () => {
         ticketIntakeDraft: {
           delete: jest.fn().mockResolvedValue({}),
         },
+        $transaction: jest.fn(async (arg: any) =>
+          typeof arg === 'function' ? arg(prisma) : Promise.all(arg),
+        ),
       };
       const auditLogsService = { create: jest.fn().mockResolvedValue({}) };
       const pricingService = {
+        // matched so the audit-1.4 unpriced-flow guard doesn't trip — these
+        // tests are about createdBy stamping, not pricing.
         resolve: jest.fn().mockResolvedValue({
-          matched: false,
-          rulesExistForFlow: false,
-          basePrice: 0,
+          matched: true,
+          available: true,
+          rulesExistForFlow: true,
+          basePrice: 100,
           attestedCharge: 0,
           nonAttestedCharge: 0,
           deliveryCharge: 0,
-          serviceCost: 0,
-          total: 0,
+          clerkBaseCost: null,
+          serviceCost: 100,
+          total: 100,
         }),
       };
       const geoService = { resolveProvinceByCity: jest.fn() };
@@ -971,6 +1075,9 @@ describe('TicketsService', () => {
         ticketIntakeDraft: {
           delete: jest.fn().mockResolvedValue({}),
         },
+        $transaction: jest.fn(async (arg: any) =>
+          typeof arg === 'function' ? arg(prisma) : Promise.all(arg),
+        ),
       };
       const auditLogsService = { create: jest.fn().mockResolvedValue({}) };
       const pricingService = {
@@ -1088,6 +1195,9 @@ describe('TicketsService', () => {
         },
         ticketStatusHistory: { create: jest.fn().mockResolvedValue({}) },
         ticketIntakeDraft: { delete: jest.fn().mockResolvedValue({}) },
+        $transaction: jest.fn(async (arg: any) =>
+          typeof arg === 'function' ? arg(prisma) : Promise.all(arg),
+        ),
       };
       const auditLogsService = { create: jest.fn().mockResolvedValue({}) };
       const pricingService = {
@@ -1275,7 +1385,8 @@ describe('TicketsService', () => {
       status?: string;
     }) {
       const { status: ticketStatus = 'PAID', ...rest } = ticket;
-      const prisma = {
+      const prisma: any = {
+        $executeRaw: jest.fn(),
         ticket: {
           findUnique: jest.fn().mockResolvedValue({
             id: 'tkt-1',
@@ -1286,6 +1397,19 @@ describe('TicketsService', () => {
             amountPaid: 0,
             totalAmount: 0,
             ...rest,
+          }),
+          updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+          findUniqueOrThrow: jest.fn().mockResolvedValue({
+            id: 'tkt-1',
+            status:
+              ticketStatus === 'WAITING_APPROVAL'
+                ? 'COMPLETED'
+                : ticketStatus === 'COMPLETED'
+                  ? 'DELIVERED'
+                  : 'ASSIGNED',
+            caseId: null,
+            consumer: { id: 'consumer-1', name: 'C', phone: null, email: null },
+            service: { id: 'svc-1', name: 'Svc' },
           }),
           update: jest.fn().mockResolvedValue({
             id: 'tkt-1',
@@ -1308,6 +1432,9 @@ describe('TicketsService', () => {
         },
         ticketStatusHistory: { create: jest.fn().mockResolvedValue({}) },
       };
+      prisma.$transaction = jest.fn(async (arg: any) =>
+        typeof arg === 'function' ? arg(prisma) : Promise.all(arg),
+      );
       const auditLogsService = { create: jest.fn().mockResolvedValue({}) };
       const pricingService = { resolve: jest.fn() };
       const geoService = { resolveProvinceByCity: jest.fn() };
@@ -1335,7 +1462,7 @@ describe('TicketsService', () => {
           actorUserId: 'admin-1',
         }),
       ).rejects.toBeInstanceOf(BadRequestException);
-      expect(prisma.ticket.update).not.toHaveBeenCalled();
+      expect(prisma.ticket.updateMany).not.toHaveBeenCalled();
     });
 
     it('PAID → ASSIGNED is allowed', async () => {
@@ -1353,7 +1480,7 @@ describe('TicketsService', () => {
         { actorUserId: 'admin-1' },
       );
       expect(updated.status).toBe('ASSIGNED');
-      expect(prisma.ticket.update).toHaveBeenCalled();
+      expect(prisma.ticket.updateMany).toHaveBeenCalled();
     });
 
     it('COMPLETED → DELIVERED blocked when amountPaid < totalAmount', async () => {
@@ -1382,7 +1509,7 @@ describe('TicketsService', () => {
       await service.updateStatus('tkt-1', 'DELIVERED', undefined, {
         actorUserId: 'a',
       });
-      expect(prisma.ticket.update).toHaveBeenCalled();
+      expect(prisma.ticket.updateMany).toHaveBeenCalled();
     });
 
     it('WAITING_APPROVAL → COMPLETED is allowed', async () => {
@@ -1396,7 +1523,7 @@ describe('TicketsService', () => {
       await service.updateStatus('tkt-1', 'COMPLETED', undefined, {
         actorUserId: 'a',
       });
-      expect(prisma.ticket.update).toHaveBeenCalled();
+      expect(prisma.ticket.updateMany).toHaveBeenCalled();
     });
   });
 
@@ -1550,6 +1677,16 @@ describe('finalizeRemainder (Task 1.4)', () => {
       serviceCost: opts.serviceCost,
       amountPaid: opts.amountPaid,
       intakeFlow: opts.intakeFlow,
+      status: 'WAITING_APPROVAL',
+      deliveryStatus: 'PENDING',
+      remainderFinalizedAt: null,
+      attestedCharges: opts.attestedCharges ?? 0,
+      nonAttestedCharges: 0,
+      printingCharges: opts.printingCharges ?? 0,
+      deliveryCharges: opts.deliveryCharges ?? 0,
+      additionalCharges: 0,
+      additionalServiceCost: 0,
+      discountPrice: 0,
     };
 
     const updatedTicket = { ...ticket };
@@ -1558,9 +1695,14 @@ describe('finalizeRemainder (Task 1.4)', () => {
     };
 
     const prisma = {
+      $executeRaw: jest.fn(),
+      $transaction: jest.fn(async (arg: any) =>
+        typeof arg === 'function' ? arg(prisma) : Promise.all(arg),
+      ),
       ticket: {
         findUnique: jest.fn().mockResolvedValue(ticket),
         update: jest.fn().mockResolvedValue(updatedTicket),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         findFirst: jest.fn().mockResolvedValue(null),
         findMany: jest.fn().mockResolvedValue([]),
         include: jest.fn(),
@@ -1607,6 +1749,33 @@ describe('finalizeRemainder (Task 1.4)', () => {
         serviceCost: 5000,
         amountPaid: 5000,
         intakeFlow: 'judicial_case_files',
+        status: 'WAITING_APPROVAL',
+        deliveryStatus: 'PENDING',
+        remainderFinalizedAt: null,
+        attestedCharges: 0,
+        nonAttestedCharges: 0,
+        printingCharges: 0,
+        deliveryCharges: 0,
+        additionalCharges: 0,
+        additionalServiceCost: 0,
+        discountPrice: 0,
+      })
+      .mockResolvedValueOnce({
+        id: 'tkt-fin',
+        consumerId: 'consumer-1',
+        serviceCost: 5000,
+        amountPaid: 5000,
+        intakeFlow: 'judicial_case_files',
+        status: 'WAITING_APPROVAL',
+        deliveryStatus: 'PENDING',
+        remainderFinalizedAt: null,
+        attestedCharges: 0,
+        nonAttestedCharges: 0,
+        printingCharges: 0,
+        deliveryCharges: 0,
+        additionalCharges: 0,
+        additionalServiceCost: 0,
+        discountPrice: 0,
       })
       .mockResolvedValue({
         id: 'tkt-fin',
@@ -1629,9 +1798,9 @@ describe('finalizeRemainder (Task 1.4)', () => {
     );
 
     // totalAmount = 5000 + 2000 + 1000 = 8000
-    expect(prisma.ticket.update).toHaveBeenCalledWith(
+    expect(prisma.ticket.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: 'tkt-fin' },
+        where: expect.objectContaining({ id: 'tkt-fin' }),
         data: expect.objectContaining({
           totalAmount: 8000,
           remainderFinalizedAt: expect.any(Date),
@@ -1658,6 +1827,34 @@ describe('finalizeRemainder (Task 1.4)', () => {
         clerkCost: 1500,
         amountPaid: 5000,
         intakeFlow: 'judicial_case_files',
+        status: 'WAITING_APPROVAL',
+        deliveryStatus: 'PENDING',
+        remainderFinalizedAt: null,
+        attestedCharges: 0,
+        nonAttestedCharges: 0,
+        printingCharges: 0,
+        deliveryCharges: 0,
+        additionalCharges: 0,
+        additionalServiceCost: 0,
+        discountPrice: 0,
+      })
+      .mockResolvedValueOnce({
+        id: 'tkt-fin',
+        consumerId: 'consumer-1',
+        serviceCost: 5000,
+        clerkCost: 1500,
+        amountPaid: 5000,
+        intakeFlow: 'judicial_case_files',
+        status: 'WAITING_APPROVAL',
+        deliveryStatus: 'PENDING',
+        remainderFinalizedAt: null,
+        attestedCharges: 0,
+        nonAttestedCharges: 0,
+        printingCharges: 0,
+        deliveryCharges: 0,
+        additionalCharges: 0,
+        additionalServiceCost: 0,
+        discountPrice: 0,
       })
       .mockResolvedValue({
         id: 'tkt-fin',
@@ -1678,7 +1875,7 @@ describe('finalizeRemainder (Task 1.4)', () => {
     // total = serviceCost 5000 + attested 2000 + printing 1000.
     // clerkCost 1500 is internal-only (rep pay-out) and NOT billed to the
     // consumer, so it is excluded from the finalized total.
-    expect(prisma.ticket.update).toHaveBeenCalledWith(
+    expect(prisma.ticket.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ totalAmount: 8000 }),
       }),
@@ -1699,6 +1896,33 @@ describe('finalizeRemainder (Task 1.4)', () => {
         serviceCost: 5000,
         amountPaid: 5000,
         intakeFlow: 'judicial_case_files',
+        status: 'WAITING_APPROVAL',
+        deliveryStatus: 'PENDING',
+        remainderFinalizedAt: null,
+        attestedCharges: 0,
+        nonAttestedCharges: 0,
+        printingCharges: 0,
+        deliveryCharges: 0,
+        additionalCharges: 0,
+        additionalServiceCost: 0,
+        discountPrice: 0,
+      })
+      .mockResolvedValueOnce({
+        id: 'tkt-fin',
+        consumerId: 'consumer-1',
+        serviceCost: 5000,
+        amountPaid: 5000,
+        intakeFlow: 'judicial_case_files',
+        status: 'WAITING_APPROVAL',
+        deliveryStatus: 'PENDING',
+        remainderFinalizedAt: null,
+        attestedCharges: 0,
+        nonAttestedCharges: 0,
+        printingCharges: 0,
+        deliveryCharges: 0,
+        additionalCharges: 0,
+        additionalServiceCost: 0,
+        discountPrice: 0,
       })
       .mockResolvedValue({
         id: 'tkt-fin',
@@ -1716,7 +1940,7 @@ describe('finalizeRemainder (Task 1.4)', () => {
       { actorUserId: 'admin-1' },
     );
 
-    const updateCall = prisma.ticket.update.mock.calls[0][0];
+    const updateCall = prisma.ticket.updateMany.mock.calls[0][0];
     expect(updateCall.data).not.toHaveProperty('paymentStatus');
     expect(updateCall.data.totalAmount).toBe(8000); // 5000 + 3000
   });
@@ -1735,6 +1959,33 @@ describe('finalizeRemainder (Task 1.4)', () => {
         serviceCost: 3000,
         amountPaid: 0,
         intakeFlow: 'non_judicial_copy_of_fir',
+        status: 'WAITING_APPROVAL',
+        deliveryStatus: 'PENDING',
+        remainderFinalizedAt: null,
+        attestedCharges: 0,
+        nonAttestedCharges: 0,
+        printingCharges: 0,
+        deliveryCharges: 0,
+        additionalCharges: 0,
+        additionalServiceCost: 0,
+        discountPrice: 0,
+      })
+      .mockResolvedValueOnce({
+        id: 'tkt-fin',
+        consumerId: 'consumer-1',
+        serviceCost: 3000,
+        amountPaid: 0,
+        intakeFlow: 'non_judicial_copy_of_fir',
+        status: 'WAITING_APPROVAL',
+        deliveryStatus: 'PENDING',
+        remainderFinalizedAt: null,
+        attestedCharges: 0,
+        nonAttestedCharges: 0,
+        printingCharges: 0,
+        deliveryCharges: 0,
+        additionalCharges: 0,
+        additionalServiceCost: 0,
+        discountPrice: 0,
       })
       .mockResolvedValue({
         id: 'tkt-fin',
@@ -1752,7 +2003,7 @@ describe('finalizeRemainder (Task 1.4)', () => {
       { actorUserId: 'admin-1' },
     );
 
-    const updateCall = prisma.ticket.update.mock.calls[0][0];
+    const updateCall = prisma.ticket.updateMany.mock.calls[0][0];
     // Copy of FIR is a physical-document service: printing + delivery are real
     // clerk charges, but attestation is NOT a capability → zeroed.
     expect(updateCall.data.attestedCharges).toBe(0);
@@ -2134,19 +2385,46 @@ describe('ticket workflow streamline — review / send-back / dispatch / deliver
   function harness(ticket: Record<string, unknown>) {
     const updates: { data: Record<string, unknown> }[] = [];
     const histories: { data: Record<string, unknown> }[] = [];
+    // Mutable row state so the conditional updateMany guards (audit 2.1)
+    // behave like the database: a where clause that no longer matches the
+    // current row state affects 0 rows.
+    const current: Record<string, any> = {
+      id: 'tkt-1',
+      deliveryStatus: 'PENDING',
+      remainderFinalizedAt: null,
+      documents: [],
+      assignments: [],
+      history: [],
+      consumer: {},
+      service: {},
+      ...ticket,
+    };
     const prisma: any = {
+      $executeRaw: jest.fn(),
       ticket: {
-        findUnique: jest.fn().mockResolvedValue({
-          documents: [],
-          assignments: [],
-          history: [],
-          consumer: {},
-          service: {},
-          ...ticket,
-        }),
+        findUnique: jest.fn().mockImplementation(async () => ({ ...current })),
+        findUniqueOrThrow: jest
+          .fn()
+          .mockImplementation(async () => ({ ...current })),
         update: jest.fn().mockImplementation(async (a: any) => {
           updates.push(a);
-          return { id: 'tkt-1', ...ticket, ...a.data };
+          Object.assign(current, a.data);
+          return { ...current };
+        }),
+        updateMany: jest.fn().mockImplementation(async (a: any) => {
+          const w = a.where ?? {};
+          const matches =
+            (w.status === undefined || w.status === current.status) &&
+            (w.deliveryStatus === undefined ||
+              w.deliveryStatus === current.deliveryStatus) &&
+            (w.clerkApprovalStatus === undefined ||
+              w.clerkApprovalStatus === current.clerkApprovalStatus) &&
+            (!('remainderFinalizedAt' in w) ||
+              current.remainderFinalizedAt === w.remainderFinalizedAt);
+          if (!matches) return { count: 0 };
+          updates.push(a);
+          Object.assign(current, a.data);
+          return { count: 1 };
         }),
       },
       ticketStatusHistory: {
@@ -2156,6 +2434,9 @@ describe('ticket workflow streamline — review / send-back / dispatch / deliver
         }),
       },
     };
+    prisma.$transaction = jest.fn(async (arg: any) =>
+      typeof arg === 'function' ? arg(prisma) : Promise.all(arg),
+    );
     const wallet = {
       settleTicketsForUser: jest.fn().mockResolvedValue(undefined),
     };
@@ -2169,7 +2450,7 @@ describe('ticket workflow streamline — review / send-back / dispatch / deliver
     );
     return { service, prisma, updates, histories };
   }
-  const actor = { actorUserId: 'admin-1' };
+  const actor = { actorUserId: 'admin-1', actorRole: 'staff-admin' };
 
   it('submitClerkReceipt advances IN_PROGRESS → WAITING_APPROVAL + SUBMITTED', async () => {
     const { service, updates } = harness({

@@ -60,7 +60,13 @@ export const PERMISSIONS = [
   'users.read',
   'users.write',
   'tickets.read',
+  // tickets.write = staff-only ticket administration (status, assignment,
+  // charges, overrides). Consumer-class roles get tickets.create (intake +
+  // drafts) instead; representatives get tickets.clerk (their lifecycle
+  // actions: accept/reject assignment, receipts, costs, dispatch).
   'tickets.write',
+  'tickets.create',
+  'tickets.clerk',
   'finance.read',
   'finance.write',
   'wallet.read',
@@ -86,6 +92,8 @@ export const ROLE_PERMISSIONS: Record<UserRole, readonly Permission[]> = {
     'users.read',
     'tickets.read',
     'tickets.write',
+    'tickets.create',
+    'tickets.clerk',
     'finance.read',
     'wallet.read',
     'wallet.topup',
@@ -104,6 +112,8 @@ export const ROLE_PERMISSIONS: Record<UserRole, readonly Permission[]> = {
     'users.write',
     'tickets.read',
     'tickets.write',
+    'tickets.create',
+    'tickets.clerk',
     'wallet.read',
     'wallet.write',
     'wallet.topup',
@@ -118,6 +128,8 @@ export const ROLE_PERMISSIONS: Record<UserRole, readonly Permission[]> = {
   'lead-admin': [
     'tickets.read',
     'tickets.write',
+    'tickets.create',
+    'tickets.clerk',
     'elections.read',
     'elections.vote',
     'reports.read',
@@ -126,12 +138,46 @@ export const ROLE_PERMISSIONS: Record<UserRole, readonly Permission[]> = {
     'cases.read',
     'cases.write',
   ],
-  lawyer: ['tickets.read', 'tickets.write', 'wallet.read', 'wallet.topup', 'documents.read', 'cases.read', 'cases.write', 'elections.read', 'elections.vote'],
-  consumer: ['tickets.read', 'tickets.write', 'wallet.read', 'wallet.topup', 'documents.read', 'cases.read', 'elections.read', 'elections.vote'],
-  representative: ['tickets.read', 'tickets.write', 'documents.read', 'cases.read', 'elections.read', 'elections.vote'],
+  lawyer: ['tickets.read', 'tickets.create', 'wallet.read', 'wallet.topup', 'documents.read', 'cases.read', 'cases.write', 'elections.read', 'elections.vote'],
+  consumer: ['tickets.read', 'tickets.create', 'wallet.read', 'wallet.topup', 'documents.read', 'cases.read', 'elections.read', 'elections.vote'],
+  representative: ['tickets.read', 'tickets.clerk', 'documents.read', 'cases.read', 'elections.read', 'elections.vote'],
   investor: ['reports.read'],
-  company: ['tickets.read', 'tickets.write', 'wallet.read', 'wallet.topup', 'documents.read', 'cases.read'],
+  company: ['tickets.read', 'tickets.create', 'wallet.read', 'wallet.topup', 'documents.read', 'cases.read'],
 };
+
+/**
+ * Consumer-class roles: account tiers that OWN tickets/cases/documents and
+ * must only ever see their own. `representative` is deliberately excluded —
+ * clerks don't own tickets; they are scoped to their active assignments.
+ *
+ * Always compare roles through these helpers. JwtUser.role is the lowercase
+ * shared UserRole; the Prisma enum spelling is uppercase ('CONSUMER'), and a
+ * literal comparison against the wrong casing is silently always-false (the
+ * root cause of the 2026-06 ticket-IDOR audit finding 3.1).
+ */
+export const CONSUMER_CLASS_ROLES = ['consumer', 'lawyer', 'company'] as const;
+
+const CONSUMER_CLASS_ROLE_SET: ReadonlySet<string> = new Set(
+  CONSUMER_CLASS_ROLES,
+);
+
+export function isConsumerRole(role: string | undefined | null): boolean {
+  return role != null && CONSUMER_CLASS_ROLE_SET.has(role);
+}
+
+/** Back-office staff roles (full ticket administration via tickets.write). */
+export const STAFF_ROLES = [
+  'super-admin',
+  'manager-admin',
+  'staff-admin',
+  'lead-admin',
+] as const;
+
+const STAFF_ROLE_SET: ReadonlySet<string> = new Set(STAFF_ROLES);
+
+export function isStaffRole(role: string | undefined | null): boolean {
+  return role != null && STAFF_ROLE_SET.has(role);
+}
 
 /**
  * Court tier hierarchy used by intake flows + pricing. Lives in shared so
@@ -239,13 +285,16 @@ export const REQUIRED_FIELDS_OPTIONAL_BY_TIER: Record<string, Partial<Record<Cou
   judicial_case_search: {
     // Search is a lookup — the consumer typically doesn't have the case
     // number or year (that's why they're searching). All but city/method
-    // are optional regardless of tier.
-    lower:   ['case_petition_no', 'case_year', 'case_type', 'case_title'],
-    high:    ['case_petition_no', 'case_year', 'case_type', 'case_title'],
-    special: ['case_petition_no', 'case_year', 'case_type', 'case_title'],
-    shariat: ['case_petition_no', 'case_year', 'case_type', 'case_title'],
-    supreme: ['case_petition_no', 'case_year', 'case_type', 'case_title'],
-    fcc:     ['case_petition_no', 'case_year', 'case_type', 'case_title'],
+    // are optional regardless of tier. case_status included (audit 5.1):
+    // the wizard hides it entirely in CNIC mode and renders it as an
+    // optional radio in details mode, so requiring it server-side made
+    // CNIC-mode searches unsubmittable.
+    lower:   ['case_petition_no', 'case_year', 'case_type', 'case_title', 'case_status'],
+    high:    ['case_petition_no', 'case_year', 'case_type', 'case_title', 'case_status'],
+    special: ['case_petition_no', 'case_year', 'case_type', 'case_title', 'case_status'],
+    shariat: ['case_petition_no', 'case_year', 'case_type', 'case_title', 'case_status'],
+    supreme: ['case_petition_no', 'case_year', 'case_type', 'case_title', 'case_status'],
+    fcc:     ['case_petition_no', 'case_year', 'case_type', 'case_title', 'case_status'],
   },
 };
 
@@ -423,6 +472,7 @@ export const NOTIFICATION_TYPES = {
   TICKET_CLERK_RECEIPT_VERIFIED: 'ticket.clerk_receipt_verified',
   TICKET_CLERK_RECEIPT_REJECTED: 'ticket.clerk_receipt_rejected',
   TICKET_DOCUMENT_UPLOADED: 'ticket.document_uploaded',
+  TICKET_DISPATCHED: 'ticket.dispatched',
   TICKET_REGENERATED: 'ticket.regenerated',
   PAYMENT_COMPLETED: 'payment.completed',
   WALLET_TOPUP_CREATED: 'wallet.topup_created',
@@ -751,6 +801,73 @@ export function caseInfoBundleBase(
       ? CASE_INFO_BUNDLE_BASE.Punjab
       : CASE_INFO_BUNDLE_BASE.other;
   return table[docBundle] ?? 0;
+}
+
+/**
+ * Flat base fee (Rs) for the non-judicial physical-document copy services.
+ * Owner-provided 2026-06-12, region-agnostic (no Punjab/other split). These
+ * flows have NO rows in `pricing-sheet.xlsx` — its grid is judicial
+ * court-tier shaped — so `seed-pricing.ts` injects them from here as
+ * `courtLevel/region/yearBand/setType = null` rules (match any region, any
+ * derived band). SPLIT flows: this base is billed at intake; printing /
+ * delivery are the clerk-entered phase-2 remainder.
+ *
+ * Criminal-record search matches Copy of FIR (owner 2026-06-12) — same flat
+ * effort, and the FIR tile's "Search by CNIC" mode reroutes to it.
+ */
+export const NON_JUDICIAL_BASE_RATES: Record<string, number> = {
+  non_judicial_copy_of_fir: 2000,
+  non_judicial_registry_deed: 3500,
+  non_judicial_criminal_record_search: 2000,
+};
+
+/**
+ * The PricingRule rows for the non-judicial base rates, as plain data.
+ * SINGLE source for the row shape — both `seed-pricing.ts` (full rebuild) and
+ * `seed-non-judicial-pricing.ts` (surgical) build their rows from here, so the
+ * two seeders can't drift. Null dimensions match any derived region / FIR-year
+ * band; `isLegacy: true` puts them in the same active bucket as the seeded
+ * judicial rules under the default `pricingMode = 'legacy'`. pdf/delivery
+ * amounts mirror Case Files (these flows share the pdf+delivery capabilities).
+ */
+export function buildNonJudicialPricingRows(): Array<{
+  name: string;
+  flow: string;
+  courtLevel: null;
+  caseStatus: null;
+  yearFrom: null;
+  yearTo: null;
+  yearBand: null;
+  setType: null;
+  region: null;
+  basePrice: number;
+  availability: boolean;
+  clerkBaseCost: null;
+  pdfSurchargeAmount: number;
+  deliveryGuyFee: number;
+  isLegacy: boolean;
+  isActive: boolean;
+  priority: number;
+}> {
+  return Object.entries(NON_JUDICIAL_BASE_RATES).map(([flow, basePrice]) => ({
+    name: `${flow} – base`,
+    flow,
+    courtLevel: null,
+    caseStatus: null,
+    yearFrom: null,
+    yearTo: null,
+    yearBand: null,
+    setType: null,
+    region: null,
+    basePrice,
+    availability: true,
+    clerkBaseCost: null,
+    pdfSurchargeAmount: 300,
+    deliveryGuyFee: 100,
+    isLegacy: true,
+    isActive: true,
+    priority: 0,
+  }));
 }
 
 // ─────────────────────────────────────────────

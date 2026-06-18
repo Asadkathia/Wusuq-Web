@@ -9,6 +9,7 @@
  * and rebuilds the PricingRule table from scratch each run (idempotent).
  */
 import { PrismaClient } from '@prisma/client';
+import { buildNonJudicialPricingRows } from '@wusuq/shared';
 import * as XLSX from 'xlsx';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -96,6 +97,10 @@ const YEAR_BAND_RANGES: Record<YearBand, { yearFrom: number | null; yearTo: numb
 };
 
 // Parse a raw cell into either a number, a sentinel availability flag, or null.
+// Audit 6.2: blank cells and the deliberate "Can't Get" sentinel are fine, but
+// any other non-numeric garbage (#REF!, a shifted label) used to silently
+// become amount:null → availability:false — indistinguishable from a real
+// sentinel. Unparseable content now aborts the seed instead of corrupting it.
 function parseCell(v: unknown): { amount: number | null; available: boolean } {
   if (v == null) return { amount: null, available: true };
   const s = v.toString().trim();
@@ -104,7 +109,15 @@ function parseCell(v: unknown): { amount: number | null; available: boolean } {
   // Strip trailing asterisks (e.g. "2000*").
   const cleaned = s.replace(/\*/g, '').replace(/,/g, '').trim();
   const n = Number(cleaned);
-  return { amount: Number.isFinite(n) ? n : null, available: true };
+  if (!Number.isFinite(n)) {
+    throw new Error(
+      `Unparseable pricing cell ${JSON.stringify(s)} — the sheet layout has ` +
+        'probably shifted. Refusing to seed (a wrong parse here silently ' +
+        "flips availability or prices to 0). Fix the xlsx or the parser's " +
+        'coordinates.',
+    );
+  }
+  return { amount: n, available: true };
 }
 
 // ── Sheet loading ────────────────────────────────────────────────────────────
@@ -397,6 +410,23 @@ function parseClerkSetTypeBlock(
 
 // ── Main ─────────────────────────────────────────────────────────────────────
 
+// Audit 6.2: every parse block uses absolute row/column coordinates — a
+// shifted sheet silently `continue`s rows and yields 0 drafts. Each block
+// must contribute at least one draft or the seed aborts before the wipe.
+function expectContribution(label: string, fn: () => void) {
+  const before = DRAFTS.length;
+  fn();
+  const added = DRAFTS.length - before;
+  if (added <= 0) {
+    console.error(
+      `Parse block "${label}" contributed 0 drafts — the sheet layout has ` +
+        'probably shifted. Refusing to seed.',
+    );
+    process.exit(1);
+  }
+  console.log(`  ${label}: +${added} drafts`);
+}
+
 async function main() {
   console.log(`Loading ${XLSX_PATH}…`);
   const wb = loadWorkbook();
@@ -404,16 +434,22 @@ async function main() {
   const s2 = sheetGrid(wb, 'Attested Non Attested Both Rate');
 
   // Sheet 1 — Punjab headline (rows 1-8) + right-hand Case Record band table.
-  parseHeadlineBlock(s1, 'Punjab', /*headerRow*/ 1, /*serviceRows*/ [3, 4, 5, 6, 7, 8], /*leftCol*/ 1, /*rightCol*/ 12);
-  parseCaseRecordBands(s1, 'Punjab', /*tierHeaderRow*/ 1, /*bandRows*/ [3, 4, 5, 6, 7], /*leftCol*/ 15, /*rightCol*/ 26, /*yearsCol*/ 14);
+  expectContribution('Punjab headline', () =>
+    parseHeadlineBlock(s1, 'Punjab', /*headerRow*/ 1, /*serviceRows*/ [3, 4, 5, 6, 7, 8], /*leftCol*/ 1, /*rightCol*/ 12));
+  expectContribution('Punjab case-record bands', () =>
+    parseCaseRecordBands(s1, 'Punjab', /*tierHeaderRow*/ 1, /*bandRows*/ [3, 4, 5, 6, 7], /*leftCol*/ 15, /*rightCol*/ 26, /*yearsCol*/ 14));
 
   // Sheet 1 — Other than Punjab headline (rows 11-18) + right-hand bands.
-  parseHeadlineBlock(s1, 'other', 11, [13, 14, 15, 16, 17, 18], 1, 12);
-  parseCaseRecordBands(s1, 'other', 11, [13, 14, 15, 16, 17], 15, 26, 14);
+  expectContribution('Other headline', () =>
+    parseHeadlineBlock(s1, 'other', 11, [13, 14, 15, 16, 17, 18], 1, 12));
+  expectContribution('Other case-record bands', () =>
+    parseCaseRecordBands(s1, 'other', 11, [13, 14, 15, 16, 17], 15, 26, 14));
 
   // Sheet 1 — Case Search band sub-tables.
-  parseCaseSearchBands(s1, 'Punjab', /*tierHeaderRow*/ 26, /*bandRows*/ [28, 29, 30, 31, 32], 1, 8, 0);
-  parseCaseSearchBands(s1, 'other', /*tierHeaderRow*/ 34, /*bandRows*/ [36, 37, 38, 39], 1, 8, 0);
+  expectContribution('Punjab case-search bands', () =>
+    parseCaseSearchBands(s1, 'Punjab', /*tierHeaderRow*/ 26, /*bandRows*/ [28, 29, 30, 31, 32], 1, 8, 0));
+  expectContribution('Other case-search bands', () =>
+    parseCaseSearchBands(s1, 'other', /*tierHeaderRow*/ 34, /*bandRows*/ [36, 37, 38, 39], 1, 8, 0));
 
   // Pending Case Files headline (row 3 Punjab / row 13 Other) is mapped to
   // yearBand=pending above. Add an explicit current-year mirror so callers
@@ -421,24 +457,45 @@ async function main() {
   // Implemented below in the resolver fallback.
 
   // Sheet 2 — Punjab set-type block (rows 2-10) + Other set-type block (rows 13-21).
-  parseSetTypeBlock(s2, 'Punjab', /*tierHeaderRow*/ 2, /*bandRows*/ [4, 5, 6, 7, 8, 9, 10]);
-  parseSetTypeBlock(s2, 'other', /*tierHeaderRow*/ 13, /*bandRows*/ [15, 16, 17, 18, 19, 20, 21]);
+  expectContribution('Punjab set-type matrix', () =>
+    parseSetTypeBlock(s2, 'Punjab', /*tierHeaderRow*/ 2, /*bandRows*/ [4, 5, 6, 7, 8, 9, 10]));
+  expectContribution('Other set-type matrix', () =>
+    parseSetTypeBlock(s2, 'other', /*tierHeaderRow*/ 13, /*bandRows*/ [15, 16, 17, 18, 19, 20, 21]));
 
   // Sheet 5 — clerk rates for set-type rules. Punjab block layout: tier
   // header row 1, data rows 3-9 (pending, current, 2025, 2024-23, 2022-20,
   // 2019-17, 2016-back). Each tier occupies 12 cols (5 wusuq + sep + 5 clerk
   // + sep). The canonical file's Sheet5 has no Other-than-Punjab block, so
   // clerk rates for `region='other'` fall back to null.
-  // Tab is optional — older xlsx versions don't carry it; skip silently.
+  // Audit 6.2: a renamed/missing Sheet5 used to be skipped silently, wiping
+  // every set-type clerk rate on the next seed. Fail unless explicitly waived.
   if (wb.SheetNames.includes('Sheet5')) {
     const s5 = sheetGrid(wb, 'Sheet5');
     parseClerkSetTypeBlock(s5, 'Punjab', /*tierHeaderRow*/ 1, /*bandRows*/ [3, 4, 5, 6, 7, 8, 9]);
+  } else if (process.argv.includes('--allow-missing-clerk-rates')) {
+    console.warn('Sheet5 missing — proceeding WITHOUT set-type clerk rates (--allow-missing-clerk-rates).');
+  } else {
+    console.error(
+      'Sheet5 (set-type clerk rates) not found in the workbook. Re-run with ' +
+        '--allow-missing-clerk-rates to seed without them.',
+    );
+    process.exit(1);
   }
 
   // De-dupe on the unique key (region, courtLevel, flow, yearBand, setType).
+  // Audit 6.3: warn when two source rows collapse onto the same key with
+  // DIFFERENT amounts (the bespoke Case Search bands are known to collide;
+  // last-write-wins must at least be visible).
   const byKey = new Map<string, RuleDraft>();
   for (const d of DRAFTS) {
     const k = `${d.region}|${d.courtLevel}|${d.flow}|${d.yearBand}|${d.setType ?? ''}`;
+    const prev = byKey.get(k);
+    if (prev && (prev.basePrice !== d.basePrice || prev.availability !== d.availability)) {
+      console.warn(
+        `Collision on ${k}: ${prev.basePrice} (avail=${prev.availability}) → ` +
+          `${d.basePrice} (avail=${d.availability}) — keeping the later row.`,
+      );
+    }
     // Last-write wins; the order above is deterministic.
     byKey.set(k, d);
   }
@@ -457,38 +514,65 @@ async function main() {
   const drafts = [...byKey.values()];
   console.log(`Parsed ${DRAFTS.length} rule drafts → ${drafts.length} unique combinations.`);
 
-  await prisma.$transaction([
-    prisma.pricingRule.deleteMany({}),
-  ]);
-  console.log('Wiped existing PricingRule rows.');
-
-  let inserted = 0;
-  for (const d of drafts) {
-    const range = YEAR_BAND_RANGES[d.yearBand];
-    const name = buildName(d);
-    await prisma.pricingRule.create({
-      data: {
-        name,
-        flow: d.flow,
-        courtLevel: d.courtLevel,
-        region: d.region,
-        yearBand: d.yearBand,
-        yearFrom: range.yearFrom,
-        yearTo: range.yearTo,
-        setType: d.setType,
-        basePrice: d.availability && d.basePrice != null ? d.basePrice : 0,
-        availability: d.availability,
-        clerkBaseCost: d.clerkBaseCost ?? null,
-        pdfSurchargeAmount: d.pdfSurchargeAmount,
-        deliveryGuyFee: d.deliveryGuyFee,
-        isLegacy: true,
-        isActive: true,
-        priority: d.setType ? 10 : d.yearBand === 'current' || d.yearBand === 'pending' ? 0 : 5,
-      },
-    });
-    inserted++;
+  // Audit 6.2: row-count floor — the scrapers refuse to overwrite on a count
+  // drop; the pricing seed (which wipes ~390 PROD rules) had no such guard. A
+  // shifted sheet that silently parses to a handful of rows must abort BEFORE
+  // the wipe.
+  const MIN_TOTAL_DRAFTS = 350;
+  if (drafts.length < MIN_TOTAL_DRAFTS) {
+    console.error(
+      `Only ${drafts.length} unique rule drafts parsed (< floor of ${MIN_TOTAL_DRAFTS}). ` +
+        'The sheet layout has probably shifted — refusing to wipe PricingRule.',
+    );
+    process.exit(1);
   }
-  console.log(`Seeded ${inserted} pricing rules.`);
+
+  const rows = drafts.map((d) => {
+    const range = YEAR_BAND_RANGES[d.yearBand];
+    return {
+      name: buildName(d),
+      flow: d.flow,
+      courtLevel: d.courtLevel,
+      region: d.region,
+      yearBand: d.yearBand,
+      yearFrom: range.yearFrom,
+      yearTo: range.yearTo,
+      setType: d.setType,
+      basePrice: d.availability && d.basePrice != null ? d.basePrice : 0,
+      availability: d.availability,
+      clerkBaseCost: d.clerkBaseCost ?? null,
+      pdfSurchargeAmount: d.pdfSurchargeAmount,
+      deliveryGuyFee: d.deliveryGuyFee,
+      isLegacy: true,
+      isActive: true,
+      priority: d.setType ? 10 : d.yearBand === 'current' || d.yearBand === 'pending' ? 0 : 5,
+    };
+  });
+
+  // Non-judicial physical-document copies (owner rates 2026-06-12). The xlsx
+  // grid is judicial court-tier shaped and carries no rows for these, so the
+  // flat per-flow base fees are injected from the shared row-builder (single
+  // source, shared with seed-non-judicial-pricing.ts) as null-dimension rules
+  // that match any derived region / FIR-year band. SPLIT flows: this base
+  // bills at intake; printing/delivery are the clerk-entered phase-2 remainder.
+  const nonJudicialRows = buildNonJudicialPricingRows();
+
+  const allRows = [...rows, ...nonJudicialRows];
+
+  // Audit 6.1: wipe + insert in ONE transaction — a dropped connection
+  // mid-run used to leave PricingRule empty/partial in prod (every intake
+  // then fails "No pricing rule matched").
+  await prisma.$transaction(
+    async (tx) => {
+      await tx.pricingRule.deleteMany({});
+      await tx.pricingRule.createMany({ data: allRows });
+    },
+    { timeout: 120_000 },
+  );
+  console.log(
+    `Seeded ${allRows.length} pricing rules (${rows.length} judicial + ` +
+      `${nonJudicialRows.length} non-judicial; atomic wipe + insert).`,
+  );
 }
 
 function buildName(d: RuleDraft): string {

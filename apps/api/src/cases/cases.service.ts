@@ -13,7 +13,15 @@ import { FilterCasesDto } from './dto/filter-cases.dto';
 import { UpdateCaseStatusDto } from './dto/update-case-status.dto';
 import { CreateCaseTicketDto } from './dto/create-case-ticket.dto';
 import { Prisma } from '@prisma/client';
-import { recommendationsForCase, isFlowKey, type FlowKey } from '@wusuq/shared';
+import {
+  recommendationsForCase,
+  isFlowKey,
+  isConsumerRole,
+  type FlowKey,
+} from '@wusuq/shared';
+
+/** Caller identity for ownership scoping on by-id case endpoints. */
+type CaseCaller = { userId?: string; role?: string };
 
 @Injectable()
 export class CasesService {
@@ -170,7 +178,25 @@ export class CasesService {
     };
   }
 
-  async findOne(id: string) {
+  /**
+   * Consumer-class callers (consumer/lawyer/company) only ever see their own
+   * cases — 404 (not 403) so foreign case ids cannot be probed for existence
+   * (audit 3.3b). Staff and undeclared (internal) callers are unscoped.
+   */
+  private ensureCaseVisible(
+    caseRec: { consumerId: string },
+    caller?: CaseCaller,
+  ) {
+    if (
+      caller?.userId &&
+      isConsumerRole(caller.role) &&
+      caseRec.consumerId !== caller.userId
+    ) {
+      throw new NotFoundException('Case not found');
+    }
+  }
+
+  async findOne(id: string, caller?: CaseCaller) {
     const caseRec = await this.prisma.case.findFirst({
       where: { id, deletedAt: null },
       include: {
@@ -189,6 +215,7 @@ export class CasesService {
     if (!caseRec) {
       throw new NotFoundException('Case not found');
     }
+    this.ensureCaseVisible(caseRec, caller);
 
     return caseRec;
   }
@@ -196,8 +223,20 @@ export class CasesService {
   async updateCase(
     id: string,
     dto: UpdateCaseDto,
-    actor?: { actorUserId?: string; actorEmail?: string },
+    actor?: { actorUserId?: string; actorEmail?: string; actorRole?: string },
   ) {
+    const caseRec = await this.prisma.case.findFirst({
+      where: { id, deletedAt: null },
+      select: { id: true, consumerId: true },
+    });
+    if (!caseRec) {
+      throw new NotFoundException('Case not found');
+    }
+    this.ensureCaseVisible(caseRec, {
+      userId: actor?.actorUserId,
+      role: actor?.actorRole,
+    });
+
     const updated = await this.prisma.case.update({
       where: { id },
       data: dto,
@@ -227,7 +266,7 @@ export class CasesService {
   async updateStatus(
     id: string,
     dto: UpdateCaseStatusDto,
-    actor?: { actorUserId?: string; actorEmail?: string },
+    actor?: { actorUserId?: string; actorEmail?: string; actorRole?: string },
   ) {
     const caseRec = await this.prisma.case.findFirst({
       where: { id, deletedAt: null },
@@ -235,6 +274,10 @@ export class CasesService {
     if (!caseRec) {
       throw new NotFoundException('Case not found');
     }
+    this.ensureCaseVisible(caseRec, {
+      userId: actor?.actorUserId,
+      role: actor?.actorRole,
+    });
 
     if (caseRec.status === dto.status) {
       return caseRec;
@@ -290,7 +333,7 @@ export class CasesService {
 
   async deleteCase(
     id: string,
-    actor?: { actorUserId?: string; actorEmail?: string },
+    actor?: { actorUserId?: string; actorEmail?: string; actorRole?: string },
   ) {
     const caseRec = await this.prisma.case.findFirst({
       where: { id, deletedAt: null },
@@ -298,6 +341,10 @@ export class CasesService {
     if (!caseRec) {
       throw new NotFoundException('Case not found');
     }
+    this.ensureCaseVisible(caseRec, {
+      userId: actor?.actorUserId,
+      role: actor?.actorRole,
+    });
 
     // Soft delete: preserves history (events, tickets, audit log) and is
     // reversible. Hard purge is a separate admin op (out of scope).
@@ -318,8 +365,8 @@ export class CasesService {
     return { deleted: true, id };
   }
 
-  async getCaseTimeline(id: string) {
-    await this.findOne(id);
+  async getCaseTimeline(id: string, caller?: CaseCaller) {
+    await this.findOne(id, caller);
 
     return this.prisma.caseEvent.findMany({
       where: { caseId: id },
@@ -338,13 +385,14 @@ export class CasesService {
     });
   }
 
-  async getCaseSummary(id: string) {
+  async getCaseSummary(id: string, caller?: CaseCaller) {
     const caseRec = await this.prisma.case.findFirst({
       where: { id, deletedAt: null },
       include: { tickets: true },
     });
 
     if (!caseRec) throw new NotFoundException('Case not found');
+    this.ensureCaseVisible(caseRec, caller);
 
     const totalTickets = caseRec.tickets.length;
     const pending = caseRec.tickets.filter(
@@ -413,12 +461,16 @@ export class CasesService {
   async createCaseTicket(
     caseId: string,
     dto: CreateCaseTicketDto,
-    actor?: { actorUserId?: string; actorEmail?: string },
+    actor?: { actorUserId?: string; actorEmail?: string; actorRole?: string },
   ) {
     const caseRec = await this.prisma.case.findFirst({
       where: { id: caseId, status: 'OPEN', deletedAt: null },
     });
     if (!caseRec) throw new BadRequestException('Case must exist and be OPEN');
+    this.ensureCaseVisible(caseRec, {
+      userId: actor?.actorUserId,
+      role: actor?.actorRole,
+    });
 
     const service = await this.prisma.service.findUnique({
       where: { id: dto.serviceId },
@@ -511,7 +563,14 @@ export class CasesService {
     return ticketWithService;
   }
 
-  async listCaseTickets(caseId: string) {
+  async listCaseTickets(caseId: string, caller?: CaseCaller) {
+    const caseRec = await this.prisma.case.findFirst({
+      where: { id: caseId, deletedAt: null },
+      select: { id: true, consumerId: true },
+    });
+    if (!caseRec) throw new NotFoundException('Case not found');
+    this.ensureCaseVisible(caseRec, caller);
+
     return this.prisma.ticket.findMany({
       where: { caseId },
       orderBy: { createdAt: 'desc' },
@@ -531,8 +590,8 @@ export class CasesService {
    * CONTEXT_DRIFT_DETECTED event exists for a field with no later
    * CONTEXT_RESOLVED event for the same field.
    */
-  async getUnresolvedDrifts(caseId: string) {
-    await this.findOne(caseId);
+  async getUnresolvedDrifts(caseId: string, caller?: CaseCaller) {
+    await this.findOne(caseId, caller);
     const events = await this.prisma.caseEvent.findMany({
       where: {
         caseId,
@@ -588,8 +647,12 @@ export class CasesService {
     caseId: string,
     eventId: string,
     source: 'CASE' | 'TICKET',
-    actor?: { actorUserId?: string; actorEmail?: string },
+    actor?: { actorUserId?: string; actorEmail?: string; actorRole?: string },
   ) {
+    await this.findOne(caseId, {
+      userId: actor?.actorUserId,
+      role: actor?.actorRole,
+    });
     const event = await this.prisma.caseEvent.findFirst({
       where: { id: eventId, caseId, type: 'CONTEXT_DRIFT_DETECTED' },
     });
@@ -647,9 +710,12 @@ export class CasesService {
   async trackRecommendationClick(
     caseId: string,
     body: { flowKey: string; surface?: string },
-    actor?: { actorUserId?: string; actorEmail?: string },
+    actor?: { actorUserId?: string; actorEmail?: string; actorRole?: string },
   ) {
-    await this.findOne(caseId);
+    await this.findOne(caseId, {
+      userId: actor?.actorUserId,
+      role: actor?.actorRole,
+    });
     if (!isFlowKey(body.flowKey)) {
       throw new BadRequestException('Unknown flowKey');
     }
@@ -673,8 +739,8 @@ export class CasesService {
    * state (Option D filter — see spec). Pure function of state; no
    * persistence.
    */
-  async getRecommendations(caseId: string) {
-    await this.findOne(caseId);
+  async getRecommendations(caseId: string, caller?: CaseCaller) {
+    await this.findOne(caseId, caller);
 
     const tickets = await this.prisma.ticket.findMany({
       where: { caseId },

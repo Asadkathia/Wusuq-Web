@@ -665,6 +665,11 @@ const caseFilesSteps: IntakeStep[] = [
         key: 'decided_date',
         label: 'Decided Date',
         type: 'date',
+        // Audit 5.3: required for Decided cases (the showWhen gate keeps it
+        // out of Pending/Unknown submissions). withDerivedYear backfills
+        // payload.year from this value, so the Special-Court validator's
+        // case_year requirement is always satisfiable for Decided cases.
+        required: true,
         showWhen: { field: 'case_status', value: 'Decided Case' },
         hint: 'Date the case was decided, per the final court order.',
       },
@@ -860,6 +865,11 @@ const caseInformationSteps: IntakeStep[] = [
         key: 'decided_date',
         label: 'Decided Date',
         type: 'date',
+        // Audit 5.3: required for Decided cases (the showWhen gate keeps it
+        // out of Pending/Unknown submissions). withDerivedYear backfills
+        // payload.year from this value, so the Special-Court validator's
+        // case_year requirement is always satisfiable for Decided cases.
+        required: true,
         showWhen: { field: 'case_status', value: 'Decided Case' },
         hint: 'Date the case was decided, per the final court order.',
       },
@@ -1291,6 +1301,10 @@ const powerOfAttorneySteps: IntakeStep[] = [
         type: 'select',
         required: true,
         options: [],
+        // Audit 5.5: lock-step with REQUIRED_FIELDS_OPTIONAL_BY_TIER
+        // .judicial_power_of_attorney — the BE only requires case_type at
+        // Special Court (every other tier drops it).
+        requiredByCourtTier: { lower: false, high: false, special: true, shariat: false, supreme: false, fcc: false },
         hint: "Pick the case category as printed on the petition or order sheet. Choose 'Other' if your category isn't listed.",
       },
       {
@@ -1307,16 +1321,18 @@ const powerOfAttorneySteps: IntakeStep[] = [
         label: 'Case No',
         type: 'text',
         required: true,
-        // 5-24-26 #16: Lower Court never requires case number/year. BE already
-        // drops both in REQUIRED_FIELDS_OPTIONAL_BY_TIER.judicial_power_of_attorney.lower.
-        requiredByCourtTier: { lower: false },
+        // Audit 5.5: BE drops case_petition_no at Lower AND Special — mirror
+        // both so the matrices stay in lock-step (was lower-only: FE-stricter,
+        // safe direction, but drift is drift).
+        requiredByCourtTier: { lower: false, special: false },
       },
       {
         key: 'year',
         label: 'Year',
         type: 'year_select',
         required: true,
-        requiredByCourtTier: { lower: false },
+        // Audit 5.5: BE requires case_year only at Special Court.
+        requiredByCourtTier: { lower: false, high: false, special: true, shariat: false, supreme: false, fcc: false },
         hint: 'Year the case was filed (per the order sheet or petition heading).',
       },
       { key: 'case_title', label: 'Case Title', type: 'text', required: true },

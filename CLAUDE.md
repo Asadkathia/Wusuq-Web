@@ -2,9 +2,11 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Graphify-first exploration (mandatory)
+## Graphify-first exploration (when the graph exists)
 
-Before using `find`, `grep`, Glob, the Explore subagent, or reading multiple files to understand system architecture, structure, or how components connect, you **must** first consult `graphify-out/` at the repo root:
+**Note (2026-06-12): `graphify-out/` is currently absent from the repo — use normal filesystem search until someone re-runs `/graphify .`.** When the artifacts exist, the rule below applies.
+
+Before using `find`, `grep`, Glob, the Explore subagent, or reading multiple files to understand system architecture, structure, or how components connect, first consult `graphify-out/` at the repo root:
 
 1. `graphify-out/GRAPH_REPORT.md` — community labels, god nodes, surprising cross-module edges, suggested questions
 2. `graphify-out/graph.json` — full node/edge graph (load it to find which file/community owns a concern)
@@ -74,16 +76,20 @@ pnpm prisma:seed            # Seed default super admin (local only)
 cd apps/api && npx ts-node --esm scripts/seed-geo.ts
 ```
 - Special courts seat at the DISTRICT level only (`SPECIAL_COURT_DISTRICTS` + `resolveSpecialCourtSeatCityIds` in `court-alias.ts`) — one seat city per district, never every tehsil.
-- `CITY_ALIAS` maps court-JSON city names like `"Babuzai (Swat)"` to the bare `GeoCity` name; a wrong alias silently leaves a tehsil with no Lower Court. Re-run `seed-geo.ts` after editing either.
+- `CITY_ALIAS` maps court-JSON city names like `"Babuzai (Swat)"` to the bare `GeoCity` name; a wrong alias would leave a tehsil with no Lower Court. Since 2026-06 `seed-geo.ts` **exits 1 and rolls the whole transaction back** on any unresolved alias/special-district (pass `--allow-unresolved` to accept gaps), and the entire truncate+rebuild is one transaction. Re-run `seed-geo.ts` after editing either.
 - **City picker search is district/province-aware** (`matchesCitySearch` in `intake-wizard/service-geo-blocks.tsx` matches the tile `subtext` = `district · province`, not just the city name). This is required because ~28 districts have NO `GeoCity` named after the district (their cities are tehsils — e.g. Hunza → Aliabad/Gojal, Swat → Mingora/Babuzai); without district matching those districts are unfindable by name. Don't regress the search to label-only, and don't "fix" it by inserting synthetic district-named cities into the seed.
 - **Court-less cities show "No courts available", never an infinite spinner (2026-06).** The court picker's loading state is driven by `cityCourtsLoaded` (the courts fetch RESOLVED) — NOT by `cityCourtGroups.length === 0`, which conflated "still loading" with "genuinely no courts" and span forever for any city with zero `CourtSeat` rows. All three `/geo/cities/:id/courts` fetch sites in `intake-wizard.tsx` set `cityCourtsLoaded` false-before / true-in-`finally`, and a monotonic `cityCourtsReqRef` discards stale responses on rapid city switches. This surfaced a real data anomaly: a stray district-named `GeoCity` "Hunza" (added after the main seed; the current seed aliases court-JSON `Hunza → Aliabad` via `CITY_ALIAS`, so it never creates a "Hunza" city) has no court seats — its courts live on Aliabad/Gojal. That rogue row should be deleted from the DB; the seed only upserts, so it won't recreate it.
 
 ### Catalogue & pricing seeds
 ```bash
 # Pricing — re-run after editing apps/api/data/pricing-sheet.xlsx (the
-# canonical price list). Wipes PricingRule + re-inserts ~390 rules.
+# canonical price list). Wipes PricingRule + re-inserts ~390 rules in ONE
+# transaction. Safety rails (2026-06): unparseable cells throw; every parse
+# block must contribute > 0 drafts; total floor of 350 drafts before the
+# wipe; a missing Sheet5 (clerk rates) aborts unless
+# --allow-missing-clerk-rates; key collisions with differing amounts warn.
 cd apps/api && npx tsx scripts/seed-pricing.ts
-npx tsx scripts/smoke-pricing.ts   # 5 worked examples from the xlsx
+npx tsx scripts/smoke-pricing.ts   # 9 worked examples; asserts matched+available and exits 1 on any FAIL
 
 # Case-type catalogue — re-run after a scraper update. Wipes
 # CourtCaseType + re-inserts ~3,500 rows from JSON sources + the
@@ -110,6 +116,10 @@ cd apps/api && npx tsx scripts/scrape-case-types/scrape-scp.ts
 ### RBAC
 Roles and permissions are defined in `packages/shared`. The mapping `ROLE_PERMISSIONS` is the single source of truth consumed by both the API's `PermissionsGuard` and the frontend nav/feature visibility. When adding a new permission, update the shared package and rebuild it.
 
+- **Ticket permission split (2026-06).** `tickets.write` is **staff-only** ticket administration (status, override, assign, send-back, patch, regenerate, bulk). Consumer-class roles (consumer/lawyer/company) hold `tickets.create` (intake endpoints + draft mutations) instead; representatives hold `tickets.clerk` (accept/reject assignment, clerk receipt/costs/charges, dispatch, document upload, record next-hearing). Never grant consumer-class roles `tickets.write` again — that was the 3.2 privilege-escalation audit finding.
+- **Role comparisons go through `isConsumerRole()` / `isStaffRole()` from `@wusuq/shared`.** `JwtUser.role` is the lowercase shared `UserRole`; the Prisma enum spelling is UPPERCASE. A literal `role === 'CONSUMER'` comparison is silently always-false — that dead guard was the root cause of the full-ticket IDOR (audit 3.1). `representative` is deliberately NOT consumer-class: clerks don't own tickets, they're scoped to their assignments (and `ensureClerkActionAllowed` binds every clerk lifecycle action to the active assignee; staff exempt).
+- Consumer-class callers get 404 (not 403) on foreign tickets/cases so ids can't be probed; `findOne` redacts `clerkCost`/`defaultClerkCost`/`clerkReport`/`dispatchProofUrl`/rep phone for consumers.
+
 ### API Request Pipeline
 ```
 Helmet → CORS → Body parser (10 MB) → ValidationPipe (whitelist, transform)
@@ -118,11 +128,20 @@ Helmet → CORS → Body parser (10 MB) → ValidationPipe (whitelist, transform
 
 ### Database Schema Key Points
 - Geo hierarchy: `GeoProvince → GeoDistrict → GeoCity → CourtSeat`
-- Ticket lifecycle: `PENDING → ASSIGNED → IN_PROGRESS → WAITING_APPROVAL → COMPLETED → DELIVERED`
+- Ticket lifecycle: `UNPAID → PAID → ASSIGNED → IN_PROGRESS → WAITING_APPROVAL → COMPLETED → DELIVERED` (there is no PENDING; the UNPAID → PAID flip is the payment gate itself)
 - Clerk approval: separate state machine `PENDING → SUBMITTED → VERIFIED / REJECTED`
 - **Streamlined review tail (2026-06).** Clerk "Submit to Admin" (`submitClerkReceipt`) advances `IN_PROGRESS → WAITING_APPROVAL`. The admin then does ONE `reviewAndComplete` (the "Review & Complete" button) that verifies the receipt + finalizes phase-2 charges (reuses `finalizeRemainder` math) + completes — and auto-advances **digital** flows to `DELIVERED` when fully paid. `sendBackToClerk` (WAITING_APPROVAL → IN_PROGRESS) is the reject path. Don't reintroduce separate Verify-Receipt / Finalize / Approve buttons.
 - **Physical-dispatch sub-state (2026-06).** `Ticket.deliveryStatus` enum `PENDING → DISPATCHED` (+ `dispatchProofUrl`, `trackingNo`) tracks the clerk sending physical files. Clerk `dispatchDelivery` (from `COMPLETED`, physical flow only) sets `DISPATCHED`; the admin's "Confirm delivered" (→ `DELIVERED`) is the verification. The `DELIVERED` gate requires `deliveryStatus = DISPATCHED` AND `isFullyPaid` for physical flows; `isFullyPaid` only for digital. Only physical-document flows (`chargeCapabilitiesFor(flow).delivery`) use this.
 - Every sensitive auth action is written to `AuditLog`
+- **Never read-then-write `Ticket.status` (2026-06, audit 2.1).** Every transition is a CONDITIONAL `updateMany({ where: { id, status: expectedFrom } })` with the history row written in the same `$transaction`; `count === 0` → `ConflictException` (409). This holds for `updateStatus`, `assign`, `acceptAssignment`, `rejectAssignment`, `submitClerkReceipt`, `submitClerkCosts`, `reviewAndComplete`, `sendBackToClerk`, `dispatchDelivery` (also conditional on `deliveryStatus`) and `overrideStatus`. `overrideStatus` may skip transition ORDER but not the money/dispatch gates on DELIVERED — except for **super-admin**, who may bypass even those (owner decision 2026-06-12; the bypass is stamped `superAdminBypass: true` in the audit row).
+- **`reviewAndComplete` is one transaction** (finalize via `finalizeRemainderCore` + verify + complete + auto-deliver); wallet settlement runs after commit (its own locks would deadlock inside). `finalizeRemainder` defaults absent dto charge fields to the PERSISTED clerk-entered columns (never 0) and finalizes at most once (conditional on `remainderFinalizedAt IS NULL`). When the finalized total drops below `amountPaid` (charges corrected down after a wallet settlement), the surplus **auto-credits back to the consumer's wallet** as a VERIFIED `ADMIN_ADJUSTMENT` ledger row and the ticket's `amountPaid` steps down to the new total — finalize/reviewAndComplete take the USER row lock BEFORE the ticket lock (same order as wallet settlement) so this credit can't deadlock; don't reorder those locks.
+- **Intake idempotency (audit 1.9).** The wizard sends one `requestId` UUID per submit attempt; it lands on the unique `Ticket.intakeRequestId`. A replay (double-click/network retry) returns the original ticket instead of creating a duplicate that wallet settlement would also pay. Ticket + initial history row are created in one transaction.
+- **`createIntakeTicket` fails loudly on unpriced flows (audit 1.4):** a flow with NO active pricing rules rejects intake unless `ALLOW_UNPRICED_INTAKE=true`.
+- **Non-judicial base rates (owner 2026-06-12).** Copy of FIR = Rs 2,000, Registry/Deed = Rs 3,500, Criminal Record Search = Rs 2,000 — flat, region-agnostic. They live in `NON_JUDICIAL_BASE_RATES` (`@wusuq/shared`, re-exported from `pricing.service.ts`), NOT the xlsx (whose grid is judicial court-tier shaped); `seed-pricing.ts` injects them as `courtLevel/region/yearBand/setType = null` rules (match any region + any FIR-year band). SPLIT flows: base bills at intake, printing/delivery are the clerk phase-2 remainder. Add any new non-judicial service's rate to that constant + re-seed.
+- **Bulk ticket "delete" is a soft archive** (`Ticket.archivedAt`, audit 4.2): archived tickets are excluded from `findAll`, wallet dues and auto-settlement; money FKs stay intact. There is no hard-delete path.
+- **For ONE_TIME (digital) flows the resolver's `serviceCost` IS the full intake-billed amount** (Case Search city multiplier + search-both surcharge folded in, audit 1.2), so `serviceCost === total` for digital flows and every component-sum recompute of `totalAmount` (`assign`, `finance.updateCharge`) plus the `isBaseCovered` PAID gate stay quote-consistent. SPLIT flows keep the un-multiplied phase-1 base. Don't reintroduce a `serviceCost` that excludes per-city multiplication.
+- **`regenerate` RE-RESOLVES the price** (owner decision 2026-06-12): the clone is a new sale at the current price list — priced through `buildPricingResolveInput`, phase-2 clerk charge columns reset to 0, `amountPaid: 0` (audit 1.8 — no backing money rows). Re-pricing failures reject loudly (same guards as intake); legacy tickets without `intakeFlow`/`formPayload` fall back to the copied totals.
+- **Payments module is partial-payment-safe (audit 1.6):** `initiate` charges remaining due (`total − paid`); the webhook flips `Payment` INITIATED→SUCCESS conditionally (idempotency) and INCREMENTS `amountPaid` under a ticket row lock; the mock provider cannot boot in production (`PAYMENT_PROVIDER` must name a real provider) and `mock/:txn/resolve` is disabled there.
 
 ### Frontend Route Structure
 ```
@@ -224,7 +243,11 @@ Both `/consumer/login` and `/consumer/signup` use the shared `CountryPicker` (`c
 
 Default super admin created by `pnpm prisma:seed`:
 - Email: `superadmin@wusuq.com`
-- Password: `password`
+- Password: `SEED_ADMIN_PASSWORD` env var (falls back to `password` for local dev only)
+
+Seed safety (2026-06, audit 4.3): the seed **never overwrites an existing
+user's passwordHash** and refuses to run in production without
+`SEED_ADMIN_PASSWORD` set.
 
 ## Deferred work
 

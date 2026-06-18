@@ -53,229 +53,251 @@ const POLICE_STATION_SEED: Record<string, string[]> = {
 };
 
 async function main() {
-  console.log('Starting geo seed (bulk mode) for all Pakistan provinces...\n');
+  // Audit 6.1: the entire truncate + rebuild runs in ONE transaction — a
+  // dropped Neon connection mid-run used to leave the whole geo hierarchy
+  // empty/partial in prod (wizard dead). Generous timeout: the rebuild does
+  // hundreds of inserts.
+  await prisma.$transaction(
+    async (tx) => {
+      console.log('Starting geo seed (bulk mode) for all Pakistan provinces...\n');
 
-  console.log('Truncating existing geo data...');
-  await prisma.$executeRawUnsafe(`
-    TRUNCATE TABLE
-      "CourtSeat",
-      "Court",
-      "GeoPoliceStation",
-      "GeoCity",
-      "GeoDistrict",
-      "GeoProvince"
-    RESTART IDENTITY CASCADE
-  `);
-  console.log('Truncated.\n');
+      console.log('Truncating existing geo data...');
+      await tx.$executeRawUnsafe(`
+        TRUNCATE TABLE
+          "CourtSeat",
+          "Court",
+          "GeoPoliceStation",
+          "GeoCity",
+          "GeoDistrict",
+          "GeoProvince"
+        RESTART IDENTITY CASCADE
+      `);
+      console.log('Truncated.\n');
 
-  const totals = { provinces: 0, districts: 0, cities: 0, courts: 0, courtSeats: 0, policeStations: 0 };
+      const totals = { provinces: 0, districts: 0, cities: 0, courts: 0, courtSeats: 0, policeStations: 0 };
 
-  // 1. Provinces / districts / cities / stations.
-  for (const prov of PAKISTAN_GEO) {
-    process.stdout.write(`Seeding ${prov.name}...`);
+      // 1. Provinces / districts / cities / stations.
+      for (const prov of PAKISTAN_GEO) {
+        process.stdout.write(`Seeding ${prov.name}...`);
 
-    const province = await prisma.geoProvince.create({ data: { name: prov.name } });
-    totals.provinces++;
+        const province = await tx.geoProvince.create({ data: { name: prov.name } });
+        totals.provinces++;
 
-    await prisma.geoDistrict.createMany({
-      data: prov.districts.map((d) => ({ provinceId: province.id, name: d.name })),
-    });
-    totals.districts += prov.districts.length;
+        await tx.geoDistrict.createMany({
+          data: prov.districts.map((d) => ({ provinceId: province.id, name: d.name })),
+        });
+        totals.districts += prov.districts.length;
 
-    const dbDistricts = await prisma.geoDistrict.findMany({
-      where: { provinceId: province.id },
-      select: { id: true, name: true },
-    });
-    const districtIdByName = new Map(dbDistricts.map((d) => [d.name, d.id]));
+        const dbDistricts = await tx.geoDistrict.findMany({
+          where: { provinceId: province.id },
+          select: { id: true, name: true },
+        });
+        const districtIdByName = new Map(dbDistricts.map((d) => [d.name, d.id]));
 
-    const cityRows: { districtId: string; name: string }[] = [];
-    for (const dist of prov.districts) {
-      const districtId = districtIdByName.get(dist.name)!;
-      for (const cityName of dist.cities) {
-        cityRows.push({ districtId, name: cityName });
-      }
-    }
-    await prisma.geoCity.createMany({ data: cityRows });
-    totals.cities += cityRows.length;
-
-    const dbCities = await prisma.geoCity.findMany({
-      where: { districtId: { in: dbDistricts.map((d) => d.id) } },
-      select: { id: true, name: true, districtId: true },
-    });
-    const cityIdByDistrictAndName = new Map(dbCities.map((c) => [`${c.districtId}:${c.name}`, c.id]));
-
-    const stationRows: { cityId: string; name: string }[] = [];
-    const provinceStations = RAW_POLICE_STATIONS_BY_PROVINCE[prov.name as keyof typeof RAW_POLICE_STATIONS_BY_PROVINCE] as Record<string, string[]> | undefined;
-
-    for (const dist of prov.districts) {
-      const districtId = districtIdByName.get(dist.name)!;
-      const districtStations = provinceStations?.[dist.name] ?? [];
-
-      for (const cityName of dist.cities) {
-        const cityId = cityIdByDistrictAndName.get(`${districtId}:${cityName}`);
-        if (!cityId) continue;
-        const stations = districtStations.length > 0
-          ? districtStations
-          : (POLICE_STATION_SEED[cityName] ?? []);
-        for (const stationName of stations) {
-          stationRows.push({ cityId, name: stationName });
+        const cityRows: { districtId: string; name: string }[] = [];
+        for (const dist of prov.districts) {
+          const districtId = districtIdByName.get(dist.name)!;
+          for (const cityName of dist.cities) {
+            cityRows.push({ districtId, name: cityName });
+          }
         }
-      }
-    }
-    if (stationRows.length > 0) {
-      await prisma.geoPoliceStation.createMany({ data: stationRows });
-      totals.policeStations += stationRows.length;
-    }
+        await tx.geoCity.createMany({ data: cityRows });
+        totals.cities += cityRows.length;
 
-    console.log(` done (${prov.districts.length} districts, ${cityRows.length} cities, ${stationRows.length} stations)`);
-  }
+        const dbCities = await tx.geoCity.findMany({
+          where: { districtId: { in: dbDistricts.map((d) => d.id) } },
+          select: { id: true, name: true, districtId: true },
+        });
+        const cityIdByDistrictAndName = new Map(dbCities.map((c) => [`${c.districtId}:${c.name}`, c.id]));
 
-  // 2. Courts + seats from pakistan-courts.json.
-  console.log('\nSeeding courts from pakistan-courts.json...');
-  const cityByProvince = new Map<string, Map<string, string>>();
-  const provinces = await prisma.geoProvince.findMany({
-    include: { districts: { include: { cities: { select: { id: true, name: true } } } } },
-  });
-  for (const prov of provinces) {
-    const map = new Map<string, string>();
-    for (const dist of prov.districts) {
-      for (const city of dist.cities) map.set(city.name.toLowerCase(), city.id);
-    }
-    cityByProvince.set(prov.name, map);
-  }
-  const globalCityByName = new Map<string, string>();
-  for (const m of cityByProvince.values()) {
-    for (const [k, v] of m.entries()) if (!globalCityByName.has(k)) globalCityByName.set(k, v);
-  }
+        const stationRows: { cityId: string; name: string }[] = [];
+        const provinceStations = RAW_POLICE_STATIONS_BY_PROVINCE[prov.name as keyof typeof RAW_POLICE_STATIONS_BY_PROVINCE] as Record<string, string[]> | undefined;
 
-  const unresolved = new Map<string, Set<string>>();
-  const seatRows: { courtId: string; cityId: string; isPrincipalSeat: boolean }[] = [];
+        for (const dist of prov.districts) {
+          const districtId = districtIdByName.get(dist.name)!;
+          const districtStations = provinceStations?.[dist.name] ?? [];
 
-  const courtIdByKey = new Map<string, string>();
-  const getOrCreateCourt = async (type: string, name: string) => {
-    const k = `${type}||${name}`;
-    const existing = courtIdByKey.get(k);
-    if (existing) return existing;
-    const court = await prisma.court.create({ data: { type, name } });
-    totals.courts++;
-    courtIdByKey.set(k, court.id);
-    return court.id;
-  };
-
-  for (const [courtType, subCourts] of Object.entries(COURTS_NESTED)) {
-    for (const [jsonSubCourtName, provinceMap] of Object.entries(subCourts)) {
-      for (const [jsonProvince, cityEntries] of Object.entries(provinceMap)) {
-        const canonical = PROVINCE_ALIAS[jsonProvince] ?? jsonProvince;
-        const provinceCities = cityByProvince.get(canonical);
-        for (const entry of cityEntries) {
-          // Fan-out: a metro JSON name like "Karachi" maps to multiple geo
-          // sub-cities. When fan-out applies, every resolved sub-city gets
-          // its own seat row.
-          const fanoutNames = CITY_FANOUT[entry.city];
-          const cityIds: string[] = [];
-          if (fanoutNames) {
-            for (const name of fanoutNames) {
-              const id =
-                provinceCities?.get(name.toLowerCase()) ??
-                globalCityByName.get(name.toLowerCase());
-              if (id) cityIds.push(id);
+          for (const cityName of dist.cities) {
+            const cityId = cityIdByDistrictAndName.get(`${districtId}:${cityName}`);
+            if (!cityId) continue;
+            const stations = districtStations.length > 0
+              ? districtStations
+              : (POLICE_STATION_SEED[cityName] ?? []);
+            for (const stationName of stations) {
+              stationRows.push({ cityId, name: stationName });
             }
-          } else {
-            const literalKey = entry.city.toLowerCase();
-            const aliased = CITY_ALIAS[entry.city] ?? entry.city;
-            const aliasedKey = aliased.toLowerCase();
-            const id =
-              provinceCities?.get(literalKey) ??
-              provinceCities?.get(aliasedKey) ??
-              globalCityByName.get(aliasedKey);
-            if (id) cityIds.push(id);
           }
-          if (cityIds.length === 0) {
-            const set = unresolved.get(canonical) ?? new Set<string>();
-            set.add(entry.city);
-            unresolved.set(canonical, set);
-            continue;
-          }
+        }
+        if (stationRows.length > 0) {
+          await tx.geoPoliceStation.createMany({ data: stationRows });
+          totals.policeStations += stationRows.length;
+        }
 
-          for (const cityId of cityIds) {
-            if (courtType === 'Lower Court') {
-              for (const sc of LOWER_COURT_SUBCOURTS) {
-                const courtId = await getOrCreateCourt(courtType, sc.name);
-                seatRows.push({ courtId, cityId, isPrincipalSeat: false });
+        console.log(` done (${prov.districts.length} districts, ${cityRows.length} cities, ${stationRows.length} stations)`);
+      }
+
+      // 2. Courts + seats from pakistan-courts.json.
+      console.log('\nSeeding courts from pakistan-courts.json...');
+      const cityByProvince = new Map<string, Map<string, string>>();
+      const provinces = await tx.geoProvince.findMany({
+        include: { districts: { include: { cities: { select: { id: true, name: true } } } } },
+      });
+      for (const prov of provinces) {
+        const map = new Map<string, string>();
+        for (const dist of prov.districts) {
+          for (const city of dist.cities) map.set(city.name.toLowerCase(), city.id);
+        }
+        cityByProvince.set(prov.name, map);
+      }
+      const globalCityByName = new Map<string, string>();
+      for (const m of cityByProvince.values()) {
+        for (const [k, v] of m.entries()) if (!globalCityByName.has(k)) globalCityByName.set(k, v);
+      }
+
+      const unresolved = new Map<string, Set<string>>();
+      const seatRows: { courtId: string; cityId: string; isPrincipalSeat: boolean }[] = [];
+
+      const courtIdByKey = new Map<string, string>();
+      const getOrCreateCourt = async (type: string, name: string) => {
+        const k = `${type}||${name}`;
+        const existing = courtIdByKey.get(k);
+        if (existing) return existing;
+        const court = await tx.court.create({ data: { type, name } });
+        totals.courts++;
+        courtIdByKey.set(k, court.id);
+        return court.id;
+      };
+
+      for (const [courtType, subCourts] of Object.entries(COURTS_NESTED)) {
+        for (const [jsonSubCourtName, provinceMap] of Object.entries(subCourts)) {
+          for (const [jsonProvince, cityEntries] of Object.entries(provinceMap)) {
+            const canonical = PROVINCE_ALIAS[jsonProvince] ?? jsonProvince;
+            const provinceCities = cityByProvince.get(canonical);
+            for (const entry of cityEntries) {
+              // Fan-out: a metro JSON name like "Karachi" maps to multiple geo
+              // sub-cities. When fan-out applies, every resolved sub-city gets
+              // its own seat row.
+              const fanoutNames = CITY_FANOUT[entry.city];
+              const cityIds: string[] = [];
+              if (fanoutNames) {
+                for (const name of fanoutNames) {
+                  const id =
+                    provinceCities?.get(name.toLowerCase()) ??
+                    globalCityByName.get(name.toLowerCase());
+                  if (id) cityIds.push(id);
+                }
+              } else {
+                const literalKey = entry.city.toLowerCase();
+                const aliased = CITY_ALIAS[entry.city] ?? entry.city;
+                const aliasedKey = aliased.toLowerCase();
+                const id =
+                  provinceCities?.get(literalKey) ??
+                  provinceCities?.get(aliasedKey) ??
+                  globalCityByName.get(aliasedKey);
+                if (id) cityIds.push(id);
               }
-            } else if (courtType === 'Special Court') {
-              // Special courts are seated at the district level after this JSON
-              // walk (see SPECIAL_COURT_DISTRICTS resolution below), not per
-              // JSON entry.
-              continue;
-            } else {
-              const courtId = await getOrCreateCourt(courtType, jsonSubCourtName);
-              seatRows.push({ courtId, cityId, isPrincipalSeat: entry.is_principal_seat });
+              if (cityIds.length === 0) {
+                const set = unresolved.get(canonical) ?? new Set<string>();
+                set.add(entry.city);
+                unresolved.set(canonical, set);
+                continue;
+              }
+
+              for (const cityId of cityIds) {
+                if (courtType === 'Lower Court') {
+                  for (const sc of LOWER_COURT_SUBCOURTS) {
+                    const courtId = await getOrCreateCourt(courtType, sc.name);
+                    seatRows.push({ courtId, cityId, isPrincipalSeat: false });
+                  }
+                } else if (courtType === 'Special Court') {
+                  // Special courts are seated at the district level after this JSON
+                  // walk (see SPECIAL_COURT_DISTRICTS resolution below), not per
+                  // JSON entry.
+                  continue;
+                } else {
+                  const courtId = await getOrCreateCourt(courtType, jsonSubCourtName);
+                  seatRows.push({ courtId, cityId, isPrincipalSeat: entry.is_principal_seat });
+                }
+              }
             }
           }
         }
       }
-    }
-  }
 
-  // Tehsil Lower-Court-only fan-out. Metro tehsils (Lahore Cantt/Model Town;
-  // Karachi South/East/West/North/Central) get the 4 canonical Lower Court
-  // sub-courts seated on them so consumers picking those tehsils see Lower
-  // Court only — the metro hub city retains the full court set.
-  for (const [parentCity, tehsils] of Object.entries(LOWER_COURT_ONLY_TEHSILS)) {
-    void parentCity;
-    for (const tehsil of tehsils) {
-      const cityId = globalCityByName.get(tehsil.toLowerCase());
-      if (!cityId) continue;
-      for (const sc of LOWER_COURT_SUBCOURTS) {
-        const courtId = await getOrCreateCourt('Lower Court', sc.name);
-        seatRows.push({ courtId, cityId, isPrincipalSeat: false });
+      // Tehsil Lower-Court-only fan-out. Metro tehsils (Lahore Cantt/Model Town;
+      // Karachi South/East/West/North/Central) get the 4 canonical Lower Court
+      // sub-courts seated on them so consumers picking those tehsils see Lower
+      // Court only — the metro hub city retains the full court set.
+      for (const [parentCity, tehsils] of Object.entries(LOWER_COURT_ONLY_TEHSILS)) {
+        void parentCity;
+        for (const tehsil of tehsils) {
+          const cityId = globalCityByName.get(tehsil.toLowerCase());
+          if (!cityId) continue;
+          for (const sc of LOWER_COURT_SUBCOURTS) {
+            const courtId = await getOrCreateCourt('Lower Court', sc.name);
+            seatRows.push({ courtId, cityId, isPrincipalSeat: false });
+          }
+        }
       }
-    }
-  }
 
-  // 2026-05-25 district-level special courts: special courts sit at the
-  // district seat only (one city per district), not in every tehsil. Resolve
-  // the canonical SPECIAL_COURT_DISTRICTS list to seat-city ids and seat the
-  // full SPECIAL_COURTS catalogue on each; these rows join seatRows and are
-  // deduped + bulk-inserted below.
-  const { cityIds: specialSeatCityIds, unresolved: unresolvedSpecial } =
-    resolveSpecialCourtSeatCityIds(globalCityByName);
-  for (const subName of SPECIAL_COURTS) {
-    const courtId = await getOrCreateCourt('Special Court', subName);
-    for (const cityId of specialSeatCityIds) {
-      seatRows.push({ courtId, cityId, isPrincipalSeat: false });
-    }
-  }
+      // 2026-05-25 district-level special courts: special courts sit at the
+      // district seat only (one city per district), not in every tehsil. Resolve
+      // the canonical SPECIAL_COURT_DISTRICTS list to seat-city ids and seat the
+      // full SPECIAL_COURTS catalogue on each; these rows join seatRows and are
+      // deduped + bulk-inserted below.
+      const { cityIds: specialSeatCityIds, unresolved: unresolvedSpecial } =
+        resolveSpecialCourtSeatCityIds(globalCityByName);
+      for (const subName of SPECIAL_COURTS) {
+        const courtId = await getOrCreateCourt('Special Court', subName);
+        for (const cityId of specialSeatCityIds) {
+          seatRows.push({ courtId, cityId, isPrincipalSeat: false });
+        }
+      }
 
-  if (seatRows.length > 0) {
-    // Deduplicate by (courtId, cityId) — a court can only sit once per city.
-    const seen = new Set<string>();
-    const deduped = seatRows.filter((r) => {
-      const k = `${r.courtId}:${r.cityId}`;
-      if (seen.has(k)) return false;
-      seen.add(k);
-      return true;
-    });
-    await prisma.courtSeat.createMany({ data: deduped });
-    totals.courtSeats = deduped.length;
-  }
+      if (seatRows.length > 0) {
+        // Deduplicate by (courtId, cityId) — a court can only sit once per city.
+        const seen = new Set<string>();
+        const deduped = seatRows.filter((r) => {
+          const k = `${r.courtId}:${r.cityId}`;
+          if (seen.has(k)) return false;
+          seen.add(k);
+          return true;
+        });
+        await tx.courtSeat.createMany({ data: deduped });
+        totals.courtSeats = deduped.length;
+      }
 
-  console.log('\nSeed complete:', totals);
-  console.log(
-    `Special courts seated on ${specialSeatCityIds.length} district seats.`,
+      console.log('\nSeed complete:', totals);
+      console.log(
+        `Special courts seated on ${specialSeatCityIds.length} district seats.`,
+      );
+      // Audit 6.3: an unresolved alias silently leaves a tehsil with no Lower
+      // Court (the exact failure CLAUDE.md warns about) — and this script used to
+      // print the list and exit 0. Throwing here rolls the WHOLE transaction back
+      // (audit 6.1), so a bad alias can never half-seed prod. Pass
+      // --allow-unresolved to accept the gaps explicitly.
+      const allowUnresolved = process.argv.includes('--allow-unresolved');
+      if (unresolved.size > 0) {
+        console.error('\nUnresolved cities (not in geo tree — courts skipped):');
+        for (const [province, cities] of unresolved.entries()) {
+          console.error(`  ${province}: ${Array.from(cities).sort().join(', ')}`);
+        }
+      }
+      if (unresolvedSpecial.length > 0) {
+        console.error(
+          `\nUnresolved special-court districts (no seat city — skipped): ${unresolvedSpecial.join(', ')}`,
+        );
+      }
+      if ((unresolved.size > 0 || unresolvedSpecial.length > 0) && !allowUnresolved) {
+        throw new Error(
+          'Unresolved geo aliases/special districts — fix CITY_ALIAS / ' +
+            'SPECIAL_COURT_DISTRICTS in court-alias.ts, or re-run with ' +
+            '--allow-unresolved to accept the gaps. (Transaction rolled back.)',
+        );
+      }
+    },
+    { timeout: 600_000, maxWait: 30_000 },
   );
-  if (unresolved.size > 0) {
-    console.log('\nUnresolved cities (not in geo tree — courts skipped):');
-    for (const [province, cities] of unresolved.entries()) {
-      console.log(`  ${province}: ${Array.from(cities).sort().join(', ')}`);
-    }
-  }
-  if (unresolvedSpecial.length > 0) {
-    console.log(
-      `\nUnresolved special-court districts (no seat city — skipped): ${unresolvedSpecial.join(', ')}`,
-    );
-  }
 }
 
 main()

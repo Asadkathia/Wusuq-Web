@@ -457,11 +457,13 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
     }
   };
 
-  // Clerk: accept assigned ticket → IN_PROGRESS
+  // Clerk: accept assigned ticket → IN_PROGRESS. Uses the dedicated
+  // accept-assignment endpoint (tickets.clerk + assignee-bound) — clerks no
+  // longer hold tickets.write, so the generic status PATCH would 403.
   const acceptTicket = async (ticket: TicketRow) => {
     if (!confirm(`Accept ticket ${ticket.batchNo}? This will move it to In Progress.`)) return;
     try {
-      await apiClient.patch(`/tickets/${ticket.id}/status`, { status: 'IN_PROGRESS' });
+      await apiClient.post(`/tickets/${ticket.id}/accept-assignment`, {});
       setMessage(`Ticket ${ticket.batchNo} accepted and moved to In Progress.`);
       loadTickets();
     } catch (error: any) {

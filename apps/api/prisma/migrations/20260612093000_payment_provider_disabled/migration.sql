@@ -1,0 +1,11 @@
+-- Audit 1.6 follow-up: PAYMENT_PROVIDER=disabled is the explicit production
+-- opt-out while no real gateway is integrated (the factory refuses to boot
+-- prod with the forgeable mock provider). The enum value only types the
+-- provider interface; no Payment row is ever written with it (initiate throws
+-- before any insert).
+--
+-- Isolated in its own migration: `ALTER TYPE ... ADD VALUE` is the form
+-- Postgres restricts inside a transaction that also uses the value, so Prisma
+-- generates enum additions as standalone migrations. Mixing it with table DDL
+-- in one file is the pattern that fails on some managed Postgres.
+ALTER TYPE "PaymentProviderName" ADD VALUE 'DISABLED';

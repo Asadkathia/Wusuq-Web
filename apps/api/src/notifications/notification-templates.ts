@@ -50,15 +50,14 @@ export const notificationTemplates = {
     title: `Receipt submitted — ${batchNo}`,
     body: `A clerk receipt for ticket ${batchNo} is awaiting verification.`,
   }),
-  ticketClerkReceiptDecidedForAssignee: (
+  ticketDispatchedForAdmin: (
     batchNo: string,
-    decision: 'VERIFIED' | 'REJECTED',
+    trackingNo?: string | null,
   ): Copy => ({
-    title: `Receipt ${decision.toLowerCase()} — ${batchNo}`,
-    body:
-      decision === 'VERIFIED'
-        ? `Your receipt for ticket ${batchNo} was verified.`
-        : `Your receipt for ticket ${batchNo} was rejected. Please resubmit.`,
+    title: `Package dispatched — ${batchNo}`,
+    body: trackingNo
+      ? `The clerk dispatched the files for ticket ${batchNo} (tracking ${trackingNo}). Confirm delivery once received.`
+      : `The clerk dispatched the files for ticket ${batchNo}. Confirm delivery once received.`,
   }),
   ticketDocumentUploadedForConsumer: (batchNo: string): Copy => ({
     title: `New document — ${batchNo}`,

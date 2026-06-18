@@ -8,6 +8,7 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
+import { isConsumerRole } from '@wusuq/shared';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { JwtUser } from '../auth/types/jwt-user.type';
 import { RequirePermissions } from '../roles-permissions/decorators/permissions.decorator';
@@ -40,8 +41,7 @@ export class CasesController {
     @Query() query: FilterCasesDto,
     @CurrentUser() user: JwtUser | undefined,
   ) {
-    const consumerRoles = ['consumer', 'lawyer', 'company'];
-    if (user && consumerRoles.includes(user.role)) {
+    if (user && isConsumerRole(user.role)) {
       query.consumerId = user.sub;
     }
     return this.casesService.findAll(query);
@@ -49,8 +49,11 @@ export class CasesController {
 
   @RequirePermissions('cases.read')
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.casesService.findOne(id);
+  findOne(@Param('id') id: string, @CurrentUser() user: JwtUser | undefined) {
+    return this.casesService.findOne(
+      id,
+      user ? { userId: user.sub, role: user.role } : undefined,
+    );
   }
 
   @RequirePermissions('cases.write')
@@ -63,6 +66,7 @@ export class CasesController {
     return this.casesService.updateCase(id, dto, {
       actorUserId: actor?.sub,
       actorEmail: actor?.email,
+      actorRole: actor?.role,
     });
   }
 
@@ -76,6 +80,7 @@ export class CasesController {
     return this.casesService.updateStatus(id, dto, {
       actorUserId: actor?.sub,
       actorEmail: actor?.email,
+      actorRole: actor?.role,
     });
   }
 
@@ -85,19 +90,26 @@ export class CasesController {
     return this.casesService.deleteCase(id, {
       actorUserId: actor?.sub,
       actorEmail: actor?.email,
+      actorRole: actor?.role,
     });
   }
 
   @RequirePermissions('cases.read')
   @Get(':id/timeline')
-  timeline(@Param('id') id: string) {
-    return this.casesService.getCaseTimeline(id);
+  timeline(@Param('id') id: string, @CurrentUser() user: JwtUser | undefined) {
+    return this.casesService.getCaseTimeline(
+      id,
+      user ? { userId: user.sub, role: user.role } : undefined,
+    );
   }
 
   @RequirePermissions('cases.read')
   @Get(':id/summary')
-  summary(@Param('id') id: string) {
-    return this.casesService.getCaseSummary(id);
+  summary(@Param('id') id: string, @CurrentUser() user: JwtUser | undefined) {
+    return this.casesService.getCaseSummary(
+      id,
+      user ? { userId: user.sub, role: user.role } : undefined,
+    );
   }
 
   @RequirePermissions('cases.write')
@@ -110,19 +122,32 @@ export class CasesController {
     return this.casesService.createCaseTicket(caseId, dto, {
       actorUserId: actor?.sub,
       actorEmail: actor?.email,
+      actorRole: actor?.role,
     });
   }
 
   @RequirePermissions('cases.read')
   @Get(':id/tickets')
-  listTickets(@Param('id') caseId: string) {
-    return this.casesService.listCaseTickets(caseId);
+  listTickets(
+    @Param('id') caseId: string,
+    @CurrentUser() user: JwtUser | undefined,
+  ) {
+    return this.casesService.listCaseTickets(
+      caseId,
+      user ? { userId: user.sub, role: user.role } : undefined,
+    );
   }
 
   @RequirePermissions('cases.read')
   @Get(':id/recommendations')
-  recommendations(@Param('id') caseId: string) {
-    return this.casesService.getRecommendations(caseId);
+  recommendations(
+    @Param('id') caseId: string,
+    @CurrentUser() user: JwtUser | undefined,
+  ) {
+    return this.casesService.getRecommendations(
+      caseId,
+      user ? { userId: user.sub, role: user.role } : undefined,
+    );
   }
 
   @RequirePermissions('cases.read')
@@ -135,13 +160,20 @@ export class CasesController {
     return this.casesService.trackRecommendationClick(caseId, body, {
       actorUserId: actor?.sub,
       actorEmail: actor?.email,
+      actorRole: actor?.role,
     });
   }
 
   @RequirePermissions('cases.read')
   @Get(':id/drifts')
-  drifts(@Param('id') caseId: string) {
-    return this.casesService.getUnresolvedDrifts(caseId);
+  drifts(
+    @Param('id') caseId: string,
+    @CurrentUser() user: JwtUser | undefined,
+  ) {
+    return this.casesService.getUnresolvedDrifts(
+      caseId,
+      user ? { userId: user.sub, role: user.role } : undefined,
+    );
   }
 
   @RequirePermissions('cases.write')
@@ -155,6 +187,7 @@ export class CasesController {
     return this.casesService.resolveDrift(caseId, eventId, body.source, {
       actorUserId: actor?.sub,
       actorEmail: actor?.email,
+      actorRole: actor?.role,
     });
   }
 }

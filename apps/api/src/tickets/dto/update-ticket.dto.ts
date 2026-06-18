@@ -5,13 +5,9 @@ export class UpdateTicketDto {
   @IsString()
   serviceCity?: string;
 
-  @IsOptional()
-  @IsString()
-  consumerPhone?: string;
-
-  @IsOptional()
-  @IsString()
-  consumerAddress?: string;
+  // Audit 4.4: consumerPhone / consumerAddress removed — Ticket has no such
+  // columns, so any request supplying them blew up the spread into
+  // prisma.ticket.update with a PrismaClientValidationError.
 
   @IsOptional()
   @IsString()

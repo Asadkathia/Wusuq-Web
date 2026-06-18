@@ -50,6 +50,10 @@ enum PaymentProviderName {
   JAZZCASH
   EASYPAISA
   HBL_PAY
+  // Explicit production opt-out: the API boots but every gateway operation
+  // throws. No Payment row is ever written with this value (initiate fails
+  // before the insert); it exists so the provider interface stays typed.
+  DISABLED
 }
 
 enum PaymentStatus {
@@ -229,6 +233,10 @@ model Ticket {
   remainderFinalizedByUserId String?
   totalAmount           Decimal             @default(0)
   amountPaid      Decimal             @default(0)
+  // Client-supplied intake idempotency key — a double-submitted wizard POST
+  // hits the unique index and returns the first ticket instead of creating
+  // (and later auto-settling) a duplicate.
+  intakeRequestId String?             @unique
   createdBy       TicketOrigin        @default(ADMIN_STAFF)
   serviceCost     Decimal             @default(0)
   caseId          String?
@@ -239,6 +247,11 @@ model Ticket {
   hearingType     String?
   outcome         String?
   nextDate        DateTime?
+  // Audit 4.2: bulk "delete" is a soft archive — hard deletes hit ON DELETE
+  // RESTRICT children and would orphan WalletTransaction money rows
+  // (SET NULL) if they ever succeeded. Archived tickets are excluded from
+  // lists and wallet dues; the rows (and their ledger linkage) survive.
+  archivedAt      DateTime?
   createdAt       DateTime            @default(now())
   updatedAt       DateTime            @updatedAt
   consumer        User                @relation(fields: [consumerId], references: [id])
@@ -258,6 +271,11 @@ model Ticket {
   @@index([consumerId])
   @@index([status])
   @@index([createdBy])
+  // Audit 4.4 hot paths: outstandingDuesForUser runs on every /wallet/me
+  // (header chip); the autosave-suppression probe filters on
+  // (consumerId, intakeFlow, createdAt).
+  @@index([consumerId, status])
+  @@index([consumerId, intakeFlow, createdAt])
 }
 
 // Structured clerk-side "what files can this court actually produce" report,
@@ -413,6 +431,8 @@ model WalletTransaction {
 
   @@index([userId])
   @@index([status])
+  // Audit 4.4: transaction history is always listed per-user, newest first.
+  @@index([userId, createdAt])
 }
 
 model Invoice {
@@ -541,6 +561,8 @@ model Notification {
 
   @@index([userId])
   @@index([isRead])
+  // Audit 4.4: the unread-count badge filters on both.
+  @@index([userId, isRead])
 }
 
 model GeoProvince {

@@ -23,6 +23,15 @@ services:
         value: 4000
       - key: UPLOADS_DIR
         value: /var/data/uploads
+      # Audit 1.6: the forgeable mock payment provider must never run in prod.
+      # `disabled` boots the API with every gateway operation hard-failing
+      # (503) until a real provider (JazzCash/EasyPaisa) is integrated — set
+      # this to that provider's key when it lands. (NODE_ENV is intentionally
+      # NOT set here: these envVars also apply at build time, and
+      # NODE_ENV=production would make `pnpm install --frozen-lockfile` drop
+      # the devDependencies the build needs.)
+      - key: PAYMENT_PROVIDER
+        value: disabled
       - key: DATABASE_URL
         sync: false
       - key: JWT_ACCESS_SECRET
