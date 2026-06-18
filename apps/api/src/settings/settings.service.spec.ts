@@ -1,3 +1,4 @@
+import { jest } from '@jest/globals';
 import { SettingsService } from './settings.service';
 
 function build(rows: Record<string, string> = {}) {
