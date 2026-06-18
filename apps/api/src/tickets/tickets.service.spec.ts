@@ -1139,10 +1139,10 @@ describe('TicketsService', () => {
       expect(data?.totalAmount).toBe(5000); // NOT 8000
     });
 
-    it('ONE_TIME flow: totalAmount equals pricing.total (full amount)', async () => {
+    it('ONE_TIME flow: totalAmount equals serviceCost (full amount; digital flows have serviceCost === total)', async () => {
       const { service, created } = buildIntakeHarnessWithPricing({
         flow: 'judicial_case_information',
-        serviceCost: 3000,
+        serviceCost: 3500,
         total: 3500,
       });
       await service.createIntakeTicket(

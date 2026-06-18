@@ -23,6 +23,8 @@ import {
   buildPricingResolveInput,
   isConsumerRole,
   isStaffRole,
+  computeTicketTotal,
+  type TicketChargeComponents,
 } from '@wusuq/shared';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { PricingService } from '../pricing/pricing.service';
@@ -38,6 +40,8 @@ import { UpdateTicketDto } from './dto/update-ticket.dto';
 import { FinalizeRemainderDto } from './dto/finalize-remainder.dto';
 import { NotificationDispatcher } from '../notifications/notification-dispatcher.service';
 import { WalletService } from '../wallet/wallet.service';
+import { SettingsService } from '../settings/settings.service';
+import { PromosService } from '../promos/promos.service';
 
 const INTAKE_FLOWS = new Set([
   'judicial_case_files',
@@ -177,6 +181,8 @@ export class TicketsService {
     private readonly geoService: GeoService,
     private readonly dispatcher: NotificationDispatcher,
     private readonly walletService: WalletService,
+    private readonly settingsService?: SettingsService,
+    private readonly promosService?: PromosService,
   ) {}
 
   async findAll(query: FilterTicketsDto, opts?: { forConsumer?: boolean }) {
@@ -519,14 +525,50 @@ export class TicketsService {
       );
     }
 
-    // SPLIT flows (e.g. judicial_case_files) bill base only at creation;
-    // phase-2 surcharges (attested, printing, delivery, pdf) are added at
-    // finalize (Task 1.4). ONE_TIME flows bill the full computed total upfront.
-    const billedTotal = pricing.matched
-      ? paymentModelFor(dto.flow) === 'SPLIT'
-        ? pricing.serviceCost
-        : pricing.total
-      : 0;
+    // Resolve tax rate (optional service; defaults to 0 when not injected).
+    const taxRate = (await this.settingsService?.getTaxRate?.()) ?? 0;
+
+    // Resolve promo code discount (optional service; skipped when not injected).
+    let promoDiscount = 0;
+    let promoCodeId: string | null = null;
+    let promoValidation: {
+      valid: boolean;
+      reason?: string;
+      discount: number;
+      promoCodeId?: string;
+    } | null = null;
+    if (pricing.matched && dto.promoCode && this.promosService) {
+      promoValidation = await this.promosService.validate({
+        code: dto.promoCode,
+        userId: dto.consumerId,
+        flow: dto.flow,
+        subtotal:
+          paymentModelFor(dto.flow) === 'SPLIT'
+            ? pricing.serviceCost
+            : pricing.total,
+      });
+      if (!promoValidation.valid) {
+        throw new BadRequestException(
+          promoValidation.reason ?? 'Invalid promo code',
+        );
+      }
+      promoDiscount = promoValidation.discount;
+      promoCodeId = promoValidation.promoCodeId ?? null;
+    }
+
+    // Assemble the billed-at-intake charge components + money (tax-inclusive).
+    // SPLIT flows bill phase-1 base only; ONE_TIME flows bill the full total.
+    const assembled = pricing.matched
+      ? TicketsService.assembleIntakeMoney({
+          flow: dto.flow,
+          serviceCost: pricing.serviceCost,
+          deliveryCharge: pricing.deliveryCharge,
+          taxRate,
+          promoDiscount,
+        })
+      : null;
+
+    const billedTotal = assembled ? assembled.money.totalAmount : 0;
 
     let ticket;
     try {
@@ -549,15 +591,29 @@ export class TicketsService {
             serviceCity: inferredServiceCity,
             caseType: inferredCaseType,
             serviceCost: pricing.matched ? pricing.serviceCost : 0,
-            // Delivery is a phase-2 charge for SPLIT (physical-document) flows — it
-            // is set by finalizeRemainder (the 2nd payment), so persist 0 at intake.
-            // Persisting the resolver's estimate here would surface a Delivery line
-            // on the consumer board that isn't part of totalAmount (display drift).
-            // ONE_TIME flows have no delivery leg, so this is 0 there too.
-            deliveryCharges:
-              pricing.matched && paymentModelFor(dto.flow) !== 'SPLIT'
-                ? pricing.deliveryCharge
-                : 0,
+            deliveryCharges: assembled ? assembled.charges.deliveryCharges : 0,
+            promoCodeId,
+            promoDiscount,
+            taxRate,
+            taxAmount: assembled ? assembled.money.taxAmount : 0,
+            priceBreakdown: assembled
+              ? ({
+                  resolver: {
+                    basePrice: pricing.basePrice,
+                    pdfSurcharge: pricing.pdfSurcharge,
+                    titleSurcharge: pricing.titleSurcharge,
+                    ageSurcharge: pricing.ageSurcharge,
+                    bundleSurcharge: pricing.bundleSurcharge,
+                    searchBothSurcharge: pricing.searchBothSurcharge,
+                    cityCount: pricing.cityCount,
+                    serviceCost: pricing.serviceCost,
+                    total: pricing.total,
+                  },
+                  applied: assembled.money,
+                  taxRate,
+                  promoDiscount,
+                } as unknown as Prisma.InputJsonValue)
+              : undefined,
             defaultClerkCost: pricing.matched
               ? (pricing.clerkBaseCost ?? null)
               : null,
@@ -581,6 +637,17 @@ export class TicketsService {
             note: 'Ticket created via intake flow',
           },
         });
+
+        if (promoCodeId) {
+          await tx.promoRedemption.create({
+            data: {
+              promoCodeId,
+              userId: dto.consumerId,
+              ticketId: createdTicket.id,
+              amount: promoDiscount,
+            },
+          });
+        }
 
         return createdTicket;
       });
@@ -2472,6 +2539,40 @@ export class TicketsService {
         surplusCredited: outcome.surplusCredited,
       },
     });
+  }
+
+  /**
+   * Assemble the intake charge components + money for a freshly resolved price.
+   * SPLIT flows bill phase-1 base only (phase-2 charges stay 0 until finalize);
+   * ONE_TIME flows fold everything into serviceCost. Tax/promo/discount applied
+   * via the single shared computeTicketTotal.
+   */
+  static assembleIntakeMoney(args: {
+    flow: string;
+    serviceCost: number;
+    deliveryCharge: number;
+    taxRate: number;
+    promoDiscount: number;
+    discountPrice?: number;
+  }) {
+    const isSplit = paymentModelFor(args.flow) === 'SPLIT';
+    const charges: TicketChargeComponents = {
+      serviceCost: args.serviceCost,
+      // Delivery is a phase-2 charge for SPLIT; ONE_TIME digital flows are 0 too.
+      deliveryCharges: isSplit ? 0 : args.deliveryCharge,
+      printingCharges: 0,
+      attestedCharges: 0,
+      nonAttestedCharges: 0,
+      additionalCharges: 0,
+      additionalServiceCost: 0,
+    };
+    const money = computeTicketTotal({
+      charges,
+      discountPrice: args.discountPrice ?? 0,
+      promoDiscount: args.promoDiscount,
+      taxRate: args.taxRate,
+    });
+    return { charges, money };
   }
 
   private generateBatchNo() {

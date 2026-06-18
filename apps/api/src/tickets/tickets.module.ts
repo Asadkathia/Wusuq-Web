@@ -5,6 +5,8 @@ import { GeoModule } from '../geo/geo.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { WalletModule } from '../wallet/wallet.module';
+import { SettingsModule } from '../settings/settings.module';
+import { PromosModule } from '../promos/promos.module';
 import { TicketsController } from './tickets.controller';
 import { TicketsService } from './tickets.service';
 
@@ -16,6 +18,8 @@ import { TicketsService } from './tickets.service';
     GeoModule,
     NotificationsModule,
     WalletModule,
+    SettingsModule,
+    PromosModule,
   ],
   controllers: [TicketsController],
   providers: [TicketsService],

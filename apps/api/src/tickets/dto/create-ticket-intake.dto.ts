@@ -59,4 +59,8 @@ export class CreateTicketIntakeDto {
   @IsOptional()
   @IsString()
   hearingType?: string;
+
+  @IsOptional()
+  @IsString()
+  promoCode?: string;
 }
