@@ -49,4 +49,32 @@ describe('FinanceService.updateCharge money', () => {
       service.updateCharge('t1', { discountPrice: 4000 }), // total 1000 < paid 3000
     ).rejects.toBeInstanceOf(BadRequestException);
   });
+
+  // discount > chargesSubtotal gate
+  it('allows a discount exactly equal to the charges subtotal', async () => {
+    const { service } = build({ ...TICKET, taxRate: 0 });
+    const r = await service.updateCharge('t1', { discountPrice: 5000 }); // == serviceCost 5000
+    expect(r.totalAmount).toBe(0);
+  });
+
+  it('rejects a discount that exceeds the charges subtotal', async () => {
+    const { service } = build({ ...TICKET, taxRate: 0 });
+    await expect(
+      service.updateCharge('t1', { discountPrice: 5001 }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  // dto.amount explicit override path
+  it('honors an explicit amount override above amountPaid', async () => {
+    const { service } = build({ ...TICKET, taxRate: 0 });
+    const r = await service.updateCharge('t1', { amount: 9999 });
+    expect(r.totalAmount).toBe(9999);
+  });
+
+  it('rejects an explicit amount override below amountPaid', async () => {
+    const { service } = build({ ...TICKET, amountPaid: 3000, taxRate: 0 });
+    await expect(
+      service.updateCharge('t1', { amount: 1000 }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
 });
