@@ -351,6 +351,10 @@ export function IntakeWizard({
   // not) could otherwise let A's later-arriving empty response overwrite B's
   // courts, mis-rendering "No courts available in B".
   const cityCourtsReqRef = useRef(0);
+  // Stale-response guard for promo validation: mirrors cityCourtsReqRef.
+  // Incremented before each /promos/validate request and on resetForm so that
+  // a late response can't overwrite a reset's 0 with a non-zero discount.
+  const promoReqRef = useRef(0);
   // QA: autosave/submit race guard. The 5s debounced autosave fires from a
   // closure that captures the pre-submit draft. If it lands at the server
   // AFTER the submit-side draft delete, it upserts a phantom draft with the
@@ -425,6 +429,7 @@ export function IntakeWizard({
     if (!promoCode.trim()) return;
     setPromoLoading(true);
     setPromoError('');
+    const reqId = ++promoReqRef.current;
     const matchedAndAvailable = pricingResult?.matched && pricingResult.available !== false;
     const billedBase = matchedAndAvailable
       ? (paymentModelFor(draft.flow) === 'SPLIT' ? pricingResult!.serviceCost : pricingResult!.total)
@@ -434,6 +439,7 @@ export function IntakeWizard({
         '/promos/validate',
         { code: promoCode.trim(), flow: draft.flow, subtotal: billedBase },
       );
+      if (promoReqRef.current !== reqId) return;
       if (r.valid) {
         startTransition(() => setPromoDiscount(r.discount));
       } else {
@@ -443,12 +449,13 @@ export function IntakeWizard({
         });
       }
     } catch (e: any) {
+      if (promoReqRef.current !== reqId) return;
       startTransition(() => {
         setPromoDiscount(0);
         setPromoError(e.message ?? 'Could not validate promo code');
       });
     } finally {
-      setPromoLoading(false);
+      if (promoReqRef.current === reqId) setPromoLoading(false);
     }
   }, [promoCode, draft.flow, pricingResult]);
 
@@ -1492,6 +1499,8 @@ export function IntakeWizard({
     setPromoCode('');
     setPromoDiscount(0);
     setPromoError('');
+    setPromoLoading(false);
+    promoReqRef.current++;
   };
 
   // Checkout summary — derives display items from draft payload. When a pricing
