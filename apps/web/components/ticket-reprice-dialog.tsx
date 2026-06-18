@@ -150,16 +150,19 @@ export function TicketRepriceDialog({
       if (v !== undefined && v !== '') payload[k] = v;
     }
 
+    // discountPrice is a top-level field on RepriceTicketDto, NOT inside overrides.
     const ov: Record<string, number> = {};
     for (const { key } of OVERRIDE_FIELD_DEFS) {
+      if (key === 'discountPrice') continue; // handled at top level below
       const raw = overrides[key];
       if (raw !== '') ov[key] = Number(raw);
     }
 
-    return {
-      payload,
-      ...(Object.keys(ov).length > 0 ? { overrides: ov } : {}),
-    };
+    const body: Record<string, unknown> = { payload };
+    if (Object.keys(ov).length > 0) body.overrides = ov;
+    if (overrides.discountPrice !== '') body.discountPrice = Number(overrides.discountPrice);
+
+    return body;
   }, [payloadFields, overrides]);
 
   const fetchPreview = useCallback(async () => {
