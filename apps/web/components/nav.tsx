@@ -9,6 +9,7 @@ import {
   LayoutDashboard,
   Scale,
   Settings,
+  Tag,
   Ticket,
   Vote,
   Wallet,
@@ -46,6 +47,7 @@ const navItems: NavItem[] = [
   { label: 'Wallet', href: '/wallet', icon: Wallet },
   { label: 'Invoices', href: '#', icon: FileText },
   { label: 'Elections & Cabinet', href: '/elections-cabinet/elections', icon: Vote },
+  { label: 'Promo Codes', href: '/promos', icon: Tag },
   {
     label: 'Settings',
     icon: Settings,
