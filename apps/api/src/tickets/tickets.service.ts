@@ -2388,6 +2388,8 @@ export class TicketsService {
         additionalCharges: true,
         additionalServiceCost: true,
         discountPrice: true,
+        promoDiscount: true,
+        taxRate: true,
         amountPaid: true,
         intakeFlow: true,
         remainderFinalizedAt: true,
@@ -2430,15 +2432,22 @@ export class TicketsService {
     // 5-24-26 #23: clerk assignment cost is internal-only (rep pay-out) and is
     // excluded from the consumer total. Additional charges / discount persisted
     // earlier are preserved.
-    const total =
-      Number(ticket.serviceCost) +
-      Number(ticket.additionalCharges ?? 0) +
-      Number(ticket.additionalServiceCost ?? 0) -
-      Number(ticket.discountPrice ?? 0) +
-      attested +
-      nonAttested +
-      printing +
-      delivery;
+    // Task 7: route through the shared computeTicketTotal so the cumulative
+    // total includes tax on phase-2 charges (taxRate defaults to 0 for legacy
+    // tickets that predate the column).
+    const money = TicketsService.assembleFinalizeMoney({
+      serviceCost: Number(ticket.serviceCost),
+      additionalCharges: Number(ticket.additionalCharges ?? 0),
+      additionalServiceCost: Number(ticket.additionalServiceCost ?? 0),
+      discountPrice: Number(ticket.discountPrice ?? 0),
+      promoDiscount: Number(ticket.promoDiscount ?? 0),
+      taxRate: Number(ticket.taxRate ?? 0),
+      attested,
+      nonAttested,
+      printing,
+      delivery,
+    });
+    const total = money.totalAmount;
 
     // Owner decision 2026-06-12: when the finalized total drops below what
     // the consumer already paid (charges corrected down after a wallet
@@ -2478,6 +2487,7 @@ export class TicketsService {
         printingCharges: printing,
         deliveryCharges: delivery,
         totalAmount: total,
+        taxAmount: money.taxAmount,
         // The surplus moved to the wallet; the ticket books stay exact.
         ...(surplus > 0 ? { amountPaid: total } : {}),
         remainderFinalizedAt: new Date(),
@@ -2547,6 +2557,34 @@ export class TicketsService {
    * ONE_TIME flows fold everything into serviceCost. Tax/promo/discount applied
    * via the single shared computeTicketTotal.
    */
+  static assembleFinalizeMoney(args: {
+    serviceCost: number;
+    additionalCharges: number;
+    additionalServiceCost: number;
+    discountPrice: number;
+    promoDiscount: number;
+    taxRate: number;
+    attested: number;
+    nonAttested: number;
+    printing: number;
+    delivery: number;
+  }) {
+    return computeTicketTotal({
+      charges: {
+        serviceCost: args.serviceCost,
+        deliveryCharges: args.delivery,
+        printingCharges: args.printing,
+        attestedCharges: args.attested,
+        nonAttestedCharges: args.nonAttested,
+        additionalCharges: args.additionalCharges,
+        additionalServiceCost: args.additionalServiceCost,
+      },
+      discountPrice: args.discountPrice,
+      promoDiscount: args.promoDiscount,
+      taxRate: args.taxRate,
+    });
+  }
+
   static assembleIntakeMoney(args: {
     flow: string;
     serviceCost: number;
