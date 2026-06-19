@@ -240,6 +240,7 @@ test.describe('Workstream-A money UI: tax, promos, reprice', () => {
     // PATCH save — capture body.
     let repricePatchBody: Record<string, unknown> | null = null;
     await page.route('**/api/tickets/t-e2e/reprice', async (route) => {
+      if (route.request().method() !== 'PATCH') { await route.fallback(); return; }
       repricePatchBody = JSON.parse(route.request().postData() ?? '{}') as Record<
         string,
         unknown
@@ -260,32 +261,42 @@ test.describe('Workstream-A money UI: tax, promos, reprice', () => {
     await page.getByRole('button', { name: 'Edit ticket' }).click();
 
     // Dialog opens (ticket-reprice-dialog.tsx renders a <Dialog open>).
-    await expect(page.getByRole('dialog')).toBeVisible();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toBeVisible();
 
     // Wait for the preview to resolve (debounce 400 ms + mock API).
     // The dialog renders "New Total" then "PKR <formatted totalAmount>".
     // formatPKR(585) = "585.00" in en-PK locale.
-    await expect(page.getByText('New Total')).toBeVisible({ timeout: 5_000 });
+    await expect(dialog.getByText('New Total')).toBeVisible({ timeout: 5_000 });
     // Tax line: ticket-reprice-dialog.tsx:319 — only renders when taxAmount > 0.
-    await expect(page.getByText('Tax')).toBeVisible({ timeout: 5_000 });
-    // The formatted values (585.00 and 85.00) appear in the preview section.
-    await expect(page.locator('text=PKR').filter({ hasText: '585' }).first()).toBeVisible();
-    await expect(page.locator('text=PKR').filter({ hasText: '85' }).first()).toBeVisible();
+    await expect(dialog.getByText('Tax')).toBeVisible({ timeout: 5_000 });
+    // Scope formatted-value assertions to the dialog so stale page numbers
+    // elsewhere cannot accidentally satisfy the check.
+    await expect(dialog.locator('text=PKR').filter({ hasText: '585' }).first()).toBeVisible();
+    await expect(dialog.locator('text=PKR').filter({ hasText: '85' }).first()).toBeVisible();
 
-    // Save is enabled once previewLoading=false.
-    // Button text is "Save" (ticket-reprice-dialog.tsx:371).
+    // Fill the Discount field (label "Discount" from OVERRIDE_FIELD_DEFS in
+    // ticket-reprice-dialog.tsx:81) with 50 so the PATCH body actually exercises
+    // the top-level discountPrice invariant, not just a trivially-absent field.
+    await dialog.getByLabel('Discount').fill('50');
+
+    // Wait for Save to be enabled (previewLoading=false) before clicking.
+    // Filling discount triggers a debounce + preview re-fetch (~400 ms); this
+    // also handles any brief disabled window while previewLoading=true.
+    await expect(page.getByRole('button', { name: 'Save' })).toBeEnabled({ timeout: 5_000 });
+
+    // Save — button text is "Save" (ticket-reprice-dialog.tsx:371).
     await page.getByRole('button', { name: 'Save' }).click();
 
-    // Assert the PATCH was called and the body has the correct shape.
-    // discountPrice is a TOP-LEVEL field on RepriceTicketDto, not inside overrides.
-    await expect.poll(() => repricePatchBody, { timeout: 5_000 }).toBeTruthy();
-    // payload key is always present (extracted from formPayload fields).
+    // Assert the PATCH body has discountPrice at the TOP LEVEL.
+    // This proves the Task 10 fix: buildBody() in ticket-reprice-dialog.tsx:163
+    // places discountPrice on body directly, skipping the ov accumulator.
+    await expect.poll(() => repricePatchBody, { timeout: 5_000 }).toMatchObject({ discountPrice: 50 });
+    // payload is always present (extracted from formPayload fields).
     expect(repricePatchBody).toHaveProperty('payload');
-    // With no override fields filled, there is no 'overrides' key in the body.
+    // No other override fields were filled — there must be no 'overrides' key.
     expect(repricePatchBody).not.toHaveProperty('overrides');
-    // discountPrice, when set, appears at the top level — not nested in overrides.
-    // (We didn't set it here, so it should be absent; the important thing is it
-    // is NOT inside overrides if it were set — see ticket-reprice-dialog.tsx:163.)
+    // discountPrice MUST NOT appear inside overrides — it lives at the top level.
     expect(
       (repricePatchBody as { overrides?: { discountPrice?: unknown } })?.overrides
         ?.discountPrice,
