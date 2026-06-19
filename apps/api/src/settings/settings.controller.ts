@@ -15,6 +15,13 @@ export class SettingsController {
     return this.settings.getTaxConfig();
   }
 
+  /** Consumer-readable endpoint: returns only the effective rate (0 when tax is disabled). */
+  @RequirePermissions('tickets.create')
+  @Get('tax/rate')
+  async getEffectiveTaxRate() {
+    return { rate: await this.settings.getTaxRate() };
+  }
+
   @RequirePermissions('settings.write')
   @Put('tax')
   setTax(@Body() dto: UpdateTaxDto, @CurrentUser() actor: JwtUser | undefined) {

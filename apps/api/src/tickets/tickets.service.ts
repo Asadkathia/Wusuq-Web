@@ -3091,9 +3091,12 @@ export class TicketsService {
     // USER row lock BEFORE ticket lock — same order as finalizeRemainderCore
     // to prevent deadlocks with wallet settlement.
     await this.prisma.$transaction(async (tx) => {
-      // Re-read amountPaid INSIDE the transaction to avoid clobbering a
-      // concurrent payment webhook that increments amountPaid between the
-      // outer findUnique and this write.
+      // Take USER row lock BEFORE TICKET lock — same order as finalizeRemainderCore
+      // and wallet settlement so concurrent transactions that hold these locks
+      // cannot interleave between our read of amountPaid and the subsequent write,
+      // preventing a concurrent payment webhook from being silently clobbered.
+      await tx.$executeRaw`SELECT id FROM "User" WHERE id = ${existing.consumerId} FOR UPDATE`;
+      await tx.$executeRaw`SELECT id FROM "Ticket" WHERE id = ${id} FOR UPDATE`;
       const fresh = await tx.ticket.findUnique({
         where: { id },
         select: { amountPaid: true },

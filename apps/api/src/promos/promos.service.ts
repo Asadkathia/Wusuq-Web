@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -115,7 +116,10 @@ export class PromosService {
     }
   }
 
-  create(dto: CreatePromoDto, actorUserId?: string) {
+  async create(dto: CreatePromoDto, actorUserId?: string) {
+    if (dto.type === 'PERCENT' && dto.value > 100) {
+      throw new BadRequestException('Percent value must be between 0 and 100');
+    }
     return this.prisma.promoCode.create({
       data: {
         code: dto.code.trim().toUpperCase(),

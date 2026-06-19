@@ -1,5 +1,9 @@
 import { jest } from '@jest/globals';
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+} from '@nestjs/common';
 import { PromosService } from './promos.service';
 
 const BASE = {
@@ -172,5 +176,21 @@ describe('PromosService.assertWithinLimits', () => {
     await expect(svc.assertWithinLimits(tx, 'promo-1', 'u1')).rejects.toThrow(
       NotFoundException,
     );
+  });
+});
+
+describe('PromosService.create', () => {
+  it('rejects a PERCENT promo with value > 100 before touching the DB', async () => {
+    const prisma = { promoCode: { create: jest.fn() } };
+    const svc = new PromosService(prisma as never);
+    await expect(
+      svc.create({
+        code: 'OVER',
+        type: 'PERCENT',
+        value: 200,
+        serviceScope: [],
+      } as any),
+    ).rejects.toThrow(BadRequestException);
+    expect(prisma.promoCode.create).not.toHaveBeenCalled();
   });
 });

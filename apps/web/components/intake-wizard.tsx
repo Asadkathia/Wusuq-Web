@@ -392,8 +392,8 @@ export function IntakeWizard({
   // Fetch the platform tax rate once on wizard mount. startTransition avoids
   // the React 19 "setState synchronously in effect body" lint rule.
   useEffect(() => {
-    apiClient.get<{ rate: number; enabled: boolean }>('/settings/tax')
-      .then((r) => { startTransition(() => setTaxRate(r.enabled ? r.rate : 0)); })
+    apiClient.get<{ rate: number }>('/settings/tax/rate')
+      .then((r) => { startTransition(() => setTaxRate(r.rate)); })
       .catch(() => {});
   }, []);
 

@@ -4,6 +4,7 @@ import { TicketsService } from './tickets.service';
 
 function buildService(ticket: any, resolved: any) {
   const tx = {
+    $executeRaw: jest.fn(async () => 0),
     ticket: {
       // Used by the in-tx fresh read (fix 3) and by any other tx-scoped lookups
       findUnique: jest.fn(async () => ticket),
@@ -117,6 +118,10 @@ describe('TicketsService.repriceTicket (persist path)', () => {
     const { svc, tx } = buildService(ticket, RESOLVED);
 
     // Override tx mocks to track invocation order
+    (tx as any).$executeRaw = jest.fn(async () => {
+      callOrder.push('$executeRaw');
+      return 0;
+    });
     (tx.user.update as any) = jest.fn(async () => {
       callOrder.push('user.update');
       return {};
@@ -129,8 +134,14 @@ describe('TicketsService.repriceTicket (persist path)', () => {
     jest.spyOn(svc, 'findOne').mockResolvedValue(ticket as any);
     await svc.repriceTicket('t1', {}, ACTOR);
 
-    expect(callOrder[0]).toBe('user.update');
-    expect(callOrder[1]).toBe('ticket.updateMany');
+    // Row locks must be acquired BEFORE the ticket write
+    const firstLock = callOrder.indexOf('$executeRaw');
+    const write = callOrder.indexOf('ticket.updateMany');
+    expect(firstLock).toBeGreaterThanOrEqual(0);
+    expect(firstLock).toBeLessThan(write);
+    expect(callOrder[0]).toBe('$executeRaw');
+    // user.update (wallet credit) must precede ticket.updateMany
+    expect(callOrder.indexOf('user.update')).toBeLessThan(write);
     expect(tx.walletTransaction.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
