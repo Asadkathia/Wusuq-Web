@@ -33,47 +33,90 @@ function build(promo: any, redemptionCounts = { total: 0, user: 0 }) {
 describe('PromosService.validate', () => {
   it('returns the capped percentage discount', async () => {
     const svc = build(BASE);
-    const r = await svc.validate({ code: 'save10', userId: 'u1', flow: 'judicial_case_files', subtotal: 100000 });
+    const r = await svc.validate({
+      code: 'save10',
+      userId: 'u1',
+      flow: 'judicial_case_files',
+      subtotal: 100000,
+    });
     expect(r.valid).toBe(true);
     expect(r.discount).toBe(2000); // 10% of 100000 = 10000, capped at 2000
     expect(r.promoCodeId).toBe('promo-1');
   });
 
   it('returns a fixed discount not exceeding the subtotal', async () => {
-    const svc = build({ ...BASE, type: 'FIXED', value: 5000, maxDiscount: null });
-    const r = await svc.validate({ code: 'SAVE10', userId: 'u1', flow: 'x', subtotal: 3000 });
+    const svc = build({
+      ...BASE,
+      type: 'FIXED',
+      value: 5000,
+      maxDiscount: null,
+    });
+    const r = await svc.validate({
+      code: 'SAVE10',
+      userId: 'u1',
+      flow: 'x',
+      subtotal: 3000,
+    });
     expect(r.discount).toBe(3000);
   });
 
   it('rejects an unknown code', async () => {
     const svc = build(null);
-    const r = await svc.validate({ code: 'NOPE', userId: 'u1', flow: 'x', subtotal: 1000 });
+    const r = await svc.validate({
+      code: 'NOPE',
+      userId: 'u1',
+      flow: 'x',
+      subtotal: 1000,
+    });
     expect(r.valid).toBe(false);
     expect(r.discount).toBe(0);
   });
 
   it('rejects an inactive code', async () => {
     const svc = build({ ...BASE, active: false });
-    const r = await svc.validate({ code: 'SAVE10', userId: 'u1', flow: 'x', subtotal: 1000 });
+    const r = await svc.validate({
+      code: 'SAVE10',
+      userId: 'u1',
+      flow: 'x',
+      subtotal: 1000,
+    });
     expect(r.valid).toBe(false);
   });
 
   it('rejects a code outside its service scope', async () => {
     const svc = build({ ...BASE, serviceScope: ['judicial_case_search'] });
-    const r = await svc.validate({ code: 'SAVE10', userId: 'u1', flow: 'judicial_case_files', subtotal: 1000 });
+    const r = await svc.validate({
+      code: 'SAVE10',
+      userId: 'u1',
+      flow: 'judicial_case_files',
+      subtotal: 1000,
+    });
     expect(r.valid).toBe(false);
   });
 
   it('rejects when the per-user limit is reached', async () => {
     const svc = build(BASE, { total: 5, user: 1 }); // perUserLimit = 1
-    const r = await svc.validate({ code: 'SAVE10', userId: 'u1', flow: 'x', subtotal: 1000 });
+    const r = await svc.validate({
+      code: 'SAVE10',
+      userId: 'u1',
+      flow: 'x',
+      subtotal: 1000,
+    });
     expect(r.valid).toBe(false);
     expect(r.reason).toMatch(/limit/i);
   });
 
   it('rejects when the total usage limit is reached', async () => {
-    const svc = build({ ...BASE, totalUsageLimit: 3, perUserLimit: null }, { total: 3, user: 0 });
-    const r = await svc.validate({ code: 'SAVE10', userId: 'u1', flow: 'x', subtotal: 1000 });
+    const svc = build(
+      { ...BASE, totalUsageLimit: 3, perUserLimit: null },
+      { total: 3, user: 0 },
+    );
+    const r = await svc.validate({
+      code: 'SAVE10',
+      userId: 'u1',
+      flow: 'x',
+      subtotal: 1000,
+    });
     expect(r.valid).toBe(false);
     expect(r.reason).toMatch(/limit/i);
   });
@@ -99,7 +142,9 @@ describe('PromosService.assertWithinLimits', () => {
     const svc = new PromosService({} as never);
     const promo = { ...BASE, totalUsageLimit: 10, perUserLimit: 3 };
     const tx = buildTx(promo, { total: 5, user: 1 });
-    await expect(svc.assertWithinLimits(tx, 'promo-1', 'u1')).resolves.toBeUndefined();
+    await expect(
+      svc.assertWithinLimits(tx, 'promo-1', 'u1'),
+    ).resolves.toBeUndefined();
     expect(tx.$executeRaw).toHaveBeenCalledTimes(1);
   });
 
@@ -107,19 +152,25 @@ describe('PromosService.assertWithinLimits', () => {
     const svc = new PromosService({} as never);
     const promo = { ...BASE, totalUsageLimit: 5, perUserLimit: null };
     const tx = buildTx(promo, { total: 5, user: 0 });
-    await expect(svc.assertWithinLimits(tx, 'promo-1', 'u1')).rejects.toThrow(ConflictException);
+    await expect(svc.assertWithinLimits(tx, 'promo-1', 'u1')).rejects.toThrow(
+      ConflictException,
+    );
   });
 
   it('throws ConflictException when perUserLimit is reached', async () => {
     const svc = new PromosService({} as never);
     const promo = { ...BASE, totalUsageLimit: null, perUserLimit: 1 };
     const tx = buildTx(promo, { total: 3, user: 1 });
-    await expect(svc.assertWithinLimits(tx, 'promo-1', 'u1')).rejects.toThrow(ConflictException);
+    await expect(svc.assertWithinLimits(tx, 'promo-1', 'u1')).rejects.toThrow(
+      ConflictException,
+    );
   });
 
   it('throws NotFoundException when promo is deleted after the lock', async () => {
     const svc = new PromosService({} as never);
     const tx = buildTx(null); // findUnique returns null — promo deleted mid-transaction
-    await expect(svc.assertWithinLimits(tx, 'promo-1', 'u1')).rejects.toThrow(NotFoundException);
+    await expect(svc.assertWithinLimits(tx, 'promo-1', 'u1')).rejects.toThrow(
+      NotFoundException,
+    );
   });
 });

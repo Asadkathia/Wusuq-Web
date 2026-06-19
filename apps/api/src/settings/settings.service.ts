@@ -21,9 +21,7 @@ export class SettingsService {
   async getTaxConfig(): Promise<{ rate: number; enabled: boolean }> {
     const rawRate = await this.readKey(TAX_RATE_KEY);
     const rawEnabled = await this.readKey(TAX_ENABLED_KEY);
-    const rate = clampRate(
-      Number(rawRate ?? process.env.TAX_RATE ?? '0'),
-    );
+    const rate = clampRate(Number(rawRate ?? process.env.TAX_RATE ?? '0'));
     // Default enabled = true once a rate exists; explicit 'false' disables.
     const enabled = rawEnabled != null ? rawEnabled === 'true' : true;
     return { rate, enabled };
@@ -44,12 +42,20 @@ export class SettingsService {
     await this.prisma.$transaction([
       this.prisma.appSetting.upsert({
         where: { key: TAX_RATE_KEY },
-        create: { key: TAX_RATE_KEY, value: String(clamped), updatedByUserId: actorUserId },
+        create: {
+          key: TAX_RATE_KEY,
+          value: String(clamped),
+          updatedByUserId: actorUserId,
+        },
         update: { value: String(clamped), updatedByUserId: actorUserId },
       }),
       this.prisma.appSetting.upsert({
         where: { key: TAX_ENABLED_KEY },
-        create: { key: TAX_ENABLED_KEY, value: String(enabled), updatedByUserId: actorUserId },
+        create: {
+          key: TAX_ENABLED_KEY,
+          value: String(enabled),
+          updatedByUserId: actorUserId,
+        },
         update: { value: String(enabled), updatedByUserId: actorUserId },
       }),
     ]);

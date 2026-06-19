@@ -1,4 +1,8 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { round2 } from '@wusuq/shared';
 import { PrismaService } from '../prisma/prisma.service';
@@ -35,13 +39,26 @@ export class PromosService {
     if (promo.endsAt && now > promo.endsAt) {
       return { valid: false, reason: 'Code has expired', discount: 0 };
     }
-    if (promo.serviceScope.length > 0 && !promo.serviceScope.includes(args.flow)) {
-      return { valid: false, reason: 'Code not valid for this service', discount: 0 };
+    if (
+      promo.serviceScope.length > 0 &&
+      !promo.serviceScope.includes(args.flow)
+    ) {
+      return {
+        valid: false,
+        reason: 'Code not valid for this service',
+        discount: 0,
+      };
     }
     if (promo.totalUsageLimit != null) {
-      const total = await db.promoRedemption.count({ where: { promoCodeId: promo.id } });
+      const total = await db.promoRedemption.count({
+        where: { promoCodeId: promo.id },
+      });
       if (total >= promo.totalUsageLimit) {
-        return { valid: false, reason: 'Code usage limit reached', discount: 0 };
+        return {
+          valid: false,
+          reason: 'Code usage limit reached',
+          discount: 0,
+        };
       }
     }
     if (promo.perUserLimit != null) {
@@ -89,7 +106,9 @@ export class PromosService {
       }
     }
     if (promo.perUserLimit != null) {
-      const mine = await tx.promoRedemption.count({ where: { promoCodeId, userId } });
+      const mine = await tx.promoRedemption.count({
+        where: { promoCodeId, userId },
+      });
       if (mine >= promo.perUserLimit) {
         throw new ConflictException('Promo code per-user limit reached');
       }
@@ -120,6 +139,9 @@ export class PromosService {
   async deactivate(id: string) {
     const existing = await this.prisma.promoCode.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException('Promo code not found');
-    return this.prisma.promoCode.update({ where: { id }, data: { active: false } });
+    return this.prisma.promoCode.update({
+      where: { id },
+      data: { active: false },
+    });
   }
 }

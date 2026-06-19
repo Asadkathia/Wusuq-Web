@@ -10,7 +10,10 @@ function build(ticket: any) {
     },
   };
   const auditLogsService = { create: jest.fn() };
-  return { service: new FinanceService(prisma as never, auditLogsService as never), prisma };
+  return {
+    service: new FinanceService(prisma as never, auditLogsService as never),
+    prisma,
+  };
 }
 
 const TICKET = {

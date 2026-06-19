@@ -262,7 +262,9 @@ export class FinanceService {
     // what the consumer has already paid (the surplus-credit path on finalize
     // handles intentional downward corrections after a settlement).
     if (money.discountTotal > money.chargesSubtotal) {
-      throw new BadRequestException('Discount cannot exceed the charges subtotal');
+      throw new BadRequestException(
+        'Discount cannot exceed the charges subtotal',
+      );
     }
     const totalAmount = dto.amount ?? money.totalAmount;
 

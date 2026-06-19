@@ -6,7 +6,9 @@ function build(rows: Record<string, string> = {}) {
   const prisma = {
     appSetting: {
       findUnique: jest.fn(async ({ where }: { where: { key: string } }) =>
-        store[where.key] != null ? { key: where.key, value: store[where.key] } : null,
+        store[where.key] != null
+          ? { key: where.key, value: store[where.key] }
+          : null,
       ),
       upsert: jest.fn(async ({ where, create, update }: any) => {
         store[where.key] = (update.value ?? create.value) as string;

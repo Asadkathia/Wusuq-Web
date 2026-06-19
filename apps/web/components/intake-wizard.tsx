@@ -231,7 +231,7 @@ export function IntakeWizard({
     step: 1,
     payload: initialPayload ?? {},
   });
-  const [consumerLabel, setConsumerLabel] = useState('');
+  const [, setConsumerLabel] = useState('');
   const [isConsumer, setIsConsumer] = useState(false);
   const [isAdminTestingMode, setIsAdminTestingMode] = useState(false);
   const [currentUser, setCurrentUser] = useState<LocalUser | null>(null);

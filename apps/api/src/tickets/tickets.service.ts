@@ -642,9 +642,15 @@ export class TicketsService {
 
         if (promoCodeId) {
           if (!this.promosService) {
-            throw new InternalServerErrorException('Promo service unavailable for redemption');
+            throw new InternalServerErrorException(
+              'Promo service unavailable for redemption',
+            );
           }
-          await this.promosService.assertWithinLimits(tx, promoCodeId, dto.consumerId);
+          await this.promosService.assertWithinLimits(
+            tx,
+            promoCodeId,
+            dto.consumerId,
+          );
           await tx.promoRedemption.create({
             data: {
               promoCodeId,

@@ -27,9 +27,9 @@ function buildService(ticket: any, resolved: any) {
     prisma as never,
     auditLogsService as never,
     pricingService as never,
-    {} as never,   // geoService
-    {} as never,   // dispatcher
-    {} as never,   // walletService
+    {} as never, // geoService
+    {} as never, // dispatcher
+    {} as never, // walletService
     settingsService as never,
   );
   return { svc, tx, prisma, pricingService, settingsService };
@@ -95,7 +95,11 @@ describe('TicketsService.repriceTicket (persist path)', () => {
   });
 
   it('rejects when resolve returns matched: false regardless of rulesExistForFlow', async () => {
-    const unmatchedResolved = { ...RESOLVED, matched: false, rulesExistForFlow: false };
+    const unmatchedResolved = {
+      ...RESOLVED,
+      matched: false,
+      rulesExistForFlow: false,
+    };
     const { svc, prisma } = buildService(BASE_TICKET, unmatchedResolved);
     jest.spyOn(svc, 'findOne').mockResolvedValue(BASE_TICKET as any);
     await expect(svc.repriceTicket('t1', {}, ACTOR)).rejects.toThrow(

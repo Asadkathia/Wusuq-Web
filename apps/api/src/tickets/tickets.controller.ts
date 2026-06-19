@@ -734,10 +734,7 @@ export class TicketsController {
 
   @RequirePermissions('tickets.write')
   @Post(':id/reprice/preview')
-  repricePreview(
-    @Param('id') id: string,
-    @Body() dto: RepriceTicketDto,
-  ) {
+  repricePreview(@Param('id') id: string, @Body() dto: RepriceTicketDto) {
     return this.ticketsService.repricePreview(id, dto);
   }
 
