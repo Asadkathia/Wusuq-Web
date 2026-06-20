@@ -17,9 +17,11 @@ describe('FinanceService.reconcilePayment — receiptUrl', () => {
           status: 'UNPAID',
           invoice: null,
         }),
-        update: jest.fn().mockImplementation((args) =>
-          Promise.resolve({ ...args.data, id: 'ticket-1' }),
-        ),
+        update: jest
+          .fn()
+          .mockImplementation((args) =>
+            Promise.resolve({ ...args.data, id: 'ticket-1' }),
+          ),
       },
       walletTransaction: {
         create: jest.fn().mockImplementation((args) => {
@@ -72,9 +74,11 @@ describe('FinanceService.reconcilePayment — receiptUrl', () => {
           status: 'UNPAID',
           invoice: null,
         }),
-        update: jest.fn().mockImplementation((args) =>
-          Promise.resolve({ ...args.data, id: 'ticket-2' }),
-        ),
+        update: jest
+          .fn()
+          .mockImplementation((args) =>
+            Promise.resolve({ ...args.data, id: 'ticket-2' }),
+          ),
       },
       walletTransaction: {
         create: jest.fn().mockImplementation((args) => {
@@ -106,6 +110,8 @@ describe('FinanceService.reconcilePayment — receiptUrl', () => {
     });
 
     expect(capturedCreateData).not.toBeNull();
-    expect((capturedCreateData as Record<string, unknown>).receiptUrl).toBeNull();
+    expect(
+      (capturedCreateData as Record<string, unknown>).receiptUrl,
+    ).toBeNull();
   });
 });

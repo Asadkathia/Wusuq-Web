@@ -5,9 +5,6 @@ import {
   paymentModelFor,
   computeCaseSearchBase,
   computeDecidedAgeSurcharge,
-  CASE_SEARCH_PER_YEAR_RATE,
-  DECIDED_AGE_SURCHARGE_PER_YEAR,
-  DECIDED_AGE_THRESHOLD_YEARS,
 } from '@wusuq/shared';
 
 // Re-export for back-compat: existing tests/importers that reference these

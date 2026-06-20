@@ -28,7 +28,9 @@ describe('computeDecidedAgeSurcharge (from @wusuq/shared)', () => {
   });
 
   it('Pending Case → 0 (not a decided case)', () => {
-    expect(computeDecidedAgeSurcharge('Pending Case', 2014, CURRENT_YEAR)).toBe(0);
+    expect(computeDecidedAgeSurcharge('Pending Case', 2014, CURRENT_YEAR)).toBe(
+      0,
+    );
   });
 
   it('current/future year → 0 (age not positive)', () => {
@@ -39,6 +41,8 @@ describe('computeDecidedAgeSurcharge (from @wusuq/shared)', () => {
 
   it('age ≤ threshold (10 years) → 0', () => {
     // 2018: age = 8, below the 10-year threshold
-    expect(computeDecidedAgeSurcharge('Decided Case', 2018, CURRENT_YEAR)).toBe(0);
+    expect(computeDecidedAgeSurcharge('Decided Case', 2018, CURRENT_YEAR)).toBe(
+      0,
+    );
   });
 });
