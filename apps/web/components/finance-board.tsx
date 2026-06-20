@@ -14,7 +14,7 @@ import { DataTableShell } from '@/components/ui/data-table-shell';
 import { FilterBar } from '@/components/ui/filter-bar';
 import { StatCard } from '@/components/ui/stat-card';
 import { StatusPill } from '@/components/ui/status-pill';
-import { Banknote, FileText, Send, Download, CheckCircle, RefreshCw, HandCoins, Pencil, X, Check, CheckCircle2, XCircle, ExternalLink, Building2, SlidersHorizontal } from 'lucide-react';
+import { Banknote, FileText, Send, Download, CheckCircle, RefreshCw, HandCoins, Pencil, X, Check, CheckCircle2, XCircle, ExternalLink, Building2, SlidersHorizontal, Upload } from 'lucide-react';
 
 type FinanceItem = {
   id: string;
@@ -45,6 +45,9 @@ export function FinanceBoard() {
   const [loading, setLoading] = useState(false);
   const [amounts, setAmounts] = useState<Record<string, string>>({});
   const [search, setSearch] = useState('');
+
+  // ── Reconcile proof files (per-ticket, optional) ─────────────────────
+  const [reconcileFiles, setReconcileFiles] = useState<Record<string, File>>({});
 
   const [editingChargeId, setEditingChargeId] = useState<string | null>(null);
   const [editServiceCost, setEditServiceCost] = useState('');
@@ -158,16 +161,37 @@ export function FinanceBoard() {
     if (amount <= 0) return setMessage('Enter valid amount');
 
     try {
+      // Upload proof first if a file was attached — abort reconcile on failure.
+      let receiptUrl: string | undefined;
+      const proofFile = reconcileFiles[ticketId];
+      if (proofFile) {
+        try {
+          const form = new FormData();
+          form.append('file', proofFile);
+          const upload = await apiClient.post<{ url: string }>('/wallet/receipt', form);
+          receiptUrl = upload.url;
+        } catch (uploadErr: any) {
+          setMessage(uploadErr.message || 'Proof upload failed — reconcile cancelled');
+          return;
+        }
+      }
+
       await apiClient.post(`/finance/${ticketId}/reconcile`, {
         amount,
         paymentMode: 'BANK_TRANSFER',
         currency: 'PKR',
+        ...(receiptUrl ? { receiptUrl } : {}),
       });
       setMessage('Payment reconciled');
       setAmounts(s => ({ ...s, [ticketId]: '' }));
+      setReconcileFiles(s => {
+        const next = { ...s };
+        delete next[ticketId];
+        return next;
+      });
       load();
     } catch (error: any) {
-      setMessage('Reconcile failed');
+      setMessage(error.message || 'Reconcile failed');
     }
   };
 
@@ -720,17 +744,45 @@ export function FinanceBoard() {
                   <div className="flex flex-col gap-2 items-end">
                     {/* Reconcile Row */}
                     {item.remaining > 0 && (
-                      <div className="flex items-center gap-2 bg-slate-100 p-1.5 rounded-lg border border-slate-200">
-                        <input
-                          className="w-24 rounded-md border-0 py-1.5 pl-3 pr-2 text-slate-900 ring-1 ring-inset ring-border-soft placeholder:text-slate-400 focus:ring-2 focus:ring-primary-600 sm:text-sm"
-                          placeholder="Amount"
-                          type="number"
-                          value={amounts[item.id] ?? ''}
-                          onChange={(e) => setAmounts(s => ({ ...s, [item.id]: e.target.value }))}
-                        />
-                        <button onClick={() => reconcile(item.id)} className="bg-primary-600 hover:bg-primary-500 text-white p-1.5 rounded-md shadow-sm transition-colors text-xs font-semibold flex items-center gap-1">
-                          <CheckCircle className="h-3.5 w-3.5" /> Reconcile
-                        </button>
+                      <div className="flex flex-col gap-1.5 bg-slate-100 p-1.5 rounded-lg border border-slate-200">
+                        <div className="flex items-center gap-2">
+                          <input
+                            className="w-24 rounded-md border-0 py-1.5 pl-3 pr-2 text-slate-900 ring-1 ring-inset ring-border-soft placeholder:text-slate-400 focus:ring-2 focus:ring-primary-600 sm:text-sm"
+                            placeholder="Amount"
+                            type="number"
+                            value={amounts[item.id] ?? ''}
+                            onChange={(e) => setAmounts(s => ({ ...s, [item.id]: e.target.value }))}
+                          />
+                          <button onClick={() => reconcile(item.id)} className="bg-primary-600 hover:bg-primary-500 text-white p-1.5 rounded-md shadow-sm transition-colors text-xs font-semibold flex items-center gap-1">
+                            <CheckCircle className="h-3.5 w-3.5" /> Reconcile
+                          </button>
+                        </div>
+                        {/* Optional payment proof attachment */}
+                        <label className="flex items-center gap-1.5 cursor-pointer group/proof">
+                          <span className={`flex h-6 w-6 items-center justify-center rounded-md transition-colors ${reconcileFiles[item.id] ? 'bg-emerald-100 text-emerald-600' : 'bg-white text-slate-400 border border-slate-300 group-hover/proof:border-primary-400 group-hover/proof:text-primary-500'}`}>
+                            <Upload className="h-3 w-3" />
+                          </span>
+                          <span className="text-xs text-slate-500 truncate max-w-[130px]">
+                            {reconcileFiles[item.id]?.name ?? 'Attach proof (optional)'}
+                          </span>
+                          <input
+                            type="file"
+                            accept="image/*,application/pdf"
+                            className="sr-only"
+                            onChange={(e) => {
+                              const f = e.target.files?.[0];
+                              if (f) {
+                                setReconcileFiles(s => ({ ...s, [item.id]: f }));
+                              } else {
+                                setReconcileFiles(s => {
+                                  const next = { ...s };
+                                  delete next[item.id];
+                                  return next;
+                                });
+                              }
+                            }}
+                          />
+                        </label>
                       </div>
                     )}
                     
