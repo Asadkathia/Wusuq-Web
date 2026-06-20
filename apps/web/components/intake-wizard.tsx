@@ -813,7 +813,13 @@ export function IntakeWizard({
       setIsConsumer(userIsConsumer);
       setIsAdminTestingMode(userIsAdmin);
       if ((userIsConsumer || userIsAdmin) && user?.id) {
-        setDraft((current) => ({ ...current, consumerId: user.id }));
+        // When regenerating, consumerId is sourced from the source ticket (not
+        // the logged-in admin) — the regenerate hydration effect overrides it.
+        // Skip defaulting here to avoid a transient clobber before the async
+        // fetch resolves. For the non-regenerate path this is the correct init.
+        if (!regenerateFromTicketId) {
+          setDraft((current) => ({ ...current, consumerId: user.id }));
+        }
         setConsumerLabel(user.name || user.email || user.id);
       }
     } catch {}
@@ -839,6 +845,7 @@ export function IntakeWizard({
   const regenerateFromTicketId = searchParams?.get('regenerateFromTicketId') ?? null;
   const regeneratePrefillAppliedRef = useRef(false);
   const [regenerateSourceLabel, setRegenerateSourceLabel] = useState<string>('');
+  const [regenerateConsumerLabel, setRegenerateConsumerLabel] = useState<string>('');
 
   useEffect(() => {
     if (!regenerateFromTicketId) return;
@@ -849,6 +856,8 @@ export function IntakeWizard({
     apiClient
       .get<{
         id: string;
+        consumerId?: string;
+        consumer?: { id: string; name?: string | null; email?: string | null };
         batchNo?: string;
         formPayload?: Record<string, string>;
         intakeFlow?: string;
@@ -866,16 +875,30 @@ export function IntakeWizard({
             // Land at step 1 so staff can review the full form before submitting.
             step: 1,
             payload: nextPayload,
+            // CRITICAL: bill the regenerated ticket to the SOURCE consumer,
+            // not the logged-in admin. The user-load effect already ran and
+            // set consumerId = admin.id; override it here with the real owner.
+            consumerId: source.consumerId ?? current.consumerId,
           }));
           // Hydrate geoIds from the copied payload so location-dependent selects
           // (CityBlock, service picker, court loader) render with the right context.
-          if (nextPayload.city_id) {
-            setGeoIds((g) => ({ ...g, cityId: nextPayload.city_id! }));
+          // Mirror the resume-draft pattern: hydrate district too, not just city.
+          if (nextPayload.city_id || nextPayload.district_id) {
+            setGeoIds((g) => ({
+              ...g,
+              districtId: nextPayload.district_id || g.districtId,
+              cityId: nextPayload.city_id || g.cityId,
+            }));
           }
           // Mark hydration complete so the autosave effect doesn't trample the
           // prefilled state on its first run.
           didHydrateRef.current = true;
           setRegenerateSourceLabel(source.batchNo ?? source.id);
+          // Surface source consumer name so the banner confirms who the
+          // regenerated ticket will be filed under.
+          const cLabel =
+            source.consumer?.name || source.consumer?.email || source.consumer?.id || '';
+          setRegenerateConsumerLabel(cLabel);
         });
       })
       .catch((e: any) => {
@@ -1878,7 +1901,10 @@ export function IntakeWizard({
         <div className="min-w-0 flex-1 space-y-8">
 
       {regenerateFromTicketId && regenerateSourceLabel ? (
-        <RegenerateBanner sourceTicketLabel={regenerateSourceLabel} />
+        <RegenerateBanner
+          sourceTicketLabel={regenerateSourceLabel}
+          consumerLabel={regenerateConsumerLabel}
+        />
       ) : futureFromTicketId && futureSourceLabel ? (
         <FutureTicketsBanner sourceTicketLabel={futureSourceLabel} />
       ) : null}
