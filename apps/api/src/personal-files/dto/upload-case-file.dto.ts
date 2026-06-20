@@ -1,4 +1,4 @@
-import { IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsNumberString, IsOptional, IsString, MaxLength } from 'class-validator';
 
 /**
  * Multipart form fields supplied alongside `file` to
@@ -39,4 +39,34 @@ export class UploadCaseFileDto {
   @IsString()
   @MaxLength(200)
   caption?: string;
+
+  // ─── Intake-style case metadata ────────────────────────────────────────────
+  // These mirror the intake-wizard payload field names so consumers can tag
+  // each upload with the case it belongs to without re-entering the full form.
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  caseNo?: string;
+
+  /** Four-digit year, sent as a string from the multipart form. */
+  @IsOptional()
+  @IsNumberString()
+  @MaxLength(4)
+  caseYear?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  caseTitle?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  courtLevel?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  caseType?: string;
 }

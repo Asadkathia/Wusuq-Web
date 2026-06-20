@@ -310,6 +310,11 @@ export class PersonalFilesService {
       courtType?: string;
       attachedTicketId?: string;
       caption?: string;
+      caseNo?: string;
+      caseYear?: string;
+      caseTitle?: string;
+      courtLevel?: string;
+      caseType?: string;
     },
   ) {
     if (cohort.attachedTicketId) {
@@ -321,6 +326,14 @@ export class PersonalFilesService {
         throw new BadRequestException({ error: 'attached_ticket_not_owned' });
       }
     }
+    // Build caseMeta from any supplied intake-style fields, omitting undefined.
+    const caseMeta: Record<string, string> = {};
+    if (cohort.caseNo) caseMeta.caseNo = cohort.caseNo;
+    if (cohort.caseYear) caseMeta.caseYear = cohort.caseYear;
+    if (cohort.caseTitle) caseMeta.caseTitle = cohort.caseTitle;
+    if (cohort.courtLevel) caseMeta.courtLevel = cohort.courtLevel;
+    if (cohort.caseType) caseMeta.caseType = cohort.caseType;
+
     const result = await this.upload(userId, actorEmail, file);
     const updated = await this.prisma.personalFile.update({
       where: { id: result.id },
@@ -330,6 +343,10 @@ export class PersonalFilesService {
         courtName: cohort.courtName ?? null,
         courtType: cohort.courtType ?? null,
         attachedTicketId: cohort.attachedTicketId ?? null,
+        // When no case fields are supplied, omit caseMeta so the column stays
+        // at its DB default (NULL). We cannot assign plain `null` because
+        // Prisma's NullableJson type requires `Prisma.DbNull` for a null-set.
+        ...(Object.keys(caseMeta).length > 0 ? { caseMeta } : {}),
       },
     });
     return toPersonalFileDto(updated);

@@ -796,6 +796,11 @@ model PersonalFile {
   attachedTicketId String?
   attachedTicket   Ticket? @relation(fields: [attachedTicketId], references: [id], onDelete: SetNull)
 
+  // Intake-style case metadata supplied at upload time (case no, year, title,
+  // court level, case type). Stored as JSON so we can grow the shape without
+  // further migrations. Null for files uploaded via the generic storage page.
+  caseMeta         Json?
+
   @@index([userId, deletedAt, createdAt])
   @@index([userId, serviceId])
 }

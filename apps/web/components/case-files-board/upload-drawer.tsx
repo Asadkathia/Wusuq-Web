@@ -12,8 +12,23 @@ type Props = {
   onUploaded: () => void;
 };
 
+type CaseMeta = {
+  caseNo: string;
+  caseYear: string;
+  caseTitle: string;
+  courtLevel: string;
+  caseType: string;
+};
+
 export function UploadDrawer({ open, onClose, onUploaded }: Props) {
   const [cohort, setCohort] = useState<Partial<CohortValue>>({});
+  const [caseMeta, setCaseMeta] = useState<CaseMeta>({
+    caseNo: '',
+    caseYear: '',
+    caseTitle: '',
+    courtLevel: '',
+    caseType: '',
+  });
   const [files, setFiles] = useState<File[]>([]);
   const [captions, setCaptions] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
@@ -23,8 +38,13 @@ export function UploadDrawer({ open, onClose, onUploaded }: Props) {
     cohort.serviceId && cohort.cityId && cohort.courtName && cohort.courtType,
   );
 
+  const setCaseMetaField = (key: keyof CaseMeta, value: string) => {
+    setCaseMeta((prev) => ({ ...prev, [key]: value }));
+  };
+
   const reset = () => {
     setCohort({});
+    setCaseMeta({ caseNo: '', caseYear: '', caseTitle: '', courtLevel: '', caseType: '' });
     setFiles([]);
     setCaptions([]);
     setError('');
@@ -68,6 +88,12 @@ export function UploadDrawer({ open, onClose, onUploaded }: Props) {
         form.append('courtType', cohort.courtType!);
         const caption = captions[i];
         if (caption) form.append('caption', caption);
+        // Intake-style case metadata — append only when provided.
+        if (caseMeta.caseNo.trim()) form.append('caseNo', caseMeta.caseNo.trim());
+        if (caseMeta.caseYear.trim()) form.append('caseYear', caseMeta.caseYear.trim());
+        if (caseMeta.caseTitle.trim()) form.append('caseTitle', caseMeta.caseTitle.trim());
+        if (caseMeta.courtLevel.trim()) form.append('courtLevel', caseMeta.courtLevel.trim());
+        if (caseMeta.caseType.trim()) form.append('caseType', caseMeta.caseType.trim());
         await apiClient.post('/personal-files/case-files', form);
       }
       reset();
@@ -104,6 +130,101 @@ export function UploadDrawer({ open, onClose, onUploaded }: Props) {
         </header>
         <div className="flex-1 space-y-6 overflow-y-auto px-5 py-6">
           <CohortPicker value={cohort} onChange={setCohort} />
+
+          {/* ── Case metadata (optional) ──────────────────────────── */}
+          <div className="space-y-3">
+            <p className="text-sm font-medium text-slate-700">
+              Case details{' '}
+              <span className="font-normal text-slate-400">(optional)</span>
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label
+                  htmlFor="upload-case-no"
+                  className="mb-1 block text-xs font-medium text-slate-600"
+                >
+                  Case no.
+                </label>
+                <input
+                  id="upload-case-no"
+                  type="text"
+                  value={caseMeta.caseNo}
+                  onChange={(e) => setCaseMetaField('caseNo', e.target.value)}
+                  placeholder="e.g. 1234/2024"
+                  className="w-full rounded-lg border border-border-soft bg-surface px-3 py-2 text-sm placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-400"
+                />
+              </div>
+              <div>
+                <label
+                  htmlFor="upload-case-year"
+                  className="mb-1 block text-xs font-medium text-slate-600"
+                >
+                  Case year
+                </label>
+                <input
+                  id="upload-case-year"
+                  type="number"
+                  min={1900}
+                  max={new Date().getFullYear()}
+                  value={caseMeta.caseYear}
+                  onChange={(e) => setCaseMetaField('caseYear', e.target.value)}
+                  placeholder="e.g. 2022"
+                  className="w-full rounded-lg border border-border-soft bg-surface px-3 py-2 text-sm placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-400"
+                />
+              </div>
+            </div>
+            <div>
+              <label
+                htmlFor="upload-case-title"
+                className="mb-1 block text-xs font-medium text-slate-600"
+              >
+                Case title / parties
+              </label>
+              <input
+                id="upload-case-title"
+                type="text"
+                value={caseMeta.caseTitle}
+                onChange={(e) => setCaseMetaField('caseTitle', e.target.value)}
+                placeholder="e.g. Ahmed vs State"
+                className="w-full rounded-lg border border-border-soft bg-surface px-3 py-2 text-sm placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-400"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label
+                  htmlFor="upload-court-level"
+                  className="mb-1 block text-xs font-medium text-slate-600"
+                >
+                  Court level
+                </label>
+                <input
+                  id="upload-court-level"
+                  type="text"
+                  value={caseMeta.courtLevel}
+                  onChange={(e) => setCaseMetaField('courtLevel', e.target.value)}
+                  placeholder="e.g. High Court"
+                  className="w-full rounded-lg border border-border-soft bg-surface px-3 py-2 text-sm placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-400"
+                />
+              </div>
+              <div>
+                <label
+                  htmlFor="upload-case-type"
+                  className="mb-1 block text-xs font-medium text-slate-600"
+                >
+                  Case type
+                </label>
+                <input
+                  id="upload-case-type"
+                  type="text"
+                  value={caseMeta.caseType}
+                  onChange={(e) => setCaseMetaField('caseType', e.target.value)}
+                  placeholder="e.g. Civil Revision"
+                  className="w-full rounded-lg border border-border-soft bg-surface px-3 py-2 text-sm placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-400"
+                />
+              </div>
+            </div>
+          </div>
+
           {cohortReady ? (
             <div>
               <p className="mb-2 text-sm font-medium text-slate-700">Files</p>

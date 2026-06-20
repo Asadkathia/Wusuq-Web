@@ -128,6 +128,11 @@ export class PersonalFilesController {
         courtType: dto.courtType,
         attachedTicketId: dto.attachedTicketId,
         caption: dto.caption,
+        caseNo: dto.caseNo,
+        caseYear: dto.caseYear,
+        caseTitle: dto.caseTitle,
+        courtLevel: dto.courtLevel,
+        caseType: dto.caseType,
       },
     );
   }
