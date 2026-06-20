@@ -324,6 +324,28 @@ export class TicketsService {
     };
   }
 
+  async countsByStatus(scope: {
+    representativeId?: string;
+    consumerId?: string;
+  }): Promise<Record<string, number>> {
+    const where: Prisma.TicketWhereInput = {
+      archivedAt: null,
+      ...(scope.representativeId
+        ? { assignments: { some: { representativeId: scope.representativeId } } }
+        : {}),
+      ...(scope.consumerId ? { consumerId: scope.consumerId } : {}),
+    };
+    const rows = await this.prisma.ticket.groupBy({
+      by: ['status'],
+      where,
+      _count: { _all: true },
+    });
+    return rows.reduce<Record<string, number>>((acc, row) => {
+      acc[row.status] = row._count._all;
+      return acc;
+    }, {});
+  }
+
   async findOne(id: string, caller?: { role: string; userId: string }) {
     const ticket = await this.prisma.ticket.findUnique({
       where: { id },

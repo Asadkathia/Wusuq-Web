@@ -313,6 +313,22 @@ export class TicketsController {
   }
 
   @RequirePermissions('tickets.read')
+  @Get('counts')
+  async getStatusCounts(
+    @CurrentUser() actor: JwtUser | undefined,
+  ): Promise<Record<string, number>> {
+    if (!actor) return {};
+    let scope: { representativeId?: string; consumerId?: string } = {};
+    if (actor.role === 'representative') {
+      scope = { representativeId: actor.sub };
+    } else if (isConsumerRole(actor.role)) {
+      scope = { consumerId: actor.sub };
+    }
+    // staff: scope = {} → all non-archived
+    return this.ticketsService.countsByStatus(scope);
+  }
+
+  @RequirePermissions('tickets.read')
   @Get(':id')
   findOne(@Param('id') id: string, @CurrentUser() user: JwtUser | undefined) {
     return this.ticketsService.findOne(

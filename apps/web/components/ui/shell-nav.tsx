@@ -5,13 +5,14 @@ import { usePathname } from 'next/navigation';
 import { startTransition, useEffect, useState, type ComponentType } from 'react';
 import { ChevronDown, ChevronRight, ShieldCheck } from 'lucide-react';
 
-export type NavSubItem = { label: string; href: string };
+export type NavSubItem = { label: string; href: string; count?: number };
 
 export type NavItem = {
   label: string;
   href?: string;
   icon: ComponentType<{ className?: string }>;
   children?: NavSubItem[];
+  count?: number;
 };
 
 type ShellNavProps = {
@@ -120,6 +121,11 @@ export function ShellNavBody({ items, variant, onNavigate }: ShellNavBodyProps) 
               >
                 {item.label}
               </span>
+              {item.count != null && item.count > 0 ? (
+                <span className="ml-auto shrink-0 rounded-full bg-brand-500 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white">
+                  {item.count > 99 ? '99+' : item.count}
+                </span>
+              ) : null}
             </div>
           );
 
@@ -183,6 +189,11 @@ export function ShellNavBody({ items, variant, onNavigate }: ShellNavBodyProps) 
                           ].join(' ')}
                         />
                         {child.label}
+                        {child.count != null && child.count > 0 ? (
+                          <span className="ml-auto shrink-0 rounded-full bg-brand-500 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white">
+                            {child.count > 99 ? '99+' : child.count}
+                          </span>
+                        ) : null}
                       </Link>
                     );
                   })}
