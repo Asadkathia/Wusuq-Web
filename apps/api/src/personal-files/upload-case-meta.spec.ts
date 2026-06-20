@@ -72,7 +72,9 @@ function makeService() {
         userStorageUsage: { upsert: prisma.userStorageUsage.upsert },
       }),
     ),
-  } as unknown as Parameters<typeof PersonalFilesService.prototype.uploadCaseFile>[0];
+  } as unknown as Parameters<
+    typeof PersonalFilesService.prototype.uploadCaseFile
+  >[0];
 
   const storage = {
     put: jest.fn(async () => undefined),
@@ -115,7 +117,8 @@ describe('PersonalFilesService.uploadCaseFile — caseMeta persistence', () => {
     });
 
     expect(updateSpy).toHaveBeenCalledTimes(1);
-    const updateData = (updateSpy.mock.calls[0] as [{ data: unknown }])[0].data as {
+    const updateData = (updateSpy.mock.calls[0] as [{ data: unknown }])[0]
+      .data as {
       caseMeta: Record<string, string> | null;
     };
     expect(updateData.caseMeta).toEqual({
@@ -137,10 +140,8 @@ describe('PersonalFilesService.uploadCaseFile — caseMeta persistence', () => {
 
     // caseMeta must NOT be present in the update data (null is not assignable
     // to Prisma's NullableJson — we omit it so the column stays at DB default).
-    const updateData = (updateSpy.mock.calls[0] as [{ data: unknown }])[0].data as Record<
-      string,
-      unknown
-    >;
+    const updateData = (updateSpy.mock.calls[0] as [{ data: unknown }])[0]
+      .data as Record<string, unknown>;
     expect('caseMeta' in updateData).toBe(false);
   });
 
@@ -154,7 +155,8 @@ describe('PersonalFilesService.uploadCaseFile — caseMeta persistence', () => {
       // caseYear, caseTitle, courtLevel, caseType intentionally omitted
     });
 
-    const updateData = (updateSpy.mock.calls[0] as [{ data: unknown }])[0].data as {
+    const updateData = (updateSpy.mock.calls[0] as [{ data: unknown }])[0]
+      .data as {
       caseMeta: Record<string, string> | null;
     };
     expect(updateData.caseMeta).toEqual({ caseNo: '999/2023' });

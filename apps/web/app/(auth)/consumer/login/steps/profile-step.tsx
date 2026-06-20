@@ -25,7 +25,6 @@ export function ProfileStep({
   // address fields
   streetAddress,
   onStreetAddressChange,
-  province,
   onProvinceChange,
   provinceId,
   onProvinceIdChange,

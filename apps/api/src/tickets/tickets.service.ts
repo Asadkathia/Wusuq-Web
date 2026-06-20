@@ -331,7 +331,9 @@ export class TicketsService {
     const where: Prisma.TicketWhereInput = {
       archivedAt: null,
       ...(scope.representativeId
-        ? { assignments: { some: { representativeId: scope.representativeId } } }
+        ? {
+            assignments: { some: { representativeId: scope.representativeId } },
+          }
         : {}),
       ...(scope.consumerId ? { consumerId: scope.consumerId } : {}),
     };

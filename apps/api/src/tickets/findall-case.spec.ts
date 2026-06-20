@@ -25,7 +25,12 @@ const BASE_TICKET = {
   id: 't1',
   batchNo: 'TKT-1',
   consumer: { id: 'c1', name: 'Alice' },
-  service: { id: 's1', name: 'Case Files', category: 'judicial', type: 'case_files' },
+  service: {
+    id: 's1',
+    name: 'Case Files',
+    category: 'judicial',
+    type: 'case_files',
+  },
   serviceCity: 'Karachi',
   caseType: 'Civil',
   intakeFlow: 'judicial_case_files',
@@ -68,7 +73,11 @@ describe('findAll – case relation and assignmentStatus', () => {
     const svc = makeService(rows);
     const result = await svc.findAll({ page: 1, limit: 10 });
     const row = result.items[0] as any;
-    expect(row.case).toEqual({ caseNo: 'C-1', court: 'X Court', caseYear: 2020 });
+    expect(row.case).toEqual({
+      caseNo: 'C-1',
+      court: 'X Court',
+      caseYear: 2020,
+    });
     expect(row.assignmentStatus).toBe('ACCEPTED');
     expect(row.assignedRepresentative).toEqual({ id: 'r1', name: 'Bob' });
   });

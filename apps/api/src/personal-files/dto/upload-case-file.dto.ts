@@ -1,4 +1,9 @@
-import { IsNumberString, IsOptional, IsString, MaxLength } from 'class-validator';
+import {
+  IsNumberString,
+  IsOptional,
+  IsString,
+  MaxLength,
+} from 'class-validator';
 
 /**
  * Multipart form fields supplied alongside `file` to

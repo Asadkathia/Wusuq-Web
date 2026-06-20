@@ -12,9 +12,9 @@ function makeDispatcher() {
 
 describe('countsByStatus', () => {
   it('clerk scope: filters by representativeId and archivedAt: null', async () => {
-    const groupBy = jest.fn().mockResolvedValue([
-      { status: 'ASSIGNED', _count: { _all: 3 } },
-    ]);
+    const groupBy = jest
+      .fn()
+      .mockResolvedValue([{ status: 'ASSIGNED', _count: { _all: 3 } }]);
     const prisma = {
       ticket: { groupBy },
     };
