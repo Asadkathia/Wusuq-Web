@@ -945,6 +945,51 @@ export function buildNonJudicialPricingRows(): Array<{
 }
 
 // ─────────────────────────────────────────────
+// Year-sensitive pricing helpers (pure, deterministic)
+// ─────────────────────────────────────────────
+//
+// Relocated from apps/api/src/pricing/pricing.service.ts (Task C1, 2026-06-19)
+// so the web wizard can import them for instant client-side checkout estimates
+// without a server round-trip (Task C2). The API pricing resolver imports and
+// re-exports these from here; existing API importers keep working via the re-
+// exports in pricing.service.ts.
+
+// Owner 2026-06 rate change: Case Search is priced by case age — Rs 2,000 per
+// year of age, per city — REPLACING the seeded base rule. Example: an 11-year-
+// old case = 11 × 2,000 = Rs 22,000 per city. Pending or unknown-year cases
+// (no caseYear, or caseYear in the present/future) charge the 1-year minimum.
+export const CASE_SEARCH_PER_YEAR_RATE = 2000;
+
+export function computeCaseSearchBase(
+  caseYear: number | undefined,
+  currentYear = new Date().getFullYear(),
+): number {
+  const age = caseYear && caseYear < currentYear ? currentYear - caseYear : 1;
+  return Math.max(1, age) * CASE_SEARCH_PER_YEAR_RATE;
+}
+
+// PDF #7 / QA 5-10-26: decided cases older than 10 years pick up Rs 1,000 per
+// extra year on top of the rule-based price. Example: in 2026 a 2016 case
+// resolves to its banded base; 2015 = base + 1,000; 2014 = base + 2,000.
+// Applies only when caseStatus === 'Decided Case'. Pending and current-year
+// cases get no surcharge.
+export const DECIDED_AGE_SURCHARGE_PER_YEAR = 1000;
+export const DECIDED_AGE_THRESHOLD_YEARS = 10;
+
+export function computeDecidedAgeSurcharge(
+  caseStatus: string | undefined,
+  caseYear: number | undefined,
+  currentYear = new Date().getFullYear(),
+): number {
+  if (caseStatus !== 'Decided Case') return 0;
+  if (!caseYear || caseYear >= currentYear) return 0;
+  const age = currentYear - caseYear;
+  const extra = age - DECIDED_AGE_THRESHOLD_YEARS;
+  if (extra <= 0) return 0;
+  return extra * DECIDED_AGE_SURCHARGE_PER_YEAR;
+}
+
+// ─────────────────────────────────────────────
 // Ticket document labels
 // ─────────────────────────────────────────────
 //

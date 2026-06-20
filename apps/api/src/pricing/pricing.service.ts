@@ -3,6 +3,20 @@ import {
   deriveYearBand,
   chargeCapabilitiesFor,
   paymentModelFor,
+  computeCaseSearchBase,
+  computeDecidedAgeSurcharge,
+  CASE_SEARCH_PER_YEAR_RATE,
+  DECIDED_AGE_SURCHARGE_PER_YEAR,
+  DECIDED_AGE_THRESHOLD_YEARS,
+} from '@wusuq/shared';
+
+// Re-export for back-compat: existing tests/importers that reference these
+// from pricing.service keep working without changes.
+export {
+  computeCaseSearchBase,
+  CASE_SEARCH_PER_YEAR_RATE,
+  DECIDED_AGE_SURCHARGE_PER_YEAR,
+  DECIDED_AGE_THRESHOLD_YEARS,
 } from '@wusuq/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatePricingRuleDto } from './dto/create-pricing-rule.dto';
@@ -34,45 +48,6 @@ export const STATE_VS_PATTERN = /^\s*state\s+vs\b/i;
 // top of the base per-city rate. The total then scales linearly with the
 // number of cities (PDF #36).
 export const SEARCH_BOTH_SURCHARGE = 1000;
-
-// Owner 2026-06 rate change: Case Search (judicial_case_search) is now priced
-// by case age — Rs 2,000 per year of age, per city — REPLACING the seeded base
-// rule. Example: an 11-year-old case = 11 × 2,000 = Rs 22,000 per city. Pending
-// or unknown-year cases (no caseYear, or caseYear in the present/future) charge
-// the 1-year minimum = Rs 2,000. The "both methods" surcharge (+Rs 1,000/city)
-// and the cityCount multiplier still apply on top. Because the per-year base
-// already encodes age, the legacy decided-age surcharge is suppressed for this
-// flow (see resolve()).
-export const CASE_SEARCH_PER_YEAR_RATE = 2000;
-
-export function computeCaseSearchBase(
-  caseYear: number | undefined,
-  currentYear = new Date().getFullYear(),
-): number {
-  const age = caseYear && caseYear < currentYear ? currentYear - caseYear : 1;
-  return Math.max(1, age) * CASE_SEARCH_PER_YEAR_RATE;
-}
-
-// PDF #7 / QA 5-10-26: decided cases older than 10 years pick up Rs 1,000 per
-// extra year on top of the rule-based price. Example: in 2026 a 2016 case
-// resolves to its banded base; 2015 = base + 1,000; 2014 = base + 2,000.
-// Applies only when caseStatus === 'Decided Case'. Pending and current-year
-// cases get no surcharge.
-export const DECIDED_AGE_SURCHARGE_PER_YEAR = 1000;
-export const DECIDED_AGE_THRESHOLD_YEARS = 10;
-
-function computeAgeSurcharge(
-  caseStatus: string | undefined,
-  caseYear: number | undefined,
-  currentYear = new Date().getFullYear(),
-): number {
-  if (caseStatus !== 'Decided Case') return 0;
-  if (!caseYear || caseYear >= currentYear) return 0;
-  const age = currentYear - caseYear;
-  const extra = age - DECIDED_AGE_THRESHOLD_YEARS;
-  if (extra <= 0) return 0;
-  return extra * DECIDED_AGE_SURCHARGE_PER_YEAR;
-}
 
 function deriveRegion(province?: string): 'Punjab' | 'other' | undefined {
   if (!province) return undefined;
@@ -615,7 +590,7 @@ export class PricingService {
     // the legacy decided-age surcharge for it to avoid double-counting.
     const ageSurcharge = isCaseSearch
       ? 0
-      : computeAgeSurcharge(dto.caseStatus, dto.caseYear);
+      : computeDecidedAgeSurcharge(dto.caseStatus, dto.caseYear);
 
     // 2026-06 #4/#5: Case Information's document bundle is folded into the base
     // fee above (see basePrice). There is no separate bundle add-on line, so
