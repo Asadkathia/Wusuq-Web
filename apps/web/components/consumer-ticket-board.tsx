@@ -20,7 +20,8 @@ import {
   Ticket as TicketIcon,
   Truck,
 } from 'lucide-react';
-import { FLOW_LABELS, isFlowKey, documentCategoryLabel } from '@wusuq/shared';
+import { FLOW_LABELS, isFlowKey, documentCategoryLabel, chargeCapabilitiesFor, orderCaseDetailKeys } from '@wusuq/shared';
+import { parseDeliveryAddress } from '@/lib/intake-flows';
 import { apiClient } from '@/lib/api-client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -569,6 +570,86 @@ function MiniStat({ label, value, tone = 'slate' }: { label: string; value: stri
   );
 }
 
+// ─── Consumer ticket detail helpers ─────────────────────────────────────────
+
+/** Keys from formPayload that are handled in the separate Delivery section or
+ *  are internal identifiers — excluded from the Case Details render. */
+const CASE_DETAIL_SKIP_KEYS = new Set([
+  'delivery_address',
+  'delivery_mode',
+  'delivery_method',
+  'delivery_city_id',
+  'delivery_province',
+  'delivery_district',
+  // Internal / idempotency
+  'parent_ticket_id',
+  'notes',
+]);
+
+/** Consumer-friendly labels for formPayload keys (supplements the generic
+ *  underscore-to-space transform for well-known intake field names). */
+const PAYLOAD_LABEL: Record<string, string> = {
+  select_court_city: 'City',
+  city: 'City',
+  select_court: 'Court',
+  select_court_type: 'Court type',
+  select_service: 'Service type',
+  case_type: 'Case type',
+  case_type_other: 'Case type (other)',
+  case_petition_no: 'Case no.',
+  case_no: 'Case no.',
+  case_year: 'Case year',
+  year: 'Case year',
+  case_title: 'Case title',
+  judge_designation: 'Judge designation',
+  judge_name: 'Judge',
+  case_date: 'Case date',
+  future_date: 'Next hearing',
+  case_status: 'Case status',
+  search_method: 'Search method',
+  want_pdf_before_dispatch: 'PDF copy',
+  cnic: 'CNIC',
+  required_documentations: 'Document bundle',
+};
+
+function payloadLabel(key: string): string {
+  return (
+    PAYLOAD_LABEL[key] ??
+    key
+      .replace(/_/g, ' ')
+      .replace(/\b\w/g, (c) => c.toUpperCase())
+  );
+}
+
+/** True if the key is safe to display in the consumer case-details panel.
+ *  Skips delivery-prefixed keys, ID-only fields, and internal markers. */
+function isCaseDetailKey(key: string, value: unknown): boolean {
+  if (CASE_DETAIL_SKIP_KEYS.has(key)) return false;
+  // Any key prefixed with 'delivery_' is for the separate delivery section.
+  if (key.startsWith('delivery_')) return false;
+  // Internal numeric IDs are not useful to consumers.
+  if (key.endsWith('_id')) return false;
+  // Empty / null / binary refs
+  if (value === null || value === undefined || String(value).trim() === '') return false;
+  if (String(value).includes('upload')) return false;
+  return true;
+}
+
+function statusLabelFull(status: string): string {
+  const MAP: Record<string, string> = {
+    UNPAID: 'Unpaid — awaiting payment',
+    PAID: 'Payment received',
+    ASSIGNED: 'Representative assigned',
+    IN_PROGRESS: 'In progress',
+    WAITING_APPROVAL: 'Under review',
+    COMPLETED: 'Completed',
+    DELIVERED: 'Delivered',
+  };
+  return MAP[status] ?? status;
+}
+
+// ─── End helpers ─────────────────────────────────────────────────────────────
+
 // Consumer-safe ticket detail — the single rendering used by both the My
 // Tickets drawer and the full-page route (/consumer/tickets/[id]). Shows ONLY
 // consumer-visible info: service, location, charges (NO clerk cost / no admin
@@ -675,6 +756,83 @@ export function ConsumerTicketDetail({
         </dl>
       </section>
 
+      {/* ── Section 2: Case details ─────────────────────────────────────── */}
+      {ticket.formPayload && typeof ticket.formPayload === 'object' && (() => {
+        const p = ticket.formPayload as Record<string, unknown>;
+        const displayKeys = orderCaseDetailKeys(
+          Object.keys(p).filter((k) => isCaseDetailKey(k, p[k]))
+        );
+        if (displayKeys.length === 0) return null;
+        return (
+          <section>
+            <h4 className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Case details</h4>
+            <div className="mt-3 divide-y divide-border-soft rounded-xl ring-1 ring-border-soft bg-surface">
+              {displayKeys.map((k) => (
+                <div key={k} className="flex items-start gap-3 px-4 py-2.5 text-sm">
+                  <span className="w-32 shrink-0 font-medium text-slate-500">{payloadLabel(k)}</span>
+                  <span className="flex-1 text-slate-800">{String(p[k])}</span>
+                </div>
+              ))}
+            </div>
+          </section>
+        );
+      })()}
+
+      {/* ── Section 3: Delivery address & method (physical flows only) ──── */}
+      {chargeCapabilitiesFor(ticket.intakeFlow).delivery &&
+        ticket.formPayload &&
+        typeof ticket.formPayload === 'object' &&
+        (() => {
+          const p = ticket.formPayload as Record<string, unknown>;
+          const deliveryMode = p.delivery_mode ? String(p.delivery_mode) : '';
+          const deliveryMethod = p.delivery_method ? String(p.delivery_method) : '';
+          const rawAddr = p.delivery_address;
+          if (!deliveryMode && !deliveryMethod && !rawAddr) return null;
+          const addr = rawAddr ? parseDeliveryAddress(rawAddr) : null;
+          const addrParts = addr
+            ? ([addr.house, addr.block, addr.mainArea, addr.city] as (string | undefined)[]).filter(
+                (s): s is string => Boolean(s?.trim())
+              )
+            : [];
+          return (
+            <section>
+              <h4 className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500 flex items-center gap-1.5">
+                <Truck className="h-3.5 w-3.5" /> Delivery
+              </h4>
+              <div className="mt-3 divide-y divide-border-soft rounded-xl ring-1 ring-border-soft bg-surface">
+                {(deliveryMode || deliveryMethod) && (
+                  <div className="flex items-start gap-3 px-4 py-2.5 text-sm">
+                    <span className="w-32 shrink-0 font-medium text-slate-500">Method</span>
+                    <span className="flex-1 text-slate-800">
+                      {[deliveryMode, deliveryMethod].filter(Boolean).join(' · ')}
+                    </span>
+                  </div>
+                )}
+                {addrParts.length > 0 && (
+                  <div className="flex items-start gap-3 px-4 py-2.5 text-sm">
+                    <span className="w-32 shrink-0 font-medium text-slate-500">Address</span>
+                    <span className="flex-1 text-slate-800">{addrParts.join(', ')}</span>
+                  </div>
+                )}
+                {ticket.trackingNo && (
+                  <div className="flex items-start gap-3 px-4 py-2.5 text-sm">
+                    <span className="w-32 shrink-0 font-medium text-slate-500">Tracking no.</span>
+                    <span className="flex-1 font-mono text-slate-800">{ticket.trackingNo}</span>
+                  </div>
+                )}
+                {ticket.deliveryStatus && (
+                  <div className="flex items-start gap-3 px-4 py-2.5 text-sm">
+                    <span className="w-32 shrink-0 font-medium text-slate-500">Dispatch status</span>
+                    <span className="flex-1 text-slate-800">
+                      {ticket.deliveryStatus === 'DISPATCHED' ? 'Dispatched' : 'Pending dispatch'}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </section>
+          );
+        })()}
+
       {charges.length > 0 || discount > 0 ? (
         <section>
           <h4 className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Charges</h4>
@@ -764,6 +922,31 @@ export function ConsumerTicketDetail({
           <Button variant="brand" size="sm" rightIcon={<ArrowUpRight className="h-3.5 w-3.5" />}>Pay now</Button>
         </Link>
       ) : null}
+
+      {/* ── Section 1: Status timeline ─────────────────────────────────── */}
+      {Array.isArray(ticket.history) && ticket.history.length > 0 && (
+        <section>
+          <h4 className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500 flex items-center gap-1.5">
+            <Clock className="h-3.5 w-3.5" /> Timeline
+          </h4>
+          <ol className="relative mt-3 border-l border-slate-200 pl-5 space-y-4">
+            {(ticket.history as Array<{ from?: string; to: string; createdAt: string }>).map((h, i) => (
+              <li key={i} className="relative">
+                <span className="absolute -left-[21px] flex h-4 w-4 items-center justify-center rounded-full bg-brand-100 ring-4 ring-white">
+                  <span className="h-1.5 w-1.5 rounded-full bg-brand-500" />
+                </span>
+                <p className="text-sm font-medium text-slate-900">{statusLabelFull(h.to)}</p>
+                {h.from && (
+                  <p className="text-xs text-slate-400 mt-0.5">from {statusLabelFull(h.from)}</p>
+                )}
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  {new Date(h.createdAt).toLocaleString('en-PK', { dateStyle: 'medium', timeStyle: 'short' })}
+                </p>
+              </li>
+            ))}
+          </ol>
+        </section>
+      )}
 
       {ticket.status === 'COMPLETED' || ticket.status === 'DELIVERED' ? (
         <PanelCard className="mt-4 border border-brand-200 bg-gradient-to-br from-brand-50 to-violet-50">
