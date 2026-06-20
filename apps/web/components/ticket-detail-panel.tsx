@@ -110,6 +110,14 @@ export function TicketDetailPanel({ ticketId, onClose, isClerkView = false }: Pr
       Number(ticket.discountPrice || 0)
     : 0;
 
+  /** Internal-only: total payout to the assigned clerk (clerkCost + phase-2 charges). */
+  const computeClerkEarnings = (t: any): number =>
+    Number(t.clerkCost || 0) +
+    Number(t.attestedCharges || 0) +
+    Number(t.nonAttestedCharges || 0) +
+    Number(t.printingCharges || 0) +
+    Number(t.deliveryCharges || 0);
+
   const renderPayload = (payload: Record<string, unknown>, opts: { hideKeys?: string[] } = {}) => {
     const hide = new Set(opts.hideKeys ?? []);
     const orderedKeys = orderCaseDetailKeys(Object.keys(payload));
@@ -250,16 +258,33 @@ export function TicketDetailPanel({ ticketId, onClose, isClerkView = false }: Pr
                     )}
                   </PanelCard>
 
-                  {/* Clerk Cost */}
-                  <PanelCard className="p-4">
-                    <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2"><CreditCard className="h-4 w-4 text-primary-500" />Clerk Cost</h3>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-slate-500">Clerk Cost</span>
-                      <span className="font-medium text-slate-800">
-                        PKR {Number(ticket.clerkCost || 0).toLocaleString()}
-                      </span>
-                    </div>
-                  </PanelCard>
+                  {/* Clerk Cost (clerk view) */}
+                  {(() => {
+                    const repName = ticket.assignments?.[0]?.representative?.name as string | undefined;
+                    const clerkLabel = repName ? `Clerk — ${repName}` : 'Clerk';
+                    const earnings = computeClerkEarnings(ticket);
+                    return (
+                      <PanelCard className="p-4">
+                        <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
+                          <CreditCard className="h-4 w-4 text-primary-500" />{clerkLabel}
+                        </h3>
+                        <div className="space-y-2 text-sm">
+                          <div className="flex justify-between">
+                            <span className="text-slate-500">Clerk Cost</span>
+                            <span className="font-medium text-slate-800">
+                              PKR {Number(ticket.clerkCost || 0).toLocaleString()}
+                            </span>
+                          </div>
+                          {earnings > 0 && (
+                            <div className="flex justify-between border-t border-slate-100 pt-2 font-semibold text-slate-900">
+                              <span>{repName ? `${repName}'s total earnings` : 'Clerk total earnings'}</span>
+                              <span>PKR {earnings.toLocaleString()}</span>
+                            </div>
+                          )}
+                        </div>
+                      </PanelCard>
+                    );
+                  })()}
                 </>
               ) : (
                 <>
@@ -330,6 +355,8 @@ export function TicketDetailPanel({ ticketId, onClose, isClerkView = false }: Pr
                     <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2"><CreditCard className="h-4 w-4 text-primary-500" />Charges Breakdown</h3>
                     {(() => {
                       const caps = chargeCapabilitiesFor(ticket.intakeFlow);
+                      const repName = ticket.assignments?.[0]?.representative?.name as string | undefined;
+                      const clerkCostLabel = repName ? `Clerk Cost (${repName})` : 'Clerk Cost';
                       const chargeRows: Array<[string, unknown]> = [
                         ['Service Cost', ticket.serviceCost],
                         ...(caps.delivery ? [['Delivery Charges', ticket.deliveryCharges] as [string, unknown]] : []),
@@ -338,9 +365,10 @@ export function TicketDetailPanel({ ticketId, onClose, isClerkView = false }: Pr
                         ...(caps.attestation ? [['Non-Attested Charges', ticket.nonAttestedCharges] as [string, unknown]] : []),
                         ['Additional Charges', ticket.additionalCharges],
                         ['Additional Service Cost', ticket.additionalServiceCost],
-                        ['Clerk Cost', ticket.clerkCost],
+                        [clerkCostLabel, ticket.clerkCost],
                         ['Discount', ticket.discountPrice ? `-${Number(ticket.discountPrice).toLocaleString()}` : null],
                       ];
+                      const clerkEarnings = computeClerkEarnings(ticket);
                       return (
                         <div className="space-y-2 text-sm">
                           {chargeRows.filter(([, val]) => val !== null && val !== undefined && Number(val) !== 0).map(([label, val]) => (
@@ -349,6 +377,12 @@ export function TicketDetailPanel({ ticketId, onClose, isClerkView = false }: Pr
                               <span className="font-medium text-slate-800">PKR {Number(val || 0).toLocaleString()}</span>
                             </div>
                           ))}
+                          {clerkEarnings > 0 && (
+                            <div className="flex justify-between border-b border-dashed border-amber-200 pb-1.5 text-amber-800">
+                              <span className="font-medium">{repName ? `${repName}'s earnings` : 'Clerk earnings'}</span>
+                              <span className="font-semibold">PKR {clerkEarnings.toLocaleString()}</span>
+                            </div>
+                          )}
                           <div className="flex justify-between pt-1 font-semibold text-slate-900">
                             <span>Total</span><span>PKR {totalCharges.toLocaleString()}</span>
                           </div>

@@ -58,7 +58,9 @@ type TicketRow = {
   additionalCharges?: number | string | null;
   intakeFlow?: string | null;
   createdBy?: string | null;
+  clerkCost?: number | string | null;
   defaultClerkCost?: number | null;
+  assignedRepresentative?: { id: string; name: string } | null;
   scheduledDate?: string | null;
   nextDate?: string | null;
   hearingType?: string | null;
@@ -207,6 +209,14 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
   const [finalizeTicket, setFinalizeTicket] = useState<TicketRow | null>(null);
   const [finalizeForm, setFinalizeForm] = useState<FinalizeForm>(EMPTY_FINALIZE);
   const [finalizing, setFinalizing] = useState(false);
+
+  /** Internal-only: total payout to the clerk given the current finalize form values. */
+  const computeFinalizeClerkEarnings = (t: TicketRow, form: FinalizeForm): number =>
+    Number(t.clerkCost ?? t.defaultClerkCost ?? 0) +
+    Number(form.attestedCharges || 0) +
+    Number(form.nonAttestedCharges || 0) +
+    Number(form.printingCharges || 0) +
+    Number(form.deliveryCharges || 0);
 
   const openFinalizeModal = (ticket: TicketRow) => {
     setFinalizeTicket(ticket);
@@ -1630,6 +1640,24 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
                     (caps.delivery ? (Number(finalizeForm.deliveryCharges) || 0) : 0)
                   ).toLocaleString()}
                 </div>
+                {/* Clerk earnings summary — internal only, never shown to consumers */}
+                {(() => {
+                  const repName = finalizeTicket.assignedRepresentative?.name;
+                  const earnings = computeFinalizeClerkEarnings(finalizeTicket, finalizeForm);
+                  return (
+                    <div className="rounded-lg border border-amber-100 bg-amber-50 px-4 py-3 text-sm">
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium text-amber-800">
+                          {repName ? `${repName}'s earnings` : 'Clerk earnings'}
+                        </span>
+                        <span className="font-semibold text-amber-900">PKR {earnings.toLocaleString()}</span>
+                      </div>
+                      <p className="mt-0.5 text-xs text-amber-700">
+                        Clerk cost{repName ? ` · ${repName}` : ''} + phase-2 charges (internal only)
+                      </p>
+                    </div>
+                  );
+                })()}
               </div>
             );
           })()}
