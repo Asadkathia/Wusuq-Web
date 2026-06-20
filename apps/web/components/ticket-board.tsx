@@ -459,6 +459,10 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
       return;
     }
     const slug = flowKeyToSlug(intakeFlow);
+    if (!slug) {
+      setMessage('Cannot regenerate: unknown service flow');
+      return;
+    }
     // Derive the URL segment from the flow key prefix.
     const category = intakeFlow.startsWith('judicial_') ? 'judicial' : 'non-judicial';
     router.push(

@@ -842,8 +842,6 @@ export function IntakeWizard({
 
   useEffect(() => {
     if (!regenerateFromTicketId) return;
-    // regenerate takes precedence — skip if futureFromTicketId already applied
-    if (futurePrefillAppliedRef.current) return;
     if (regeneratePrefillAppliedRef.current) return;
     regeneratePrefillAppliedRef.current = true;
     // No cancelled flag: the ref guard ensures exactly-once execution per
@@ -880,14 +878,17 @@ export function IntakeWizard({
           setRegenerateSourceLabel(source.batchNo ?? source.id);
         });
       })
-      .catch(() => {
-        // Silent failure: leave the wizard in its default empty state.
+      .catch((e: any) => {
+        startTransition(() => {
+          setApiError(e?.message || 'Failed to load source ticket for regeneration.');
+        });
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [regenerateFromTicketId]);
 
   useEffect(() => {
     if (!futureFromTicketId) return;
+    if (regenerateFromTicketId) return;
     if (futurePrefillAppliedRef.current) return;
     futurePrefillAppliedRef.current = true;
     // No cancelled flag: the ref guard already ensures exactly-once
@@ -958,7 +959,7 @@ export function IntakeWizard({
         // adjust fields manually.
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [futureFromTicketId]);
+  }, [futureFromTicketId, regenerateFromTicketId]);
 
   // Resume from server-side draft. The server is the source of truth; the
   // localStorage id is only a fast-path cache. Always ask the API for the
