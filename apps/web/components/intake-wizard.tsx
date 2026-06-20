@@ -1581,7 +1581,7 @@ export function IntakeWizard({
     const _effectiveCaseYear = (() => {
       if (p.decided_date) {
         const m = /^(\d{4})/.exec(p.decided_date);
-        if (m && m[1]) return parseInt(m[1]);
+        if (m && m[1]) return parseInt(m[1], 10) || undefined;
       }
       return parseInt(p.case_year ?? p.year ?? '0') || undefined;
     })();
@@ -1596,12 +1596,16 @@ export function IntakeWizard({
       const raw = pricingResult;
       if (!raw?.matched || raw.available === false) return raw;
       if (draft.flow === 'judicial_case_search') {
-        // Base is entirely year-driven: computeCaseSearchBase × cityCount.
+        // Base is per-city: computeCaseSearchBase returns a per-city value; the
+        // server's raw.basePrice is also per-city (the resolver multiplies by
+        // cityCount only into serviceCost/total, never into basePrice). Guard
+        // and delta must both stay in per-city units; delta is then scaled by
+        // cityCount before adjusting serviceCost/total.
         const cityCount = raw.cityCount ?? Math.max(1, parseCities(p.cities ?? '').length);
-        const instantBase = computeCaseSearchBase(_effectiveCaseYear) * cityCount;
-        if (instantBase === raw.basePrice) return raw; // server already current
-        const delta = instantBase - raw.basePrice;
-        return { ...raw, basePrice: instantBase, serviceCost: raw.serviceCost + delta, total: raw.total + delta };
+        const instantPerCityBase = computeCaseSearchBase(_effectiveCaseYear);
+        if (instantPerCityBase === raw.basePrice) return raw; // per-city vs per-city — true no-op when year unchanged
+        const delta = (instantPerCityBase - raw.basePrice) * cityCount; // scale by cityCount
+        return { ...raw, basePrice: instantPerCityBase, serviceCost: raw.serviceCost + delta, total: raw.total + delta };
       }
       if (draft.flow === 'judicial_case_files' && p.case_status === 'Decided Case') {
         // Only the age-surcharge is year-driven; banded base is server-only.
