@@ -629,6 +629,8 @@ export class TicketsService {
               ? new Date(dto.scheduledDate)
               : undefined,
             hearingType: dto.hearingType,
+            // Regenerate lineage stamp (B2). null when not a regeneration.
+            regeneratedFromTicketId: dto.regeneratedFromTicketId ?? null,
           },
         });
 

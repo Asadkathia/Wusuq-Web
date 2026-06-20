@@ -63,4 +63,10 @@ export class CreateTicketIntakeDto {
   @IsOptional()
   @IsString()
   promoCode?: string;
+
+  // When set, stamps the lineage pointer Ticket.regeneratedFromTicketId so
+  // staff can trace which ticket this regeneration originated from (B2).
+  @IsOptional()
+  @IsString()
+  regeneratedFromTicketId?: string;
 }
