@@ -27,7 +27,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { UserCircle, MapPin, Tag, RefreshCw, CheckSquare, Clock, History, FileOutput, Eye, PlayCircle, Upload, X, XCircle } from 'lucide-react';
+import { UserCircle, MapPin, Tag, RefreshCw, CheckSquare, Clock, History, FileOutput, Eye, PlayCircle, Upload, X, XCircle, Calendar, FileText } from 'lucide-react';
 import { TicketDetailPanel } from './ticket-detail-panel';
 import { flowKeyToSlug } from '@/lib/intake-flows';
 
@@ -60,8 +60,11 @@ type TicketRow = {
   createdBy?: string | null;
   defaultClerkCost?: number | null;
   scheduledDate?: string | null;
+  nextDate?: string | null;
   hearingType?: string | null;
   payload?: Record<string, string> | null;
+  case?: { caseNo: string | null; court: string | null; caseYear: number | null } | null;
+  assignmentStatus?: 'ACTIVE' | 'ACCEPTED' | 'REJECTED' | 'SUPERSEDED' | null;
   consumer: { id: string; name: string };
   service: { id: string; name: string; category: string; type: string };
 };
@@ -808,6 +811,9 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
               </th>
               <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Consumer</th>
               <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Service Details</th>
+              {isClerk && (
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Case &amp; Schedule</th>
+              )}
               <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Status</th>
               <th scope="col" className="relative px-6 py-3"><span className="sr-only">Actions</span></th>
             </tr>
@@ -847,6 +853,67 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
                     <span className="flex items-center gap-1"><Tag className="h-3 w-3" /> {ticket.caseType || 'Standard'}</span>
                   </div>
                 </td>
+                {isClerk && (
+                  <td className="px-6 py-4">
+                    {/* Case number */}
+                    {ticket.case?.caseNo && (
+                      <div className="flex items-center gap-1 text-sm text-slate-700 font-medium">
+                        <FileText className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                        <span>{ticket.case.caseNo}{ticket.case.caseYear ? ` / ${ticket.case.caseYear}` : ''}</span>
+                      </div>
+                    )}
+                    {/* Next hearing date — prefer nextDate over scheduledDate */}
+                    {(ticket.nextDate || ticket.scheduledDate) && (
+                      <div className="flex items-center gap-1 text-xs text-slate-500 mt-1">
+                        <Calendar className="h-3 w-3 shrink-0" />
+                        <span>
+                          {new Date(ticket.nextDate ?? ticket.scheduledDate!).toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric' })}
+                          {ticket.hearingType ? ` · ${ticket.hearingType}` : ''}
+                        </span>
+                      </div>
+                    )}
+                    {/* Assignment acceptance */}
+                    <div className="flex flex-wrap gap-1 mt-1.5">
+                      {ticket.assignmentStatus && (
+                        <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium ${
+                          ticket.assignmentStatus === 'ACCEPTED'
+                            ? 'bg-emerald-50 text-emerald-700'
+                            : ticket.assignmentStatus === 'ACTIVE'
+                            ? 'bg-blue-50 text-blue-700'
+                            : ticket.assignmentStatus === 'REJECTED'
+                            ? 'bg-rose-50 text-rose-700'
+                            : 'bg-slate-100 text-slate-600'
+                        }`}>
+                          {ticket.assignmentStatus === 'ACCEPTED' ? 'Accepted' : ticket.assignmentStatus === 'ACTIVE' ? 'Active' : ticket.assignmentStatus === 'REJECTED' ? 'Rejected' : ticket.assignmentStatus}
+                        </span>
+                      )}
+                      {/* Clerk-approval sub-state */}
+                      {ticket.clerkApprovalStatus && ticket.clerkApprovalStatus !== 'PENDING' && (
+                        <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium ${
+                          ticket.clerkApprovalStatus === 'VERIFIED'
+                            ? 'bg-emerald-50 text-emerald-700'
+                            : ticket.clerkApprovalStatus === 'SUBMITTED'
+                            ? 'bg-amber-50 text-amber-700'
+                            : ticket.clerkApprovalStatus === 'REJECTED'
+                            ? 'bg-rose-50 text-rose-700'
+                            : 'bg-slate-100 text-slate-600'
+                        }`}>
+                          {ticket.clerkApprovalStatus === 'VERIFIED' ? 'Receipt ✓' : ticket.clerkApprovalStatus === 'SUBMITTED' ? 'Receipt ↑' : ticket.clerkApprovalStatus === 'REJECTED' ? 'Receipt ✗' : ticket.clerkApprovalStatus}
+                        </span>
+                      )}
+                      {/* Delivery sub-state */}
+                      {ticket.deliveryStatus && (
+                        <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium ${
+                          ticket.deliveryStatus === 'DISPATCHED'
+                            ? 'bg-teal-50 text-teal-700'
+                            : 'bg-slate-100 text-slate-500'
+                        }`}>
+                          {ticket.deliveryStatus === 'DISPATCHED' ? 'Dispatched' : 'Pending delivery'}
+                        </span>
+                      )}
+                    </div>
+                  </td>
+                )}
                 <td className="px-6 py-4 whitespace-nowrap">
                   {isAdminOrFinance ? (
                     <select

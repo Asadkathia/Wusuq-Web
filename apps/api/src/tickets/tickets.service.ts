@@ -263,6 +263,7 @@ export class TicketsService {
           service: {
             select: { id: true, name: true, category: true, type: true },
           },
+          case: { select: { caseNo: true, court: true, caseYear: true } },
           assignments: {
             take: 1,
             orderBy: { createdAt: 'desc' },
@@ -292,7 +293,10 @@ export class TicketsService {
         createdBy: ticket.createdBy,
         remainderFinalizedAt: ticket.remainderFinalizedAt,
         scheduledDate: ticket.scheduledDate,
+        nextDate: ticket.nextDate,
         hearingType: ticket.hearingType,
+        case: ticket.case ?? null,
+        assignmentStatus: ticket.assignments[0]?.status ?? null,
         // Physical-dispatch trail. deliveryStatus + trackingNo are consumer-safe
         // ("Out for delivery" chip); the proof file path is admin-only.
         deliveryStatus: ticket.deliveryStatus,
