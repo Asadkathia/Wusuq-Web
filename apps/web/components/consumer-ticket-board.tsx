@@ -572,20 +572,6 @@ function MiniStat({ label, value, tone = 'slate' }: { label: string; value: stri
 
 // ─── Consumer ticket detail helpers ─────────────────────────────────────────
 
-/** Keys from formPayload that are handled in the separate Delivery section or
- *  are internal identifiers — excluded from the Case Details render. */
-const CASE_DETAIL_SKIP_KEYS = new Set([
-  'delivery_address',
-  'delivery_mode',
-  'delivery_method',
-  'delivery_city_id',
-  'delivery_province',
-  'delivery_district',
-  // Internal / idempotency
-  'parent_ticket_id',
-  'notes',
-]);
-
 /** Consumer-friendly labels for formPayload keys (supplements the generic
  *  underscore-to-space transform for well-known intake field names). */
 const PAYLOAD_LABEL: Record<string, string> = {
@@ -622,14 +608,12 @@ function payloadLabel(key: string): string {
 }
 
 /** True if the key is safe to display in the consumer case-details panel.
- *  Skips delivery-prefixed keys, ID-only fields, and internal markers. */
+ *  Allowlisted against PAYLOAD_LABEL — any key not in the curated set is
+ *  silently dropped so future server-injected payload keys never surface. */
 function isCaseDetailKey(key: string, value: unknown): boolean {
-  if (CASE_DETAIL_SKIP_KEYS.has(key)) return false;
-  // Any key prefixed with 'delivery_' is for the separate delivery section.
-  if (key.startsWith('delivery_')) return false;
-  // Internal numeric IDs are not useful to consumers.
-  if (key.endsWith('_id')) return false;
-  // Empty / null / binary refs
+  // Must be a recognized, consumer-safe intake field.
+  if (!(key in PAYLOAD_LABEL)) return false;
+  // Still skip empty / null / binary refs.
   if (value === null || value === undefined || String(value).trim() === '') return false;
   if (String(value).includes('upload')) return false;
   return true;

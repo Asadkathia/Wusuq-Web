@@ -111,7 +111,13 @@ export function TicketDetailPanel({ ticketId, onClose, isClerkView = false }: Pr
     : 0;
 
   /** Internal-only: total payout to the assigned clerk (clerkCost + phase-2 charges). */
-  const computeClerkEarnings = (t: any): number =>
+  const computeClerkEarnings = (t: {
+    clerkCost?: number | string | null;
+    attestedCharges?: number | string | null;
+    nonAttestedCharges?: number | string | null;
+    printingCharges?: number | string | null;
+    deliveryCharges?: number | string | null;
+  }): number =>
     Number(t.clerkCost || 0) +
     Number(t.attestedCharges || 0) +
     Number(t.nonAttestedCharges || 0) +

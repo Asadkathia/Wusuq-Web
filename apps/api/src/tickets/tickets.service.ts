@@ -296,19 +296,19 @@ export class TicketsService {
         nextDate: ticket.nextDate,
         hearingType: ticket.hearingType,
         case: ticket.case ?? null,
-        assignmentStatus: ticket.assignments[0]?.status ?? null,
         // Physical-dispatch trail. deliveryStatus + trackingNo are consumer-safe
         // ("Out for delivery" chip); the proof file path is admin-only.
         deliveryStatus: ticket.deliveryStatus,
         trackingNo: ticket.trackingNo,
-        // Clerk cost is internal-only (rep pay-out) — never expose it to
-        // consumers (CLAUDE.md). Admin/staff list rows still carry it.
+        // Clerk cost and internal ops state are back-office only — never expose
+        // to consumers (CLAUDE.md). Admin/staff list rows still carry them.
         ...(opts?.forConsumer
           ? {}
           : {
               clerkCost: ticket.clerkCost,
               defaultClerkCost: ticket.defaultClerkCost,
               dispatchProofUrl: ticket.dispatchProofUrl,
+              assignmentStatus: ticket.assignments[0]?.status ?? null,
             }),
         deliveryCharges: ticket.deliveryCharges,
         printingCharges: ticket.printingCharges,
@@ -428,6 +428,14 @@ export class TicketsService {
       status: string;
       documents?: { visibleToConsumer: boolean }[] | null;
       assignments?: { representative?: Record<string, unknown> | null }[];
+      history?:
+        | {
+            from?: unknown;
+            to?: unknown;
+            createdAt?: unknown;
+            note?: string | null;
+          }[]
+        | null;
     },
   >(ticket: T) {
     const safe: Record<string, unknown> = { ...ticket };
@@ -449,6 +457,11 @@ export class TicketsService {
       delete representative.phone;
       return { ...assignment, representative };
     });
+    // Strip staff free-text notes from history rows — send-back reasons,
+    // rejection reasons, admin-override notes are back-office data.
+    safe.history = (ticket.history ?? []).map(
+      ({ note: _note, ...rest }) => rest,
+    );
     return safe as T;
   }
 

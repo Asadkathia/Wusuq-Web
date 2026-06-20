@@ -450,3 +450,74 @@ describe('clerk actions bound to the active assignee (report 3.3e)', () => {
     ).rejects.toThrow(ForbiddenException);
   });
 });
+
+describe('findOne consumer redaction — history notes', () => {
+  it('strips history note from the consumer view while keeping from/to/createdAt', async () => {
+    const ticketWithNotes = {
+      ...fullTicket(),
+      history: [
+        {
+          id: 'h1',
+          from: 'PAID',
+          to: 'ASSIGNED',
+          note: 'Assigned to Rep A',
+          createdAt: new Date('2024-01-01'),
+        },
+        {
+          id: 'h2',
+          from: 'ASSIGNED',
+          to: 'IN_PROGRESS',
+          note: null,
+          createdAt: new Date('2024-01-02'),
+        },
+      ],
+    };
+    const prisma = {
+      ticket: { findUnique: jest.fn().mockResolvedValue(ticketWithNotes) },
+    };
+    const service = makeService(prisma);
+
+    const result = (await service.findOne('ticket-1', {
+      role: 'consumer',
+      userId: 'consumer-B',
+    })) as Record<string, unknown>;
+
+    const history = result.history as Array<Record<string, unknown>>;
+    expect(history).toHaveLength(2);
+    // note must not be present on ANY row, regardless of original value.
+    history.forEach((row) => {
+      expect(row).not.toHaveProperty('note');
+    });
+    // from/to/createdAt must be preserved.
+    expect(history[0]).toMatchObject({ from: 'PAID', to: 'ASSIGNED' });
+    expect(history[1]).toMatchObject({ from: 'ASSIGNED', to: 'IN_PROGRESS' });
+  });
+
+  it('returns history notes intact for staff callers', async () => {
+    const ticketWithNotes = {
+      ...fullTicket(),
+      history: [
+        {
+          id: 'h1',
+          from: 'PAID',
+          to: 'ASSIGNED',
+          note: 'Assigned to Rep A',
+          createdAt: new Date('2024-01-01'),
+        },
+      ],
+    };
+    const prisma = {
+      ticket: { findUnique: jest.fn().mockResolvedValue(ticketWithNotes) },
+    };
+    const service = makeService(prisma);
+
+    const result = (await service.findOne('ticket-1', {
+      role: 'staff-admin',
+      userId: 'admin-1',
+    })) as Record<string, unknown>;
+
+    const history = result.history as Array<Record<string, unknown>>;
+    // Staff must still see the note.
+    expect(history[0]).toHaveProperty('note', 'Assigned to Rep A');
+  });
+});
