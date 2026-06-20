@@ -5,6 +5,7 @@ import { useMemo, useEffect, useState, useCallback, useRef, startTransition } fr
 import { useRouter, useSearchParams } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { buildFutureTicketsPayload } from '@/lib/future-tickets';
+import { buildRegeneratePayload } from '@/lib/regenerate-ticket';
 import { PanelCard } from '@/components/ui/panel-card';
 import { ChevronRight, CheckCircle2, FolderOpen, Pencil, Sparkles, X } from 'lucide-react';
 import type { IntakeFlow, IntakeStep, CourtTier } from '@/lib/intake-flows';
@@ -16,6 +17,7 @@ import { buildPricingResolveInput, computeTicketTotal } from '@wusuq/shared';
 import type { IntakeWizardProps, TicketDraft, ServiceHit, LocalUser, CityCourtGroup } from './intake-wizard/types';
 import { StepRail } from './intake-wizard/step-rail';
 import { FutureTicketsBanner } from './intake-wizard/future-tickets-banner';
+import { RegenerateBanner } from './intake-wizard/regenerate-banner';
 import { renderField, colSpan } from './intake-wizard/field-renderer';
 import { FileUpload } from './intake-wizard/file-upload';
 import {
@@ -829,6 +831,61 @@ export function IntakeWizard({
   const futurePrefillAppliedRef = useRef(false);
   const [futureSourceLabel, setFutureSourceLabel] = useState<string>('');
 
+  // ── Regenerate prefill (B3) ───────────────────────────────────────────────
+  // When the wizard mounts with ?regenerateFromTicketId=<id> (staff-only),
+  // fetch the source ticket and pre-populate the draft with a full copy of
+  // its formPayload so staff can review and adjust before re-submitting.
+  // Takes precedence over futureFromTicketId if both are somehow present.
+  const regenerateFromTicketId = searchParams?.get('regenerateFromTicketId') ?? null;
+  const regeneratePrefillAppliedRef = useRef(false);
+  const [regenerateSourceLabel, setRegenerateSourceLabel] = useState<string>('');
+
+  useEffect(() => {
+    if (!regenerateFromTicketId) return;
+    // regenerate takes precedence — skip if futureFromTicketId already applied
+    if (futurePrefillAppliedRef.current) return;
+    if (regeneratePrefillAppliedRef.current) return;
+    regeneratePrefillAppliedRef.current = true;
+    // No cancelled flag: the ref guard ensures exactly-once execution per
+    // component instance (same reasoning as the futureFromTicketId effect).
+    apiClient
+      .get<{
+        id: string;
+        batchNo?: string;
+        formPayload?: Record<string, string>;
+        intakeFlow?: string;
+      }>(`/tickets/${encodeURIComponent(regenerateFromTicketId)}`)
+      .then((source) => {
+        if (!source?.formPayload) return;
+        const nextPayload = normalizeDraftPayload(buildRegeneratePayload(source.formPayload));
+        startTransition(() => {
+          setDraft((current) => ({
+            ...current,
+            // Drop the previous draftId so the next autosave creates a fresh
+            // row rather than mutating the active draft for this flow.
+            draftId: undefined,
+            flow: (source.intakeFlow as typeof current.flow) ?? current.flow,
+            // Land at step 1 so staff can review the full form before submitting.
+            step: 1,
+            payload: nextPayload,
+          }));
+          // Hydrate geoIds from the copied payload so location-dependent selects
+          // (CityBlock, service picker, court loader) render with the right context.
+          if (nextPayload.city_id) {
+            setGeoIds((g) => ({ ...g, cityId: nextPayload.city_id! }));
+          }
+          // Mark hydration complete so the autosave effect doesn't trample the
+          // prefilled state on its first run.
+          didHydrateRef.current = true;
+          setRegenerateSourceLabel(source.batchNo ?? source.id);
+        });
+      })
+      .catch(() => {
+        // Silent failure: leave the wizard in its default empty state.
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [regenerateFromTicketId]);
+
   useEffect(() => {
     if (!futureFromTicketId) return;
     if (futurePrefillAppliedRef.current) return;
@@ -908,7 +965,7 @@ export function IntakeWizard({
   // active draft for (consumer, flow) so a cleared localStorage / different
   // browser / re-login still resumes where the user left off.
   useEffect(() => {
-    if (futureFromTicketId) return; // FT-T3: prefill takes priority
+    if (futureFromTicketId || regenerateFromTicketId) return; // B3/FT-T3: prefill takes priority
     const flowKey = flows[0]?.key;
     if (!flowKey) return;
     if (!draft.consumerId) return; // wait until the consumer id is known
@@ -976,7 +1033,7 @@ export function IntakeWizard({
     };
   // We intentionally only run this once per (consumerId, first-flow) pairing.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draft.consumerId, flows[0]?.key, futureFromTicketId]);
+  }, [draft.consumerId, flows[0]?.key, futureFromTicketId, regenerateFromTicketId]);
 
   useEffect(() => {
     if (!apiError) return;
@@ -1706,6 +1763,9 @@ export function IntakeWizard({
         // Server re-validates and redeems the promo code so the discount
         // cannot be fabricated client-side.
         ...(promoCode ? { promoCode } : {}),
+        // B3: stamp the source ticket id when the wizard was opened via the
+        // staff Regenerate button so the API can record the lineage.
+        ...(regenerateFromTicketId ? { regeneratedFromTicketId: regenerateFromTicketId } : {}),
       });
       // The ticket now EXISTS — this is the commit point. Attachment uploads
       // are best-effort: a failed upload must NOT throw out to the catch and
@@ -1772,11 +1832,13 @@ export function IntakeWizard({
       <div className="flex flex-col gap-8 lg:flex-row lg:items-start">
         <div className="min-w-0 flex-1 space-y-8">
 
-      {futureFromTicketId && futureSourceLabel ? (
+      {regenerateFromTicketId && regenerateSourceLabel ? (
+        <RegenerateBanner sourceTicketLabel={regenerateSourceLabel} />
+      ) : futureFromTicketId && futureSourceLabel ? (
         <FutureTicketsBanner sourceTicketLabel={futureSourceLabel} />
       ) : null}
 
-      {resumedDraftAt && !futureFromTicketId ? (
+      {resumedDraftAt && !futureFromTicketId && !regenerateFromTicketId ? (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-brand-200 bg-brand-50/60 px-4 py-3 text-sm text-brand-800">
           <div className="flex items-start gap-2">
             <FolderOpen className="mt-0.5 h-4 w-4 shrink-0" />

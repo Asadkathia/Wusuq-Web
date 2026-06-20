@@ -5,6 +5,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import type { TicketStatus } from '@wusuq/shared';
 import { chargeCapabilitiesFor } from '@wusuq/shared';
 import { TICKET_STATUSES } from '@wusuq/shared';
@@ -28,6 +29,7 @@ import {
 } from '@/components/ui/dialog';
 import { UserCircle, MapPin, Tag, RefreshCw, CheckSquare, Clock, History, FileOutput, Eye, PlayCircle, Upload, X, XCircle } from 'lucide-react';
 import { TicketDetailPanel } from './ticket-detail-panel';
+import { flowKeyToSlug } from '@/lib/intake-flows';
 
 type TicketBoardProps = {
   title: string;
@@ -93,6 +95,7 @@ const EMPTY_CLERK_COSTS: ClerkCostsForm = {
 };
 
 export function TicketBoard({ title, status }: TicketBoardProps) {
+  const router = useRouter();
   const [tickets, setTickets] = useState<TicketRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
@@ -447,14 +450,20 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
     }
   };
 
-  const regenerateTicket = async (ticketId: string) => {
-    try {
-      await apiClient.post(`/tickets/${ticketId}/regenerate`);
-      setMessage('Ticket regenerated');
-      loadTickets();
-    } catch (error: any) {
-      setMessage(error.message || 'Regenerate failed');
+  // B3: Navigate to the pre-filled intake wizard instead of calling the old
+  // POST /tickets/:id/regenerate endpoint. The old endpoint is left intact
+  // for back-compat but is no longer called from the UI.
+  const regenerateTicket = (ticketId: string, intakeFlow: string | null | undefined) => {
+    if (!intakeFlow) {
+      setMessage('Cannot regenerate: ticket has no intake flow recorded');
+      return;
     }
+    const slug = flowKeyToSlug(intakeFlow);
+    // Derive the URL segment from the flow key prefix.
+    const category = intakeFlow.startsWith('judicial_') ? 'judicial' : 'non-judicial';
+    router.push(
+      `/paralegal-services/${category}/${slug}?regenerateFromTicketId=${encodeURIComponent(ticketId)}`,
+    );
   };
 
   // Clerk: accept assigned ticket → IN_PROGRESS. Uses the dedicated
@@ -965,7 +974,7 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
                             <Clock className="h-3.5 w-3.5" /> Next Hearing
                           </button>
                         )}
-                        <button onClick={() => regenerateTicket(ticket.id)} className="text-slate-600 hover:text-rose-600 bg-slate-100 hover:bg-rose-50 px-3 py-1.5 rounded-md flex items-center gap-1" title="Regenerate Ticket">
+                        <button onClick={() => regenerateTicket(ticket.id, ticket.intakeFlow)} className="text-slate-600 hover:text-rose-600 bg-slate-100 hover:bg-rose-50 px-3 py-1.5 rounded-md flex items-center gap-1" title="Regenerate Ticket">
                           <FileOutput className="h-3.5 w-3.5" />
                         </button>
                       </>
