@@ -48,6 +48,10 @@ export function FinanceBoard() {
 
   // ── Reconcile proof files (per-ticket, optional) ─────────────────────
   const [reconcileFiles, setReconcileFiles] = useState<Record<string, File>>({});
+  // Fix 1: in-flight guard — keyed by ticket id
+  const [reconciling, setReconciling] = useState<Record<string, boolean>>({});
+  // Fix 3: bump key to remount <input type="file"> after successful reconcile
+  const [fileInputKeys, setFileInputKeys] = useState<Record<string, number>>({});
 
   const [editingChargeId, setEditingChargeId] = useState<string | null>(null);
   const [editServiceCost, setEditServiceCost] = useState('');
@@ -157,8 +161,14 @@ export function FinanceBoard() {
   }, [items, search]);
 
   const reconcile = async (ticketId: string) => {
+    // Fix 1: prevent double-submission while an upload/POST is in flight
+    if (reconciling[ticketId]) return;
+
     const amount = Number(amounts[ticketId] ?? 0);
     if (amount <= 0) return setMessage('Enter valid amount');
+
+    setMessage(''); // clear stale feedback before new attempt
+    setReconciling(s => ({ ...s, [ticketId]: true }));
 
     try {
       // Upload proof first if a file was attached — abort reconcile on failure.
@@ -189,9 +199,18 @@ export function FinanceBoard() {
         delete next[ticketId];
         return next;
       });
+      // Fix 3: bump key so the file <input> remounts — allows re-selecting the same filename
+      setFileInputKeys(s => ({ ...s, [ticketId]: (s[ticketId] ?? 0) + 1 }));
       load();
     } catch (error: any) {
       setMessage(error.message || 'Reconcile failed');
+    } finally {
+      // Fix 1: always clear in-flight marker so the button re-enables
+      setReconciling(s => {
+        const next = { ...s };
+        delete next[ticketId];
+        return next;
+      });
     }
   };
 
@@ -753,25 +772,41 @@ export function FinanceBoard() {
                             value={amounts[item.id] ?? ''}
                             onChange={(e) => setAmounts(s => ({ ...s, [item.id]: e.target.value }))}
                           />
-                          <button onClick={() => reconcile(item.id)} className="bg-primary-600 hover:bg-primary-500 text-white p-1.5 rounded-md shadow-sm transition-colors text-xs font-semibold flex items-center gap-1">
-                            <CheckCircle className="h-3.5 w-3.5" /> Reconcile
+                          <button
+                            onClick={() => reconcile(item.id)}
+                            disabled={!!reconciling[item.id]}
+                            className="bg-primary-600 hover:bg-primary-500 text-white p-1.5 rounded-md shadow-sm transition-colors text-xs font-semibold flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            {reconciling[item.id]
+                              ? <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                              : <CheckCircle className="h-3.5 w-3.5" />}
+                            {reconciling[item.id] ? '…' : 'Reconcile'}
                           </button>
                         </div>
                         {/* Optional payment proof attachment */}
-                        <label className="flex items-center gap-1.5 cursor-pointer group/proof">
+                        <label className={`flex items-center gap-1.5 cursor-pointer group/proof ${reconciling[item.id] ? 'pointer-events-none opacity-50' : ''}`}>
                           <span className={`flex h-6 w-6 items-center justify-center rounded-md transition-colors ${reconcileFiles[item.id] ? 'bg-emerald-100 text-emerald-600' : 'bg-white text-slate-400 border border-slate-300 group-hover/proof:border-primary-400 group-hover/proof:text-primary-500'}`}>
                             <Upload className="h-3 w-3" />
                           </span>
                           <span className="text-xs text-slate-500 truncate max-w-[130px]">
                             {reconcileFiles[item.id]?.name ?? 'Attach proof (optional)'}
                           </span>
+                          {/* Fix 3: key remounts the input after success so the same filename triggers onChange */}
                           <input
+                            key={fileInputKeys[item.id] ?? 0}
                             type="file"
                             accept="image/*,application/pdf"
                             className="sr-only"
+                            disabled={!!reconciling[item.id]}
                             onChange={(e) => {
                               const f = e.target.files?.[0];
                               if (f) {
+                                // Fix 2: reject files larger than the API body-parser limit (10 MB)
+                                if (f.size > 10 * 1024 * 1024) {
+                                  setMessage('Proof must be under 10 MB');
+                                  e.target.value = '';
+                                  return;
+                                }
                                 setReconcileFiles(s => ({ ...s, [item.id]: f }));
                               } else {
                                 setReconcileFiles(s => {
