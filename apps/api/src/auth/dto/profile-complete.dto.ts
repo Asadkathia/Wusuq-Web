@@ -14,4 +14,24 @@ export class ProfileCompleteDto {
   @IsOptional()
   @IsIn(CONSUMER_KINDS as unknown as string[])
   consumerKind?: ConsumerKind;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  address?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  province?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  district?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  postalCode?: string;
 }

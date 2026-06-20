@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, startTransition } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { Select } from '@/components/ui/select';
 import { CountryPicker } from '@/components/ui/country-picker';
@@ -12,6 +12,8 @@ import {
 } from '@wusuq/shared';
 
 type CityRow = { id: string; name: string; district?: string; province?: string };
+type ProvinceRow = { id: string; name: string };
+type DistrictRow = { id: string; name: string };
 
 export function ProfileStep({
   name,
@@ -20,6 +22,17 @@ export function ProfileStep({
   onCityChange,
   consumerKind,
   onConsumerKindChange,
+  // address fields
+  streetAddress,
+  onStreetAddressChange,
+  province,
+  onProvinceChange,
+  provinceId,
+  onProvinceIdChange,
+  district,
+  onDistrictChange,
+  postalCode,
+  onPostalCodeChange,
   onSubmit,
   loading,
 }: {
@@ -29,6 +42,16 @@ export function ProfileStep({
   onCityChange: (v: string) => void;
   consumerKind: ConsumerKind | null;
   onConsumerKindChange: (v: ConsumerKind) => void;
+  streetAddress: string;
+  onStreetAddressChange: (v: string) => void;
+  province: string;
+  onProvinceChange: (v: string) => void;
+  provinceId: string;
+  onProvinceIdChange: (v: string) => void;
+  district: string;
+  onDistrictChange: (v: string) => void;
+  postalCode: string;
+  onPostalCodeChange: (v: string) => void;
   onSubmit: () => void;
   // onSkip retained in the parent but intentionally unused here:
   // PDF #4 forces profile completion — no skip path until kind is chosen.
@@ -36,6 +59,8 @@ export function ProfileStep({
   loading: boolean;
 }) {
   const [cities, setCities] = useState<CityRow[]>([]);
+  const [provinces, setProvinces] = useState<ProvinceRow[]>([]);
+  const [districts, setDistricts] = useState<DistrictRow[]>([]);
   // Country picker is frontend-only for now; selection is held in local
   // component state and will be wired to pricing once the backend contract
   // is defined. Defaults to Pakistan.
@@ -45,12 +70,39 @@ export function ProfileStep({
     apiClient
       .get<CityRow[]>('/geo/cities')
       .then((rows) => {
-        setCities(rows);
+        startTransition(() => setCities(rows));
       })
       .catch(() => {
         // city is optional — silent fall-through
       });
   }, []);
+
+  useEffect(() => {
+    apiClient
+      .get<ProvinceRow[]>('/geo/provinces')
+      .then((rows) => {
+        startTransition(() => setProvinces(rows));
+      })
+      .catch(() => {
+        // provinces are optional — silent fall-through
+      });
+  }, []);
+
+  // Load districts whenever the selected province changes
+  useEffect(() => {
+    if (!provinceId) {
+      startTransition(() => setDistricts([]));
+      return;
+    }
+    apiClient
+      .get<DistrictRow[]>(`/geo/provinces/${provinceId}/districts`)
+      .then((rows) => {
+        startTransition(() => setDistricts(rows));
+      })
+      .catch(() => {
+        startTransition(() => setDistricts([]));
+      });
+  }, [provinceId]);
 
   // Disambiguate cross-region cities (e.g. Khanpur in Punjab vs Sindh) by
   // suffixing district/province into the value. Keeps the value a plain
@@ -64,6 +116,17 @@ export function ProfileStep({
       description: [c.district, c.province].filter(Boolean).join(' · '),
     };
   });
+
+  const provinceOptions = provinces.map((p) => ({ value: p.id, label: p.name }));
+  const districtOptions = districts.map((d) => ({ value: d.name, label: d.name }));
+
+  function handleProvinceChange(id: string) {
+    onProvinceIdChange(id);
+    const found = provinces.find((p) => p.id === id);
+    onProvinceChange(found?.name ?? '');
+    // Reset district when province changes
+    onDistrictChange('');
+  }
 
   const valid = name.trim().length >= 2 && consumerKind !== null;
 
@@ -136,6 +199,60 @@ export function ProfileStep({
           ariaLabel="City"
         />
       </label>
+
+      {/* Address section */}
+      <div className="flex flex-col gap-3 rounded-xl border border-border-soft bg-slate-50 p-4">
+        <p className="text-sm font-medium text-slate-700">Address (optional)</p>
+
+        <label className="flex flex-col gap-1.5">
+          <span className="text-xs font-medium text-slate-600">Province</span>
+          <Select
+            value={provinceId}
+            onChange={handleProvinceChange}
+            options={provinceOptions}
+            placeholder="Select province…"
+            searchPlaceholder="Search province…"
+            allowClear
+            ariaLabel="Province"
+          />
+        </label>
+
+        <label className="flex flex-col gap-1.5">
+          <span className="text-xs font-medium text-slate-600">District</span>
+          <Select
+            value={district}
+            onChange={onDistrictChange}
+            options={districtOptions}
+            placeholder={provinceId ? 'Select district…' : 'Select a province first'}
+            searchPlaceholder="Search district…"
+            allowClear
+            ariaLabel="District"
+          />
+        </label>
+
+        <label className="flex flex-col gap-1.5">
+          <span className="text-xs font-medium text-slate-600">Street / Area</span>
+          <input
+            type="text"
+            value={streetAddress}
+            onChange={(e) => onStreetAddressChange(e.target.value)}
+            placeholder="House No., Street, Area"
+            className="rounded-xl border-0 px-3.5 py-2.5 text-slate-900 shadow-sm ring-1 ring-inset ring-border-soft focus:ring-2 focus:ring-brand-500/50"
+          />
+        </label>
+
+        <label className="flex flex-col gap-1.5">
+          <span className="text-xs font-medium text-slate-600">Postal Code</span>
+          <input
+            type="text"
+            value={postalCode}
+            onChange={(e) => onPostalCodeChange(e.target.value)}
+            placeholder="54000"
+            inputMode="numeric"
+            className="rounded-xl border-0 px-3.5 py-2.5 text-slate-900 shadow-sm ring-1 ring-inset ring-border-soft focus:ring-2 focus:ring-brand-500/50"
+          />
+        </label>
+      </div>
 
       <button
         type="button"

@@ -20,6 +20,11 @@ export function useLoginFlow() {
   const [name, setName] = useState('');
   const [cityName, setCityName] = useState('');
   const [consumerKind, setConsumerKind] = useState<ConsumerKind | null>(null);
+  const [streetAddress, setStreetAddress] = useState('');
+  const [province, setProvince] = useState('');
+  const [provinceId, setProvinceId] = useState('');
+  const [district, setDistrict] = useState('');
+  const [postalCode, setPostalCode] = useState('');
   const [devCode, setDevCode] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -88,8 +93,20 @@ export function useLoginFlow() {
   const submitProfile = useCallback(async () => {
     setError(null);
     setLoading(true);
+    // Compose a single address string from street + district + province so the
+    // User.address column gets a human-readable label; the structured fields
+    // (province/district/postalCode) are stored separately.
+    const composedAddress = [streetAddress, district, province].filter(Boolean).join(', ') || undefined;
     try {
-      await completeProfile(name, cityName || undefined, consumerKind ?? undefined);
+      await completeProfile({
+        name,
+        cityName: cityName || undefined,
+        consumerKind: consumerKind ?? undefined,
+        address: composedAddress,
+        province: province || undefined,
+        district: district || undefined,
+        postalCode: postalCode || undefined,
+      });
       try {
         const raw = localStorage.getItem('wusuq_user');
         if (raw) {
@@ -108,7 +125,7 @@ export function useLoginFlow() {
       setLoading(false);
       router.replace('/consumer/dashboard');
     }
-  }, [name, cityName, consumerKind, router]);
+  }, [name, cityName, consumerKind, streetAddress, province, district, postalCode, router]);
 
   const skipProfile = useCallback(() => {
     router.replace('/consumer/dashboard');
@@ -125,6 +142,11 @@ export function useLoginFlow() {
     countryCode, setCountryCode,
     phone, setPhone, otp, setOtp, name, setName, cityName, setCityName,
     consumerKind, setConsumerKind,
+    streetAddress, setStreetAddress,
+    province, setProvince,
+    provinceId, setProvinceId,
+    district, setDistrict,
+    postalCode, setPostalCode,
     error, loading, devCode,
     sendOtp, submitOtp, submitProfile, skipProfile, changePhone,
   };

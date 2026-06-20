@@ -52,6 +52,16 @@ export default function ConsumerLoginPage() {
             onCityChange={f.setCityName}
             consumerKind={f.consumerKind}
             onConsumerKindChange={f.setConsumerKind}
+            streetAddress={f.streetAddress}
+            onStreetAddressChange={f.setStreetAddress}
+            province={f.province}
+            onProvinceChange={f.setProvince}
+            provinceId={f.provinceId}
+            onProvinceIdChange={f.setProvinceId}
+            district={f.district}
+            onDistrictChange={f.setDistrict}
+            postalCode={f.postalCode}
+            onPostalCodeChange={f.setPostalCode}
             onSubmit={f.submitProfile}
             loading={f.loading}
           />

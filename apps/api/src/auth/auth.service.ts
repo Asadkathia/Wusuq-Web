@@ -223,6 +223,10 @@ export class AuthService {
       name: string;
       cityName?: string;
       consumerKind?: 'LAWYER' | 'NON_LAWYER' | 'CORPORATE';
+      address?: string;
+      province?: string;
+      district?: string;
+      postalCode?: string;
     },
   ) {
     const user = await this.prisma.user.update({
@@ -231,6 +235,10 @@ export class AuthService {
         name: dto.name,
         ...(dto.cityName ? { city: dto.cityName } : {}),
         ...(dto.consumerKind ? { consumerKind: dto.consumerKind } : {}),
+        ...(dto.address ? { address: dto.address } : {}),
+        ...(dto.province ? { province: dto.province } : {}),
+        ...(dto.district ? { district: dto.district } : {}),
+        ...(dto.postalCode ? { postalCode: dto.postalCode } : {}),
       },
     });
     return {
