@@ -183,6 +183,7 @@ export class FinanceService {
             verifiedAt: new Date(),
             reviewedByUserId: actor?.actorUserId,
             note: dto.note,
+            receiptUrl: dto.receiptUrl ?? null,
           },
         });
 

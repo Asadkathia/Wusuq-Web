@@ -18,4 +18,8 @@ export class ReconcilePaymentDto {
   @IsOptional()
   @IsString()
   note?: string;
+
+  @IsOptional()
+  @IsString()
+  receiptUrl?: string;
 }
