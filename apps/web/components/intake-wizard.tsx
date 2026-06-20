@@ -12,7 +12,7 @@ import type { IntakeFlow, IntakeStep, CourtTier } from '@/lib/intake-flows';
 import { courtTierFromCourtType, resolveRequired, docBundleLabel, normalizeDraftPayload, isStructuredAddressComplete, computeYearBand, parseBench, showWhenSatisfied, parseCities, stringifyCities } from '@/lib/intake-flows';
 import { BENCH_TYPE_LABELS } from '@/lib/bench-types';
 import type { YearBand } from '@/lib/intake-flows';
-import { buildPricingResolveInput, computeTicketTotal } from '@wusuq/shared';
+import { buildPricingResolveInput, computeTicketTotal, computeCaseSearchBase, computeDecidedAgeSurcharge } from '@wusuq/shared';
 
 import type { IntakeWizardProps, TicketDraft, ServiceHit, LocalUser, CityCourtGroup } from './intake-wizard/types';
 import { StepRail } from './intake-wizard/step-rail';
@@ -1571,8 +1571,48 @@ export function IntakeWizard({
   const checkoutSummary: CheckoutSummary = useMemo(() => {
     const p = draft.payload;
     const items: CheckoutItem[] = [];
-    const pr = pricingResult;
     const isSplit = paymentModelFor(draft.flow) === 'SPLIT';
+
+    // ── Instant year-driven checkout estimate (Task C2) ───────────────────
+    // Derive the effective case year from the payload the same way
+    // buildPricingResolveInput does: prefer decided_date year, then the
+    // case_year / year alias. This extraction is the ONLY client-side
+    // pricing math — no full resolver replication.
+    const _effectiveCaseYear = (() => {
+      if (p.decided_date) {
+        const m = /^(\d{4})/.exec(p.decided_date);
+        if (m && m[1]) return parseInt(m[1]);
+      }
+      return parseInt(p.case_year ?? p.year ?? '0') || undefined;
+    })();
+
+    // Patch the server result with the instant year-driven component so the
+    // checkout base updates on every keystroke, not after the 400ms debounce.
+    // The shared functions are the SAME ones the server resolver calls, so the
+    // instant estimate and the reconciled server value always agree on the
+    // year-driven portion. The patch is a no-op when the server result is
+    // already current (delta === 0).
+    const pr = (() => {
+      const raw = pricingResult;
+      if (!raw?.matched || raw.available === false) return raw;
+      if (draft.flow === 'judicial_case_search') {
+        // Base is entirely year-driven: computeCaseSearchBase × cityCount.
+        const cityCount = raw.cityCount ?? Math.max(1, parseCities(p.cities ?? '').length);
+        const instantBase = computeCaseSearchBase(_effectiveCaseYear) * cityCount;
+        if (instantBase === raw.basePrice) return raw; // server already current
+        const delta = instantBase - raw.basePrice;
+        return { ...raw, basePrice: instantBase, serviceCost: raw.serviceCost + delta, total: raw.total + delta };
+      }
+      if (draft.flow === 'judicial_case_files' && p.case_status === 'Decided Case') {
+        // Only the age-surcharge is year-driven; banded base is server-only.
+        const instantAge = computeDecidedAgeSurcharge(p.case_status, _effectiveCaseYear);
+        const oldAge = raw.ageSurcharge ?? 0;
+        if (instantAge === oldAge) return raw; // server already current
+        const delta = instantAge - oldAge;
+        return { ...raw, ageSurcharge: instantAge, serviceCost: raw.serviceCost + delta, total: raw.total + delta };
+      }
+      return raw;
+    })();
 
     if (selectedFlow?.label) {
       items.push({ label: 'Intake type', detail: selectedFlow.label, amount: null });
