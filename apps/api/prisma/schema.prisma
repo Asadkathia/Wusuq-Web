@@ -213,8 +213,9 @@ model Ticket {
   status          TicketStatus        @default(UNPAID)
   serviceCity     String?
   caseType        String?
-  intakeFlow      String?
-  formPayload     Json?
+  intakeFlow               String?
+  formPayload              Json?
+  regeneratedFromTicketId  String?
   deliveryCharges       Decimal             @default(0)
   printingCharges       Decimal             @default(0)
   attestedCharges       Decimal             @default(0)
@@ -290,6 +291,7 @@ model Ticket {
   // (consumerId, intakeFlow, createdAt).
   @@index([consumerId, status])
   @@index([consumerId, intakeFlow, createdAt])
+  @@index([regeneratedFromTicketId])
 }
 
 // Structured clerk-side "what files can this court actually produce" report,
