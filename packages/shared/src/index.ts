@@ -786,6 +786,7 @@ export function computeTicketTotal(input: TicketMoneyInput): TicketMoneyResult {
 /** Resolver input shape produced by {@link buildPricingResolveInput}. */
 export interface PricingResolveInput {
   flow: string;
+  currency: Currency;
   courtLevel?: string;
   caseStatus?: string;
   caseYear?: number;
@@ -812,6 +813,7 @@ export interface PricingResolveInput {
 export function buildPricingResolveInput(
   flow: string,
   payload: Record<string, string | undefined> | undefined | null,
+  currency: Currency = 'PKR',
 ): PricingResolveInput {
   const p = payload ?? {};
 
@@ -849,6 +851,7 @@ export function buildPricingResolveInput(
 
   return {
     flow,
+    currency,
     courtLevel: p.select_court_type || undefined,
     caseStatus,
     caseYear,
