@@ -205,6 +205,7 @@ export class PricingService {
     province?: string;
     cityId?: string;
     city?: string;
+    currency?: string;
     options: string[];
   }): Promise<Record<string, boolean>> {
     const settings = await this.getSettings();
@@ -216,6 +217,8 @@ export class PricingService {
       city: args.city,
     });
     const region = args.region ?? deriveRegion(province);
+    // Billing currency: 'USD' matches the flat international rules, else PKR.
+    const currency = (args.currency as 'PKR' | 'USD') ?? 'PKR';
     const effectiveCourtLevel = normalizeCourtLevel(args.courtLevel);
     // Mirror resolve(): a pending case without an explicit band must resolve to
     // the 'pending' band, not 'current'.
@@ -243,7 +246,8 @@ export class PricingService {
     // contract for pending cases that have no decided year.
     const lookup = (opt: string, yearBand: string) =>
       flowRules.filter((r) => {
-        if (r.courtLevel && r.courtLevel !== effectiveCourtLevel) return false;
+        if ((r.currency ?? 'PKR') !== currency) return false;
+      if (r.courtLevel && r.courtLevel !== effectiveCourtLevel) return false;
         if (r.caseStatus && r.caseStatus !== args.caseStatus) return false;
         if (r.region && r.region !== region) return false;
         if (r.yearBand && r.yearBand !== yearBand) return false;
@@ -257,7 +261,8 @@ export class PricingService {
     // `resolve()` below.
     const lookupNullSetType = (yearBand: string) =>
       flowRules.filter((r) => {
-        if (r.courtLevel && r.courtLevel !== effectiveCourtLevel) return false;
+        if ((r.currency ?? 'PKR') !== currency) return false;
+      if (r.courtLevel && r.courtLevel !== effectiveCourtLevel) return false;
         if (r.caseStatus && r.caseStatus !== args.caseStatus) return false;
         if (r.region && r.region !== region) return false;
         if (r.yearBand && r.yearBand !== yearBand) return false;
@@ -349,6 +354,8 @@ export class PricingService {
       city: dto.city,
     });
     const region = dto.region ?? deriveRegion(province);
+    // Billing currency: 'USD' matches the flat international rules, else PKR.
+    const currency = (dto.currency as 'PKR' | 'USD') ?? 'PKR';
 
     const effectiveCourtLevel = normalizeCourtLevel(dto.courtLevel);
     const requestedSetType = dto.setType ?? null;
@@ -377,6 +384,7 @@ export class PricingService {
 
     // Strict match on v2 dimensions when present.
     let candidates = flowRules.filter((r) => {
+      if ((r.currency ?? 'PKR') !== currency) return false;
       if (r.courtLevel && r.courtLevel !== effectiveCourtLevel) return false;
       if (r.caseStatus && r.caseStatus !== dto.caseStatus) return false;
       if (r.region && r.region !== region) return false;
@@ -400,7 +408,8 @@ export class PricingService {
     // yearFrom/yearTo fallback so the v2 dimensions still take priority.
     if (!candidates.length && requestedYearBand !== 'current') {
       candidates = flowRules.filter((r) => {
-        if (r.courtLevel && r.courtLevel !== effectiveCourtLevel) return false;
+        if ((r.currency ?? 'PKR') !== currency) return false;
+      if (r.courtLevel && r.courtLevel !== effectiveCourtLevel) return false;
         if (r.caseStatus && r.caseStatus !== dto.caseStatus) return false;
         if (r.region && r.region !== region) return false;
         if (r.yearBand && r.yearBand !== 'current') return false;
@@ -422,7 +431,8 @@ export class PricingService {
     // requested band and the current-band fallback.
     if (!candidates.length && requestedSetType) {
       candidates = flowRules.filter((r) => {
-        if (r.courtLevel && r.courtLevel !== effectiveCourtLevel) return false;
+        if ((r.currency ?? 'PKR') !== currency) return false;
+      if (r.courtLevel && r.courtLevel !== effectiveCourtLevel) return false;
         if (r.caseStatus && r.caseStatus !== dto.caseStatus) return false;
         if (r.region && r.region !== region) return false;
         if (
@@ -440,7 +450,8 @@ export class PricingService {
     // legacy yearFrom/yearTo only, retry without yearBand match.
     if (!candidates.length) {
       candidates = flowRules.filter((r) => {
-        if (r.courtLevel && r.courtLevel !== effectiveCourtLevel) return false;
+        if ((r.currency ?? 'PKR') !== currency) return false;
+      if (r.courtLevel && r.courtLevel !== effectiveCourtLevel) return false;
         if (r.caseStatus && r.caseStatus !== dto.caseStatus) return false;
         if (r.region && r.region !== region) return false;
         if (r.yearFrom !== null && year < r.yearFrom) return false;
@@ -498,6 +509,37 @@ export class PricingService {
         deliveryCharge: 0,
         serviceCost: 0,
         total: 0,
+      };
+    }
+
+    // USD orders are all-inclusive flat: the matched rule's basePrice IS the
+    // total. No PDF/delivery/attestation/title/age/search-both/per-year/
+    // per-city/bundle math, and ONE_TIME (no clerk phase-2 remainder). The
+    // currency filter above guarantees `best` is a USD rule here.
+    if (currency === 'USD') {
+      const flat = Number(best.basePrice);
+      return {
+        matched: true,
+        available: true,
+        rulesExistForFlow: true,
+        ruleId: best.id,
+        yearBand: best.yearBand,
+        setType: best.setType,
+        basePrice: flat,
+        base: flat,
+        pdfSurcharge: 0,
+        deliveryFee: 0,
+        titleSurcharge: 0,
+        ageSurcharge: 0,
+        bundleSurcharge: 0,
+        searchBothSurcharge: 0,
+        cityCount: 1,
+        clerkBaseCost: null,
+        attestedCharge: 0,
+        nonAttestedCharge: 0,
+        deliveryCharge: 0,
+        serviceCost: flat,
+        total: flat,
       };
     }
 

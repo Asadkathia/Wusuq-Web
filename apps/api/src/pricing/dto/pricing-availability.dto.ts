@@ -10,5 +10,6 @@ export class PricingAvailabilityDto {
   // Preferred region source — selected GeoCity id (see #26). `city` is fallback.
   @IsOptional() @IsString() cityId?: string;
   @IsOptional() @IsString() city?: string;
+  @IsOptional() @IsString() currency?: string;
   @IsArray() @ArrayNotEmpty() @IsString({ each: true }) options!: string[];
 }
