@@ -43,6 +43,7 @@ describe('createIntakeTicket regeneratedFromTicketId stamping (B2)', () => {
     const prisma: Record<string, unknown> = {
       user: {
         findUnique: jest.fn().mockResolvedValue({ id: 'c-2' }),
+        findUniqueOrThrow: jest.fn().mockResolvedValue({ currency: 'PKR' }),
       },
       service: {
         findUnique: jest

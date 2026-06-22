@@ -35,7 +35,10 @@ describe('Case Search case_status is optional at every tier (audit 5.1)', () => 
 
   it('createIntakeTicket accepts a CNIC-mode payload without case_status', async () => {
     const prisma: Record<string, any> = {
-      user: { findUnique: jest.fn().mockResolvedValue({ id: 'c-1' }) },
+      user: {
+        findUnique: jest.fn().mockResolvedValue({ id: 'c-1' }),
+        findUniqueOrThrow: jest.fn().mockResolvedValue({ currency: 'PKR' }),
+      },
       service: {
         findUnique: jest
           .fn()
