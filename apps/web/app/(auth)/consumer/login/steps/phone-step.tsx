@@ -16,7 +16,6 @@ export function PhoneStep({
   phone,
   onPhoneChange,
   onSubmit,
-  onMockedSocial,
   loading,
   error,
 }: {
@@ -25,7 +24,6 @@ export function PhoneStep({
   phone: string;
   onPhoneChange: (v: string) => void;
   onSubmit: () => void;
-  onMockedSocial: (provider: 'google' | 'apple') => void;
   loading: boolean;
   error: string | null;
 }) {
@@ -75,27 +73,6 @@ export function PhoneStep({
         className="rounded-xl bg-brand-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-brand-700 disabled:opacity-40"
       >
         {loading ? 'Sending…' : 'Continue →'}
-      </button>
-
-      <div className="flex items-center gap-3 text-xs text-slate-400">
-        <span className="h-px flex-1 bg-border-soft" />
-        or continue with
-        <span className="h-px flex-1 bg-border-soft" />
-      </div>
-
-      <button
-        type="button"
-        onClick={() => onMockedSocial('google')}
-        className="flex items-center justify-center gap-2 rounded-xl border border-border-soft bg-surface px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-surface-muted"
-      >
-        <span className="font-bold text-[#4285F4]">G</span> Continue with Google
-      </button>
-      <button
-        type="button"
-        onClick={() => onMockedSocial('apple')}
-        className="flex items-center justify-center gap-2 rounded-xl border border-border-soft bg-surface px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-surface-muted"
-      >
-         Continue with Apple
       </button>
 
       <div className="flex items-center justify-center gap-3 text-xs">
