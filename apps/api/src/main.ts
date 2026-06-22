@@ -13,6 +13,13 @@ async function bootstrap() {
     mkdirSync(getUploadsBucketDir(bucket), { recursive: true });
   }
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  // Behind Render's load balancer the immediate peer is the proxy, so without
+  // this `req.ip` resolves to the proxy IP for EVERY request — the
+  // ThrottlerGuard then buckets all users under one shared rate-limit and trips
+  // the limits under normal multi-user load (the prod "Too Many Requests" /
+  // network-error symptom). Trust the first proxy hop so `req.ip` reflects the
+  // real client (X-Forwarded-For) and each client gets its own bucket.
+  app.set('trust proxy', 1);
   app.useBodyParser('json', { limit: '10mb' });
   app.useBodyParser('urlencoded', { extended: true, limit: '10mb' });
   app.setGlobalPrefix('api');

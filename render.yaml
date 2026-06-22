@@ -1,6 +1,10 @@
 services:
   - type: web
-    name: wusuq-api
+    # Must match the actual Render service name so this Blueprint governs it.
+    # If they diverge, none of the envVars/buildCommand below apply (that gap
+    # left PAYMENT_PROVIDER unset in prod → the provider factory threw at boot
+    # → every deploy since the June-11 one failed and prod stayed stale).
+    name: wusuq-api-sg
     runtime: node
     rootDir: .
     # Persistent disks require a paid plan on Render. Bump from `free` to
