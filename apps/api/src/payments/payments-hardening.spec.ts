@@ -5,6 +5,7 @@ import { Decimal } from '@prisma/client/runtime/library';
 import { PrismaService } from '../prisma/prisma.service';
 import { PaymentsService } from './payments.service';
 import { MockProvider } from './providers/mock-provider';
+import { DisabledProvider } from './providers/disabled-provider';
 import { PAYMENT_PROVIDER } from './providers/payment-provider.interface';
 import { PaymentProviderFactory } from './providers/provider.factory';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
@@ -209,14 +210,16 @@ describe('mock provider production guards (audit 1.6)', () => {
   };
   const factory = PaymentProviderFactory as unknown as Factory;
 
-  it('factory throws at startup in production when PAYMENT_PROVIDER is unset', () => {
+  it('factory falls back to DisabledProvider in production when PAYMENT_PROVIDER is unset (never crashes, never mock)', () => {
     const config = {
       get: (k: string) => (k === 'NODE_ENV' ? 'production' : undefined),
     };
-    expect(() => factory.useFactory(config)).toThrow(/PAYMENT_PROVIDER/);
+    // A missing env var must NOT brick the whole API; payments are simply
+    // disabled (503) and the forgeable mock never runs in prod.
+    expect(factory.useFactory(config)).toBeInstanceOf(DisabledProvider);
   });
 
-  it('factory throws at startup in production when PAYMENT_PROVIDER is mock', () => {
+  it('factory refuses the mock provider in production — falls back to DisabledProvider', () => {
     const config = {
       get: (k: string) =>
         k === 'NODE_ENV'
@@ -225,7 +228,28 @@ describe('mock provider production guards (audit 1.6)', () => {
             ? 'mock'
             : undefined,
     };
-    expect(() => factory.useFactory(config)).toThrow(/PAYMENT_PROVIDER/);
+    expect(factory.useFactory(config)).toBeInstanceOf(DisabledProvider);
+  });
+
+  it('factory honours an explicit PAYMENT_PROVIDER=disabled in production', () => {
+    const config = {
+      get: (k: string) =>
+        k === 'NODE_ENV'
+          ? 'production'
+          : k === 'PAYMENT_PROVIDER'
+            ? 'disabled'
+            : undefined,
+    };
+    expect(factory.useFactory(config)).toBeInstanceOf(DisabledProvider);
+  });
+
+  it('factory still throws on an UNKNOWN provider name (typo guard)', () => {
+    const config = {
+      get: (k: string) => (k === 'PAYMENT_PROVIDER' ? 'jazzcashh' : undefined),
+    };
+    expect(() => factory.useFactory(config)).toThrow(
+      /Unknown PAYMENT_PROVIDER/,
+    );
   });
 
   it('factory returns the mock provider outside production', () => {
