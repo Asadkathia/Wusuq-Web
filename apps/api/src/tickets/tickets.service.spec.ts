@@ -2343,7 +2343,9 @@ describe('findAll — clerk cost is gated out of the consumer list', () => {
       nonAttestedCharges: 0,
       additionalCharges: 0,
       assignments: [],
-      createdAt: new Date(),
+      createdAt: new Date('2026-06-20T10:00:00Z'),
+      updatedAt: new Date('2026-06-22T15:00:00Z'),
+      history: [{ createdAt: new Date('2026-06-21T09:00:00Z') }],
     };
     const prisma = {
       $transaction: jest.fn().mockResolvedValue([[ticketRow], 1]),
@@ -2378,6 +2380,38 @@ describe('findAll — clerk cost is gated out of the consumer list', () => {
     const row = res.items[0] as Record<string, unknown>;
     expect(row.clerkCost).toBe(500);
     expect(row.defaultClerkCost).toBe(400);
+  });
+
+  it('returns updatedAt and statusSince (latest history timestamp)', async () => {
+    const { service } = harness();
+    const res = await service.findAll(query);
+    const row = res.items[0] as Record<string, unknown>;
+    expect(row.updatedAt).toEqual(new Date('2026-06-22T15:00:00Z'));
+    expect(row.statusSince).toEqual(new Date('2026-06-21T09:00:00Z'));
+  });
+
+  it('orders the list by updatedAt desc, then createdAt desc', async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const count = jest.fn().mockResolvedValue(0);
+    const prisma = {
+      ticket: { findMany, count },
+      $transaction: jest.fn(async (ops: Promise<unknown>[]) =>
+        Promise.all(ops),
+      ),
+    };
+    const service = new TicketsService(
+      prisma as never,
+      { create: jest.fn() } as never,
+      {} as never,
+      {} as never,
+      makeDispatcher() as never,
+    );
+    await service.findAll({ page: 1, limit: 20 } as never);
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
+      }),
+    );
   });
 });
 

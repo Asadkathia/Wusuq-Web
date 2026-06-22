@@ -257,7 +257,11 @@ export class TicketsService {
         where,
         skip,
         take: query.limit,
-        orderBy: { createdAt: 'desc' },
+        // Most-recently-active ticket first: any status change / assignment /
+        // charge edit / reprice bumps Ticket.updatedAt (Prisma @updatedAt), so
+        // this surfaces whatever the back office last touched. createdAt is the
+        // tie-breaker for rows updated in the same tick.
+        orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
         include: {
           consumer: { select: { id: true, name: true } },
           service: {
@@ -268,6 +272,14 @@ export class TicketsService {
             take: 1,
             orderBy: { createdAt: 'desc' },
             include: { representative: { select: { id: true, name: true } } },
+          },
+          // Most-recent transition → "time in current status": the last history
+          // row's `to` is the current status, so its createdAt is when the
+          // ticket entered that state.
+          history: {
+            orderBy: { createdAt: 'desc' },
+            take: 1,
+            select: { createdAt: true },
           },
         },
       }),
@@ -317,6 +329,9 @@ export class TicketsService {
         additionalCharges: ticket.additionalCharges,
         assignedRepresentative: ticket.assignments[0]?.representative ?? null,
         createdAt: ticket.createdAt,
+        updatedAt: ticket.updatedAt,
+        // When the ticket entered its current status (latest history row).
+        statusSince: ticket.history?.[0]?.createdAt ?? null,
       })),
       page: query.page,
       limit: query.limit,

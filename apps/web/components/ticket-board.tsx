@@ -10,6 +10,7 @@ import type { TicketStatus } from '@wusuq/shared';
 import { chargeCapabilitiesFor } from '@wusuq/shared';
 import { TICKET_STATUSES } from '@wusuq/shared';
 import { apiClient } from '@/lib/api-client';
+import { relativeTime } from '@/lib/relative-time';
 import { paymentsClient } from '@/lib/payments-client';
 import { DataTableShell } from '@/components/ui/data-table-shell';
 import { FilterBar } from '@/components/ui/filter-bar';
@@ -61,6 +62,9 @@ type TicketRow = {
   clerkCost?: number | string | null;
   defaultClerkCost?: number | null;
   assignedRepresentative?: { id: string; name: string } | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+  statusSince?: string | null;
   scheduledDate?: string | null;
   nextDate?: string | null;
   hearingType?: string | null;
@@ -89,6 +93,18 @@ type ClerkCostsForm = {
 };
 
 const CONSUMER_ROLES = ['consumer', 'lawyer', 'company'] as const;
+
+// Compact money label, e.g. "Rs 3,500".
+const rs = (n: number) => `Rs ${Math.round(n).toLocaleString()}`;
+
+// "{N}{d|h}" since the ticket entered its current status; stale past 7 days.
+function statusAge(iso?: string | null): { label: string; stale: boolean } | null {
+  if (!iso) return null;
+  const diff = Math.max(0, Date.now() - new Date(iso).getTime());
+  const days = Math.floor(diff / 86_400_000);
+  const label = days >= 1 ? `${days}d` : `${Math.floor(diff / 3_600_000)}h`;
+  return { label, stale: days > 7 };
+}
 const EMPTY_CLERK_COSTS: ClerkCostsForm = {
   deliveryCharges: '',
   printingCharges: '',
@@ -847,7 +863,14 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
                         }}
                       />
                     ) : null}
-                    <div className="text-sm font-medium text-slate-900">{ticket.batchNo}</div>
+                    <div>
+                      <div className="text-sm font-medium text-slate-900">{ticket.batchNo}</div>
+                      {ticket.updatedAt && (
+                        <div className="text-xs text-slate-400" title={new Date(ticket.updatedAt).toLocaleString()}>
+                          updated {relativeTime(ticket.updatedAt)}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
@@ -855,6 +878,11 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
                      <UserCircle className="h-4 w-4 text-slate-400" />
                      <span className="text-sm text-slate-700">{ticket.consumer.name}</span>
                   </div>
+                  {ticket.assignedRepresentative && (
+                    <div className="mt-0.5 text-xs text-slate-500 pl-6">
+                      → {ticket.assignedRepresentative.name}
+                    </div>
+                  )}
                 </td>
                 <td className="px-6 py-4">
                   <div className="text-sm font-medium text-slate-900">{ticket.service.name}</div>
@@ -862,6 +890,24 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
                     <span className="flex items-center gap-1"><MapPin className="h-3 w-3" /> {ticket.serviceCity || 'Anywhere'}</span>
                     <span className="flex items-center gap-1"><Tag className="h-3 w-3" /> {ticket.caseType || 'Standard'}</span>
                   </div>
+                  {(() => {
+                    const total = Number(ticket.totalAmount ?? 0);
+                    const paid = Number(ticket.amountPaid ?? 0);
+                    const due = Math.max(0, total - paid);
+                    const age = statusAge(ticket.statusSince ?? ticket.createdAt ?? null);
+                    return (
+                      <div className="mt-1 flex items-center gap-2 text-xs">
+                        <span className="text-slate-500">
+                          {total <= 0 ? 'Free' : due > 0 ? `${rs(total)} · ${rs(due)} due` : 'Paid in full'}
+                        </span>
+                        {age && (
+                          <span className={age.stale ? 'text-amber-600 font-medium' : 'text-slate-400'}>
+                            · {age.label} in {ticket.status.replace(/_/g, ' ').toLowerCase()}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </td>
                 {isClerk && (
                   <td className="px-6 py-4">
@@ -1002,10 +1048,18 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
                       </>
                     ) : (
                       <>
-                        {(status === 'UNPAID' || status === 'PAID') && (
+                        {status === 'PAID' && (
                           <button onClick={() => openAssign(ticket)} className="text-primary-600 hover:text-primary-900 bg-primary-50 px-3 py-1.5 rounded-md flex items-center gap-1">
                             <CheckSquare className="h-3.5 w-3.5" /> Assign
                           </button>
+                        )}
+                        {status === 'UNPAID' && (
+                          <span
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium bg-amber-50 text-amber-700"
+                            title="A ticket must be paid before it can be assigned to a representative."
+                          >
+                            <Clock className="h-3.5 w-3.5" /> Awaiting payment
+                          </span>
                         )}
                         {status === 'WAITING_APPROVAL' && (
                           <>
