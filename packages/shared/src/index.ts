@@ -189,6 +189,22 @@ export function isStaffRole(role: string | undefined | null): boolean {
   return role != null && STAFF_ROLE_SET.has(role);
 }
 
+// ── Billing currency ──────────────────────────────────────────────────────
+// A customer is billed in PKR when their phone dial code is +92 (Pakistan),
+// otherwise in USD. Phone dial code wins; country ISO is the fallback when no
+// phone is on file; default PKR. This is the ONLY place currency is derived.
+export type Currency = 'PKR' | 'USD';
+
+export function deriveCurrency(input: {
+  phone?: string | null;
+  country?: string | null;
+}): Currency {
+  const phone = input.phone?.replace(/\s+/g, '') ?? '';
+  if (phone) return phone.startsWith('+92') ? 'PKR' : 'USD';
+  if (input.country) return input.country.toUpperCase() === 'PK' ? 'PKR' : 'USD';
+  return 'PKR';
+}
+
 /**
  * Court tier hierarchy used by intake flows + pricing. Lives in shared so
  * the per-tier required-field overrides below can be type-checked on both
