@@ -34,4 +34,9 @@ export class ProfileCompleteDto {
   @IsString()
   @MaxLength(20)
   postalCode?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2)
+  country?: string; // ISO code from the profile country picker (e.g. 'PK', 'GB')
 }

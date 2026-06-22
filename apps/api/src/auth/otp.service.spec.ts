@@ -175,6 +175,7 @@ describe('OtpService', () => {
           phoneVerified: true,
           role: 'consumer',
           isActive: true,
+          currency: 'PKR',
         },
       });
       expect(r.isNewUser).toBe(true);

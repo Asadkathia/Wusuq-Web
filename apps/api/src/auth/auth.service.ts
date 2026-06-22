@@ -6,6 +6,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { UserRole } from '@prisma/client';
+import { deriveCurrency } from '@wusuq/shared';
 import { compare, hash } from 'bcryptjs';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { NotificationDispatcher } from '../notifications/notification-dispatcher.service';
@@ -164,6 +165,8 @@ export class AuthService {
         email: dto.email,
         passwordHash,
         phone: dto.phone,
+        country: dto.country ?? null,
+        currency: deriveCurrency({ phone: dto.phone, country: dto.country }),
         role: 'consumer',
       },
     });
@@ -227,8 +230,32 @@ export class AuthService {
       province?: string;
       district?: string;
       postalCode?: string;
+      country?: string;
     },
   ) {
+    // Currency locks once the account is active. Re-derive (and update country)
+    // only when the user has zero non-archived tickets AND zero wallet balance,
+    // so an in-flight account can never end up with a mixed PKR/USD ledger.
+    const existing = await this.prisma.user.findUniqueOrThrow({
+      where: { id: userId },
+      select: { walletBalance: true, phone: true },
+    });
+    const ticketCount = await this.prisma.ticket.count({
+      where: { consumerId: userId, archivedAt: null },
+    });
+    const locked = ticketCount > 0 || Number(existing.walletBalance) !== 0;
+    const currencyUpdate = !dto.country
+      ? {}
+      : locked
+        ? { country: dto.country } // contact info only; billing currency stays
+        : {
+            country: dto.country,
+            currency: deriveCurrency({
+              phone: existing.phone,
+              country: dto.country,
+            }),
+          };
+
     const user = await this.prisma.user.update({
       where: { id: userId },
       data: {
@@ -239,6 +266,7 @@ export class AuthService {
         ...(dto.province ? { province: dto.province } : {}),
         ...(dto.district ? { district: dto.district } : {}),
         ...(dto.postalCode ? { postalCode: dto.postalCode } : {}),
+        ...currencyUpdate,
       },
     });
     return {
@@ -248,6 +276,7 @@ export class AuthService {
       role: user.role,
       city: user.city,
       consumerKind: user.consumerKind,
+      currency: user.currency,
     };
   }
 

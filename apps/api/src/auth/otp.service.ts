@@ -6,6 +6,7 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { randomInt } from 'node:crypto';
+import { deriveCurrency } from '@wusuq/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthService } from './auth.service';
 
@@ -128,6 +129,7 @@ export class OtpService {
           phoneVerified: true,
           role: 'consumer',
           isActive: true,
+          currency: deriveCurrency({ phone }),
         },
       });
       isNewUser = true;
