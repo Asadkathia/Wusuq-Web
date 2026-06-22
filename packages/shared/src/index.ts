@@ -540,7 +540,13 @@ export const PAYMENT_MODEL_BY_FLOW: Record<string, PaymentModel> = {
   judicial_power_of_attorney: 'ONE_TIME',
 };
 
-export function paymentModelFor(flow?: string | null): PaymentModel {
+export function paymentModelFor(
+  flow?: string | null,
+  currency?: Currency,
+): PaymentModel {
+  // USD orders are all-inclusive flat — always a single up-front payment, even
+  // for physically-fulfilled Case Files (no clerk phase-2 remainder is billed).
+  if (currency === 'USD') return 'ONE_TIME';
   if (!flow) return 'ONE_TIME';
   return PAYMENT_MODEL_BY_FLOW[flow] ?? 'ONE_TIME';
 }
@@ -703,6 +709,23 @@ export function parsePayloadCities(value: unknown): string[] {
 /** Round to 2 decimals (PKR). Avoids binary-float drift on persisted money. */
 export function round2(n: number): number {
   return Math.round((n + Number.EPSILON) * 100) / 100;
+}
+
+/**
+ * Format a money amount for display. USD → "$1,234"; PKR → "PKR 1,234".
+ * The ONLY money formatter — replaces the per-component formatPKR helpers.
+ */
+export function formatMoney(
+  amount: number,
+  currency: Currency,
+  opts?: { decimals?: number },
+): string {
+  const decimals = opts?.decimals ?? 0;
+  const n = new Intl.NumberFormat(currency === 'USD' ? 'en-US' : 'en-PK', {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  }).format(amount);
+  return currency === 'USD' ? `$${n}` : `PKR ${n}`;
 }
 
 export type PromoType = 'PERCENT' | 'FIXED';
