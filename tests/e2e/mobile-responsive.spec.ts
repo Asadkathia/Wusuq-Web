@@ -26,3 +26,18 @@ test.describe('Mobile — inputs are ≥16px (no iOS zoom)', () => {
     expect(fontPx).toBeGreaterThanOrEqual(16);
   });
 });
+
+test.describe('Mobile — tap targets ≥44px', () => {
+  test('topbar notification button is ≥44px on mobile', async ({ page }) => {
+    await setMobile(page);
+    await authAsConsumer(page);
+    await mockConsumerApis(page);
+    await page.goto('/consumer/dashboard');
+    const btn = page.getByRole('button', { name: /Notifications/ });
+    await btn.waitFor();
+    const box = await btn.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.height).toBeGreaterThanOrEqual(44);
+    expect(box!.width).toBeGreaterThanOrEqual(44);
+  });
+});

@@ -310,7 +310,7 @@ export default function ConsumerDashboardPage() {
               href="/consumer/dashboard"
               scroll={false}
               className={[
-                'rounded-md px-3 py-1 text-xs font-semibold transition-colors',
+                'rounded-md px-3 py-2.5 sm:py-1 text-xs font-semibold transition-colors',
                 !isUnpaidTab ? 'bg-white text-slate-900 shadow-elev-1' : 'text-slate-500 hover:text-slate-700',
               ].join(' ')}
             >
@@ -320,7 +320,7 @@ export default function ConsumerDashboardPage() {
               href="/consumer/dashboard?tab=unpaid"
               scroll={false}
               className={[
-                'rounded-md px-3 py-1 text-xs font-semibold transition-colors',
+                'rounded-md px-3 py-2.5 sm:py-1 text-xs font-semibold transition-colors',
                 isUnpaidTab ? 'bg-white text-slate-900 shadow-elev-1' : 'text-slate-500 hover:text-slate-700',
               ].join(' ')}
             >

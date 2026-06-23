@@ -34,6 +34,7 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(functio
       ref={ref}
       className={[
         'inline-flex items-center justify-center',
+        'min-h-11 min-w-11 sm:min-h-0 sm:min-w-0',
         'transition-[background-color,color,box-shadow,transform] duration-200 ease-silk',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40',
         'disabled:opacity-60 disabled:cursor-not-allowed',
