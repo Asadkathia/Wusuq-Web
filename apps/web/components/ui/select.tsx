@@ -55,7 +55,7 @@ function normalize(options: SelectProps['options']): SelectOption[] {
 }
 
 const triggerBase = [
-  'group flex h-11 w-full items-center gap-2 rounded-xl border bg-surface px-3.5 text-left text-sm',
+  'group flex h-11 w-full items-center gap-2 rounded-xl border bg-surface px-3.5 text-left text-base sm:text-sm',
   'transition-[box-shadow,border-color] duration-200 ease-silk',
   'focus-visible:outline-none',
   'disabled:bg-surface-muted disabled:cursor-not-allowed',
@@ -241,7 +241,7 @@ export const Select = forwardRef<HTMLButtonElement, SelectProps>(function Select
                       setOpen(false);
                     }
                   }}
-                  className="h-9 w-full rounded-lg bg-surface-muted pl-9 pr-3 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500/30"
+                  className="h-9 w-full rounded-lg bg-surface-muted pl-9 pr-3 text-base sm:text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500/30"
                 />
               </div>
             ) : null}

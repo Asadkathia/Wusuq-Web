@@ -13,7 +13,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
   ref,
 ) {
   const base = [
-    'h-11 w-full rounded-xl bg-surface text-sm text-slate-900 placeholder:text-slate-400',
+    'h-11 w-full rounded-xl bg-surface text-base sm:text-sm text-slate-900 placeholder:text-slate-400',
     'border transition-[box-shadow,border-color] duration-200 ease-silk',
     'focus:outline-none',
     'disabled:bg-surface-muted disabled:cursor-not-allowed',
