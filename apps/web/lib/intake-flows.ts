@@ -1787,6 +1787,23 @@ export function flowKeyToSlug(key: string): string {
   return FLOW_KEY_TO_SLUG[key] ?? key;
 }
 
+// Flows offered to USD (international) customers — the only flows with USD
+// pricing rules (owner list 2026-06-14). Case Filing, Power of Attorney, and
+// all non-judicial services are PKR-only. Mirrors the USD seed in
+// apps/api/data/usd-pricing.ts; keep the two in sync.
+export const USD_AVAILABLE_FLOWS: ReadonlySet<string> = new Set([
+  'judicial_case_files',
+  'judicial_case_information',
+  'judicial_case_search',
+]);
+
+export function isFlowAvailableForCurrency(
+  flowKey: string,
+  currency: 'PKR' | 'USD',
+): boolean {
+  return currency === 'PKR' || USD_AVAILABLE_FLOWS.has(flowKey);
+}
+
 export function slugToFlowKey(
   slug: string,
   category: 'judicial' | 'non_judicial',

@@ -30,7 +30,13 @@ export type CityCourtGroup = {
   courts: CityCourt[];
 };
 
-export type LocalUser = { id: string; name?: string; email?: string; role?: string };
+export type LocalUser = {
+  id: string;
+  name?: string;
+  email?: string;
+  role?: string;
+  currency?: 'PKR' | 'USD';
+};
 
 export type IntakeWizardProps = {
   title: string;

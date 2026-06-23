@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { ArrowUpRight, Sparkles } from 'lucide-react';
 import { flowKeyToSlug, type IntakeFlow } from '@/lib/intake-flows';
+import { UsdTileGate, UsdServicesEmptyState } from './usd-service-gate';
 
 type Variant = 'admin' | 'consumer';
 
@@ -51,6 +52,13 @@ export function ServicePicker({
         </p>
       </header>
 
+      {/* USD (international) consumers can only order the flows with USD
+          pricing; this notice shows when none of the listed flows qualify
+          (e.g. the non-judicial menu). Admin/portal users always see all. */}
+      {isConsumer ? (
+        <UsdServicesEmptyState flowKeys={flows.map((f) => f.key)} />
+      ) : null}
+
       <ul
         className={
           isConsumer
@@ -61,7 +69,7 @@ export function ServicePicker({
         {flows.map((flow) => {
           const Icon = flow.icon ?? Sparkles;
           const href = `${basePath}/${flowKeyToSlug(flow.key)}`;
-          return (
+          const tile = (
             <li key={flow.key}>
               <Link
                 href={href}
@@ -108,6 +116,15 @@ export function ServicePicker({
                 </div>
               </Link>
             </li>
+          );
+          // Consumer tiles are gated by billing currency (USD customers only
+          // see flows with USD pricing); admin/portal sees everything.
+          return isConsumer ? (
+            <UsdTileGate key={flow.key} flowKey={flow.key}>
+              {tile}
+            </UsdTileGate>
+          ) : (
+            tile
           );
         })}
       </ul>
