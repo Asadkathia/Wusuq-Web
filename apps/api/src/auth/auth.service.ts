@@ -90,6 +90,8 @@ export class AuthService {
         email: user.email,
         role: payload.role,
         verified: user.verified,
+        currency: user.currency,
+        country: user.country,
       },
     };
   }
