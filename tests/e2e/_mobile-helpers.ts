@@ -22,6 +22,17 @@ export async function authAsConsumer(page: Page): Promise<void> {
 
 export async function mockConsumerApis(page: Page): Promise<void> {
   const nowIso = new Date().toISOString();
+  // Playwright matches routes in LIFO order — register the catch-all FIRST so
+  // that specific routes registered below take precedence over it.
+  await page.route(/\/api\/.*/, (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ items: [] }) }),
+  );
+  await page.route(/\/api\/notifications\/unread-count$/, (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ count: 0 }) }),
+  );
+  await page.route(/\/api\/wallet\/me$/, (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ balance: -1900, currency: 'PKR' }) }),
+  );
   await page.route(/\/api\/dashboard\/my-summary$/, (route) =>
     route.fulfill({
       status: 200,
@@ -38,16 +49,6 @@ export async function mockConsumerApis(page: Page): Promise<void> {
         myNextHearing: null,
       }),
     }),
-  );
-  await page.route(/\/api\/wallet\/me$/, (route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ balance: -1900, currency: 'PKR' }) }),
-  );
-  await page.route(/\/api\/notifications\/unread-count$/, (route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ count: 0 }) }),
-  );
-  // Catch-all for anything else (notifications list, profile, SSE handshake, etc.)
-  await page.route(/\/api\/.*/, (route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ items: [] }) }),
   );
 }
 

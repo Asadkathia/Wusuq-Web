@@ -7,7 +7,11 @@ test.describe('Mobile — no horizontal overflow', () => {
     await authAsConsumer(page);
     await mockConsumerApis(page);
     await page.goto('/consumer/dashboard');
-    await page.getByText('Recent activity').waitFor();
+    // Wait for an actual ticket row (batchNo rendered by the mock) — this
+    // guarantees the async /dashboard/my-summary fetch has completed and
+    // the overflow-causing right-hand cluster (amount + StatusPill + Pay now)
+    // is present in the DOM before we measure scrollWidth.
+    await page.getByText('TKT-3601').waitFor({ timeout: 10000 });
     await expectNoHorizontalOverflow(page);
   });
 });
