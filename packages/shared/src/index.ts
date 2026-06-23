@@ -189,6 +189,35 @@ export function isStaffRole(role: string | undefined | null): boolean {
   return role != null && STAFF_ROLE_SET.has(role);
 }
 
+// ── Billing currency ──────────────────────────────────────────────────────
+// A customer is billed in PKR when their phone dial code is +92 (Pakistan),
+// otherwise in USD. Phone dial code wins; country ISO is the fallback when no
+// phone is on file; default PKR. This is the ONLY place currency is derived.
+export type Currency = 'PKR' | 'USD';
+
+export function deriveCurrency(input: {
+  phone?: string | null;
+  country?: string | null;
+}): Currency {
+  // Normalise away spaces, a leading '+', and an international '00' prefix so
+  // both E.164 ('+923…') and locally-stored forms ('923…', '0300…') classify
+  // correctly. A Pakistan number is '92…' after normalisation, or a bare local
+  // mobile ('0…' / '3XXXXXXXXX').
+  const raw = (input.phone ?? '').replace(/[\s-]/g, '').replace(/^\+/, '').replace(/^00/, '');
+  if (raw) {
+    if (raw.startsWith('92')) return 'PKR';
+    if (raw.startsWith('0') || /^3\d{9}$/.test(raw)) return 'PKR'; // local PK form
+    return 'USD';
+  }
+  if (input.country) return input.country.toUpperCase() === 'PK' ? 'PKR' : 'USD';
+  return 'PKR';
+}
+
+/** Coerce an arbitrary stored value to a Currency (defaults PKR). */
+export function toCurrency(value: unknown): Currency {
+  return value === 'USD' ? 'USD' : 'PKR';
+}
+
 /**
  * Court tier hierarchy used by intake flows + pricing. Lives in shared so
  * the per-tier required-field overrides below can be type-checked on both
@@ -524,7 +553,13 @@ export const PAYMENT_MODEL_BY_FLOW: Record<string, PaymentModel> = {
   judicial_power_of_attorney: 'ONE_TIME',
 };
 
-export function paymentModelFor(flow?: string | null): PaymentModel {
+export function paymentModelFor(
+  flow?: string | null,
+  currency?: Currency,
+): PaymentModel {
+  // USD orders are all-inclusive flat — always a single up-front payment, even
+  // for physically-fulfilled Case Files (no clerk phase-2 remainder is billed).
+  if (currency === 'USD') return 'ONE_TIME';
   if (!flow) return 'ONE_TIME';
   return PAYMENT_MODEL_BY_FLOW[flow] ?? 'ONE_TIME';
 }
@@ -551,7 +586,14 @@ export const SERVICE_CHARGE_CAPABILITIES: Record<string, ServiceChargeCapabiliti
 
 const NO_CHARGES: ServiceChargeCapabilities = { attestation: false, printing: false, delivery: false, pdf: false };
 
-export function chargeCapabilitiesFor(flow?: string | null): ServiceChargeCapabilities {
+export function chargeCapabilitiesFor(
+  flow?: string | null,
+  currency?: Currency,
+): ServiceChargeCapabilities {
+  // USD orders are all-inclusive flat — no clerk phase-2 charges are ever
+  // billed to the consumer (the physical work still happens; its cost is the
+  // internal clerkCost). So USD exposes NO consumer-facing charge capabilities.
+  if (currency === 'USD') return NO_CHARGES;
   if (!flow) return NO_CHARGES;
   return SERVICE_CHARGE_CAPABILITIES[flow] ?? NO_CHARGES;
 }
@@ -689,6 +731,25 @@ export function round2(n: number): number {
   return Math.round((n + Number.EPSILON) * 100) / 100;
 }
 
+/**
+ * Format a money amount for display. USD → "$1,234.50"; PKR → "PKR 1,234".
+ * Shared money formatter for consumer-facing surfaces; staff/admin boards may
+ * still use their own helpers. Defaults: USD shows 2 fraction digits (cents),
+ * PKR shows whole rupees; override via opts.decimals.
+ */
+export function formatMoney(
+  amount: number,
+  currency: Currency,
+  opts?: { decimals?: number },
+): string {
+  const decimals = opts?.decimals ?? (currency === 'USD' ? 2 : 0);
+  const n = new Intl.NumberFormat(currency === 'USD' ? 'en-US' : 'en-PK', {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  }).format(amount);
+  return currency === 'USD' ? `$${n}` : `PKR ${n}`;
+}
+
 export type PromoType = 'PERCENT' | 'FIXED';
 
 export interface TicketChargeComponents {
@@ -747,6 +808,7 @@ export function computeTicketTotal(input: TicketMoneyInput): TicketMoneyResult {
 /** Resolver input shape produced by {@link buildPricingResolveInput}. */
 export interface PricingResolveInput {
   flow: string;
+  currency: Currency;
   courtLevel?: string;
   caseStatus?: string;
   caseYear?: number;
@@ -773,6 +835,7 @@ export interface PricingResolveInput {
 export function buildPricingResolveInput(
   flow: string,
   payload: Record<string, string | undefined> | undefined | null,
+  currency: Currency = 'PKR',
 ): PricingResolveInput {
   const p = payload ?? {};
 
@@ -810,6 +873,7 @@ export function buildPricingResolveInput(
 
   return {
     flow,
+    currency,
     courtLevel: p.select_court_type || undefined,
     caseStatus,
     caseYear,

@@ -46,6 +46,7 @@ describe('createIntakeTicket idempotency (audit 1.9)', () => {
     const prisma: Record<string, unknown> = {
       user: {
         findUnique: jest.fn().mockResolvedValue({ id: 'c-1' }),
+        findUniqueOrThrow: jest.fn().mockResolvedValue({ currency: 'PKR' }),
       },
       service: {
         findUnique: jest

@@ -27,7 +27,10 @@ function buildHarness() {
     .fn()
     .mockResolvedValue({ id: 'tkt-1', batchNo: 'T-1' });
   const prisma: Record<string, any> = {
-    user: { findUnique: jest.fn().mockResolvedValue({ id: 'c-1' }) },
+    user: {
+      findUnique: jest.fn().mockResolvedValue({ id: 'c-1' }),
+      findUniqueOrThrow: jest.fn().mockResolvedValue({ currency: 'PKR' }),
+    },
     service: {
       findUnique: jest
         .fn()

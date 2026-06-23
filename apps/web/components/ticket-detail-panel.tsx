@@ -699,6 +699,7 @@ export function TicketDetailPanel({ ticketId, onClose, isClerkView = false }: Pr
           ticketId={ticketId}
           formPayload={(ticket.formPayload as Record<string, unknown>) ?? {}}
           currentTotalAmount={Number(ticket.totalAmount || 0)}
+          currency={(ticket.currency as 'PKR' | 'USD') ?? 'PKR'}
           onClose={() => setRepriceOpen(false)}
           onSaved={() => { setRepriceOpen(false); void load(); }}
         />

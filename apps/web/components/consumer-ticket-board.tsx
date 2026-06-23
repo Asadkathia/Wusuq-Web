@@ -25,6 +25,7 @@ import { parseDeliveryAddress } from '@/lib/intake-flows';
 import { apiClient } from '@/lib/api-client';
 import { relativeTime } from '@/lib/relative-time';
 import { Button } from '@/components/ui/button';
+import { formatMoney } from '@wusuq/shared';
 import { Input } from '@/components/ui/input';
 import { PanelCard } from '@/components/ui/panel-card';
 import { StatusPill } from '@/components/ui/status-pill';
@@ -60,6 +61,7 @@ type TicketRow = {
   totalAmount?: number | string | null;
   amountPaid?: number | string | null;
   serviceCost?: number | string | null;
+  currency?: 'PKR' | 'USD' | null;
   createdBy?: string | null;
   remainderFinalizedAt?: string | null;
   consumer: { id: string; name: string };
@@ -127,9 +129,11 @@ function statusLabel(status: TicketStatus) {
   }
 }
 
-function formatPKR(value: number | string | null | undefined) {
-  const n = Number(value ?? 0);
-  return new Intl.NumberFormat('en-PK', { maximumFractionDigits: 0 }).format(n);
+function money(
+  value: number | string | null | undefined,
+  currency: 'PKR' | 'USD',
+) {
+  return formatMoney(Number(value ?? 0), currency);
 }
 
 type FilterTab = 'all' | 'active' | 'completed' | 'unpaid';
@@ -323,6 +327,7 @@ function TicketList({
 function TicketCard({ ticket, onOpen }: { ticket: TicketRow; onOpen: () => void }) {
   const total = Number(ticket.totalAmount ?? 0);
   const paid = Number(ticket.amountPaid ?? 0);
+  const currency: 'PKR' | 'USD' = ticket.currency ?? 'PKR';
   const base = Number(ticket.serviceCost ?? 0);
   const remaining = Math.max(0, total - paid);
   const isConsumerCreated = ticket.createdBy === 'CONSUMER';
@@ -438,10 +443,10 @@ function TicketCard({ ticket, onOpen }: { ticket: TicketRow; onOpen: () => void 
         <StatusPill dot label={statusLabel(ticket.status)} variant={statusVariant(ticket.status)} />
         {total > 0 ? (
           <div className="text-right">
-            <p className="text-sm font-semibold tabular-nums text-slate-900">PKR {formatPKR(total)}</p>
+            <p className="text-sm font-semibold tabular-nums text-slate-900">{money(total, currency)}</p>
             {remaining > 0 ? (
               <p className="text-[11px] tabular-nums text-amber-600">
-                PKR {formatPKR(remaining)} due{paid > 0 ? ` · PKR ${formatPKR(paid)} paid` : ''}
+                {money(remaining, currency)} due{paid > 0 ? ` · ${money(paid, currency)} paid` : ''}
               </p>
             ) : (
               <p className="text-[11px] text-emerald-600">Fully paid</p>
@@ -481,7 +486,7 @@ function TicketCard({ ticket, onOpen }: { ticket: TicketRow; onOpen: () => void 
       {showFinalPayment ? (
         <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 flex items-center justify-between gap-3">
           <p className="text-xs font-medium text-rose-700">
-            Final payment due — PKR {formatPKR(remaining)}
+            Final payment due — {money(remaining, currency)}
           </p>
           <Link
             href={`/consumer/tickets/${ticket.id}/pay`}
@@ -671,6 +676,7 @@ export function ConsumerTicketDetail({
 
   const total = Number(ticket.totalAmount || 0);
   const paid = Number(ticket.amountPaid || 0);
+  const currency: 'PKR' | 'USD' = ticket.currency ?? 'PKR';
   const base = Number(ticket.serviceCost || 0);
   const remaining = Math.max(0, total - paid);
   const discount = Number(ticket.discountPrice || 0);
@@ -715,8 +721,8 @@ export function ConsumerTicketDetail({
       ) : null}
 
       <section className="grid grid-cols-2 gap-3">
-        <MiniStat label="Total" value={`PKR ${formatPKR(total)}`} />
-        <MiniStat label={remaining > 0 ? 'Due' : 'Paid'} value={`PKR ${formatPKR(remaining > 0 ? remaining : paid)}`} tone={remaining > 0 ? 'amber' : 'emerald'} />
+        <MiniStat label="Total" value={money(total, currency)} />
+        <MiniStat label={remaining > 0 ? 'Due' : 'Paid'} value={money(remaining > 0 ? remaining : paid, currency)} tone={remaining > 0 ? 'amber' : 'emerald'} />
       </section>
 
       <section>
@@ -812,18 +818,18 @@ export function ConsumerTicketDetail({
             {charges.map(([label, val]) => (
               <div key={label} className="flex items-center justify-between px-4 py-2.5 text-sm">
                 <span className="text-slate-600">{label}</span>
-                <span className="tabular-nums text-slate-900">PKR {formatPKR(val)}</span>
+                <span className="tabular-nums text-slate-900">{money(val, currency)}</span>
               </div>
             ))}
             {discount > 0 ? (
               <div className="flex items-center justify-between px-4 py-2.5 text-sm">
                 <span className="text-slate-600">Discount</span>
-                <span className="tabular-nums text-emerald-600">− PKR {formatPKR(discount)}</span>
+                <span className="tabular-nums text-emerald-600">− {money(discount, currency)}</span>
               </div>
             ) : null}
             <div className="flex items-center justify-between px-4 py-3 text-sm font-semibold">
               <span className="text-slate-900">Total</span>
-              <span className="tabular-nums text-slate-900">PKR {formatPKR(total)}</span>
+              <span className="tabular-nums text-slate-900">{money(total, currency)}</span>
             </div>
           </div>
         </section>
@@ -883,7 +889,7 @@ export function ConsumerTicketDetail({
 
       {showFinalPayment ? (
         <div className="w-full rounded-lg border border-rose-200 bg-rose-50 px-4 py-3">
-          <p className="text-sm font-medium text-rose-700 mb-2">Final payment due — PKR {formatPKR(remaining)}</p>
+          <p className="text-sm font-medium text-rose-700 mb-2">Final payment due — {money(remaining, currency)}</p>
           <Link href={`/consumer/tickets/${ticketId}/pay`}>
             <Button variant="brand" size="sm" rightIcon={<ArrowUpRight className="h-3.5 w-3.5" />}>Pay now</Button>
           </Link>

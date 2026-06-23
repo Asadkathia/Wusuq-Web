@@ -312,7 +312,13 @@ export class WalletService {
   async getMyWallet(userId: string) {
     const user = await this.prisma.user.findUniqueOrThrow({
       where: { id: userId },
-      select: { id: true, name: true, email: true, walletBalance: true },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        walletBalance: true,
+        currency: true,
+      },
     });
 
     const transactions = await this.prisma.walletTransaction.findMany({
@@ -342,6 +348,7 @@ export class WalletService {
       balance: credit - due,
       credit,
       due,
+      currency: user.currency,
       transactions: transactions.map((transaction) => ({
         ...transaction,
         amount: Number(transaction.amount || 0),
@@ -447,7 +454,7 @@ export class WalletService {
       await tx.$executeRaw`SELECT id FROM "User" WHERE id = ${userId} FOR UPDATE`;
       const current = await tx.user.findUnique({
         where: { id: userId },
-        select: { walletBalance: true },
+        select: { walletBalance: true, currency: true },
       });
       if (!current) {
         throw new NotFoundException('User not found');
@@ -469,7 +476,7 @@ export class WalletService {
           userId,
           amount,
           paymentMode: 'BANK_TRANSFER',
-          currency: 'PKR',
+          currency: current.currency,
           status: 'VERIFIED',
           type: 'ADMIN_ADJUSTMENT',
           verifiedAt: new Date(),
@@ -541,6 +548,7 @@ export class WalletService {
           amountPaid: true,
           serviceCost: true,
           status: true,
+          currency: true,
         },
       });
       if (!fresh) continue;
@@ -567,6 +575,7 @@ export class WalletService {
           amountPaid,
           serviceCost: Number(fresh.serviceCost),
           status: fresh.status,
+          currency: fresh.currency,
         },
         deducted,
         paymentMode,
@@ -595,6 +604,7 @@ export class WalletService {
       amountPaid: number;
       serviceCost: number;
       status: string;
+      currency: string;
     },
     deducted: number,
     paymentMode: PaymentMode,
@@ -619,7 +629,7 @@ export class WalletService {
         ticketId: ticket.ticketId,
         amount: deducted,
         paymentMode,
-        currency: 'PKR',
+        currency: ticket.currency,
         status: 'VERIFIED',
         type: 'TICKET_DEBIT',
         verifiedAt: new Date(),

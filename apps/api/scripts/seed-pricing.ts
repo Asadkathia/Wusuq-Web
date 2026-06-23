@@ -12,6 +12,10 @@ import { PrismaClient } from '@prisma/client';
 import { buildNonJudicialPricingRows } from '@wusuq/shared';
 import * as XLSX from 'xlsx';
 import * as fs from 'node:fs';
+import {
+  buildUsdPricingRuleRows,
+  USD_PRICING_ROW_COUNT,
+} from '../data/usd-pricing';
 import * as path from 'node:path';
 
 const prisma = new PrismaClient();
@@ -557,7 +561,20 @@ async function main() {
   // bills at intake; printing/delivery are the clerk-entered phase-2 remainder.
   const nonJudicialRows = buildNonJudicialPricingRows();
 
-  const allRows = [...rows, ...nonJudicialRows];
+  // USD all-inclusive flat rules (owner list 2026-06-14). Same dimensions as
+  // PKR rows but currency='USD'; the resolver short-circuits these to a flat
+  // total (no surcharges). Shared builder with seed-usd-pricing.ts (the
+  // USD-only seed) so the two never drift. Included here so a full rebuild
+  // also re-creates USD rows after the wipe.
+  const usdRows = buildUsdPricingRuleRows();
+  if (usdRows.length !== USD_PRICING_ROW_COUNT) {
+    console.error(
+      `USD rows = ${usdRows.length}, expected ${USD_PRICING_ROW_COUNT}. Aborting.`,
+    );
+    process.exit(1);
+  }
+
+  const allRows = [...rows, ...nonJudicialRows, ...usdRows];
 
   // Audit 6.1: wipe + insert in ONE transaction — a dropped connection
   // mid-run used to leave PricingRule empty/partial in prod (every intake
@@ -571,7 +588,8 @@ async function main() {
   );
   console.log(
     `Seeded ${allRows.length} pricing rules (${rows.length} judicial + ` +
-      `${nonJudicialRows.length} non-judicial; atomic wipe + insert).`,
+      `${nonJudicialRows.length} non-judicial + ${usdRows.length} USD; ` +
+      `atomic wipe + insert).`,
   );
 }
 

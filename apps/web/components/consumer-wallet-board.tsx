@@ -12,6 +12,7 @@ import {
   Upload,
   Wallet as WalletIcon,
 } from 'lucide-react';
+import { formatMoney } from '@wusuq/shared';
 import { apiClient } from '@/lib/api-client';
 import { advanceOnEnter } from '@/lib/form-utils';
 import { Button } from '@/components/ui/button';
@@ -47,12 +48,9 @@ type MyWallet = {
   balance: number; // net = credit − outstanding dues (can be negative)
   credit?: number; // prepaid top-up credit (>= 0)
   due?: number; // outstanding ticket dues
+  currency?: 'PKR' | 'USD';
   transactions: Transaction[];
 };
-
-function formatPKR(v: number | string) {
-  return new Intl.NumberFormat('en-PK', { maximumFractionDigits: 0 }).format(Number(v));
-}
 
 function txVariant(status: string) {
   if (status === 'VERIFIED') return 'success' as const;
@@ -73,6 +71,7 @@ export function ConsumerWalletBoard() {
   const [loading, setLoading] = useState(true);
   const [topupOpen, setTopupOpen] = useState(false);
   const toast = useToast();
+  const currency: 'PKR' | 'USD' = data?.currency ?? 'PKR';
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -124,15 +123,15 @@ export function ConsumerWalletBoard() {
             <Skeleton className="h-12 w-48 bg-white/10" />
           ) : (
             <p className="text-5xl font-semibold tracking-tight tabular-nums">
-              PKR <span className="font-mono">{formatPKR(data?.balance ?? 0)}</span>
+              <span className="font-mono">{formatMoney(data?.balance ?? 0, currency)}</span>
             </p>
           )}
           {/* Breakdown: prepaid credit vs outstanding ticket dues. */}
           {!loading && (data?.due ?? 0) > 0 ? (
             <p className="mt-3 inline-flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg bg-white/10 px-3 py-1.5 text-xs ring-1 ring-inset ring-white/20">
-              <span className="tabular-nums">PKR {formatPKR(data?.due ?? 0)} owed</span>
+              <span className="tabular-nums">{formatMoney(data?.due ?? 0, currency)} owed</span>
               <span className="text-brand-100/60">·</span>
-              <span className="tabular-nums">PKR {formatPKR(data?.credit ?? 0)} credit</span>
+              <span className="tabular-nums">{formatMoney(data?.credit ?? 0, currency)} credit</span>
             </p>
           ) : null}
           <p className="mt-2 text-xs text-brand-100/80">
@@ -193,7 +192,7 @@ export function ConsumerWalletBoard() {
                   </div>
                   <div className="flex items-center gap-3 shrink-0">
                     <span className={['text-sm font-semibold tabular-nums', isCredit ? 'text-emerald-700' : 'text-rose-700'].join(' ')}>
-                      {isCredit ? '+' : '−'} PKR {formatPKR(tx.amount)}
+                      {isCredit ? '+' : '−'} {formatMoney(Number(tx.amount), currency)}
                     </span>
                     <StatusPill dot label={txLabel(tx.status)} variant={txVariant(tx.status)} />
                   </div>
@@ -208,6 +207,7 @@ export function ConsumerWalletBoard() {
         open={topupOpen}
         onOpenChange={setTopupOpen}
         onSuccess={() => { setTopupOpen(false); load(); }}
+        currency={currency}
       />
     </div>
   );
@@ -217,10 +217,12 @@ function TopupDialog({
   open,
   onOpenChange,
   onSuccess,
+  currency,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSuccess: () => void;
+  currency: 'PKR' | 'USD';
 }) {
   const [amount, setAmount] = useState('');
   const [paymentMode, setPaymentMode] = useState('BANK_TRANSFER');
@@ -257,7 +259,7 @@ function TopupDialog({
       await apiClient.post('/wallet/topup', {
         amount: amountNum,
         paymentMode,
-        currency: 'PKR',
+        currency,
         receiptUrl,
       });
       toast.success('Top-up submitted', 'Your request is pending verification.');

@@ -23,6 +23,7 @@ import { PanelCard } from '@/components/ui/panel-card';
 import { StatusPill } from '@/components/ui/status-pill';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
+import { formatMoney } from '@wusuq/shared';
 import { ProfileCompletionBanner } from './profile-completion-banner';
 
 type ConsumerSummary = {
@@ -45,7 +46,7 @@ type ConsumerSummary = {
   } | null;
 };
 
-type WalletResponse = { balance?: number };
+type WalletResponse = { balance?: number; currency?: 'PKR' | 'USD' };
 
 const SERVICES = [
   {
@@ -115,10 +116,6 @@ function getStatusVariant(status: string) {
   return 'neutral' as const;
 }
 
-function formatPKR(value: number) {
-  return new Intl.NumberFormat('en-PK', { maximumFractionDigits: 0 }).format(value);
-}
-
 function relativeTime(iso: string) {
   const now = Date.now();
   const then = new Date(iso).getTime();
@@ -136,6 +133,7 @@ function relativeTime(iso: string) {
 export default function ConsumerDashboardPage() {
   const [summary, setSummary] = useState<ConsumerSummary | null>(null);
   const [walletBalance, setWalletBalance] = useState(0);
+  const [walletCurrency, setWalletCurrency] = useState<'PKR' | 'USD'>('PKR');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [userName, setUserName] = useState<string>('');
@@ -167,6 +165,7 @@ export default function ConsumerDashboardPage() {
         ]);
         setSummary(summaryResult);
         setWalletBalance(Number(walletResult.balance ?? summaryResult.myWalletBalance ?? 0));
+        if (walletResult.currency) setWalletCurrency(walletResult.currency);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load dashboard');
       } finally {
@@ -258,9 +257,9 @@ export default function ConsumerDashboardPage() {
       <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <SummaryCard
           label="Wallet balance"
-          value={`PKR ${formatPKR(walletBalance)}`}
+          value={formatMoney(walletBalance, walletCurrency)}
           icon={<Wallet className="h-4 w-4" />}
-          hint={summary ? `Outstanding: PKR ${formatPKR(summary.myOutstanding)}` : undefined}
+          hint={summary ? `Outstanding: ${formatMoney(summary.myOutstanding, walletCurrency)}` : undefined}
           tone="brand"
           loading={loading}
         />
@@ -368,7 +367,7 @@ export default function ConsumerDashboardPage() {
                   </div>
                   <div className="flex items-center gap-3 shrink-0">
                     <span className="text-sm font-semibold tabular-nums text-slate-900">
-                      PKR {formatPKR(Number(t.totalAmount || 0))}
+                      {formatMoney(Number(t.totalAmount || 0), walletCurrency)}
                     </span>
                     <StatusPill label={t.status.replace(/_/g, ' ')} variant={getStatusVariant(t.status)} />
                     {isUnpaid ? (

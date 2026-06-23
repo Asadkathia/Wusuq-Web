@@ -78,6 +78,8 @@ export default function ConsumerSignupPage() {
             name: name.trim(),
             email: email.trim().toLowerCase(),
             password,
+            // Country drives billing currency server-side (PKR for PK, else USD).
+            country: countryCode,
             ...(phone.trim()
               ? {
                   // Compose +<dial><local>; strip leading + / 0 and skip

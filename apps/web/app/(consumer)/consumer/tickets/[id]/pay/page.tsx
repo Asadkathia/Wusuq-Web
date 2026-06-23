@@ -4,7 +4,7 @@ import { FormEvent, useEffect, useRef, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { AlertCircle, Building2, CheckCircle2, Clock, Upload } from 'lucide-react';
-import { paymentModelFor } from '@wusuq/shared';
+import { paymentModelFor, formatMoney } from '@wusuq/shared';
 import { apiClient, ApiError } from '@/lib/api-client';
 import { paymentSettingsClient, PaymentSettings } from '@/lib/payment-settings-client';
 import { advanceOnEnter } from '@/lib/form-utils';
@@ -23,6 +23,7 @@ interface TicketSummary {
   totalAmount?: number | string | null;
   amountPaid?: number | string | null;
   remainderFinalizedAt?: string | null;
+  currency?: 'PKR' | 'USD' | null;
   service?: { name?: string | null } | null;
 }
 
@@ -31,8 +32,8 @@ function toNum(value: number | string | null | undefined): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-function formatPKR(value: number): string {
-  return value.toLocaleString('en-PK', { maximumFractionDigits: 0 });
+function currencyOf(ticket: TicketSummary | null): 'PKR' | 'USD' {
+  return ticket?.currency ?? 'PKR';
 }
 
 /**
@@ -42,7 +43,7 @@ function formatPKR(value: number): string {
  * - ONE_TIME:             totalAmount − amountPaid
  */
 function computeDueNow(ticket: TicketSummary): number {
-  const model = paymentModelFor(ticket.intakeFlow);
+  const model = paymentModelFor(ticket.intakeFlow, ticket.currency ?? undefined);
   const serviceCost = toNum(ticket.serviceCost);
   const totalAmount = toNum(ticket.totalAmount);
   const amountPaid = toNum(ticket.amountPaid);
@@ -60,7 +61,7 @@ function computeDueNow(ticket: TicketSummary): number {
  * upfront (so wallet has excess that auto-settles the remainder later).
  */
 function computeFullUpfrontAmount(ticket: TicketSummary): number {
-  const model = paymentModelFor(ticket.intakeFlow);
+  const model = paymentModelFor(ticket.intakeFlow, ticket.currency ?? undefined);
   if (model !== 'SPLIT') return 0;
   const totalAmount = toNum(ticket.totalAmount);
   const amountPaid = toNum(ticket.amountPaid);
@@ -160,7 +161,7 @@ export default function PayTicketPage() {
       await apiClient.post('/wallet/topup', {
         amount,
         paymentMode: 'BANK_TRANSFER',
-        currency: 'PKR',
+        currency: currencyOf(ticket),
         receiptUrl,
         ticketId,
       });
@@ -187,7 +188,7 @@ export default function PayTicketPage() {
     const due = ticket ? computeDueNow(ticket) : 0;
     if (due > 0) {
       toast.info(
-        `PKR ${formatPKR(due)} added to your wallet as due`,
+        `${formatMoney(due, currencyOf(ticket))} added to your wallet as due`,
         'Pay anytime from My Wallet — your ticket is released for processing once paid.',
       );
     }
@@ -276,7 +277,8 @@ export default function PayTicketPage() {
 
   // ── Derived values ────────────────────────────────────────────────────────
 
-  const model = paymentModelFor(ticket.intakeFlow);
+  const currency = currencyOf(ticket);
+  const model = paymentModelFor(ticket.intakeFlow, ticket.currency ?? undefined);
   const dueNow = computeDueNow(ticket);
   const fullUpfront = computeFullUpfrontAmount(ticket);
   // Show "pay full amount upfront" option only for SPLIT flows where total > due-now
@@ -320,7 +322,7 @@ export default function PayTicketPage() {
           <div className="flex items-center justify-between border-t border-border-soft pt-3">
             <span className="text-sm font-medium text-slate-700">Amount due now</span>
             <span className="text-lg font-semibold text-slate-900">
-              PKR {formatPKR(dueNow)}
+              {formatMoney(dueNow, currency)}
             </span>
           </div>
         </div>
@@ -404,7 +406,7 @@ export default function PayTicketPage() {
                     : 'border-border-soft text-slate-700 hover:bg-surface-muted',
                 ].join(' ')}
               >
-                Phase 1 only — PKR {formatPKR(dueNow)}
+                Phase 1 only — {formatMoney(dueNow, currency)}
               </button>
               <button
                 type="button"
@@ -416,7 +418,7 @@ export default function PayTicketPage() {
                     : 'border-border-soft text-slate-700 hover:bg-surface-muted',
                 ].join(' ')}
               >
-                Full amount upfront — PKR {formatPKR(fullUpfront)}
+                Full amount upfront — {formatMoney(fullUpfront, currency)}
               </button>
             </div>
           ) : null}

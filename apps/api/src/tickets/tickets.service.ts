@@ -25,6 +25,7 @@ import {
   isConsumerRole,
   isStaffRole,
   computeTicketTotal,
+  toCurrency,
   type TicketChargeComponents,
 } from '@wusuq/shared';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
@@ -302,6 +303,7 @@ export class TicketsService {
         serviceCost: ticket.serviceCost,
         totalAmount: ticket.totalAmount,
         amountPaid: ticket.amountPaid,
+        currency: ticket.currency,
         createdBy: ticket.createdBy,
         remainderFinalizedAt: ticket.remainderFinalizedAt,
         scheduledDate: ticket.scheduledDate,
@@ -511,8 +513,17 @@ export class TicketsService {
     this.ensureFlowSupported(dto.flow);
     this.validateFlowPayload(dto.flow, dto.payload);
 
-    await this.ensureUserExists(dto.consumerId);
     await this.ensureServiceExists(dto.serviceId);
+
+    // Billing currency is the consumer's (authoritative) — never client-supplied.
+    // Stamped onto the ticket and used to resolve USD vs PKR pricing. This read
+    // also serves as the user-existence check (one query instead of two).
+    const consumer = await this.prisma.user.findUnique({
+      where: { id: dto.consumerId },
+      select: { currency: true },
+    });
+    if (!consumer) throw new NotFoundException('User not found');
+    const currency = toCurrency(consumer.currency);
 
     const inferredServiceCity =
       dto.serviceCity ??
@@ -553,7 +564,7 @@ export class TicketsService {
     // Case Search undercharge).
     const payload = (dto.payload ?? {}) as Record<string, string | undefined>;
     const pricing = await this.pricingService.resolve(
-      buildPricingResolveInput(dto.flow, payload),
+      buildPricingResolveInput(dto.flow, payload, currency),
     );
 
     if (!pricing.matched && pricing.rulesExistForFlow) {
@@ -584,7 +595,19 @@ export class TicketsService {
     }
 
     // Resolve tax rate (optional service; defaults to 0 when not injected).
-    const taxRate = (await this.settingsService?.getTaxRate?.()) ?? 0;
+    // USD (international) orders are taxed at 0 — the list price is final.
+    const taxRate =
+      currency === 'USD'
+        ? 0
+        : ((await this.settingsService?.getTaxRate?.()) ?? 0);
+
+    // USD orders cannot use promo codes (owner spec). Fail loud rather than
+    // silently ignoring a code the consumer thinks applied.
+    if (currency === 'USD' && dto.promoCode) {
+      throw new BadRequestException(
+        'Promo codes are not available for international (USD) orders.',
+      );
+    }
 
     // Resolve promo code discount (optional service; skipped when not injected).
     let promoDiscount = 0;
@@ -601,7 +624,7 @@ export class TicketsService {
         userId: dto.consumerId,
         flow: dto.flow,
         subtotal:
-          paymentModelFor(dto.flow) === 'SPLIT'
+          paymentModelFor(dto.flow, currency) === 'SPLIT'
             ? pricing.serviceCost
             : pricing.total,
       });
@@ -619,6 +642,7 @@ export class TicketsService {
     const assembled = pricing.matched
       ? TicketsService.assembleIntakeMoney({
           flow: dto.flow,
+          currency,
           serviceCost: pricing.serviceCost,
           deliveryCharge: pricing.deliveryCharge,
           taxRate,
@@ -648,6 +672,7 @@ export class TicketsService {
                 : 'ADMIN_STAFF',
             serviceCity: inferredServiceCity,
             caseType: inferredCaseType,
+            currency,
             serviceCost: pricing.matched ? pricing.serviceCost : 0,
             deliveryCharges: assembled ? assembled.charges.deliveryCharges : 0,
             promoCodeId,
@@ -1588,6 +1613,10 @@ export class TicketsService {
       throw new NotFoundException('Ticket not found');
     }
 
+    // The clone keeps the original's billing currency (the consumer's currency
+    // is locked once active, so this equals their current currency).
+    const currency = (original.currency as 'PKR' | 'USD') ?? 'PKR';
+
     // Owner decision 2026-06-12: a regenerated ticket is a NEW sale at the
     // CURRENT price list — re-resolve through the same shared input builder
     // intake uses (quote = charge), reset the phase-2 clerk charge columns,
@@ -1613,7 +1642,7 @@ export class TicketsService {
         string | undefined
       >;
       const pricing = await this.pricingService.resolve(
-        buildPricingResolveInput(original.intakeFlow, payload),
+        buildPricingResolveInput(original.intakeFlow, payload, currency),
       );
       if (!pricing.matched && pricing.rulesExistForFlow) {
         throw new BadRequestException(
@@ -1632,7 +1661,7 @@ export class TicketsService {
         );
       }
       const billedTotal = pricing.matched
-        ? paymentModelFor(original.intakeFlow) === 'SPLIT'
+        ? paymentModelFor(original.intakeFlow, currency) === 'SPLIT'
           ? pricing.serviceCost
           : pricing.total
         : 0;
@@ -1641,7 +1670,8 @@ export class TicketsService {
         // Same shape as createIntakeTicket: phase-2 charges start clean —
         // the clerk re-enters them for the new fulfilment.
         deliveryCharges:
-          pricing.matched && paymentModelFor(original.intakeFlow) !== 'SPLIT'
+          pricing.matched &&
+          paymentModelFor(original.intakeFlow, currency) !== 'SPLIT'
             ? pricing.deliveryCharge
             : 0,
         printingCharges: 0,
@@ -1672,6 +1702,7 @@ export class TicketsService {
           serviceCity: original.serviceCity,
           caseType: original.caseType,
           intakeFlow: original.intakeFlow,
+          currency,
           formPayload: (original.formPayload ?? undefined) as
             | Prisma.InputJsonValue
             | undefined,
@@ -1814,8 +1845,13 @@ export class TicketsService {
       }
 
       // 1. Apply phase-2 charges (reuses the caps-gated finalize math) when
-      //    the flow has them and they weren't finalized already.
-      const caps = chargeCapabilitiesFor(ticket.intakeFlow);
+      //    the flow has them and they weren't finalized already. USD orders are
+      //    all-inclusive flat — chargeCapabilitiesFor returns NO_CHARGES for USD
+      //    so no phase-2 remainder is added on top of the paid flat price.
+      const caps = chargeCapabilitiesFor(
+        ticket.intakeFlow,
+        toCurrency(ticket.currency),
+      );
       const hasCaps =
         caps.attestation || caps.printing || caps.delivery || caps.pdf;
       let finalized: Awaited<
@@ -2353,12 +2389,15 @@ export class TicketsService {
   ) {
     const ticket = await this.prisma.ticket.findUnique({
       where: { id: ticketId },
-      select: { id: true, intakeFlow: true },
+      select: { id: true, intakeFlow: true, currency: true },
     });
     if (!ticket) throw new NotFoundException('Ticket not found');
     await this.ensureClerkActionAllowed(ticketId, actor);
 
-    const caps = chargeCapabilitiesFor(ticket.intakeFlow);
+    const caps = chargeCapabilitiesFor(
+      ticket.intakeFlow,
+      toCurrency(ticket.currency),
+    );
     await this.prisma.ticket.update({
       where: { id: ticketId },
       data: {
@@ -2462,6 +2501,7 @@ export class TicketsService {
         taxRate: true,
         amountPaid: true,
         intakeFlow: true,
+        currency: true,
         remainderFinalizedAt: true,
       },
     });
@@ -2480,7 +2520,10 @@ export class TicketsService {
       );
     }
 
-    const caps = chargeCapabilitiesFor(ticket.intakeFlow);
+    const caps = chargeCapabilitiesFor(
+      ticket.intakeFlow,
+      toCurrency(ticket.currency),
+    );
     // Attestation / printing / delivery have NO default rates — they are the
     // amounts the clerk entered (and the admin may edit). Absent dto fields
     // fall back to the persisted columns, never to 0.
@@ -2657,13 +2700,16 @@ export class TicketsService {
 
   static assembleIntakeMoney(args: {
     flow: string;
+    currency?: 'PKR' | 'USD';
     serviceCost: number;
     deliveryCharge: number;
     taxRate: number;
     promoDiscount: number;
     discountPrice?: number;
   }) {
-    const isSplit = paymentModelFor(args.flow) === 'SPLIT';
+    // USD is always ONE_TIME (all-inclusive flat) → bills the full serviceCost
+    // (which equals total for USD) at intake, no deferred phase-2 remainder.
+    const isSplit = paymentModelFor(args.flow, args.currency) === 'SPLIT';
     const charges: TicketChargeComponents = {
       serviceCost: args.serviceCost,
       // Delivery is a phase-2 charge for SPLIT; ONE_TIME digital flows are 0 too.
@@ -3069,24 +3115,40 @@ export class TicketsService {
     resolved: Awaited<ReturnType<PricingService['resolve']>>,
     taxRate: number,
     dto: RepriceTicketDto,
+    currency: 'PKR' | 'USD',
   ) {
     const flow = ticket.intakeFlow ?? '';
-    const isSplit = paymentModelFor(flow) === 'SPLIT';
+    const isSplit = paymentModelFor(flow, currency) === 'SPLIT';
     const o = dto.overrides ?? {};
     const num = (v: unknown) => Number(v ?? 0);
-    const charges = {
-      serviceCost: resolved.matched ? resolved.serviceCost : num(0),
-      deliveryCharges:
-        o.deliveryCharges ??
-        (isSplit ? num(ticket.deliveryCharges) : resolved.deliveryCharge),
-      printingCharges: o.printingCharges ?? num(ticket.printingCharges),
-      attestedCharges: o.attestedCharges ?? num(ticket.attestedCharges),
-      nonAttestedCharges:
-        o.nonAttestedCharges ?? num(ticket.nonAttestedCharges),
-      additionalCharges: o.additionalCharges ?? num(ticket.additionalCharges),
-      additionalServiceCost:
-        o.additionalServiceCost ?? num(ticket.additionalServiceCost),
-    };
+    // USD orders are all-inclusive flat: the resolved serviceCost IS the total,
+    // with no phase-2 charges and no tax (caller passes taxRate=0 for USD).
+    // Manual phase-2 overrides are ignored so the flat price can't be inflated.
+    const charges =
+      currency === 'USD'
+        ? {
+            serviceCost: resolved.matched ? resolved.serviceCost : num(0),
+            deliveryCharges: 0,
+            printingCharges: 0,
+            attestedCharges: 0,
+            nonAttestedCharges: 0,
+            additionalCharges: 0,
+            additionalServiceCost: 0,
+          }
+        : {
+            serviceCost: resolved.matched ? resolved.serviceCost : num(0),
+            deliveryCharges:
+              o.deliveryCharges ??
+              (isSplit ? num(ticket.deliveryCharges) : resolved.deliveryCharge),
+            printingCharges: o.printingCharges ?? num(ticket.printingCharges),
+            attestedCharges: o.attestedCharges ?? num(ticket.attestedCharges),
+            nonAttestedCharges:
+              o.nonAttestedCharges ?? num(ticket.nonAttestedCharges),
+            additionalCharges:
+              o.additionalCharges ?? num(ticket.additionalCharges),
+            additionalServiceCost:
+              o.additionalServiceCost ?? num(ticket.additionalServiceCost),
+          };
     const money = computeTicketTotal({
       charges,
       discountPrice: dto.discountPrice ?? num(ticket.discountPrice),
@@ -3113,12 +3175,17 @@ export class TicketsService {
   async repricePreview(id: string, dto: RepriceTicketDto) {
     const ticket = await this.prisma.ticket.findUnique({ where: { id } });
     if (!ticket) throw new NotFoundException('Ticket not found');
+    const currency = (ticket.currency as 'PKR' | 'USD') ?? 'PKR';
     const payload = this.mergedPayload(ticket, dto);
     const resolved = await this.pricingService.resolve(
-      buildPricingResolveInput(ticket.intakeFlow ?? '', payload),
+      buildPricingResolveInput(ticket.intakeFlow ?? '', payload, currency),
     );
-    const taxRate = (await this.settingsService?.getTaxRate?.()) ?? 0;
-    return this.buildRepriceResult(ticket, resolved, taxRate, dto);
+    // USD orders are taxed at 0 (the international list price is final).
+    const taxRate =
+      currency === 'USD'
+        ? 0
+        : ((await this.settingsService?.getTaxRate?.()) ?? 0);
+    return this.buildRepriceResult(ticket, resolved, taxRate, dto, currency);
   }
 
   async repriceTicket(
@@ -3133,17 +3200,28 @@ export class TicketsService {
         'A delivered ticket can no longer be repriced',
       );
     }
+    const currency = (existing.currency as 'PKR' | 'USD') ?? 'PKR';
     const payload = this.mergedPayload(existing, dto);
     const resolved = await this.pricingService.resolve(
-      buildPricingResolveInput(existing.intakeFlow ?? '', payload),
+      buildPricingResolveInput(existing.intakeFlow ?? '', payload, currency),
     );
     if (!resolved.matched) {
       throw new BadRequestException(
         'Cannot reprice: no active pricing rule matched the edited case details',
       );
     }
-    const taxRate = (await this.settingsService?.getTaxRate?.()) ?? 0;
-    const result = this.buildRepriceResult(existing, resolved, taxRate, dto);
+    // USD orders are taxed at 0 (the international list price is final).
+    const taxRate =
+      currency === 'USD'
+        ? 0
+        : ((await this.settingsService?.getTaxRate?.()) ?? 0);
+    const result = this.buildRepriceResult(
+      existing,
+      resolved,
+      taxRate,
+      dto,
+      currency,
+    );
     const total = result.money.totalAmount;
 
     // USER row lock BEFORE ticket lock — same order as finalizeRemainderCore
@@ -3172,7 +3250,7 @@ export class TicketsService {
             ticketId: id,
             amount: surplus,
             paymentMode: 'BANK_TRANSFER',
-            currency: 'PKR',
+            currency,
             status: 'VERIFIED',
             type: 'ADMIN_ADJUSTMENT',
             verifiedAt: new Date(),

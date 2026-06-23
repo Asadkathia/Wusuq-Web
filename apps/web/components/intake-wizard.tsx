@@ -9,7 +9,7 @@ import { buildRegeneratePayload } from '@/lib/regenerate-ticket';
 import { PanelCard } from '@/components/ui/panel-card';
 import { ChevronRight, CheckCircle2, FolderOpen, Pencil, Sparkles, X } from 'lucide-react';
 import type { IntakeFlow, IntakeStep, CourtTier } from '@/lib/intake-flows';
-import { courtTierFromCourtType, resolveRequired, docBundleLabel, normalizeDraftPayload, isStructuredAddressComplete, computeYearBand, parseBench, showWhenSatisfied, parseCities, stringifyCities } from '@/lib/intake-flows';
+import { courtTierFromCourtType, resolveRequired, docBundleLabel, normalizeDraftPayload, isStructuredAddressComplete, computeYearBand, parseBench, showWhenSatisfied, parseCities, stringifyCities, isFlowAvailableForCurrency } from '@/lib/intake-flows';
 import { BENCH_TYPE_LABELS } from '@/lib/bench-types';
 import type { YearBand } from '@/lib/intake-flows';
 import { buildPricingResolveInput, computeTicketTotal, computeCaseSearchBase, computeDecidedAgeSurcharge } from '@wusuq/shared';
@@ -253,6 +253,9 @@ export function IntakeWizard({
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
   // Tax rate fetched from /settings/tax on mount (0 = disabled / not configured).
   const [taxRate, setTaxRate] = useState(0);
+  // Consumer billing currency (PKR default; USD for international customers).
+  // Seeded from the stored user and confirmed via /wallet/me on mount.
+  const [currency, setCurrency] = useState<'PKR' | 'USD'>('PKR');
   // Promo-code state: the code the user typed, the validated discount amount,
   // and any validation error message.
   const [promoCode, setPromoCode] = useState('');
@@ -398,6 +401,25 @@ export function IntakeWizard({
       .then((r) => { startTransition(() => setTaxRate(r.rate)); })
       .catch(() => {});
   }, []);
+
+  // Resolve the consumer's billing currency. /wallet/me is authoritative (it
+  // reads User.currency server-side); the stored user is the instant seed.
+  useEffect(() => {
+    apiClient.get<{ currency?: 'PKR' | 'USD' }>('/wallet/me')
+      .then((r) => { if (r.currency) startTransition(() => setCurrency(r.currency!)); })
+      .catch(() => {});
+  }, []);
+
+  // Admin / staff acting on behalf of a consumer (incl. the staff Regenerate
+  // flow, where consumerId is the source ticket's owner): the preview must use
+  // the TARGET consumer's currency, not the acting staff member's /wallet/me.
+  useEffect(() => {
+    const cid = draft.consumerId;
+    if (!cid || !currentUser?.id || cid === currentUser.id) return;
+    apiClient.get<{ currency?: 'PKR' | 'USD' }>(`/users/${cid}`)
+      .then((r) => { if (r.currency) startTransition(() => setCurrency(r.currency!)); })
+      .catch(() => {});
+  }, [draft.consumerId, currentUser?.id]);
 
   // Clear a stale "Non Attested" selection when the user flips to Decided Case,
   // since that option is hidden in this configuration.
@@ -690,7 +712,7 @@ export function IntakeWizard({
     // checkout quote and the persisted charge are computed from identical
     // inputs — no hand-maintained field list to drift (yearBand/caseTitle/
     // cityCount/searchMethod were previously dropped server-side).
-    const resolveInput = buildPricingResolveInput(flow, p);
+    const resolveInput = buildPricingResolveInput(flow, p, currency);
 
     let cancelled = false;
     const handle = setTimeout(() => {
@@ -725,6 +747,7 @@ export function IntakeWizard({
     draft.payload.cities,
     draft.payload.search_method,
     draft.payload.required_documentations,
+    currency,
   ]);
 
   // ── Set-type availability — batched lookup ("Can't Get" handling) ────────
@@ -760,6 +783,7 @@ export function IntakeWizard({
         // #26: prefer the GeoCity id for reliable region derivation.
         cityId: p.city_id || undefined,
         city: p.select_court_city ?? p.city ?? undefined,
+        currency,
         options: ['attested', 'non_attested', 'both'],
       })
         .then((r) => { if (!cancelled) setSetTypeAvailability(r ?? {}); })
@@ -775,6 +799,7 @@ export function IntakeWizard({
     draft.payload.case_year,
     draft.payload.year,
     draft.payload.decided_date,
+    currency,
   ]);
 
   // Auto-uncheck the currently selected set type if the availability map flips
@@ -803,6 +828,7 @@ export function IntakeWizard({
     try {
       const user = JSON.parse(localStorage.getItem('wusuq_user') || 'null') as LocalUser | null;
       setCurrentUser(user);
+      if (user?.currency) startTransition(() => setCurrency(user.currency!));
       const role = user?.role ?? '';
       const userIsAdmin = role.includes('admin');
       const userIsConsumer =
@@ -1594,7 +1620,11 @@ export function IntakeWizard({
   const checkoutSummary: CheckoutSummary = useMemo(() => {
     const p = draft.payload;
     const items: CheckoutItem[] = [];
-    const isSplit = paymentModelFor(draft.flow) === 'SPLIT';
+    // USD orders are always ONE_TIME (all-inclusive flat) and carry no tax or
+    // promo — the list price is final.
+    const isSplit = paymentModelFor(draft.flow, currency) === 'SPLIT';
+    const effectiveTaxRate = currency === 'USD' ? 0 : taxRate;
+    const effectivePromo = currency === 'USD' ? 0 : promoDiscount;
 
     // ── Instant year-driven checkout estimate (Task C2) ───────────────────
     // Derive the effective case year from the payload the same way
@@ -1618,6 +1648,9 @@ export function IntakeWizard({
     const pr = (() => {
       const raw = pricingResult;
       if (!raw?.matched || raw.available === false) return raw;
+      // USD is an all-inclusive flat lookup — the year-driven PKR patch
+      // (per-year Case Search base / decided-age surcharge) must not apply.
+      if (currency === 'USD') return raw;
       if (draft.flow === 'judicial_case_search') {
         // Base is per-city: computeCaseSearchBase returns a per-city value; the
         // server's raw.basePrice is also per-city (the resolver multiplies by
@@ -1729,8 +1762,8 @@ export function IntakeWizard({
       : null;
 
     // Promo discount line — shown when a valid code has been applied.
-    if (billedBase !== null && promoDiscount > 0) {
-      items.push({ label: 'Discount', amount: -promoDiscount });
+    if (billedBase !== null && effectivePromo > 0) {
+      items.push({ label: 'Discount', amount: -effectivePromo });
     }
 
     // Use computeTicketTotal (same function the server uses for createIntakeTicket
@@ -1747,14 +1780,14 @@ export function IntakeWizard({
             additionalCharges: 0,
             additionalServiceCost: 0,
           },
-          promoDiscount,
-          taxRate,
+          promoDiscount: effectivePromo,
+          taxRate: effectiveTaxRate,
         })
       : null;
 
     // Tax line — shown only when a non-zero tax rate is configured.
-    if (money && taxRate > 0) {
-      items.push({ label: `Tax (${Math.round(taxRate * 100)}%)`, amount: money.taxAmount });
+    if (money && effectiveTaxRate > 0) {
+      items.push({ label: `Tax (${Math.round(effectiveTaxRate * 100)}%)`, amount: money.taxAmount });
     }
 
     return {
@@ -1762,12 +1795,20 @@ export function IntakeWizard({
       subtotal: billedBase,
       fees: null,
       total: money ? money.totalAmount : null,
-      currency: 'PKR',
+      currency,
     };
-  }, [draft.payload, draft.flow, pricingResult, selectedFlow, promoDiscount, taxRate]);
+  }, [draft.payload, draft.flow, pricingResult, selectedFlow, promoDiscount, taxRate, currency]);
 
   const submitTicket = async () => {
     if (!selectedFlow || !validateAllSteps()) return;
+    // Block USD consumers from a PKR-only flow before hitting the server (which
+    // would reject anyway — no USD pricing rule). Matches the banner above.
+    if (isConsumer && !isFlowAvailableForCurrency(draft.flow, currency)) {
+      setApiError(
+        'This service is not available for international (USD) customers.',
+      );
+      return;
+    }
     // QA: flip the submission guard BEFORE any await, and clear any pending
     // autosave timer. Both are required to prevent the autosave from
     // resurrecting the draft we're about to delete server-side.
@@ -1830,7 +1871,10 @@ export function IntakeWizard({
         ...(caseId ? { caseId } : {}),
         // Server re-validates and redeems the promo code so the discount
         // cannot be fabricated client-side.
-        ...(promoCode ? { promoCode } : {}),
+        // USD orders can't use promo codes; never send a stale code (the
+        // server rejects it, which would otherwise wedge submit when the
+        // promo input is hidden after an async currency flip to USD).
+        ...(promoCode && currency !== 'USD' ? { promoCode } : {}),
         // B3: stamp the source ticket id when the wizard was opened via the
         // staff Regenerate button so the API can record the lineage.
         ...(regenerateFromTicketId ? { regeneratedFromTicketId: regenerateFromTicketId } : {}),
@@ -1907,6 +1951,13 @@ export function IntakeWizard({
         />
       ) : futureFromTicketId && futureSourceLabel ? (
         <FutureTicketsBanner sourceTicketLabel={futureSourceLabel} />
+      ) : null}
+
+      {isConsumer && draft.flow && !isFlowAvailableForCurrency(draft.flow, currency) ? (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          This service isn&apos;t available for international (USD) customers.
+          Please choose Case Files, Case Information, or Case Search.
+        </div>
       ) : null}
 
       {resumedDraftAt && !futureFromTicketId && !regenerateFromTicketId ? (
@@ -2503,7 +2554,7 @@ export function IntakeWizard({
         <CheckoutPanel
           summary={checkoutSummary}
           hasFlow={Boolean(draft.flow)}
-          promoSlot={
+          promoSlot={currency === 'USD' ? undefined : (
             <div className="space-y-2">
               <p className="text-xs font-semibold text-slate-700">Promo code</p>
               <div className="flex gap-2">
@@ -2543,7 +2594,7 @@ export function IntakeWizard({
                 <p className="text-xs text-emerald-600">Promo applied — discount deducted above.</p>
               ) : null}
             </div>
-          }
+          )}
         />
       </div>
     </div>

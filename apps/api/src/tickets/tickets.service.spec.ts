@@ -923,6 +923,7 @@ describe('TicketsService', () => {
       const prisma = {
         user: {
           findUnique: jest.fn().mockResolvedValue({ id: 'consumer-1' }),
+          findUniqueOrThrow: jest.fn().mockResolvedValue({ currency: 'PKR' }),
         },
         service: {
           findUnique: jest
@@ -1057,6 +1058,7 @@ describe('TicketsService', () => {
       const prisma = {
         user: {
           findUnique: jest.fn().mockResolvedValue({ id: 'consumer-1' }),
+          findUniqueOrThrow: jest.fn().mockResolvedValue({ currency: 'PKR' }),
         },
         service: {
           findUnique: jest
@@ -1181,7 +1183,10 @@ describe('TicketsService', () => {
       const resolveCalls: Record<string, unknown>[] = [];
       const created: { data: Record<string, unknown> }[] = [];
       const prisma = {
-        user: { findUnique: jest.fn().mockResolvedValue({ id: 'consumer-1' }) },
+        user: {
+          findUnique: jest.fn().mockResolvedValue({ id: 'consumer-1' }),
+          findUniqueOrThrow: jest.fn().mockResolvedValue({ currency: 'PKR' }),
+        },
         service: {
           findUnique: jest
             .fn()
@@ -1709,7 +1714,10 @@ describe('finalizeRemainder (Task 1.4)', () => {
       },
       ticketStatusHistory: { create: jest.fn().mockResolvedValue({}) },
       ticketIntakeDraft: { delete: jest.fn().mockResolvedValue({}) },
-      user: { findUnique: jest.fn().mockResolvedValue({ id: 'consumer-1' }) },
+      user: {
+        findUnique: jest.fn().mockResolvedValue({ id: 'consumer-1' }),
+        findUniqueOrThrow: jest.fn().mockResolvedValue({ currency: 'PKR' }),
+      },
       service: {
         findUnique: jest
           .fn()

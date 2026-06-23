@@ -58,4 +58,8 @@ export class ResolvePricingDto {
   // consulted for `judicial_case_information`, where it adds a region-keyed
   // surcharge on top of the seeded base fee.
   @IsOptional() @IsString() docBundle?: string;
+
+  // Billing currency. 'USD' resolves the all-inclusive flat international
+  // rates; absent / 'PKR' resolves the existing Pakistan rates.
+  @IsOptional() @IsString() currency?: string;
 }

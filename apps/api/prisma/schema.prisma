@@ -253,6 +253,8 @@ model Ticket {
   intakeRequestId String?             @unique
   createdBy       TicketOrigin        @default(ADMIN_STAFF)
   serviceCost     Decimal             @default(0)
+  // Billing currency snapshotted from User.currency at intake (PKR | USD).
+  currency        String              @default("PKR")
   caseId          String?
   // Scheduling / outcome fields (replaces deleted Hearing model — see
   // spec 2026-05-04-cases-workflow-redesign-design.md). Optional: only
@@ -541,6 +543,9 @@ model PricingRule {
   yearBand               String?
   setType                String?
   region                 String?
+  // Billing currency this rule prices in. PKR = existing rates; USD = the
+  // all-inclusive flat international list. Part of the unique dimensions key.
+  currency               String   @default("PKR")
   isLegacy               Boolean  @default(false)
   // v2 availability flag — when false ("Can't Get" in the source sheet) the
   // wizard hides this combination instead of pricing it.
@@ -559,7 +564,7 @@ model PricingRule {
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
 
-  @@unique([region, courtLevel, flow, yearBand, setType], name: "PricingRule_dimensions_unique")
+  @@unique([currency, region, courtLevel, flow, yearBand, setType], name: "PricingRule_dimensions_unique")
 }
 
 model PricingSettings {

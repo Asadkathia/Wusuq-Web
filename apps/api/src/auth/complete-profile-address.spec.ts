@@ -4,6 +4,16 @@ import { jest } from '@jest/globals';
 jest.mock('@wusuq/shared', () => ({
   CONSUMER_KINDS: ['LAWYER', 'NON_LAWYER', 'CORPORATE'],
   mapPrismaRoleToShared: jest.fn((r: string) => r.toLowerCase()),
+  deriveCurrency: jest.fn(
+    (i: { phone?: string | null; country?: string | null }) =>
+      (i.phone ?? '').replace(/\s+/g, '').startsWith('+92')
+        ? 'PKR'
+        : i.country?.toUpperCase() === 'PK'
+          ? 'PKR'
+          : i.phone || i.country
+            ? 'USD'
+            : 'PKR',
+  ),
 }));
 
 // Stub heavy deps so we don't need a full NestJS module
@@ -24,8 +34,14 @@ import { AuthService } from './auth.service';
 function makeMinimalPrisma() {
   return {
     user: {
+      // completeProfile reads the user (currency-lock check) before updating.
+      findUniqueOrThrow: jest.fn(() =>
+        Promise.resolve({ walletBalance: 0, phone: '+923001234567' }),
+      ),
       update: jest.fn(),
     },
+    // Lock check: zero non-archived tickets ⇒ account inactive.
+    ticket: { count: jest.fn(() => Promise.resolve(0)) },
   };
 }
 

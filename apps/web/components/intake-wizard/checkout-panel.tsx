@@ -2,6 +2,7 @@
 
 import { type ReactNode } from 'react';
 import { Receipt } from 'lucide-react';
+import { formatMoney } from '@wusuq/shared';
 
 export type CheckoutItem = {
   label: string;
@@ -35,15 +36,7 @@ type CheckoutPanelProps = {
 
 function formatAmount(amount: number | null, currency: string): string {
   if (amount === null || amount === undefined) return '—';
-  try {
-    return new Intl.NumberFormat('en-PK', {
-      style: 'currency',
-      currency,
-      maximumFractionDigits: 0,
-    }).format(amount);
-  } catch {
-    return `${currency} ${amount.toLocaleString()}`;
-  }
+  return formatMoney(amount, currency === 'USD' ? 'USD' : 'PKR');
 }
 
 export function CheckoutPanel({ summary, hasFlow, promoSlot }: CheckoutPanelProps) {

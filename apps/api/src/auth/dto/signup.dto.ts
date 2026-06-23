@@ -1,4 +1,10 @@
-import { IsEmail, IsOptional, IsString, MinLength } from 'class-validator';
+import {
+  IsEmail,
+  IsOptional,
+  IsString,
+  MaxLength,
+  MinLength,
+} from 'class-validator';
 
 export class SignupDto {
   @IsString()
@@ -15,4 +21,9 @@ export class SignupDto {
   @IsOptional()
   @IsString()
   phone?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2)
+  country?: string; // ISO code from the signup country picker (e.g. 'PK', 'GB')
 }
