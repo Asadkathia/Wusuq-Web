@@ -43,12 +43,11 @@ function buildHarness(currency: 'PKR' | 'USD') {
     .mockResolvedValue({ id: 'tkt-1', batchNo: 'TKT-1' });
   const prisma: Record<string, unknown> = {
     user: {
+      // createIntakeTicket reads the consumer's currency via findUnique (this
+      // single read also serves as the existence check).
       findUnique: jest
         .fn<(...a: any[]) => any>()
-        .mockResolvedValue({ id: 'c-1' }),
-      findUniqueOrThrow: jest
-        .fn<(...a: any[]) => any>()
-        .mockResolvedValue({ currency }),
+        .mockResolvedValue({ id: 'c-1', currency }),
     },
     service: {
       findUnique: jest

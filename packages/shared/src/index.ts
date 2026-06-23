@@ -199,10 +199,23 @@ export function deriveCurrency(input: {
   phone?: string | null;
   country?: string | null;
 }): Currency {
-  const phone = input.phone?.replace(/\s+/g, '') ?? '';
-  if (phone) return phone.startsWith('+92') ? 'PKR' : 'USD';
+  // Normalise away spaces, a leading '+', and an international '00' prefix so
+  // both E.164 ('+923…') and locally-stored forms ('923…', '0300…') classify
+  // correctly. A Pakistan number is '92…' after normalisation, or a bare local
+  // mobile ('0…' / '3XXXXXXXXX').
+  const raw = (input.phone ?? '').replace(/[\s-]/g, '').replace(/^\+/, '').replace(/^00/, '');
+  if (raw) {
+    if (raw.startsWith('92')) return 'PKR';
+    if (raw.startsWith('0') || /^3\d{9}$/.test(raw)) return 'PKR'; // local PK form
+    return 'USD';
+  }
   if (input.country) return input.country.toUpperCase() === 'PK' ? 'PKR' : 'USD';
   return 'PKR';
+}
+
+/** Coerce an arbitrary stored value to a Currency (defaults PKR). */
+export function toCurrency(value: unknown): Currency {
+  return value === 'USD' ? 'USD' : 'PKR';
 }
 
 /**
@@ -573,7 +586,14 @@ export const SERVICE_CHARGE_CAPABILITIES: Record<string, ServiceChargeCapabiliti
 
 const NO_CHARGES: ServiceChargeCapabilities = { attestation: false, printing: false, delivery: false, pdf: false };
 
-export function chargeCapabilitiesFor(flow?: string | null): ServiceChargeCapabilities {
+export function chargeCapabilitiesFor(
+  flow?: string | null,
+  currency?: Currency,
+): ServiceChargeCapabilities {
+  // USD orders are all-inclusive flat — no clerk phase-2 charges are ever
+  // billed to the consumer (the physical work still happens; its cost is the
+  // internal clerkCost). So USD exposes NO consumer-facing charge capabilities.
+  if (currency === 'USD') return NO_CHARGES;
   if (!flow) return NO_CHARGES;
   return SERVICE_CHARGE_CAPABILITIES[flow] ?? NO_CHARGES;
 }
@@ -712,15 +732,17 @@ export function round2(n: number): number {
 }
 
 /**
- * Format a money amount for display. USD → "$1,234"; PKR → "PKR 1,234".
- * The ONLY money formatter — replaces the per-component formatPKR helpers.
+ * Format a money amount for display. USD → "$1,234.50"; PKR → "PKR 1,234".
+ * Shared money formatter for consumer-facing surfaces; staff/admin boards may
+ * still use their own helpers. Defaults: USD shows 2 fraction digits (cents),
+ * PKR shows whole rupees; override via opts.decimals.
  */
 export function formatMoney(
   amount: number,
   currency: Currency,
   opts?: { decimals?: number },
 ): string {
-  const decimals = opts?.decimals ?? 0;
+  const decimals = opts?.decimals ?? (currency === 'USD' ? 2 : 0);
   const n = new Intl.NumberFormat(currency === 'USD' ? 'en-US' : 'en-PK', {
     minimumFractionDigits: decimals,
     maximumFractionDigits: decimals,

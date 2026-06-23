@@ -410,6 +410,17 @@ export function IntakeWizard({
       .catch(() => {});
   }, []);
 
+  // Admin / staff acting on behalf of a consumer (incl. the staff Regenerate
+  // flow, where consumerId is the source ticket's owner): the preview must use
+  // the TARGET consumer's currency, not the acting staff member's /wallet/me.
+  useEffect(() => {
+    const cid = draft.consumerId;
+    if (!cid || !currentUser?.id || cid === currentUser.id) return;
+    apiClient.get<{ currency?: 'PKR' | 'USD' }>(`/users/${cid}`)
+      .then((r) => { if (r.currency) startTransition(() => setCurrency(r.currency!)); })
+      .catch(() => {});
+  }, [draft.consumerId, currentUser?.id]);
+
   // Clear a stale "Non Attested" selection when the user flips to Decided Case,
   // since that option is hidden in this configuration.
   useEffect(() => {
@@ -772,6 +783,7 @@ export function IntakeWizard({
         // #26: prefer the GeoCity id for reliable region derivation.
         cityId: p.city_id || undefined,
         city: p.select_court_city ?? p.city ?? undefined,
+        currency,
         options: ['attested', 'non_attested', 'both'],
       })
         .then((r) => { if (!cancelled) setSetTypeAvailability(r ?? {}); })
@@ -787,6 +799,7 @@ export function IntakeWizard({
     draft.payload.case_year,
     draft.payload.year,
     draft.payload.decided_date,
+    currency,
   ]);
 
   // Auto-uncheck the currently selected set type if the availability map flips
@@ -1858,7 +1871,10 @@ export function IntakeWizard({
         ...(caseId ? { caseId } : {}),
         // Server re-validates and redeems the promo code so the discount
         // cannot be fabricated client-side.
-        ...(promoCode ? { promoCode } : {}),
+        // USD orders can't use promo codes; never send a stale code (the
+        // server rejects it, which would otherwise wedge submit when the
+        // promo input is hidden after an async currency flip to USD).
+        ...(promoCode && currency !== 'USD' ? { promoCode } : {}),
         // B3: stamp the source ticket id when the wizard was opened via the
         // staff Regenerate button so the API can record the lineage.
         ...(regenerateFromTicketId ? { regeneratedFromTicketId: regenerateFromTicketId } : {}),

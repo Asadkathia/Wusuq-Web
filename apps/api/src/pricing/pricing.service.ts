@@ -358,7 +358,13 @@ export class PricingService {
     const currency = (dto.currency as 'PKR' | 'USD') ?? 'PKR';
 
     const effectiveCourtLevel = normalizeCourtLevel(dto.courtLevel);
-    const requestedSetType = dto.setType ?? null;
+    // USD price rows are flat and carry setType=null (international rates don't
+    // vary by attested/non-attested), but the wizard always sends set_type for
+    // Case Files. Ignoring set type for USD makes the STRICT match land on the
+    // exact (currency, region, courtLevel, flow, yearBand) row instead of
+    // falling through to the setType-null fallback, which admits the 'current'
+    // band too and picks order-dependently (wrong, non-deterministic price).
+    const requestedSetType = currency === 'USD' ? null : (dto.setType ?? null);
     // Derive the band from caseStatus + caseYear when the caller didn't pass an
     // explicit yearBand. Critical: deriveYearBand returns 'pending' for Pending
     // cases — without consulting caseStatus a pending ticket would fall to the

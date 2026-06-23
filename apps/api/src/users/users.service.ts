@@ -248,6 +248,7 @@ export class UsersService {
       verified: user.verified,
       isActive: user.isActive,
       walletBalance: user.walletBalance,
+      currency: user.currency,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
     };

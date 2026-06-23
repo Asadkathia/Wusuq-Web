@@ -25,6 +25,7 @@ import {
   isConsumerRole,
   isStaffRole,
   computeTicketTotal,
+  toCurrency,
   type TicketChargeComponents,
 } from '@wusuq/shared';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
@@ -302,6 +303,7 @@ export class TicketsService {
         serviceCost: ticket.serviceCost,
         totalAmount: ticket.totalAmount,
         amountPaid: ticket.amountPaid,
+        currency: ticket.currency,
         createdBy: ticket.createdBy,
         remainderFinalizedAt: ticket.remainderFinalizedAt,
         scheduledDate: ticket.scheduledDate,
@@ -511,16 +513,17 @@ export class TicketsService {
     this.ensureFlowSupported(dto.flow);
     this.validateFlowPayload(dto.flow, dto.payload);
 
-    await this.ensureUserExists(dto.consumerId);
     await this.ensureServiceExists(dto.serviceId);
 
     // Billing currency is the consumer's (authoritative) — never client-supplied.
-    // Stamped onto the ticket and used to resolve USD vs PKR pricing.
-    const consumer = await this.prisma.user.findUniqueOrThrow({
+    // Stamped onto the ticket and used to resolve USD vs PKR pricing. This read
+    // also serves as the user-existence check (one query instead of two).
+    const consumer = await this.prisma.user.findUnique({
       where: { id: dto.consumerId },
       select: { currency: true },
     });
-    const currency = (consumer.currency as 'PKR' | 'USD') ?? 'PKR';
+    if (!consumer) throw new NotFoundException('User not found');
+    const currency = toCurrency(consumer.currency);
 
     const inferredServiceCity =
       dto.serviceCity ??
@@ -1842,8 +1845,13 @@ export class TicketsService {
       }
 
       // 1. Apply phase-2 charges (reuses the caps-gated finalize math) when
-      //    the flow has them and they weren't finalized already.
-      const caps = chargeCapabilitiesFor(ticket.intakeFlow);
+      //    the flow has them and they weren't finalized already. USD orders are
+      //    all-inclusive flat — chargeCapabilitiesFor returns NO_CHARGES for USD
+      //    so no phase-2 remainder is added on top of the paid flat price.
+      const caps = chargeCapabilitiesFor(
+        ticket.intakeFlow,
+        toCurrency(ticket.currency),
+      );
       const hasCaps =
         caps.attestation || caps.printing || caps.delivery || caps.pdf;
       let finalized: Awaited<
@@ -2381,12 +2389,15 @@ export class TicketsService {
   ) {
     const ticket = await this.prisma.ticket.findUnique({
       where: { id: ticketId },
-      select: { id: true, intakeFlow: true },
+      select: { id: true, intakeFlow: true, currency: true },
     });
     if (!ticket) throw new NotFoundException('Ticket not found');
     await this.ensureClerkActionAllowed(ticketId, actor);
 
-    const caps = chargeCapabilitiesFor(ticket.intakeFlow);
+    const caps = chargeCapabilitiesFor(
+      ticket.intakeFlow,
+      toCurrency(ticket.currency),
+    );
     await this.prisma.ticket.update({
       where: { id: ticketId },
       data: {
@@ -2490,6 +2501,7 @@ export class TicketsService {
         taxRate: true,
         amountPaid: true,
         intakeFlow: true,
+        currency: true,
         remainderFinalizedAt: true,
       },
     });
@@ -2508,7 +2520,10 @@ export class TicketsService {
       );
     }
 
-    const caps = chargeCapabilitiesFor(ticket.intakeFlow);
+    const caps = chargeCapabilitiesFor(
+      ticket.intakeFlow,
+      toCurrency(ticket.currency),
+    );
     // Attestation / printing / delivery have NO default rates — they are the
     // amounts the clerk entered (and the admin may edit). Absent dto fields
     // fall back to the persisted columns, never to 0.
@@ -3100,24 +3115,40 @@ export class TicketsService {
     resolved: Awaited<ReturnType<PricingService['resolve']>>,
     taxRate: number,
     dto: RepriceTicketDto,
+    currency: 'PKR' | 'USD',
   ) {
     const flow = ticket.intakeFlow ?? '';
-    const isSplit = paymentModelFor(flow) === 'SPLIT';
+    const isSplit = paymentModelFor(flow, currency) === 'SPLIT';
     const o = dto.overrides ?? {};
     const num = (v: unknown) => Number(v ?? 0);
-    const charges = {
-      serviceCost: resolved.matched ? resolved.serviceCost : num(0),
-      deliveryCharges:
-        o.deliveryCharges ??
-        (isSplit ? num(ticket.deliveryCharges) : resolved.deliveryCharge),
-      printingCharges: o.printingCharges ?? num(ticket.printingCharges),
-      attestedCharges: o.attestedCharges ?? num(ticket.attestedCharges),
-      nonAttestedCharges:
-        o.nonAttestedCharges ?? num(ticket.nonAttestedCharges),
-      additionalCharges: o.additionalCharges ?? num(ticket.additionalCharges),
-      additionalServiceCost:
-        o.additionalServiceCost ?? num(ticket.additionalServiceCost),
-    };
+    // USD orders are all-inclusive flat: the resolved serviceCost IS the total,
+    // with no phase-2 charges and no tax (caller passes taxRate=0 for USD).
+    // Manual phase-2 overrides are ignored so the flat price can't be inflated.
+    const charges =
+      currency === 'USD'
+        ? {
+            serviceCost: resolved.matched ? resolved.serviceCost : num(0),
+            deliveryCharges: 0,
+            printingCharges: 0,
+            attestedCharges: 0,
+            nonAttestedCharges: 0,
+            additionalCharges: 0,
+            additionalServiceCost: 0,
+          }
+        : {
+            serviceCost: resolved.matched ? resolved.serviceCost : num(0),
+            deliveryCharges:
+              o.deliveryCharges ??
+              (isSplit ? num(ticket.deliveryCharges) : resolved.deliveryCharge),
+            printingCharges: o.printingCharges ?? num(ticket.printingCharges),
+            attestedCharges: o.attestedCharges ?? num(ticket.attestedCharges),
+            nonAttestedCharges:
+              o.nonAttestedCharges ?? num(ticket.nonAttestedCharges),
+            additionalCharges:
+              o.additionalCharges ?? num(ticket.additionalCharges),
+            additionalServiceCost:
+              o.additionalServiceCost ?? num(ticket.additionalServiceCost),
+          };
     const money = computeTicketTotal({
       charges,
       discountPrice: dto.discountPrice ?? num(ticket.discountPrice),
@@ -3144,12 +3175,17 @@ export class TicketsService {
   async repricePreview(id: string, dto: RepriceTicketDto) {
     const ticket = await this.prisma.ticket.findUnique({ where: { id } });
     if (!ticket) throw new NotFoundException('Ticket not found');
+    const currency = (ticket.currency as 'PKR' | 'USD') ?? 'PKR';
     const payload = this.mergedPayload(ticket, dto);
     const resolved = await this.pricingService.resolve(
-      buildPricingResolveInput(ticket.intakeFlow ?? '', payload),
+      buildPricingResolveInput(ticket.intakeFlow ?? '', payload, currency),
     );
-    const taxRate = (await this.settingsService?.getTaxRate?.()) ?? 0;
-    return this.buildRepriceResult(ticket, resolved, taxRate, dto);
+    // USD orders are taxed at 0 (the international list price is final).
+    const taxRate =
+      currency === 'USD'
+        ? 0
+        : ((await this.settingsService?.getTaxRate?.()) ?? 0);
+    return this.buildRepriceResult(ticket, resolved, taxRate, dto, currency);
   }
 
   async repriceTicket(
@@ -3164,17 +3200,28 @@ export class TicketsService {
         'A delivered ticket can no longer be repriced',
       );
     }
+    const currency = (existing.currency as 'PKR' | 'USD') ?? 'PKR';
     const payload = this.mergedPayload(existing, dto);
     const resolved = await this.pricingService.resolve(
-      buildPricingResolveInput(existing.intakeFlow ?? '', payload),
+      buildPricingResolveInput(existing.intakeFlow ?? '', payload, currency),
     );
     if (!resolved.matched) {
       throw new BadRequestException(
         'Cannot reprice: no active pricing rule matched the edited case details',
       );
     }
-    const taxRate = (await this.settingsService?.getTaxRate?.()) ?? 0;
-    const result = this.buildRepriceResult(existing, resolved, taxRate, dto);
+    // USD orders are taxed at 0 (the international list price is final).
+    const taxRate =
+      currency === 'USD'
+        ? 0
+        : ((await this.settingsService?.getTaxRate?.()) ?? 0);
+    const result = this.buildRepriceResult(
+      existing,
+      resolved,
+      taxRate,
+      dto,
+      currency,
+    );
     const total = result.money.totalAmount;
 
     // USER row lock BEFORE ticket lock — same order as finalizeRemainderCore
@@ -3203,7 +3250,7 @@ export class TicketsService {
             ticketId: id,
             amount: surplus,
             paymentMode: 'BANK_TRANSFER',
-            currency: 'PKR',
+            currency,
             status: 'VERIFIED',
             type: 'ADMIN_ADJUSTMENT',
             verifiedAt: new Date(),

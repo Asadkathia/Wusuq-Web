@@ -238,13 +238,15 @@ export class AuthService {
     // Currency locks once the account is active. Re-derive (and update country)
     // only when the user has zero non-archived tickets AND zero wallet balance,
     // so an in-flight account can never end up with a mixed PKR/USD ledger.
-    const existing = await this.prisma.user.findUniqueOrThrow({
-      where: { id: userId },
-      select: { walletBalance: true, phone: true },
-    });
-    const ticketCount = await this.prisma.ticket.count({
-      where: { consumerId: userId, archivedAt: null },
-    });
+    const [existing, ticketCount] = await Promise.all([
+      this.prisma.user.findUniqueOrThrow({
+        where: { id: userId },
+        select: { walletBalance: true, phone: true },
+      }),
+      this.prisma.ticket.count({
+        where: { consumerId: userId, archivedAt: null },
+      }),
+    ]);
     const locked = ticketCount > 0 || Number(existing.walletBalance) !== 0;
     const currencyUpdate = !dto.country
       ? {}

@@ -62,6 +62,30 @@ describe('resolve() USD flat short-circuit', () => {
     expect(r.attestedCharge).toBe(0);
   });
 
+  it('matches the exact year band for USD Case Files even when a set type is sent (regression)', async () => {
+    // USD rows are flat with setType=null; the wizard always sends set_type for
+    // Case Files. The 'current' band row must NOT win over the requested band.
+    const currentRow = {
+      ...usdCaseFiles2024,
+      id: 'usd-current',
+      yearBand: 'current',
+      basePrice: 25,
+    };
+    const svc = makeService([currentRow, usdCaseFiles2024]); // current first → would win the buggy tie-break
+    const r = await svc.resolve({
+      flow: 'judicial_case_files',
+      courtLevel: 'Lower Court',
+      region: 'Punjab',
+      caseStatus: 'Decided Case',
+      caseYear: 2024,
+      yearBand: 'y2024_2023',
+      setType: 'attested',
+      currency: 'USD',
+    } as any);
+    expect(r.matched).toBe(true);
+    expect(r.total).toBe(50); // the y2024_2023 row, not the $25 current row
+  });
+
   it('does not match a USD request against a PKR rule', async () => {
     const pkr = {
       ...usdCaseFiles2024,

@@ -2,10 +2,12 @@
 
 import { useEffect, useState, startTransition, type ReactNode } from 'react';
 import { isFlowAvailableForCurrency, USD_AVAILABLE_FLOWS } from '@/lib/intake-flows';
+import { apiClient } from '@/lib/api-client';
 
-// Reads the logged-in user's billing currency from localStorage (the login
-// payload includes `currency`). Defaults to PKR until known, so PKR — the
-// common case — never flashes.
+// Resolves the logged-in user's billing currency. Seeds instantly from the
+// localStorage login payload, then confirms via /wallet/me (authoritative) so
+// pre-feature sessions whose stored user has no `currency` key still gate
+// correctly. Defaults to PKR until known — PKR (the common case) never flashes.
 function useBillingCurrency(): 'PKR' | 'USD' {
   const [currency, setCurrency] = useState<'PKR' | 'USD'>('PKR');
   useEffect(() => {
@@ -17,6 +19,10 @@ function useBillingCurrency(): 'PKR' | 'USD' {
     } catch {
       /* ignore malformed storage */
     }
+    apiClient
+      .get<{ currency?: 'PKR' | 'USD' }>('/wallet/me')
+      .then((r) => { if (r.currency) startTransition(() => setCurrency(r.currency!)); })
+      .catch(() => {});
   }, []);
   return currency;
 }

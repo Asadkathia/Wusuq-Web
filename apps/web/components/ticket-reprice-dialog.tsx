@@ -2,6 +2,7 @@
 'use client';
 
 import { startTransition, useCallback, useEffect, useRef, useState } from 'react';
+import { formatMoney } from '@wusuq/shared';
 import { apiClient } from '@/lib/api-client';
 import { X } from 'lucide-react';
 import {
@@ -54,6 +55,7 @@ export type TicketRepriceDialogProps = {
   ticketId: string;
   formPayload: Record<string, unknown>;
   currentTotalAmount: number;
+  currency?: 'PKR' | 'USD';
   onClose: () => void;
   onSaved: () => void;
 };
@@ -108,19 +110,17 @@ function extractPayloadFields(fp: Record<string, unknown>): RepricePayloadFields
   return out;
 }
 
-function formatPKR(n: number) {
-  return new Intl.NumberFormat('en-PK', { minimumFractionDigits: 2 }).format(n);
-}
-
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export function TicketRepriceDialog({
   ticketId,
   formPayload,
   currentTotalAmount,
+  currency = 'PKR',
   onClose,
   onSaved,
 }: TicketRepriceDialogProps) {
+  const fmt = (n: number) => formatMoney(n, currency, { decimals: 2 });
   const [payloadFields, setPayloadFields] = useState<RepricePayloadFields>(() =>
     extractPayloadFields(formPayload),
   );
@@ -304,14 +304,14 @@ export function TicketRepriceDialog({
                   <div className="flex justify-between">
                     <span className="text-slate-500">Charges subtotal</span>
                     <span className="font-medium text-slate-800">
-                      PKR {formatPKR(preview.money.chargesSubtotal)}
+                      {fmt(preview.money.chargesSubtotal)}
                     </span>
                   </div>
                   {preview.money.discountTotal > 0 && (
                     <div className="flex justify-between">
                       <span className="text-emerald-600">Discount</span>
                       <span className="font-medium text-emerald-700">
-                        − PKR {formatPKR(preview.money.discountTotal)}
+                        − {fmt(preview.money.discountTotal)}
                       </span>
                     </div>
                   )}
@@ -319,17 +319,17 @@ export function TicketRepriceDialog({
                     <div className="flex justify-between">
                       <span className="text-slate-500">Tax</span>
                       <span className="font-medium text-slate-800">
-                        PKR {formatPKR(preview.money.taxAmount)}
+                        {fmt(preview.money.taxAmount)}
                       </span>
                     </div>
                   )}
                   <div className="flex justify-between border-t border-slate-200 pt-1.5 font-semibold text-slate-900">
                     <span>New Total</span>
-                    <span>PKR {formatPKR(preview.money.totalAmount)}</span>
+                    <span>{fmt(preview.money.totalAmount)}</span>
                   </div>
                   <div className="flex justify-between text-xs">
                     <span className="text-slate-400">Current Total</span>
-                    <span className="text-slate-500">PKR {formatPKR(currentTotalAmount)}</span>
+                    <span className="text-slate-500">{fmt(currentTotalAmount)}</span>
                   </div>
                   {totalDiff !== 0 && (
                     <div
@@ -340,7 +340,7 @@ export function TicketRepriceDialog({
                     >
                       <span>Difference</span>
                       <span>
-                        {totalDiff > 0 ? '+' : ''}PKR {formatPKR(totalDiff)}
+                        {totalDiff > 0 ? '+' : ''}{fmt(totalDiff)}
                       </span>
                     </div>
                   )}
