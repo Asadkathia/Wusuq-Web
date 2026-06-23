@@ -34,10 +34,11 @@ export type ProfileCompleteParams = {
   province?: string;
   district?: string;
   postalCode?: string;
+  country?: string;
 };
 
 export function completeProfile(params: ProfileCompleteParams) {
-  const { name, cityName, consumerKind, address, province, district, postalCode } = params;
+  const { name, cityName, consumerKind, address, province, district, postalCode, country } = params;
   return apiClient.post<ProfileCompleteResponse>('/auth/profile/complete', {
     name,
     ...(cityName ? { cityName } : {}),
@@ -46,5 +47,6 @@ export function completeProfile(params: ProfileCompleteParams) {
     ...(province ? { province } : {}),
     ...(district ? { district } : {}),
     ...(postalCode ? { postalCode } : {}),
+    ...(country ? { country } : {}),
   });
 }

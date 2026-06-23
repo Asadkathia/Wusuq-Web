@@ -106,6 +106,8 @@ export function useLoginFlow() {
         province: province || undefined,
         district: district || undefined,
         postalCode: postalCode || undefined,
+        // Country drives billing currency (server locks it once the account is active).
+        country: countryCode || undefined,
       });
       try {
         const raw = localStorage.getItem('wusuq_user');
@@ -125,7 +127,7 @@ export function useLoginFlow() {
       setLoading(false);
       router.replace('/consumer/dashboard');
     }
-  }, [name, cityName, consumerKind, streetAddress, province, district, postalCode, router]);
+  }, [name, cityName, consumerKind, streetAddress, province, district, postalCode, countryCode, router]);
 
   const skipProfile = useCallback(() => {
     router.replace('/consumer/dashboard');
