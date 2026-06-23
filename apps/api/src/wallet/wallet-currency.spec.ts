@@ -10,15 +10,13 @@ describe('getMyWallet currency', () => {
   it('returns the consumer currency alongside the balance', async () => {
     const prisma = {
       user: {
-        findUniqueOrThrow: jest
-          .fn<(...a: any[]) => any>()
-          .mockResolvedValue({
-            id: 'u1',
-            name: 'A',
-            email: null,
-            walletBalance: 0,
-            currency: 'USD',
-          }),
+        findUniqueOrThrow: jest.fn<(...a: any[]) => any>().mockResolvedValue({
+          id: 'u1',
+          name: 'A',
+          email: null,
+          walletBalance: 0,
+          currency: 'USD',
+        }),
       },
       walletTransaction: {
         findMany: jest.fn<(...a: any[]) => any>().mockResolvedValue([]),

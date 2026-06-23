@@ -247,7 +247,7 @@ export class PricingService {
     const lookup = (opt: string, yearBand: string) =>
       flowRules.filter((r) => {
         if ((r.currency ?? 'PKR') !== currency) return false;
-      if (r.courtLevel && r.courtLevel !== effectiveCourtLevel) return false;
+        if (r.courtLevel && r.courtLevel !== effectiveCourtLevel) return false;
         if (r.caseStatus && r.caseStatus !== args.caseStatus) return false;
         if (r.region && r.region !== region) return false;
         if (r.yearBand && r.yearBand !== yearBand) return false;
@@ -262,7 +262,7 @@ export class PricingService {
     const lookupNullSetType = (yearBand: string) =>
       flowRules.filter((r) => {
         if ((r.currency ?? 'PKR') !== currency) return false;
-      if (r.courtLevel && r.courtLevel !== effectiveCourtLevel) return false;
+        if (r.courtLevel && r.courtLevel !== effectiveCourtLevel) return false;
         if (r.caseStatus && r.caseStatus !== args.caseStatus) return false;
         if (r.region && r.region !== region) return false;
         if (r.yearBand && r.yearBand !== yearBand) return false;
@@ -409,7 +409,7 @@ export class PricingService {
     if (!candidates.length && requestedYearBand !== 'current') {
       candidates = flowRules.filter((r) => {
         if ((r.currency ?? 'PKR') !== currency) return false;
-      if (r.courtLevel && r.courtLevel !== effectiveCourtLevel) return false;
+        if (r.courtLevel && r.courtLevel !== effectiveCourtLevel) return false;
         if (r.caseStatus && r.caseStatus !== dto.caseStatus) return false;
         if (r.region && r.region !== region) return false;
         if (r.yearBand && r.yearBand !== 'current') return false;
@@ -432,7 +432,7 @@ export class PricingService {
     if (!candidates.length && requestedSetType) {
       candidates = flowRules.filter((r) => {
         if ((r.currency ?? 'PKR') !== currency) return false;
-      if (r.courtLevel && r.courtLevel !== effectiveCourtLevel) return false;
+        if (r.courtLevel && r.courtLevel !== effectiveCourtLevel) return false;
         if (r.caseStatus && r.caseStatus !== dto.caseStatus) return false;
         if (r.region && r.region !== region) return false;
         if (
@@ -451,7 +451,7 @@ export class PricingService {
     if (!candidates.length) {
       candidates = flowRules.filter((r) => {
         if ((r.currency ?? 'PKR') !== currency) return false;
-      if (r.courtLevel && r.courtLevel !== effectiveCourtLevel) return false;
+        if (r.courtLevel && r.courtLevel !== effectiveCourtLevel) return false;
         if (r.caseStatus && r.caseStatus !== dto.caseStatus) return false;
         if (r.region && r.region !== region) return false;
         if (r.yearFrom !== null && year < r.yearFrom) return false;

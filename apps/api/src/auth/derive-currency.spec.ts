@@ -15,7 +15,9 @@ describe('deriveCurrency', () => {
     expect(deriveCurrency({ country: 'GB' })).toBe('USD');
   });
   it('prefers phone over country (phone dial code wins)', () => {
-    expect(deriveCurrency({ phone: '+447911123456', country: 'PK' })).toBe('USD');
+    expect(deriveCurrency({ phone: '+447911123456', country: 'PK' })).toBe(
+      'USD',
+    );
   });
   it('defaults to PKR when nothing is provided', () => {
     expect(deriveCurrency({})).toBe('PKR');

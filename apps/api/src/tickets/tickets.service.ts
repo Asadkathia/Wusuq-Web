@@ -1667,7 +1667,8 @@ export class TicketsService {
         // Same shape as createIntakeTicket: phase-2 charges start clean —
         // the clerk re-enters them for the new fulfilment.
         deliveryCharges:
-          pricing.matched && paymentModelFor(original.intakeFlow, currency) !== 'SPLIT'
+          pricing.matched &&
+          paymentModelFor(original.intakeFlow, currency) !== 'SPLIT'
             ? pricing.deliveryCharge
             : 0,
         printingCharges: 0,

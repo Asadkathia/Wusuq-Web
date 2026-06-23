@@ -43,7 +43,9 @@ function buildHarness(currency: 'PKR' | 'USD') {
     .mockResolvedValue({ id: 'tkt-1', batchNo: 'TKT-1' });
   const prisma: Record<string, unknown> = {
     user: {
-      findUnique: jest.fn<(...a: any[]) => any>().mockResolvedValue({ id: 'c-1' }),
+      findUnique: jest
+        .fn<(...a: any[]) => any>()
+        .mockResolvedValue({ id: 'c-1' }),
       findUniqueOrThrow: jest
         .fn<(...a: any[]) => any>()
         .mockResolvedValue({ currency }),
@@ -70,7 +72,9 @@ function buildHarness(currency: 'PKR' | 'USD') {
     ),
   };
   const pricingService = {
-    resolve: jest.fn<(...a: any[]) => any>().mockResolvedValue(USD_FLAT_RESOLVE),
+    resolve: jest
+      .fn<(...a: any[]) => any>()
+      .mockResolvedValue(USD_FLAT_RESOLVE),
   };
   const dispatcher = {
     ticketCreated: jest.fn<(...a: any[]) => any>().mockResolvedValue(undefined),

@@ -63,7 +63,10 @@ describe('AuthService currency derivation', () => {
       },
       ticket: { count: jest.fn().mockResolvedValue(0) },
     } as any;
-    await makeService(prisma).completeProfile('u1', { name: 'A', country: 'GB' });
+    await makeService(prisma).completeProfile('u1', {
+      name: 'A',
+      country: 'GB',
+    });
     expect(prisma.user.update).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ currency: 'USD', country: 'GB' }),
@@ -83,7 +86,10 @@ describe('AuthService currency derivation', () => {
       },
       ticket: { count: jest.fn().mockResolvedValue(1) },
     } as any;
-    await makeService(prisma).completeProfile('u1', { name: 'A', country: 'GB' });
+    await makeService(prisma).completeProfile('u1', {
+      name: 'A',
+      country: 'GB',
+    });
     const data = prisma.user.update.mock.calls[0][0].data;
     expect(data.country).toBe('GB'); // contact info still updates
     expect(data.currency).toBeUndefined(); // billing currency stays locked

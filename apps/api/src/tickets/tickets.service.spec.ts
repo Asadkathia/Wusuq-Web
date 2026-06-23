@@ -1184,9 +1184,9 @@ describe('TicketsService', () => {
       const created: { data: Record<string, unknown> }[] = [];
       const prisma = {
         user: {
-        findUnique: jest.fn().mockResolvedValue({ id: 'consumer-1' }),
-        findUniqueOrThrow: jest.fn().mockResolvedValue({ currency: 'PKR' }),
-      },
+          findUnique: jest.fn().mockResolvedValue({ id: 'consumer-1' }),
+          findUniqueOrThrow: jest.fn().mockResolvedValue({ currency: 'PKR' }),
+        },
         service: {
           findUnique: jest
             .fn()
