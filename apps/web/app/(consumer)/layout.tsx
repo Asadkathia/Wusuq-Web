@@ -8,7 +8,7 @@ export default function ConsumerLayout({ children }: { children: ReactNode }) {
     <ConsumerAuthGuard>
       <div className="flex min-h-screen bg-background text-foreground">
         <ConsumerSidebarNav />
-        <div className="flex flex-1 flex-col">
+        <div className="flex flex-1 flex-col min-w-0">
           <ConsumerTopbar />
           <main className="flex-1 p-4 sm:p-6">{children}</main>
         </div>

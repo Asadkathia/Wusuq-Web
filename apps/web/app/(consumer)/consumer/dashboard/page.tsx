@@ -354,7 +354,7 @@ export default function ConsumerDashboardPage() {
               return (
                 <div
                   key={t.id}
-                  className="group flex items-center gap-4 rounded-xl px-3 py-3 transition-colors duration-150 hover:bg-surface-muted"
+                  className="group flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl px-3 py-3 transition-colors duration-150 hover:bg-surface-muted"
                 >
                   <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-50 text-brand-500 shrink-0">
                     <Ticket className="h-4 w-4" />
@@ -365,7 +365,7 @@ export default function ConsumerDashboardPage() {
                       {t.batchNo} · <span className="inline-flex items-center gap-1"><Clock className="h-3 w-3" />{relativeTime(t.createdAt)}</span>
                     </p>
                   </div>
-                  <div className="flex items-center gap-3 shrink-0">
+                  <div className="flex w-full items-center justify-end gap-3 sm:w-auto sm:shrink-0">
                     <span className="text-sm font-semibold tabular-nums text-slate-900">
                       {formatMoney(Number(t.totalAmount || 0), walletCurrency)}
                     </span>
