@@ -4,6 +4,7 @@ import Link from 'next/link';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { Bell, LogOut, Menu as MenuIcon, User, Wallet, X } from 'lucide-react';
 import { startTransition, useEffect, useState } from 'react';
+import { formatMoney } from '@wusuq/shared';
 import { apiClient } from '@/lib/api-client';
 import { IconButton } from './icon-button';
 import { Menu, MenuContent, MenuItem, MenuLabel, MenuSeparator, MenuTrigger } from './menu';
@@ -42,6 +43,7 @@ export function ShellTopbar({ variant, walletHref, profileHref = '/profile', onS
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unread, setUnread] = useState(0);
   const [walletBalance, setWalletBalance] = useState<number | null>(null);
+  const [walletCurrency, setWalletCurrency] = useState<'PKR' | 'USD'>('PKR');
   const [user, setUser] = useState<{ name?: string; email?: string; role?: string } | null>(null);
 
   useEffect(() => {
@@ -54,8 +56,13 @@ export function ShellTopbar({ variant, walletHref, profileHref = '/profile', onS
 
     if (variant === 'consumer') {
       apiClient
-        .get<{ balance?: number }>('/wallet/me')
-        .then((r) => setWalletBalance(Number(r.balance ?? 0)))
+        .get<{ balance?: number; currency?: 'PKR' | 'USD' }>('/wallet/me')
+        .then((r) => {
+          startTransition(() => {
+            setWalletBalance(Number(r.balance ?? 0));
+            if (r.currency) setWalletCurrency(r.currency);
+          });
+        })
         .catch(() => {});
     }
   }, [variant]);
@@ -177,7 +184,7 @@ export function ShellTopbar({ variant, walletHref, profileHref = '/profile', onS
             }`}
           >
             <Wallet className="h-4 w-4" />
-            <span className="tabular-nums">PKR {new Intl.NumberFormat('en-PK').format(walletBalance)}</span>
+            <span className="tabular-nums">{formatMoney(walletBalance, walletCurrency)}</span>
           </Link>
         ) : null}
 
