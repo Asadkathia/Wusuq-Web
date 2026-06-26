@@ -483,13 +483,19 @@ export function renderField(
     // TODO: integrate a map pin / geocoder for the "Main Area" field in a
     // follow-up iteration — out of scope for this pass.
     const addr = parseDeliveryAddress(value);
-    const cityFromPayload = payload.city ?? addr.city ?? '';
-    const update = (patch: Partial<{ house: string; block: string; mainArea: string }>) => {
+    // Editable delivery city: prefer the user-edited address city, falling back
+    // to the wizard's selected city (payload.city) as the initial value. It was
+    // previously hard-pinned read-only from payload.city, which blocked
+    // delivering to a different city than the case's city.
+    const cityValue = addr.city ?? payload.city ?? '';
+    const update = (
+      patch: Partial<{ house: string; block: string; mainArea: string; city: string }>,
+    ) => {
       const next = {
         house: addr.house,
         block: addr.block,
         mainArea: addr.mainArea,
-        ...(cityFromPayload ? { city: cityFromPayload } : {}),
+        ...(cityValue ? { city: cityValue } : {}),
         ...patch,
       };
       onChange(field.key, JSON.stringify(next));
@@ -497,11 +503,19 @@ export function renderField(
     return (
       <div className="space-y-3">
         <div className="text-sm font-semibold text-slate-800">Delivery address</div>
-        {cityFromPayload ? (
-          <div className="text-xs text-slate-500">
-            Delivering to: <span className="font-medium text-slate-700">{cityFromPayload}</span>
-          </div>
-        ) : null}
+        <div>
+          <label className="block text-xs font-medium text-slate-600 mb-1">
+            Delivering to (City)
+          </label>
+          <input
+            className={inputClass}
+            type="text"
+            value={cityValue}
+            onChange={(e) => update({ city: e.target.value })}
+            onBlur={() => onBlur?.(field.key)}
+            placeholder="e.g. Lahore"
+          />
+        </div>
         <div>
           <label className="block text-xs font-medium text-slate-600 mb-1">
             House / Flat / Apartment / Office Number
