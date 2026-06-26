@@ -197,6 +197,11 @@ export class AuthService {
       data: { hashedRefreshToken: await hash(tokens.refreshToken, 10) },
     });
 
+    // The AuditLog row below is the impersonation trail (kept). We deliberately
+    // do NOT notify the impersonated user: a staff/admin "log in as" should be
+    // silent to the target (the audit log preserves accountability instead).
+    // `dispatcher.authImpersonationStarted` + its template are intentionally
+    // left in place — other code/tests may reference them — just not called.
     await this.auditLogsService.create({
       action: 'AUTH_IMPERSONATE',
       entity: 'AUTH',
@@ -205,10 +210,6 @@ export class AuthService {
       actorEmail: actor.email,
       metadata: { reason: 'admin impersonation', targetUserId },
     });
-
-    await this.dispatcher
-      .authImpersonationStarted(targetUserId, actor.email)
-      .catch(() => undefined);
 
     return {
       ...tokens,
