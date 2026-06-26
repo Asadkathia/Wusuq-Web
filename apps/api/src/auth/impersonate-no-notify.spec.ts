@@ -9,7 +9,9 @@ function makeService(prisma: any, audit: any, dispatcher: any) {
   const jwtService = {
     signAsync: jest.fn().mockResolvedValue('token'),
   } as any;
-  const configService = { getOrThrow: jest.fn().mockReturnValue('secret') } as any;
+  const configService = {
+    getOrThrow: jest.fn().mockReturnValue('secret'),
+  } as any;
   return new AuthService(jwtService, configService, prisma, audit, dispatcher);
 }
 

@@ -122,9 +122,11 @@ describe('UsersService currency derivation', () => {
   it('update() keeps currency locked once the account has a ticket', async () => {
     const prisma = {
       user: {
-        findUnique: jest
-          .fn()
-          .mockResolvedValue({ id: 'u1', phone: '+923001234567', walletBalance: 0 }),
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'u1',
+          phone: '+923001234567',
+          walletBalance: 0,
+        }),
         update: jest
           .fn()
           .mockImplementation(({ data }: any) => ({ id: 'u1', ...data })),
