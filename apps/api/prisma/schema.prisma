@@ -829,6 +829,8 @@ model PaymentSettings {
   accountTitle    String
   accountNumber   String
   iban            String?
+  jazzCash        String?
+  easyPaisa       String?
   instructions    String?
   updatedAt       DateTime @updatedAt
   updatedByUserId String?
