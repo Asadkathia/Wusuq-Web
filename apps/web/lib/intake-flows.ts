@@ -154,7 +154,15 @@ export function parseDeliveryAddress(value: unknown): StructuredAddress {
  */
 export function isStructuredAddressComplete(value: unknown): boolean {
   const addr = parseDeliveryAddress(value);
-  return Boolean(addr.house.trim() && addr.block.trim() && addr.mainArea.trim());
+  // City is required: it's now editable (delivery may differ from the case
+  // city), so a blank/cleared city must block submission to prevent dispatch to
+  // an empty/unknown destination.
+  return Boolean(
+    (addr.city ?? '').trim() &&
+      addr.house.trim() &&
+      addr.block.trim() &&
+      addr.mainArea.trim(),
+  );
 }
 
 /**

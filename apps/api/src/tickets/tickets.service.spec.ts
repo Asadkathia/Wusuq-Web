@@ -1456,25 +1456,24 @@ describe('TicketsService', () => {
 
     // Pay-at-end (Task 3.1): UNPAID → ASSIGNED is now a valid transition. The
     // money gate lives only at DELIVERED, so an unpaid ticket can be assigned
-    // and worked; the consumer settles before delivery.
-    it('UNPAID → ASSIGNED is allowed (pay-at-end)', async () => {
-      const { service, prisma } = buildGateHarness({
+    // and worked; the consumer settles before delivery. Pay-at-end is reached
+    // ONLY through assign() (which creates the Assignment row) — see the
+    // assign-from-UNPAID coverage in walkthrough-fixes.spec.ts. The GENERIC
+    // updateStatus path must still reject UNPAID → ASSIGNED, otherwise a manual
+    // status change could strand a ticket in ASSIGNED with no assignment.
+    it('UNPAID → ASSIGNED is rejected via generic updateStatus (no orphan)', async () => {
+      const { service } = buildGateHarness({
         createdBy: 'CONSUMER',
         status: 'UNPAID',
         serviceCost: 5000,
         amountPaid: 0,
         totalAmount: 5000,
       });
-      const updated = await service.updateStatus(
-        'tkt-1',
-        'ASSIGNED',
-        undefined,
-        {
+      await expect(
+        service.updateStatus('tkt-1', 'ASSIGNED', undefined, {
           actorUserId: 'admin-1',
-        },
-      );
-      expect(updated.status).toBe('ASSIGNED');
-      expect(prisma.ticket.updateMany).toHaveBeenCalled();
+        }),
+      ).rejects.toThrow(/Invalid transition/i);
     });
 
     it('PAID → ASSIGNED is allowed', async () => {

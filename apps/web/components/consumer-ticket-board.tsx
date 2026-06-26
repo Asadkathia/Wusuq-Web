@@ -21,7 +21,11 @@ import {
   Truck,
 } from 'lucide-react';
 import { FLOW_LABELS, isFlowKey, documentCategoryLabel, chargeCapabilitiesFor, orderCaseDetailKeys } from '@wusuq/shared';
-import { parseDeliveryAddress, docBundleLabel } from '@/lib/intake-flows';
+import {
+  parseDeliveryAddress,
+  docBundleLabel,
+  courtTierFromCourtType,
+} from '@/lib/intake-flows';
 import { apiClient } from '@/lib/api-client';
 import { relativeTime } from '@/lib/relative-time';
 import { Button } from '@/components/ui/button';
@@ -612,11 +616,21 @@ function payloadLabel(key: string): string {
 /** Humanize raw enum-style payload values (e.g. the document-bundle key
  *  `doc_petition_plus_complete_order`) into reader-friendly text. Falls back to
  *  the raw string for values we don't recognise. Local to the consumer view. */
-function payloadValueLabel(key: string, value: unknown): string {
+function payloadValueLabel(
+  key: string,
+  value: unknown,
+  courtType?: unknown,
+): string {
   const raw = String(value);
   if (key === 'required_documentations') {
-    // Single source for the bundle label (tier-agnostic here → "Petition …").
-    return docBundleLabel(raw, undefined);
+    // Single source for the bundle label, court-tier aware so apex courts show
+    // "Paperbook + Complete Order" rather than the generic "Petition + …".
+    return docBundleLabel(
+      raw,
+      courtTierFromCourtType(
+        typeof courtType === 'string' ? courtType : undefined,
+      ),
+    );
   }
   return raw;
 }
@@ -707,12 +721,20 @@ export function ConsumerTicketDetail({
   const remaining = Math.max(0, total - paid);
   const discount = Number(ticket.discountPrice || 0);
   const isConsumerCreated = ticket.createdBy === 'CONSUMER';
-  const isUnpaid = ticket.status === 'UNPAID';
+  const isDelivered = ticket.status === 'DELIVERED';
   const isFullyPaid = paid >= total && total > 0;
   const showFinalPayment =
     isConsumerCreated && Boolean(ticket.remainderFinalizedAt) && !isFullyPaid && remaining > 0;
+  // Pay-at-end: a ticket can be assigned/worked while still unpaid, so the Pay
+  // control must not be gated on status==='UNPAID' (that left an assigned digital
+  // ONE_TIME ticket with no way to pay). Show it whenever the phase-1 base is not
+  // yet covered and the ticket isn't fully paid or already delivered.
   const showPayNow =
-    !showFinalPayment && isConsumerCreated && isUnpaid && (base === 0 ? remaining > 0 : paid < base);
+    !showFinalPayment &&
+    isConsumerCreated &&
+    !isFullyPaid &&
+    !isDelivered &&
+    (base === 0 ? remaining > 0 : paid < base);
 
   const nextSteps: Record<string, string> = {
     UNPAID: "Your request is awaiting payment. Complete your payment to proceed.",
@@ -782,7 +804,7 @@ export function ConsumerTicketDetail({
               {displayKeys.map((k) => (
                 <div key={k} className="flex items-start gap-3 px-4 py-2.5 text-sm">
                   <span className="w-32 shrink-0 font-medium text-slate-500">{payloadLabel(k)}</span>
-                  <span className="flex-1 text-slate-800">{payloadValueLabel(k, p[k])}</span>
+                  <span className="flex-1 text-slate-800">{payloadValueLabel(k, p[k], p.select_court_type)}</span>
                 </div>
               ))}
             </div>

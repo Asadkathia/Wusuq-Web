@@ -3,14 +3,23 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { apiClient } from '@/lib/api-client';
-import { chargeCapabilitiesFor, FLOW_LABELS, orderCaseDetailKeys } from '@wusuq/shared';
+import {
+  chargeCapabilitiesFor,
+  FLOW_LABELS,
+  orderCaseDetailKeys,
+  courtTierFromCourtType,
+} from '@wusuq/shared';
 import { PanelCard } from '@/components/ui/panel-card';
 import { StatusPill } from '@/components/ui/status-pill';
 import {
   X, User, FileText, Package, CreditCard, Clock,
   Phone, MapPin, Briefcase, Download, Truck, ClipboardCheck
 } from 'lucide-react';
-import { parseDeliveryAddress, parseBench } from '@/lib/intake-flows';
+import {
+  parseDeliveryAddress,
+  parseBench,
+  docBundleLabel,
+} from '@/lib/intake-flows';
 import { BENCH_TYPE_LABELS } from '@/lib/bench-types';
 import { TicketRepriceDialog } from '@/components/ticket-reprice-dialog';
 
@@ -85,7 +94,9 @@ function adminPayloadLabel(key: string): string {
   );
 }
 
-// "doc_petition_plus_complete_order" → "Petition + Complete Order".
+// Generic snake_case enum → Title Case fallback for misc payload values.
+// The document bundle (required_documentations) is rendered via the canonical
+// docBundleLabel at the call site instead (court-tier aware), not here.
 function humanizePayloadValue(value: unknown): string {
   const s = String(value);
   if (/^[a-z0-9]+(_[a-z0-9]+)+$/.test(s)) {
@@ -224,7 +235,16 @@ export function TicketDetailPanel({ ticketId, onClose, isClerkView = false, onCh
           <span className="w-40 flex-shrink-0 font-medium text-slate-500">
             {adminPayloadLabel(k)}
           </span>
-          <span className="text-slate-800">{humanizePayloadValue(payload[k])}</span>
+          <span className="text-slate-800">
+            {k === 'required_documentations'
+              ? docBundleLabel(
+                  String(payload[k]),
+                  courtTierFromCourtType(
+                    payload.select_court_type as string | undefined,
+                  ),
+                )
+              : humanizePayloadValue(payload[k])}
+          </span>
         </div>
       ));
   };

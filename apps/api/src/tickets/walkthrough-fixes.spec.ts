@@ -276,12 +276,15 @@ describe('Task 3.3 — representativeCandidates city scoping', () => {
     expect(res.map((r) => r.id)).toEqual(['r1', 'r2']);
   });
 
-  it('falls back to the full pool when no rep matches the city', async () => {
+  it('returns no reps when none serve the city (FE then offers Override)', async () => {
+    // No full-pool fallback: assign() 409s a non-serving rep unless forceAssign,
+    // so listing far-away reps would let the admin pick one and hit a confusing
+    // failure. An empty result is the signal to tick "Override city restriction".
     const service = makeService(repPrisma(reps));
     const res = (await service.representativeCandidates({
       city: 'Quetta',
     })) as Array<{ id: string }>;
-    expect(res.map((r) => r.id)).toEqual(['r1', 'r2']);
+    expect(res).toEqual([]);
   });
 });
 

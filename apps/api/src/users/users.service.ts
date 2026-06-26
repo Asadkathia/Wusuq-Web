@@ -145,7 +145,12 @@ export class UsersService {
   ) {
     const existing = await this.prisma.user.findUnique({
       where: { id },
-      select: { id: true, phone: true, walletBalance: true },
+      select: {
+        id: true,
+        phone: true,
+        country: true,
+        walletBalance: true,
+      },
     });
     if (!existing) {
       throw new NotFoundException('User not found');
@@ -157,16 +162,22 @@ export class UsersService {
 
     // Currency locks once the account is active. Re-derive only while the user
     // has zero non-archived tickets AND a zero wallet balance, so an in-flight
-    // account can never end up with a mixed PKR/USD ledger. The UpdateUserDto
-    // carries no `country` (other agent's file), so we derive from the effective
-    // phone — the new phone if one is supplied, else the stored one.
+    // account can never end up with a mixed PKR/USD ledger. Derive from BOTH the
+    // effective phone AND the stored country — dropping country would silently
+    // flip a country-derived USD account to PKR on an unrelated edit (e.g. an
+    // address change). Including country makes the re-derive idempotent.
     const ticketCount = await this.prisma.ticket.count({
       where: { consumerId: id, archivedAt: null },
     });
     const locked = ticketCount > 0 || Number(existing.walletBalance) !== 0;
     const currencyUpdate = locked
       ? {}
-      : { currency: deriveCurrency({ phone: nextPhone ?? existing.phone }) };
+      : {
+          currency: deriveCurrency({
+            phone: nextPhone ?? existing.phone,
+            country: existing.country ?? undefined,
+          }),
+        };
 
     const user = await this.prisma.user.update({
       where: { id },

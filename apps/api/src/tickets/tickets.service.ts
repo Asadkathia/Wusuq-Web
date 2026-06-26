@@ -164,11 +164,12 @@ const REQUIRED_FIELDS_BY_FLOW: Record<string, string[]> = {
 const PAYLOAD_FIELD_ALIASES: Record<string, readonly string[]> = SHARED_ALIASES;
 
 const STATUS_TRANSITIONS: Record<TicketStatus, TicketStatus[]> = {
-  // Pay-at-end (owner requirement): a ticket may be assigned directly from
-  // UNPAID — the payment gate lives only at DELIVERED, not at assign. The
-  // conditional updateMany contract (audit 2.1) is unchanged; this only widens
-  // the set of allowed source states for the ASSIGNED transition.
-  UNPAID: ['PAID', 'ASSIGNED'],
+  // Pay-at-end (owner requirement) is handled inside assign() — it explicitly
+  // accepts an UNPAID source — NOT by widening this map. Widening UNPAID here
+  // would also let the generic updateStatus() path reach ASSIGNED with no
+  // Assignment row, stranding the ticket (no rep can ever accept it). Keep the
+  // generic transition map narrow; the payment gate lives only at DELIVERED.
+  UNPAID: ['PAID'],
   PAID: ['ASSIGNED'],
   ASSIGNED: ['IN_PROGRESS'],
   IN_PROGRESS: ['WAITING_APPROVAL'],
@@ -461,6 +462,19 @@ export class TicketsService {
   }
 
   /**
+   * Redact a clerk-mutation result (accept/reject/submit-costs/dispatch return
+   * values) when the caller is a representative — those endpoints return the
+   * full ticket, which would otherwise leak consumer money/PII the way
+   * findAll/findOne already guard against. Staff/admin callers get the full row.
+   */
+  private redactMutationResultForCaller<T>(ticket: T, actorRole?: string): T {
+    if (actorRole !== 'representative') return ticket;
+    return this.redactTicketForRepresentative(
+      ticket as T & { consumer?: Record<string, unknown> | null },
+    ) as T;
+  }
+
+  /**
    * Representative view of a ticket: strips consumer money fields (totals,
    * amount paid, per-charge columns, tax/discount/promo, the price breakdown)
    * and consumer PII (email/phone/CNIC/address), keeping the representative's
@@ -528,6 +542,10 @@ export class TicketsService {
     delete safe.defaultClerkCost;
     delete safe.clerkReport;
     delete safe.dispatchProofUrl;
+    // Clerk per-page cost basis is internal (the clerk's printing math), never
+    // shown to the consumer — same class as clerkCost.
+    delete safe.noOfPages;
+    delete safe.costPerPage;
     // DELIVERED included: auto-deliver (digital flows) and the admin's
     // delivery confirmation are terminal — the consumer must keep access to
     // the deliverables they paid for after COMPLETED.
@@ -1253,8 +1271,16 @@ export class TicketsService {
     const representative = await this.ensureActiveRepresentativeExists(
       dto.representativeId,
     );
-    const allowedTransitions = this.getAllowedTransitions(ticket.status);
-    if (!allowedTransitions.includes('ASSIGNED')) {
+    // Pay-at-end: assign is reachable from PAID (the normal flow) OR directly
+    // from UNPAID (owner requirement — collect payment at the end). This is the
+    // ONLY path allowed to skip PAID; the generic updateStatus map stays narrow
+    // so a manual status change can't orphan a ticket into ASSIGNED with no
+    // Assignment row. The conditional updateMany below (audit 2.1) still pins
+    // the flip to the observed status.
+    const canAssign =
+      ticket.status === 'UNPAID' ||
+      this.getAllowedTransitions(ticket.status).includes('ASSIGNED');
+    if (!canAssign) {
       throw new BadRequestException(
         `Invalid transition from ${ticket.status} to ASSIGNED`,
       );
@@ -1282,15 +1308,24 @@ export class TicketsService {
     // representative's pay-out, not something the client is billed for. It is
     // still persisted on the ticket (below) for internal accounting but is
     // deliberately excluded from the consumer-facing totalAmount.
-    const nextTotalAmount =
-      Number(ticket.serviceCost) +
-      Number(ticket.deliveryCharges) +
-      Number(ticket.printingCharges) +
-      Number(ticket.attestedCharges) +
-      Number(ticket.nonAttestedCharges) +
-      Number(ticket.additionalCharges) +
-      Number(ticket.additionalServiceCost) -
-      Number(ticket.discountPrice);
+    // Audit / CLAUDE.md: every totalAmount write goes through the single shared
+    // computeTicketTotal so tax + promo + discount stay in the total. This is
+    // critical for pay-at-end — the consumer pays this persisted total, so
+    // dropping tax (undercharge) or promo (overcharge) here corrupts the bill.
+    const nextTotalAmount = computeTicketTotal({
+      charges: {
+        serviceCost: Number(ticket.serviceCost ?? 0),
+        deliveryCharges: Number(ticket.deliveryCharges ?? 0),
+        printingCharges: Number(ticket.printingCharges ?? 0),
+        attestedCharges: Number(ticket.attestedCharges ?? 0),
+        nonAttestedCharges: Number(ticket.nonAttestedCharges ?? 0),
+        additionalCharges: Number(ticket.additionalCharges ?? 0),
+        additionalServiceCost: Number(ticket.additionalServiceCost ?? 0),
+      },
+      discountPrice: Number(ticket.discountPrice ?? 0),
+      promoDiscount: Number(ticket.promoDiscount ?? 0),
+      taxRate: Number(ticket.taxRate ?? 0),
+    }).totalAmount;
     const priorAssignment = await this.prisma.assignment.findFirst({
       where: { ticketId: id, status: 'ACTIVE' },
       orderBy: { createdAt: 'desc' },
@@ -1405,9 +1440,13 @@ export class TicketsService {
         .map((c) => c.toLowerCase());
       return repCities.some((c) => c.includes(city) || city.includes(c));
     });
-    // Fall back to the full pool when no rep matches the city, so the dropdown
-    // is never empty (the earlier hard filter regressed exactly this way).
-    return matching.length > 0 ? matching : reps;
+    // Return ONLY city-matching reps (empty if none). We must NOT fall back to
+    // the full pool: assign() rejects a non-serving rep with a 409 unless
+    // forceAssign, so silently listing far-away reps lets the admin pick one and
+    // hit a confusing failure. An empty result is the signal for the FE to show
+    // "no clerk serves this city — tick Override city restriction", which
+    // re-fetches widened (no city filter) and assigns with forceAssign.
+    return matching;
   }
 
   async assignBulk(
@@ -1933,7 +1972,7 @@ export class TicketsService {
       .ticketClerkReceiptSubmitted(ticketId)
       .catch(() => undefined);
 
-    return updated;
+    return this.redactMutationResultForCaller(updated, actor?.actorRole);
   }
 
   /**
@@ -2173,7 +2212,7 @@ export class TicketsService {
     // Audit 2.3: the 2026-06-05 spec's "notify the admin on dispatch" was
     // never wired — only the audit row existed.
     await this.dispatcher.ticketDispatched(ticketId).catch(() => undefined);
-    return updated;
+    return this.redactMutationResultForCaller(updated, actor?.actorRole);
   }
 
   async submitClerkCosts(
@@ -2351,12 +2390,12 @@ export class TicketsService {
       .ticketClerkCostsSubmitted(ticketId)
       .catch(() => undefined);
 
-    return updated;
+    return this.redactMutationResultForCaller(updated, actor?.actorRole);
   }
 
   async acceptAssignment(
     ticketId: string,
-    actor?: { actorUserId?: string; actorEmail?: string },
+    actor?: { actorUserId?: string; actorEmail?: string; actorRole?: string },
   ) {
     const ticket = await this.prisma.ticket.findUnique({
       where: { id: ticketId },
@@ -2426,7 +2465,7 @@ export class TicketsService {
       .ticketAssignmentAccepted(ticketId)
       .catch(() => undefined);
 
-    return updated;
+    return this.redactMutationResultForCaller(updated, actor?.actorRole);
   }
 
   async rejectAssignment(
@@ -2505,7 +2544,7 @@ export class TicketsService {
         .catch(() => undefined);
     }
 
-    return updated;
+    return this.redactMutationResultForCaller(updated, actor?.actorRole);
   }
 
   /**
@@ -2717,7 +2756,9 @@ export class TicketsService {
           ticketId,
           amount: surplus,
           paymentMode: 'BANK_TRANSFER',
-          currency: 'PKR',
+          // Carry the ticket's currency (CLAUDE.md): a USD ticket's surplus must
+          // not land as a PKR ledger row. Mirrors the reprice-surplus path.
+          currency: ticket.currency,
           status: 'VERIFIED',
           type: 'ADMIN_ADJUSTMENT',
           verifiedAt: new Date(),

@@ -437,6 +437,7 @@ export class TicketsController {
     return this.ticketsService.acceptAssignment(id, {
       actorUserId: actor?.sub,
       actorEmail: actor?.email,
+      actorRole: actor?.role,
     });
   }
 
