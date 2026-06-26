@@ -221,6 +221,11 @@ model Ticket {
   attestedCharges       Decimal             @default(0)
   nonAttestedCharges    Decimal             @default(0)
   additionalCharges     Decimal             @default(0)
+  // Clerk-entered page breakdown behind printingCharges (= noOfPages × costPerPage).
+  // Persisted so the admin Review & Complete dialog can show the breakdown the
+  // clerk entered, not just the computed printing total.
+  noOfPages             Int?
+  costPerPage           Decimal?            @db.Decimal(10, 2)
   discountPrice         Decimal             @default(0)
   promoCodeId           String?
   promoDiscount         Decimal             @default(0)
