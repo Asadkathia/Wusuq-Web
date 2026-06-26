@@ -11,6 +11,7 @@ import {
   Settings,
   Tag,
   Ticket,
+  Truck,
   Vote,
   Wallet,
   WalletCards,
@@ -85,8 +86,9 @@ function buildNavItems(counts: Record<string, number>): NavItem[] {
 }
 
 function buildClerkItems(counts: Record<string, number>): NavItem[] {
+  // Representatives lack reports.read and get a 403 on /dashboard, so their nav
+  // lands them on their work queue ("My Assigned Tickets") instead.
   return [
-    { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
     {
       label: 'My Assigned Tickets',
       href: '/tickets/assigned',
@@ -98,6 +100,12 @@ function buildClerkItems(counts: Record<string, number>): NavItem[] {
       href: '/tickets/waiting-approval',
       icon: FileText,
       count: counts['WAITING_APPROVAL'],
+    },
+    {
+      label: 'Ready to Dispatch',
+      href: '/tickets/completed',
+      icon: Truck,
+      count: counts['COMPLETED'],
     },
     {
       label: 'Paralegal Tickets',
