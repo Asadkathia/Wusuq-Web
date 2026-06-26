@@ -916,6 +916,29 @@ export function IntakeWizard({
               cityId: nextPayload.city_id || g.cityId,
             }));
           }
+          // Load the city's court groups so the court picker resolves (Continue
+          // would otherwise stick on "Loading courts…" → "Please select a court").
+          // Mirror the resume-draft loader: false-before / true-in-finally with
+          // the monotonic cityCourtsReqRef stale-guard (no cancelled flag — the
+          // regeneratePrefillAppliedRef already ensures exactly-once execution).
+          if (nextPayload.city_id) {
+            setCityCourtsLoading(true);
+            setCityCourtsLoaded(false);
+            const reqSeq = ++cityCourtsReqRef.current;
+            apiClient
+              .get<CityCourtGroup[]>(`/geo/cities/${nextPayload.city_id}/courts`)
+              .then((groups) => {
+                if (reqSeq === cityCourtsReqRef.current) setCityCourtGroups(groups ?? []);
+              })
+              .catch(() => {
+                if (reqSeq === cityCourtsReqRef.current) setCityCourtGroups([]);
+              })
+              .finally(() => {
+                if (reqSeq !== cityCourtsReqRef.current) return;
+                setCityCourtsLoading(false);
+                setCityCourtsLoaded(true);
+              });
+          }
           // Mark hydration complete so the autosave effect doesn't trample the
           // prefilled state on its first run.
           didHydrateRef.current = true;
