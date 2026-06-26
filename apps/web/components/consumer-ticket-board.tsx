@@ -360,8 +360,17 @@ function TicketCard({ ticket, onOpen }: { ticket: TicketRow; onOpen: () => void 
   const createdStr = formatDate(ticket.createdAt);
   const hearingStr = formatDate(ticket.scheduledDate);
   // Lifecycle position for the status-step strip (DELIVERED = fully complete).
+  // Pay-at-end tickets can jump UNPAID → ASSIGNED without ever flipping to
+  // PAID; any status at or past ASSIGNED has implicitly cleared the PAID step,
+  // so position by linear lifecycle index (every earlier pip renders passed).
+  const statusIdx = Math.max(0, LIFECYCLE.indexOf(ticket.status));
+  const assignedIdx = LIFECYCLE.indexOf('ASSIGNED');
   const lifePos =
-    ticket.status === 'DELIVERED' ? LIFECYCLE.length : Math.max(0, LIFECYCLE.indexOf(ticket.status));
+    ticket.status === 'DELIVERED'
+      ? LIFECYCLE.length
+      : statusIdx >= assignedIdx
+        ? Math.max(statusIdx, assignedIdx)
+        : statusIdx;
   const payPct = total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : 0;
 
   return (
