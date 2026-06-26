@@ -751,9 +751,17 @@ export function ConsumerTicketDetail({
       {/* ── Section 2: Case details ─────────────────────────────────────── */}
       {ticket.formPayload && typeof ticket.formPayload === 'object' && (() => {
         const p = ticket.formPayload as Record<string, unknown>;
+        // De-duplicate by resolved label: intake writes both `city` and
+        // `select_court_city` (both labelled "City"); surface each label once.
+        const seenLabels = new Set<string>();
         const displayKeys = orderCaseDetailKeys(
           Object.keys(p).filter((k) => isCaseDetailKey(k, p[k]))
-        );
+        ).filter((k) => {
+          const label = payloadLabel(k);
+          if (seenLabels.has(label)) return false;
+          seenLabels.add(label);
+          return true;
+        });
         if (displayKeys.length === 0) return null;
         return (
           <section>
