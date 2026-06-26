@@ -1454,7 +1454,10 @@ describe('TicketsService', () => {
       return { service, prisma };
     }
 
-    it('UNPAID → ASSIGNED is blocked (invalid transition in new machine)', async () => {
+    // Pay-at-end (Task 3.1): UNPAID → ASSIGNED is now a valid transition. The
+    // money gate lives only at DELIVERED, so an unpaid ticket can be assigned
+    // and worked; the consumer settles before delivery.
+    it('UNPAID → ASSIGNED is allowed (pay-at-end)', async () => {
       const { service, prisma } = buildGateHarness({
         createdBy: 'CONSUMER',
         status: 'UNPAID',
@@ -1462,12 +1465,16 @@ describe('TicketsService', () => {
         amountPaid: 0,
         totalAmount: 5000,
       });
-      await expect(
-        service.updateStatus('tkt-1', 'ASSIGNED', undefined, {
+      const updated = await service.updateStatus(
+        'tkt-1',
+        'ASSIGNED',
+        undefined,
+        {
           actorUserId: 'admin-1',
-        }),
-      ).rejects.toBeInstanceOf(BadRequestException);
-      expect(prisma.ticket.updateMany).not.toHaveBeenCalled();
+        },
+      );
+      expect(updated.status).toBe('ASSIGNED');
+      expect(prisma.ticket.updateMany).toHaveBeenCalled();
     });
 
     it('PAID → ASSIGNED is allowed', async () => {

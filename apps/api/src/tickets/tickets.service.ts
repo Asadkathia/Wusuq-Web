@@ -164,7 +164,11 @@ const REQUIRED_FIELDS_BY_FLOW: Record<string, string[]> = {
 const PAYLOAD_FIELD_ALIASES: Record<string, readonly string[]> = SHARED_ALIASES;
 
 const STATUS_TRANSITIONS: Record<TicketStatus, TicketStatus[]> = {
-  UNPAID: ['PAID'],
+  // Pay-at-end (owner requirement): a ticket may be assigned directly from
+  // UNPAID — the payment gate lives only at DELIVERED, not at assign. The
+  // conditional updateMany contract (audit 2.1) is unchanged; this only widens
+  // the set of allowed source states for the ASSIGNED transition.
+  UNPAID: ['PAID', 'ASSIGNED'],
   PAID: ['ASSIGNED'],
   ASSIGNED: ['IN_PROGRESS'],
   IN_PROGRESS: ['WAITING_APPROVAL'],
@@ -188,7 +192,10 @@ export class TicketsService {
     private readonly promosService?: PromosService,
   ) {}
 
-  async findAll(query: FilterTicketsDto, opts?: { forConsumer?: boolean }) {
+  async findAll(
+    query: FilterTicketsDto,
+    opts?: { forConsumer?: boolean; forRepresentative?: boolean },
+  ) {
     const skip = (query.page - 1) * query.limit;
 
     const where = {
@@ -287,6 +294,15 @@ export class TicketsService {
       this.prisma.ticket.count({ where }),
     ]);
 
+    // Representatives are not staff and are not the consumer: they are scoped
+    // to their own assignments and must never see consumer money (totals,
+    // amount paid, the per-charge columns) — only their own internal clerk
+    // cost. Consumers see their money but not clerk-internal fields. Staff see
+    // everything. `forRepresentative` is the authoritative role signal passed
+    // by the controller (audit 1.1 — never infer it from query filters, a
+    // consumer can spoof representativeId).
+    const isRep = Boolean(opts?.forRepresentative);
+    const pureConsumer = Boolean(opts?.forConsumer) && !isRep;
     return {
       items: items.map((ticket) => ({
         id: ticket.id,
@@ -300,9 +316,19 @@ export class TicketsService {
         status: ticket.status,
         clerkApprovalStatus: ticket.clerkApprovalStatus,
         clerkReceiptUrl: ticket.clerkReceiptUrl,
-        serviceCost: ticket.serviceCost,
-        totalAmount: ticket.totalAmount,
-        amountPaid: ticket.amountPaid,
+        // Consumer money fields — hidden from representatives.
+        ...(isRep
+          ? {}
+          : {
+              serviceCost: ticket.serviceCost,
+              totalAmount: ticket.totalAmount,
+              amountPaid: ticket.amountPaid,
+              deliveryCharges: ticket.deliveryCharges,
+              printingCharges: ticket.printingCharges,
+              attestedCharges: ticket.attestedCharges,
+              nonAttestedCharges: ticket.nonAttestedCharges,
+              additionalCharges: ticket.additionalCharges,
+            }),
         currency: ticket.currency,
         createdBy: ticket.createdBy,
         remainderFinalizedAt: ticket.remainderFinalizedAt,
@@ -315,8 +341,9 @@ export class TicketsService {
         deliveryStatus: ticket.deliveryStatus,
         trackingNo: ticket.trackingNo,
         // Clerk cost and internal ops state are back-office only — never expose
-        // to consumers (CLAUDE.md). Admin/staff list rows still carry them.
-        ...(opts?.forConsumer
+        // to consumers (CLAUDE.md). Admin/staff AND the assigned representative
+        // (their own pay-out) still carry them.
+        ...(pureConsumer
           ? {}
           : {
               clerkCost: ticket.clerkCost,
@@ -324,11 +351,6 @@ export class TicketsService {
               dispatchProofUrl: ticket.dispatchProofUrl,
               assignmentStatus: ticket.assignments[0]?.status ?? null,
             }),
-        deliveryCharges: ticket.deliveryCharges,
-        printingCharges: ticket.printingCharges,
-        attestedCharges: ticket.attestedCharges,
-        nonAttestedCharges: ticket.nonAttestedCharges,
-        additionalCharges: ticket.additionalCharges,
         assignedRepresentative: ticket.assignments[0]?.representative ?? null,
         createdAt: ticket.createdAt,
         updatedAt: ticket.updatedAt,
@@ -429,9 +451,55 @@ export class TicketsService {
       if (!assigned) {
         throw new NotFoundException('Ticket not found');
       }
+      // Audit 1.1: a representative is scoped to their assignment and must
+      // never see consumer money (totals, amount paid, per-charge columns) or
+      // consumer PII — only their own internal clerk cost.
+      return this.redactTicketForRepresentative(ticket);
     }
 
     return ticket;
+  }
+
+  /**
+   * Representative view of a ticket: strips consumer money fields (totals,
+   * amount paid, per-charge columns, tax/discount/promo, the price breakdown)
+   * and consumer PII (email/phone/CNIC/address), keeping the representative's
+   * own clerk cost (their pay-out). Case details, documents, status history
+   * and the clerk report stay — the rep needs them to do the work.
+   */
+  private redactTicketForRepresentative<
+    T extends {
+      consumer?: Record<string, unknown> | null;
+    },
+  >(ticket: T) {
+    const safe: Record<string, unknown> = { ...ticket };
+    // Consumer money — back-office / consumer-only, never shown to the rep.
+    delete safe.totalAmount;
+    delete safe.amountPaid;
+    delete safe.serviceCost;
+    delete safe.deliveryCharges;
+    delete safe.printingCharges;
+    delete safe.attestedCharges;
+    delete safe.nonAttestedCharges;
+    delete safe.additionalCharges;
+    delete safe.additionalServiceCost;
+    delete safe.discountPrice;
+    delete safe.promoDiscount;
+    delete safe.promoCodeId;
+    delete safe.taxRate;
+    delete safe.taxAmount;
+    delete safe.priceBreakdown;
+    // Consumer PII — the rep does not need the consumer's contact details.
+    if (ticket.consumer) {
+      const consumer = { ...ticket.consumer };
+      delete consumer.email;
+      delete consumer.phone;
+      delete consumer.cnic;
+      delete consumer.address;
+      delete consumer.postalCode;
+      safe.consumer = consumer;
+    }
+    return safe as T;
   }
 
   /**
@@ -1298,14 +1366,11 @@ export class TicketsService {
     return { id, representativeId: dto.representativeId, assigned: true };
   }
 
-  async representativeCandidates(_filters: {
+  async representativeCandidates(filters: {
     city?: string;
     district?: string;
   }) {
-    // Return all active representatives — admins select from the full pool.
-    // Geographic filters were previously hard-excluding reps without a matching
-    // city, leaving the dropdown empty for most tickets.
-    return this.prisma.user.findMany({
+    const reps = await this.prisma.user.findMany({
       where: {
         role: 'representative',
         isActive: true,
@@ -1323,6 +1388,26 @@ export class TicketsService {
       },
       orderBy: { name: 'asc' },
     });
+
+    // Task 3.3: when a ticket city is supplied, default the dropdown to reps
+    // who serve that city — same case-insensitive includes-both-ways match the
+    // `assign` precheck uses (rep.courtCity / rep.city vs the ticket city). The
+    // admin can still widen to the full pool via the "Override city restriction"
+    // checkbox (which the FE handles by omitting the city filter / forceAssign).
+    // When no city is given, every active rep is returned.
+    const city = filters.city?.trim().toLowerCase();
+    if (!city) {
+      return reps;
+    }
+    const matching = reps.filter((rep) => {
+      const repCities = [rep.courtCity, rep.city]
+        .filter((c): c is string => Boolean(c))
+        .map((c) => c.toLowerCase());
+      return repCities.some((c) => c.includes(city) || city.includes(c));
+    });
+    // Fall back to the full pool when no rep matches the city, so the dropdown
+    // is never empty (the earlier hard filter regressed exactly this way).
+    return matching.length > 0 ? matching : reps;
   }
 
   async assignBulk(
@@ -1551,6 +1636,48 @@ export class TicketsService {
       }
     }
     return { filePath: doc.fileUrl, name: doc.name, type: doc.type };
+  }
+
+  /**
+   * Streams the clerk's submitted receipt (the file behind
+   * `Ticket.clerkReceiptUrl`). Staff and the ticket's assigned representative
+   * may view it; consumers never can (clerk-side back-office proof). Task 4.1:
+   * the admin Review & Complete dialog links to this so the receipt is more
+   * than a yes/no flag.
+   */
+  async resolveClerkReceiptDownload(
+    ticketId: string,
+    caller: { userId: string; role: string },
+  ): Promise<{ filePath: string; name: string; type: string }> {
+    const ticket = await this.prisma.ticket.findUnique({
+      where: { id: ticketId },
+      select: { clerkReceiptUrl: true },
+    });
+    if (!ticket?.clerkReceiptUrl) {
+      throw new NotFoundException('Clerk receipt not found');
+    }
+    if (isConsumerRole(caller.role)) {
+      throw new ForbiddenException('Not permitted');
+    }
+    if (caller.role === 'representative') {
+      const assigned = await this.prisma.assignment.findFirst({
+        where: { ticketId, representativeId: caller.userId },
+        select: { id: true },
+      });
+      if (!assigned) {
+        throw new ForbiddenException('Not your assignment');
+      }
+    }
+    const filePath = ticket.clerkReceiptUrl;
+    const name = filePath.split('/').pop() || 'clerk-receipt';
+    const ext = (name.split('.').pop() || '').toLowerCase();
+    const type =
+      ext === 'pdf'
+        ? 'application/pdf'
+        : ext === 'png'
+          ? 'image/png'
+          : 'image/jpeg';
+    return { filePath, name, type };
   }
 
   /**
@@ -2119,6 +2246,10 @@ export class TicketsService {
           attestedCharges,
           nonAttestedCharges,
           additionalCharges,
+          // Persist the clerk's page breakdown behind printingCharges so the
+          // admin Review & Complete dialog can show "pages × rate" (Task 4.1).
+          noOfPages: dto.noOfPages ?? ticket.noOfPages,
+          costPerPage: dto.costPerPage ?? ticket.costPerPage,
           totalAmount,
           clerkApprovalStatus: 'SUBMITTED',
           status: 'WAITING_APPROVAL',
@@ -2539,6 +2670,12 @@ export class TicketsService {
     const delivery = caps.delivery
       ? Number(dto.deliveryCharges ?? ticket.deliveryCharges ?? 0)
       : 0;
+    // Task 4.1: "Additional Cost" is admin-editable at Review & Complete. Like
+    // the other phase-2 charges, an absent dto field falls back to the
+    // persisted column, never to 0.
+    const additionalCharges = Number(
+      dto.additionalCharges ?? ticket.additionalCharges ?? 0,
+    );
     // 5-24-26 #17: PDF is now priced at intake (folded into serviceCost by the
     // pricing resolver when want_pdf_before_dispatch=Yes), so it is NOT
     // re-added at finalize — doing so would double-bill the PDF surcharge.
@@ -2550,7 +2687,7 @@ export class TicketsService {
     // tickets that predate the column).
     const money = TicketsService.assembleFinalizeMoney({
       serviceCost: Number(ticket.serviceCost),
-      additionalCharges: Number(ticket.additionalCharges ?? 0),
+      additionalCharges,
       additionalServiceCost: Number(ticket.additionalServiceCost ?? 0),
       discountPrice: Number(ticket.discountPrice ?? 0),
       promoDiscount: Number(ticket.promoDiscount ?? 0),
@@ -2599,6 +2736,7 @@ export class TicketsService {
         nonAttestedCharges: nonAttested,
         printingCharges: printing,
         deliveryCharges: delivery,
+        additionalCharges,
         totalAmount: total,
         taxAmount: money.taxAmount,
         // The surplus moved to the wallet; the ticket books stay exact.
