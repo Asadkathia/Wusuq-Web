@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { hash } from 'bcryptjs';
 import type { User } from '@prisma/client';
-import { USER_ROLES } from '@wusuq/shared';
+import { USER_ROLES, deriveCurrency } from '@wusuq/shared';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { NotificationDispatcher } from '../notifications/notification-dispatcher.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -67,11 +67,14 @@ export class UsersService {
     dto: CreateUserDto,
     actor?: { actorUserId?: string; actorEmail?: string },
   ) {
+    const phone = dto.phone
+      ? (formatPakistaniPhone(dto.phone) ?? dto.phone)
+      : undefined;
     const user = await this.prisma.user.create({
       data: {
         name: dto.name,
         email: dto.email,
-        phone: formatPakistaniPhone(dto.phone) ?? dto.phone,
+        phone,
         cnic: dto.cnic,
         address: dto.address,
         province: dto.province,
@@ -79,6 +82,12 @@ export class UsersService {
         city: dto.city,
         passwordHash: await hash(dto.password, 10),
         role: mapSharedRoleToPrisma(dto.role),
+        // Billing currency is derived once at creation (single source:
+        // deriveCurrency). The CreateUserDto has no `country` field (and it
+        // lives in another agent's ownership), so we derive from phone only —
+        // PKR for +92 / local PK numbers, USD otherwise, default PKR when no
+        // phone is on file.
+        currency: deriveCurrency({ phone }),
       },
     });
     await this.auditLogsService.create({
@@ -97,11 +106,14 @@ export class UsersService {
     dto: CreateRepresentativeDto,
     actor?: { actorUserId?: string; actorEmail?: string },
   ) {
+    const phone = dto.phone
+      ? (formatPakistaniPhone(dto.phone) ?? dto.phone)
+      : undefined;
     const user = await this.prisma.user.create({
       data: {
         name: dto.name,
         email: dto.email,
-        phone: formatPakistaniPhone(dto.phone) ?? dto.phone,
+        phone,
         address: dto.address,
         serviceFocus: dto.serviceFocus,
         court: dto.court,
@@ -111,6 +123,8 @@ export class UsersService {
         city: dto.city,
         passwordHash: await hash(dto.password, 10),
         role: mapSharedRoleToPrisma('representative'),
+        // Derived once at creation (no `country` on the DTO — derive from phone).
+        currency: deriveCurrency({ phone }),
       },
     });
 
@@ -129,20 +143,42 @@ export class UsersService {
     dto: UpdateUserDto,
     actor?: { actorUserId?: string; actorEmail?: string },
   ) {
-    await this.ensureExists(id);
+    const existing = await this.prisma.user.findUnique({
+      where: { id },
+      select: { id: true, phone: true, walletBalance: true },
+    });
+    if (!existing) {
+      throw new NotFoundException('User not found');
+    }
+
+    const nextPhone = dto.phone
+      ? (formatPakistaniPhone(dto.phone) ?? dto.phone)
+      : undefined;
+
+    // Currency locks once the account is active. Re-derive only while the user
+    // has zero non-archived tickets AND a zero wallet balance, so an in-flight
+    // account can never end up with a mixed PKR/USD ledger. The UpdateUserDto
+    // carries no `country` (other agent's file), so we derive from the effective
+    // phone — the new phone if one is supplied, else the stored one.
+    const ticketCount = await this.prisma.ticket.count({
+      where: { consumerId: id, archivedAt: null },
+    });
+    const locked = ticketCount > 0 || Number(existing.walletBalance) !== 0;
+    const currencyUpdate = locked
+      ? {}
+      : { currency: deriveCurrency({ phone: nextPhone ?? existing.phone }) };
 
     const user = await this.prisma.user.update({
       where: { id },
       data: {
         name: dto.name,
         email: dto.email,
-        phone: dto.phone
-          ? (formatPakistaniPhone(dto.phone) ?? dto.phone)
-          : undefined,
+        phone: nextPhone,
         passwordHash: dto.password ? await hash(dto.password, 10) : undefined,
         role: dto.role ? mapSharedRoleToPrisma(dto.role) : undefined,
         verified: dto.verified,
         isActive: dto.isActive,
+        ...currencyUpdate,
       },
     });
     await this.auditLogsService.create({

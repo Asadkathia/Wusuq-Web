@@ -6,6 +6,13 @@ export type Country = {
   dial: string;
 };
 
+/**
+ * Default ISO country code used by phone-centric surfaces (e.g. the consumer
+ * phone-login flow, where the dial prefix must render before a number is typed).
+ * Do NOT use this as a silent default on signup — currency is derived from the
+ * country there, so signup requires an EXPLICIT country choice instead (see
+ * `apps/web/app/(auth)/consumer/signup/page.tsx`).
+ */
 export const DEFAULT_COUNTRY_CODE = 'PK';
 
 export const COUNTRIES: Country[] = [
