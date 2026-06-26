@@ -11,6 +11,7 @@ import {
   Settings,
   Tag,
   Ticket,
+  Truck,
   Vote,
   Wallet,
   WalletCards,
@@ -98,6 +99,12 @@ function buildClerkItems(counts: Record<string, number>): NavItem[] {
       href: '/tickets/waiting-approval',
       icon: FileText,
       count: counts['WAITING_APPROVAL'],
+    },
+    {
+      label: 'Ready to Dispatch',
+      href: '/tickets/completed',
+      icon: Truck,
+      count: counts['COMPLETED'],
     },
     {
       label: 'Paralegal Tickets',
