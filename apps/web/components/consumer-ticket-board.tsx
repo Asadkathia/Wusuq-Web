@@ -21,7 +21,7 @@ import {
   Truck,
 } from 'lucide-react';
 import { FLOW_LABELS, isFlowKey, documentCategoryLabel, chargeCapabilitiesFor, orderCaseDetailKeys } from '@wusuq/shared';
-import { parseDeliveryAddress } from '@/lib/intake-flows';
+import { parseDeliveryAddress, docBundleLabel } from '@/lib/intake-flows';
 import { apiClient } from '@/lib/api-client';
 import { relativeTime } from '@/lib/relative-time';
 import { Button } from '@/components/ui/button';
@@ -609,6 +609,18 @@ function payloadLabel(key: string): string {
   );
 }
 
+/** Humanize raw enum-style payload values (e.g. the document-bundle key
+ *  `doc_petition_plus_complete_order`) into reader-friendly text. Falls back to
+ *  the raw string for values we don't recognise. Local to the consumer view. */
+function payloadValueLabel(key: string, value: unknown): string {
+  const raw = String(value);
+  if (key === 'required_documentations') {
+    // Single source for the bundle label (tier-agnostic here → "Petition …").
+    return docBundleLabel(raw, undefined);
+  }
+  return raw;
+}
+
 /** True if the key is safe to display in the consumer case-details panel.
  *  Allowlisted against PAYLOAD_LABEL — any key not in the curated set is
  *  silently dropped so future server-injected payload keys never surface. */
@@ -770,7 +782,7 @@ export function ConsumerTicketDetail({
               {displayKeys.map((k) => (
                 <div key={k} className="flex items-start gap-3 px-4 py-2.5 text-sm">
                   <span className="w-32 shrink-0 font-medium text-slate-500">{payloadLabel(k)}</span>
-                  <span className="flex-1 text-slate-800">{String(p[k])}</span>
+                  <span className="flex-1 text-slate-800">{payloadValueLabel(k, p[k])}</span>
                 </div>
               ))}
             </div>
