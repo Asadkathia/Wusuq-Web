@@ -663,6 +663,10 @@ export function ConsumerTicketDetail({
     );
   }
 
+  const taxAmount = Number(ticket.taxAmount || 0);
+  const taxRate = Number(ticket.taxRate || 0);
+  const taxLabel = taxRate > 0 ? `Tax (${Math.round(taxRate * 100)}%)` : 'Tax';
+
   const charges: Array<[string, number]> = (
     [
       ['Service', Number(ticket.serviceCost || 0)],
@@ -671,6 +675,7 @@ export function ConsumerTicketDetail({
       ['Attested', Number(ticket.attestedCharges || 0)],
       ['Non-attested', Number(ticket.nonAttestedCharges || 0)],
       ['Additional', Number(ticket.additionalCharges || 0)],
+      [taxLabel, taxAmount],
     ] as Array<[string, number]>
   ).filter((row) => Number(row[1]) !== 0);
 
