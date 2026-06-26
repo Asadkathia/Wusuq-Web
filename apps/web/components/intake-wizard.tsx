@@ -916,6 +916,29 @@ export function IntakeWizard({
               cityId: nextPayload.city_id || g.cityId,
             }));
           }
+          // Load the city's court groups so the court picker resolves (Continue
+          // would otherwise stick on "Loading courts…" → "Please select a court").
+          // Mirror the resume-draft loader: false-before / true-in-finally with
+          // the monotonic cityCourtsReqRef stale-guard (no cancelled flag — the
+          // regeneratePrefillAppliedRef already ensures exactly-once execution).
+          if (nextPayload.city_id) {
+            setCityCourtsLoading(true);
+            setCityCourtsLoaded(false);
+            const reqSeq = ++cityCourtsReqRef.current;
+            apiClient
+              .get<CityCourtGroup[]>(`/geo/cities/${nextPayload.city_id}/courts`)
+              .then((groups) => {
+                if (reqSeq === cityCourtsReqRef.current) setCityCourtGroups(groups ?? []);
+              })
+              .catch(() => {
+                if (reqSeq === cityCourtsReqRef.current) setCityCourtGroups([]);
+              })
+              .finally(() => {
+                if (reqSeq !== cityCourtsReqRef.current) return;
+                setCityCourtsLoading(false);
+                setCityCourtsLoaded(true);
+              });
+          }
           // Mark hydration complete so the autosave effect doesn't trample the
           // prefilled state on its first run.
           didHydrateRef.current = true;
@@ -1674,6 +1697,15 @@ export function IntakeWizard({
       return raw;
     })();
 
+    // Suppress the placeholder Base fee / Total for Case Files until a Set Type
+    // is chosen. With no set_type the resolver matches the setType=null headline
+    // rule whose seeded base is a bogus ~Rs 20 placeholder — showing it as the
+    // quote is misleading. (The underlying seed/data fix is out of scope for
+    // this FE-only change.) Once a set type is picked the real banded rule
+    // matches and the quote renders.
+    const caseFilesNeedsSetType = draft.flow === 'judicial_case_files' && !p.set_type;
+    const pricingDisplayable = Boolean(pr?.matched && pr.available !== false && !caseFilesNeedsSetType);
+
     if (selectedFlow?.label) {
       items.push({ label: 'Intake type', detail: selectedFlow.label, amount: null });
     }
@@ -1692,7 +1724,7 @@ export function IntakeWizard({
     // are billed at intake; attested/non-attested copies and delivery are
     // deferred to the phase-2 clerk charge window (the second payment) and are
     // not shown here.
-    if (pr?.matched && pr.available !== false) {
+    if (pr?.matched && pr.available !== false && !caseFilesNeedsSetType) {
       if (pr.basePrice > 0) {
         items.push({ label: 'Base fee', amount: pr.basePrice });
       }
@@ -1752,7 +1784,7 @@ export function IntakeWizard({
       }
     }
 
-    const matchedAndAvailable = pr?.matched && pr.available !== false;
+    const matchedAndAvailable = pricingDisplayable;
     // For SPLIT flows, the checkout total is the base service cost only.
     // The remainder (attested/non-attested/PDF/delivery) is billed after
     // the clerk enters phase-2 charges. billedBase is the pre-tax /
