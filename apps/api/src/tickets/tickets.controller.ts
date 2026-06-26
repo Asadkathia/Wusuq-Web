@@ -78,9 +78,13 @@ export class TicketsController {
     if (isRepresentative && user) {
       query.representativeId = user.sub;
     }
-    // Consumers must never receive internal clerk-cost fields in the list.
+    // Consumers must never receive internal clerk-cost fields in the list;
+    // representatives must never receive consumer money fields (audit 1.1).
+    // forRepresentative is the authoritative role signal — derived from the
+    // JWT role, never from a (spoofable) query filter.
     return this.ticketsService.findAll(query, {
       forConsumer: isConsumer || isRepresentative,
+      forRepresentative: isRepresentative,
     });
   }
 
@@ -645,6 +649,31 @@ export class TicketsController {
     res.setHeader(
       'Content-Disposition',
       `attachment; filename="${encodeURIComponent(name)}"`,
+    );
+    return createReadStream(filePath).pipe(res);
+  }
+
+  // Staff / assigned-rep download of the clerk's submitted receipt. Service
+  // enforces the role + assignment scope (consumers are rejected).
+  @RequirePermissions('tickets.read')
+  @Get(':id/clerk-receipt/download')
+  async downloadClerkReceipt(
+    @Param('id') id: string,
+    @CurrentUser() user: JwtUser | undefined,
+    @Res() res: Response,
+  ) {
+    if (!user?.sub) {
+      throw new BadRequestException('Authenticated user required');
+    }
+    const { filePath, name, type } =
+      await this.ticketsService.resolveClerkReceiptDownload(id, {
+        userId: user.sub,
+        role: user.role,
+      });
+    res.setHeader('Content-Type', type);
+    res.setHeader(
+      'Content-Disposition',
+      `inline; filename="${encodeURIComponent(name)}"`,
     );
     return createReadStream(filePath).pipe(res);
   }

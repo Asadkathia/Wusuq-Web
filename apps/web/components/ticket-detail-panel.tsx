@@ -18,7 +18,85 @@ type Props = {
   ticketId: string;
   onClose: () => void;
   isClerkView?: boolean;
+  /** Called after a mutation inside the drawer (accept/reject) so the parent
+   *  list can refresh and the now-stale row leaves its previous bucket. */
+  onChange?: () => void;
 };
+
+// ── Case-payload humanizing (Task 4.2) ───────────────────────────────────────
+// Admin/clerk case details. Unlike the consumer side (strict allowlist), staff
+// may see all intake fields — but raw ids and system bookkeeping keys are
+// excluded, and enum-ish values are humanized.
+const ADMIN_PAYLOAD_LABEL: Record<string, string> = {
+  city: 'City',
+  select_court_city: 'City',
+  select_court: 'Court',
+  select_court_type: 'Court type',
+  select_service: 'Service type',
+  case_type: 'Case type',
+  case_type_other: 'Case type (other)',
+  case_petition_no: 'Case no.',
+  case_no: 'Case no.',
+  case_year: 'Case year',
+  year: 'Case year',
+  case_title: 'Case title',
+  judge_designation: 'Judge designation',
+  judge_name: 'Judge',
+  case_date: 'Case date',
+  future_date: 'Next hearing',
+  case_status: 'Case status',
+  search_method: 'Search method',
+  want_pdf_before_dispatch: 'PDF copy',
+  cnic: 'CNIC',
+  required_documentations: 'Document bundle',
+  subject_cnic: 'Subject CNIC',
+  subject_full_name: 'Subject name',
+  purpose: 'Purpose',
+  delivery_mode: 'Delivery mode',
+  delivery_method: 'Delivery method',
+  province: 'Province',
+  station: 'Police station',
+  fir_no: 'FIR no.',
+  fir_year: 'FIR year',
+  notes: 'Notes',
+};
+
+// id / system bookkeeping keys never shown on the case-details panel.
+const PAYLOAD_SYSTEM_KEYS = new Set([
+  'source',
+  'request_id',
+  'requestId',
+  'parent_ticket_id',
+  'consumer_id',
+  'intake_request_id',
+]);
+
+function isExcludedPayloadKey(key: string): boolean {
+  if (PAYLOAD_SYSTEM_KEYS.has(key)) return true;
+  // Any resolved foreign-key id (city_id, select_court_id, district_id, …).
+  if (/_id$/.test(key)) return true;
+  return false;
+}
+
+function adminPayloadLabel(key: string): string {
+  return (
+    ADMIN_PAYLOAD_LABEL[key] ??
+    key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+  );
+}
+
+// "doc_petition_plus_complete_order" → "Petition + Complete Order".
+function humanizePayloadValue(value: unknown): string {
+  const s = String(value);
+  if (/^[a-z0-9]+(_[a-z0-9]+)+$/.test(s)) {
+    return s
+      .replace(/^doc_/, '')
+      .replace(/_plus_/g, ' + ')
+      .replace(/_/g, ' ')
+      .replace(/\b\w/g, (c) => c.toUpperCase());
+  }
+  return s;
+}
 
 const STATUS_VARIANT: Record<string, 'success' | 'warning' | 'error' | 'neutral' | 'info'> = {
   PENDING: 'warning',
@@ -27,7 +105,7 @@ const STATUS_VARIANT: Record<string, 'success' | 'warning' | 'error' | 'neutral'
   COMPLETED: 'success',
 };
 
-export function TicketDetailPanel({ ticketId, onClose, isClerkView = false }: Props) {
+export function TicketDetailPanel({ ticketId, onClose, isClerkView = false, onChange }: Props) {
   const [ticket, setTicket] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -74,8 +152,17 @@ export function TicketDetailPanel({ ticketId, onClose, isClerkView = false }: Pr
     try {
       await apiClient.post(`/tickets/${ticketId}/accept-assignment`, {});
       await load();
+      onChange?.();
     } catch (e: any) {
-      setActionError(e?.message || 'Failed to accept assignment');
+      const msg: string = e?.message || '';
+      // Benign race (Bug #10): the ticket already left ASSIGNED (e.g. accepted
+      // from the list a moment ago). Don't surface a red error — just refresh.
+      if (/only assigned tickets can be accepted/i.test(msg)) {
+        await load();
+        onChange?.();
+      } else {
+        setActionError(msg || 'Failed to accept assignment');
+      }
     } finally {
       setActionBusy(false);
     }
@@ -91,6 +178,7 @@ export function TicketDetailPanel({ ticketId, onClose, isClerkView = false }: Pr
       setRejectOpen(false);
       setRejectReason('');
       await load();
+      onChange?.();
     } catch (e: any) {
       setActionError(e?.message || 'Failed to reject assignment');
     } finally {
@@ -98,17 +186,12 @@ export function TicketDetailPanel({ ticketId, onClose, isClerkView = false }: Pr
     }
   };
 
-  const totalCharges = ticket
-    ? Number(ticket.serviceCost || 0) +
-      Number(ticket.deliveryCharges || 0) +
-      Number(ticket.printingCharges || 0) +
-      Number(ticket.attestedCharges || 0) +
-      Number(ticket.nonAttestedCharges || 0) +
-      Number(ticket.additionalCharges || 0) +
-      Number(ticket.additionalServiceCost || 0) +
-      Number(ticket.clerkCost || 0) -
-      Number(ticket.discountPrice || 0)
-    : 0;
+  // Customer-facing total is ALWAYS Ticket.totalAmount (the single source —
+  // computeTicketTotal on the server). Never hand-sum components here: that
+  // both re-included the internal clerk cost (Bug #5) and omitted tax, so the
+  // admin panel disagreed with the consumer receipt. Clerk earnings are shown
+  // as their own separate internal line below.
+  const customerTotal = ticket ? Number(ticket.totalAmount || 0) : 0;
 
   /** Internal-only: total payout to the assigned clerk (clerkCost + phase-2 charges). */
   const computeClerkEarnings = (t: {
@@ -128,13 +211,20 @@ export function TicketDetailPanel({ ticketId, onClose, isClerkView = false }: Pr
     const hide = new Set(opts.hideKeys ?? []);
     const orderedKeys = orderCaseDetailKeys(Object.keys(payload));
     return orderedKeys
-      .filter((k) => !hide.has(k) && payload[k] !== null && payload[k] !== '' && !String(payload[k]).includes('upload'))
+      .filter(
+        (k) =>
+          !hide.has(k) &&
+          !isExcludedPayloadKey(k) &&
+          payload[k] !== null &&
+          payload[k] !== '' &&
+          !String(payload[k]).includes('upload'),
+      )
       .map((k) => (
         <div key={k} className="flex gap-2 text-sm py-1 border-b border-slate-50 last:border-0">
-          <span className="w-40 flex-shrink-0 font-medium text-slate-500 capitalize">
-            {k.replace(/_/g, ' ')}
+          <span className="w-40 flex-shrink-0 font-medium text-slate-500">
+            {adminPayloadLabel(k)}
           </span>
-          <span className="text-slate-800">{String(payload[k])}</span>
+          <span className="text-slate-800">{humanizePayloadValue(payload[k])}</span>
         </div>
       ));
   };
@@ -268,25 +358,20 @@ export function TicketDetailPanel({ ticketId, onClose, isClerkView = false }: Pr
                   {(() => {
                     const repName = ticket.assignments?.[0]?.representative?.name as string | undefined;
                     const clerkLabel = repName ? `Clerk — ${repName}` : 'Clerk';
-                    const earnings = computeClerkEarnings(ticket);
                     return (
                       <PanelCard className="p-4">
                         <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
                           <CreditCard className="h-4 w-4 text-primary-500" />{clerkLabel}
                         </h3>
                         <div className="space-y-2 text-sm">
+                          {/* Clerk sees only their own clerk cost — never the
+                              consumer's totals or the blended earnings line. */}
                           <div className="flex justify-between">
                             <span className="text-slate-500">Clerk Cost</span>
                             <span className="font-medium text-slate-800">
                               PKR {Number(ticket.clerkCost || 0).toLocaleString()}
                             </span>
                           </div>
-                          {earnings > 0 && (
-                            <div className="flex justify-between border-t border-slate-100 pt-2 font-semibold text-slate-900">
-                              <span>{repName ? `${repName}'s total earnings` : 'Clerk total earnings'}</span>
-                              <span>PKR {earnings.toLocaleString()}</span>
-                            </div>
-                          )}
                         </div>
                       </PanelCard>
                     );
@@ -362,7 +447,6 @@ export function TicketDetailPanel({ ticketId, onClose, isClerkView = false }: Pr
                     {(() => {
                       const caps = chargeCapabilitiesFor(ticket.intakeFlow);
                       const repName = ticket.assignments?.[0]?.representative?.name as string | undefined;
-                      const clerkCostLabel = repName ? `Clerk Cost (${repName})` : 'Clerk Cost';
                       const chargeRows: Array<[string, unknown]> = [
                         ['Service Cost', ticket.serviceCost],
                         ...(caps.delivery ? [['Delivery Charges', ticket.deliveryCharges] as [string, unknown]] : []),
@@ -371,7 +455,9 @@ export function TicketDetailPanel({ ticketId, onClose, isClerkView = false }: Pr
                         ...(caps.attestation ? [['Non-Attested Charges', ticket.nonAttestedCharges] as [string, unknown]] : []),
                         ['Additional Charges', ticket.additionalCharges],
                         ['Additional Service Cost', ticket.additionalServiceCost],
-                        [clerkCostLabel, ticket.clerkCost],
+                        // Clerk cost is internal-only and excluded from the
+                        // customer total — it appears solely in the separate
+                        // clerk-earnings line below (Bug #5).
                         ['Discount', ticket.discountPrice ? `-${Number(ticket.discountPrice).toLocaleString()}` : null],
                       ];
                       const clerkEarnings = computeClerkEarnings(ticket);
@@ -390,13 +476,13 @@ export function TicketDetailPanel({ ticketId, onClose, isClerkView = false }: Pr
                             </div>
                           )}
                           <div className="flex justify-between pt-1 font-semibold text-slate-900">
-                            <span>Total</span><span>PKR {totalCharges.toLocaleString()}</span>
+                            <span>Total</span><span>PKR {customerTotal.toLocaleString()}</span>
                           </div>
                           <div className="flex justify-between text-emerald-700">
                             <span>Amount Paid</span><span className="font-medium">PKR {Number(ticket.amountPaid || 0).toLocaleString()}</span>
                           </div>
                           <div className="flex justify-between text-rose-700">
-                            <span>Remaining</span><span className="font-medium">PKR {Math.max(0, totalCharges - Number(ticket.amountPaid || 0)).toLocaleString()}</span>
+                            <span>Remaining</span><span className="font-medium">PKR {Math.max(0, customerTotal - Number(ticket.amountPaid || 0)).toLocaleString()}</span>
                           </div>
                           {ticket.remainderFinalizedAt ? (
                             <div className="pt-1 text-xs text-slate-500">
