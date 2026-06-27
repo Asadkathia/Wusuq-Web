@@ -765,6 +765,7 @@ export class TicketsController {
     @CurrentUser() actor: JwtUser | undefined,
   ) {
     return this.ticketsService.recordNextHearing(id, dto, {
+      actorUserId: actor?.sub,
       actorRole: actor?.role,
     });
   }

@@ -2599,14 +2599,12 @@ export class TicketsService {
       metadata: { ...dto },
     });
 
-    // Pass the caller so a representative gets the redacted view (this is a
-    // tickets.clerk endpoint; without the caller findOne returns the full
-    // unredacted admin row, leaking consumer money/PII to the rep).
-    return this.findOne(
-      ticketId,
-      actor?.actorRole
-        ? { role: actor.actorRole, userId: actor.actorUserId ?? '' }
-        : undefined,
+    // tickets.clerk endpoint — redact consumer money/PII for representatives.
+    // ensureClerkActionAllowed already ran above, so redact in-memory (like the
+    // sibling clerk mutations) rather than re-running findOne's assignment query.
+    return this.redactMutationResultForCaller(
+      await this.findOne(ticketId),
+      actor?.actorRole,
     );
   }
 
@@ -3195,9 +3193,13 @@ export class TicketsService {
   async recordNextHearing(
     ticketId: string,
     dto: { scheduledDate: string; hearingType?: string },
-    actor?: { actorRole?: string },
+    actor?: { actorUserId?: string; actorRole?: string },
   ) {
     await this.ensureTicketExists(ticketId);
+    // Scope a representative to their own assignment — without this, any rep
+    // could overwrite another ticket's hearing data (staff are exempt). Mirrors
+    // every sibling clerk mutation (submitClerkReceipt/dispatchDelivery/etc.).
+    await this.ensureClerkActionAllowed(ticketId, actor);
     const updated = await this.prisma.ticket.update({
       where: { id: ticketId },
       data: {

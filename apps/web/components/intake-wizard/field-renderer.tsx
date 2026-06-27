@@ -483,13 +483,14 @@ export function renderField(
     // TODO: integrate a map pin / geocoder for the "Main Area" field in a
     // follow-up iteration — out of scope for this pass.
     const addr = parseDeliveryAddress(value);
-    // Editable delivery city: prefer the user-edited address city, falling back
-    // to the wizard's selected city (payload.city) as the initial value. It was
-    // previously hard-pinned read-only from payload.city, which blocked
-    // delivering to a different city than the case's city.
-    const cityValue = addr.city ?? payload.city ?? '';
+    // Delivery city is pinned to the case city (payload.city) and always
+    // persisted with the address — TCS delivers to the case city. (The owner's
+    // "needs a city" ask was for the Uber flow, which has its own editable
+    // delivery_city field.) Pinning avoids both a misdelivery from a cleared
+    // city and a resumed-draft dead-end from an unsaved one.
+    const cityValue = payload.city ?? '';
     const update = (
-      patch: Partial<{ house: string; block: string; mainArea: string; city: string }>,
+      patch: Partial<{ house: string; block: string; mainArea: string }>,
     ) => {
       const next = {
         house: addr.house,
@@ -505,16 +506,11 @@ export function renderField(
         <div className="text-sm font-semibold text-slate-800">Delivery address</div>
         <div>
           <label className="block text-xs font-medium text-slate-600 mb-1">
-            Delivering to (City)
+            Delivering to
           </label>
-          <input
-            className={inputClass}
-            type="text"
-            value={cityValue}
-            onChange={(e) => update({ city: e.target.value })}
-            onBlur={() => onBlur?.(field.key)}
-            placeholder="e.g. Lahore"
-          />
+          <div className="rounded-lg border border-border-soft bg-surface-muted px-3 py-2 text-sm text-slate-700">
+            {cityValue || '—'}
+          </div>
         </div>
         <div>
           <label className="block text-xs font-medium text-slate-600 mb-1">

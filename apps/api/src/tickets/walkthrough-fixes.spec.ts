@@ -350,3 +350,47 @@ describe('Task 4.1 — clerk page breakdown persisted', () => {
     expect(data.data.printingCharges).toBe(50);
   });
 });
+
+describe('recordNextHearing — clerk action scope (auth, review-3)', () => {
+  function nextHearingPrisma(assignedRepId: string | null) {
+    return {
+      ticket: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValue({ id: 'ticket-1', consumerId: 'c1' }),
+        update: jest.fn().mockResolvedValue({ id: 'ticket-1' }),
+      },
+      assignment: {
+        findFirst: jest
+          .fn()
+          .mockResolvedValue(
+            assignedRepId ? { representativeId: assignedRepId } : null,
+          ),
+      },
+    };
+  }
+
+  it('rejects a representative not assigned to the ticket', async () => {
+    const service = makeService(nextHearingPrisma('rep-OWNER'));
+    await expect(
+      service.recordNextHearing(
+        'ticket-1',
+        { scheduledDate: '2026-07-01' },
+        { actorUserId: 'rep-INTRUDER', actorRole: 'representative' },
+      ),
+    ).rejects.toThrow(/assigned representative/i);
+  });
+
+  it('allows the assigned representative', async () => {
+    const prisma = nextHearingPrisma('rep-OWNER');
+    const service = makeService(prisma);
+    await expect(
+      service.recordNextHearing(
+        'ticket-1',
+        { scheduledDate: '2026-07-01' },
+        { actorUserId: 'rep-OWNER', actorRole: 'representative' },
+      ),
+    ).resolves.toBeDefined();
+    expect((prisma.ticket as { update: jest.Mock }).update).toHaveBeenCalled();
+  });
+});
