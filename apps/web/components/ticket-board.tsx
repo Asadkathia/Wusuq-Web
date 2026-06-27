@@ -493,10 +493,13 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
           : '';
       const reps = await apiClient.get<Representative[]>(`/tickets/representatives${query}`);
       setRepresentatives(reps);
+      const cityScoped = !widen && Boolean(ticket.serviceCity);
       setAssignWarning(
         reps.length
           ? ''
-          : 'No active representatives found. Add a representative user first.',
+          : cityScoped
+            ? `No representative serves ${ticket.serviceCity}. Tick "Override city restriction" to assign one from another city.`
+            : 'No active representatives found. Add a representative user first.',
       );
     } catch (error: any) {
       setRepresentatives([]);

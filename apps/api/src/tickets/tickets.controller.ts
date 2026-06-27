@@ -762,8 +762,11 @@ export class TicketsController {
   recordNextHearing(
     @Param('id') id: string,
     @Body() dto: RecordNextHearingDto,
+    @CurrentUser() actor: JwtUser | undefined,
   ) {
-    return this.ticketsService.recordNextHearing(id, dto);
+    return this.ticketsService.recordNextHearing(id, dto, {
+      actorRole: actor?.role,
+    });
   }
 
   @RequirePermissions('tickets.write')

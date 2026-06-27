@@ -468,7 +468,11 @@ export class TicketsService {
    * findAll/findOne already guard against. Staff/admin callers get the full row.
    */
   private redactMutationResultForCaller<T>(ticket: T, actorRole?: string): T {
-    if (actorRole !== 'representative') return ticket;
+    // Staff/admin see the full row; everyone else (representatives, and any
+    // future non-staff clerk role) gets the rep-safe redaction. Gating on
+    // isStaffRole rather than a literal 'representative' is the robust altitude
+    // CLAUDE.md mandates — a hardcoded role string is how the 3.1 IDOR happened.
+    if (isStaffRole(actorRole ?? '')) return ticket;
     return this.redactTicketForRepresentative(
       ticket as T & { consumer?: Record<string, unknown> | null },
     ) as T;
@@ -2595,7 +2599,15 @@ export class TicketsService {
       metadata: { ...dto },
     });
 
-    return this.findOne(ticketId);
+    // Pass the caller so a representative gets the redacted view (this is a
+    // tickets.clerk endpoint; without the caller findOne returns the full
+    // unredacted admin row, leaking consumer money/PII to the rep).
+    return this.findOne(
+      ticketId,
+      actor?.actorRole
+        ? { role: actor.actorRole, userId: actor.actorUserId ?? '' }
+        : undefined,
+    );
   }
 
   /**
@@ -3183,15 +3195,18 @@ export class TicketsService {
   async recordNextHearing(
     ticketId: string,
     dto: { scheduledDate: string; hearingType?: string },
+    actor?: { actorRole?: string },
   ) {
     await this.ensureTicketExists(ticketId);
-    return this.prisma.ticket.update({
+    const updated = await this.prisma.ticket.update({
       where: { id: ticketId },
       data: {
         scheduledDate: new Date(dto.scheduledDate),
         ...(dto.hearingType ? { hearingType: dto.hearingType } : {}),
       },
     });
+    // tickets.clerk endpoint — redact consumer money/PII for representatives.
+    return this.redactMutationResultForCaller(updated, actor?.actorRole);
   }
 
   private static FUTURE_COPIED_KEYS = [

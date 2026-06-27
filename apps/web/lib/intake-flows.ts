@@ -351,6 +351,20 @@ export function normalizeDraftPayload(payload: Record<string, string>): Record<s
     };
     next = { ...next, bench: JSON.stringify(synthesized) };
   }
+  // Backfill the delivery-address city from the case city for older drafts saved
+  // before the city was persisted. The renderer shows `addr.city ?? payload.city`
+  // (display-only fallback), so without this a resumed draft whose stored address
+  // lacks a city would fail isStructuredAddressComplete while the City box looks
+  // filled — a dead-end with no field-level error.
+  if (next.delivery_address && next.city) {
+    const addr = parseDeliveryAddress(next.delivery_address);
+    if (!(addr.city ?? '').trim()) {
+      next = {
+        ...next,
+        delivery_address: JSON.stringify({ ...addr, city: next.city }),
+      };
+    }
+  }
   return next;
 }
 

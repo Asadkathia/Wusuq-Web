@@ -335,14 +335,8 @@ function TicketCard({ ticket, onOpen }: { ticket: TicketRow; onOpen: () => void 
   const base = Number(ticket.serviceCost ?? 0);
   const remaining = Math.max(0, total - paid);
   const isConsumerCreated = ticket.createdBy === 'CONSUMER';
-  const isUnpaid = ticket.status === 'UNPAID';
+  const isDelivered = ticket.status === 'DELIVERED';
   const isFullyPaid = paid >= total && total > 0;
-
-  // Show base "Pay now" when: consumer-created, UNPAID status, base not yet covered
-  const showPayNow =
-    isConsumerCreated &&
-    isUnpaid &&
-    (base === 0 ? remaining > 0 : paid < base);
 
   // Show "Final payment due" when: remainder has been finalized but not yet fully paid
   const showFinalPayment =
@@ -350,6 +344,15 @@ function TicketCard({ ticket, onOpen }: { ticket: TicketRow; onOpen: () => void 
     Boolean(ticket.remainderFinalizedAt) &&
     !isFullyPaid &&
     remaining > 0;
+
+  // Pay-at-end: a ticket can be assigned/worked while unpaid, so the base
+  // "Pay now" must NOT be gated on status==='UNPAID' (mirror the detail surface).
+  const showPayNow =
+    !showFinalPayment &&
+    isConsumerCreated &&
+    !isFullyPaid &&
+    !isDelivered &&
+    (base === 0 ? remaining > 0 : paid < base);
 
   // ── Detail surface (Feature: max ticket details on cards) ──────────────────
   const p = ticket.payload;
