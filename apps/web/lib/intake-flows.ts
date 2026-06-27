@@ -154,6 +154,8 @@ export function parseDeliveryAddress(value: unknown): StructuredAddress {
  */
 export function isStructuredAddressComplete(value: unknown): boolean {
   const addr = parseDeliveryAddress(value);
+  // City is pinned to the case city by the renderer (not user-entered), so only
+  // the free-text address parts are validated here.
   return Boolean(addr.house.trim() && addr.block.trim() && addr.mainArea.trim());
 }
 
@@ -702,11 +704,29 @@ const caseFilesSteps: IntakeStep[] = [
         showWhen: { field: 'delivery_mode', value: 'TCS' },
       },
       {
+        // Delivery city for the Uber branch. OPTIONAL: making it required would
+        // need a matching entry in REQUIRED_FIELDS_BY_FLOW (packages/shared),
+        // which is out of scope for this FE-only change — so it's optional and
+        // the Uber rider falls back to the coordinates if it's left blank.
+        key: 'delivery_city',
+        label: 'Delivery City',
+        type: 'text',
+        showWhen: { field: 'delivery_mode', value: 'Uber' },
+        placeholder: 'e.g. Lahore',
+        hint: 'City the Uber rider should deliver to.',
+      },
+      {
         key: 'coordinates',
         label: 'Uber Coordinates (lat, lng)',
         type: 'text',
         required: true,
         showWhen: { field: 'delivery_mode', value: 'Uber' },
+        placeholder: 'e.g. 31.5204, 74.3587',
+        // Reject free-form junk like "11111" — require a lat, lng pair.
+        pattern: {
+          regex: '^\\s*-?\\d{1,3}(?:\\.\\d+)?\\s*,\\s*-?\\d{1,3}(?:\\.\\d+)?\\s*$',
+          message: 'Enter coordinates as latitude, longitude — e.g. 31.5204, 74.3587',
+        },
       },
       {
         key: 'pickup_location',
@@ -1067,11 +1087,28 @@ const caseSearchSteps: IntakeStep[] = [
         showWhen: { field: 'delivery_mode', value: 'TCS' },
       },
       {
+        // Delivery city for the Uber branch. OPTIONAL — see the Case Files
+        // block above for why (would need a packages/shared required-field
+        // change that's out of scope here).
+        key: 'delivery_city',
+        label: 'Delivery City',
+        type: 'text',
+        showWhen: { field: 'delivery_mode', value: 'Uber' },
+        placeholder: 'e.g. Lahore',
+        hint: 'City the Uber rider should deliver to.',
+      },
+      {
         key: 'coordinates',
         label: 'Uber Coordinates (lat, lng)',
         type: 'text',
         required: true,
         showWhen: { field: 'delivery_mode', value: 'Uber' },
+        placeholder: 'e.g. 31.5204, 74.3587',
+        // Reject free-form junk like "11111" — require a lat, lng pair.
+        pattern: {
+          regex: '^\\s*-?\\d{1,3}(?:\\.\\d+)?\\s*,\\s*-?\\d{1,3}(?:\\.\\d+)?\\s*$',
+          message: 'Enter coordinates as latitude, longitude — e.g. 31.5204, 74.3587',
+        },
       },
       {
         key: 'pickup_location',

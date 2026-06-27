@@ -98,6 +98,7 @@ export const paymentsClient = {
       nonAttestedCharges?: number;
       printingCharges?: number;
       deliveryCharges?: number;
+      additionalCharges?: number;
     },
   ): Promise<unknown> {
     return apiClient.post(`/tickets/${ticketId}/review-complete`, charges);

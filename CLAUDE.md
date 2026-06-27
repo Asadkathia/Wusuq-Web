@@ -291,6 +291,23 @@ Seed safety (2026-06, audit 4.3): the seed **never overwrites an existing
 user's passwordHash** and refuses to run in production without
 `SEED_ADMIN_PASSWORD` set.
 
+### Walkthrough fixes (2026-06-27)
+
+Plan: `DOcs/superpowers/plans/2026-06-26-walkthrough-fixes.md`. Shipped from an owner screen-recording walkthrough of the full ticket lifecycle; survived 4 code-review passes.
+
+- **Pay-at-end.** A ticket may be assigned directly from **UNPAID** — `assign()` explicitly accepts an UNPAID source (`ticket.status === 'UNPAID' || allowedTransitions.includes('ASSIGNED')`). The generic `STATUS_TRANSITIONS` map stays **narrow** (`UNPAID: ['PAID']`) so the generic `updateStatus` path can't reach ASSIGNED without an Assignment row (orphan). The money gate lives **only at DELIVERED**; wallet dues + FIFO auto-settlement already handle unpaid-but-completed tickets. Consumer Pay controls are gated on outstanding-and-not-delivered, **not** on `status==='UNPAID'` (both list card + detail).
+- **`assign()` writes `totalAmount` via `computeTicketTotal`** (keeps tax + promo) — never hand-roll the sum (critical now that pay-at-end bills this persisted total).
+- **Representative redaction covers ALL clerk-mutation return paths.** `redactMutationResultForCaller(result, actorRole)` (gates on `isStaffRole`, NOT a literal `'representative'`) wraps the returns of `acceptAssignment`/`rejectAssignment`/`submitClerkCosts`/`submitClerkReceipt`/`dispatchDelivery`/`recordNextHearing`; `saveClerkCharges` redacts its `findOne` result the same way. `findAll`/`findOne` already redact reps (`redactTicketForRepresentative` strips consumer money + PII). Consumer redaction also strips `noOfPages`/`costPerPage`. **Don't add a new clerk-mutation endpoint without redacting its ticket return.**
+- **`recordNextHearing` now calls `ensureClerkActionAllowed`** (was a cross-ticket IDOR — any rep could overwrite any ticket's hearing data).
+- **Totals on screen always render `ticket.totalAmount`** — the admin `TicketDetailPanel` no longer hand-sums components (it was adding clerk cost + dropping tax); clerk cost shows only in the internal earnings line. Consumer receipt renders a **Tax line** so line items reconcile to the total.
+- **New `Ticket` columns `noOfPages Int?` + `costPerPage Decimal?`** persist the clerk's printing breakdown (was computed-then-discarded); admin "Review & Complete" shows the page breakdown + Additional Cost + a clerk-receipt link + uploaded docs.
+- **`PaymentSettings` gained `jazzCash` + `easyPaisa`** (consumer pay page renders them; admin Finance board populates them). Bank/wallet details must be populated once or the pay page shows "not configured".
+- **Clerk-dropdown city scoping.** `representativeCandidates` returns **only** reps serving the ticket city (empty if none — the FE shows "tick Override city restriction"); no full-pool fallback (it caused a confusing 409). `assign` still enforces the city restriction unless `forceAssign`.
+- **TCS delivery city is pinned to the case city** (read-only in the renderer) and **re-stamped at every save/submit** by `withDerivedYear` so it can't go stale → misdelivery. The **Uber** flow has its own editable `delivery_city` field (the owner's actual "needs a city" ask) + a lat,lng `pattern` on `coordinates`.
+- **Currency derivation hardened.** `users.service` derives currency on admin create/update (update keeps the stored `country`, re-derives only while inactive); consumer signup requires an explicit country (no silent PK default). Legacy accounts (created before the 2026-06-23 country-pricing commit) are PKR-by-default and fixed by `backfill-user-currency.ts --rederive-legacy`.
+- **Admin↔clerk payload display** uses an allowlist + value humanizer (`docBundleLabel`, court-tier aware) so raw `*_id`/`source`/enum keys don't leak on the ticket-detail screen; duplicate "City" row removed.
+- **Regenerate wizard** now fires the `/geo/cities/:id/courts` fetch in its prefill effect (was hanging on "Loading courts…").
+
 ## Deferred work
 
 Items deliberately not shipped. Full backlog with rationale in `DOcs/superpowers/specs/`. Items that affect day-to-day code decisions:
@@ -308,3 +325,7 @@ The `react-hooks/set-state-in-effect` rule (new in React 19) flags synchronous `
 - **Derived state mirroring props** → don't sync via `setState` in an effect; either derive on render or use a stable `key` to remount.
 
 When in doubt, the rule's heuristic is "setState that fires synchronously on every render of this effect is a bug." If the update is genuinely needed post-render (DOM measurement, post-mount sync), `startTransition` is the canonical escape hatch.
+
+## Session Log
+
+- **2026-06-27** (branch `integration/walkthrough-fixes`) — Implemented the full owner-walkthrough fix set (17 defects + UX/behavior changes) from 4 WhatsApp screen recordings of the ticket lifecycle. Transcribed the Urdu/English voiceover (local whisper large-v3) + frame-by-frame visual pass, traced every issue to root cause, planned (`DOcs/superpowers/plans/2026-06-26-walkthrough-fixes.md`), implemented across 6 parallel worktree agents, then ran 4 code-review passes fixing all findings (incl. a clerk-redaction leak across 7 mutation paths, a `recordNextHearing` IDOR, pay-at-end, currency derivation, city-scoped clerk assignment, JazzCash/EasyPaisa payment settings). 410 API tests green; merged to `main`. DB: applied `add_ticket_clerk_page_breakdown` + `add_payment_settings_wallets` migrations; ran legacy currency backfill.

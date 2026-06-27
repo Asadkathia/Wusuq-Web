@@ -21,7 +21,11 @@ import {
   Truck,
 } from 'lucide-react';
 import { FLOW_LABELS, isFlowKey, documentCategoryLabel, chargeCapabilitiesFor, orderCaseDetailKeys } from '@wusuq/shared';
-import { parseDeliveryAddress } from '@/lib/intake-flows';
+import {
+  parseDeliveryAddress,
+  docBundleLabel,
+  courtTierFromCourtType,
+} from '@/lib/intake-flows';
 import { apiClient } from '@/lib/api-client';
 import { relativeTime } from '@/lib/relative-time';
 import { Button } from '@/components/ui/button';
@@ -331,14 +335,8 @@ function TicketCard({ ticket, onOpen }: { ticket: TicketRow; onOpen: () => void 
   const base = Number(ticket.serviceCost ?? 0);
   const remaining = Math.max(0, total - paid);
   const isConsumerCreated = ticket.createdBy === 'CONSUMER';
-  const isUnpaid = ticket.status === 'UNPAID';
+  const isDelivered = ticket.status === 'DELIVERED';
   const isFullyPaid = paid >= total && total > 0;
-
-  // Show base "Pay now" when: consumer-created, UNPAID status, base not yet covered
-  const showPayNow =
-    isConsumerCreated &&
-    isUnpaid &&
-    (base === 0 ? remaining > 0 : paid < base);
 
   // Show "Final payment due" when: remainder has been finalized but not yet fully paid
   const showFinalPayment =
@@ -346,6 +344,15 @@ function TicketCard({ ticket, onOpen }: { ticket: TicketRow; onOpen: () => void 
     Boolean(ticket.remainderFinalizedAt) &&
     !isFullyPaid &&
     remaining > 0;
+
+  // Pay-at-end: a ticket can be assigned/worked while unpaid, so the base
+  // "Pay now" must NOT be gated on status==='UNPAID' (mirror the detail surface).
+  const showPayNow =
+    !showFinalPayment &&
+    isConsumerCreated &&
+    !isFullyPaid &&
+    !isDelivered &&
+    (base === 0 ? remaining > 0 : paid < base);
 
   // ── Detail surface (Feature: max ticket details on cards) ──────────────────
   const p = ticket.payload;
@@ -360,8 +367,17 @@ function TicketCard({ ticket, onOpen }: { ticket: TicketRow; onOpen: () => void 
   const createdStr = formatDate(ticket.createdAt);
   const hearingStr = formatDate(ticket.scheduledDate);
   // Lifecycle position for the status-step strip (DELIVERED = fully complete).
+  // Pay-at-end tickets can jump UNPAID → ASSIGNED without ever flipping to
+  // PAID; any status at or past ASSIGNED has implicitly cleared the PAID step,
+  // so position by linear lifecycle index (every earlier pip renders passed).
+  const statusIdx = Math.max(0, LIFECYCLE.indexOf(ticket.status));
+  const assignedIdx = LIFECYCLE.indexOf('ASSIGNED');
   const lifePos =
-    ticket.status === 'DELIVERED' ? LIFECYCLE.length : Math.max(0, LIFECYCLE.indexOf(ticket.status));
+    ticket.status === 'DELIVERED'
+      ? LIFECYCLE.length
+      : statusIdx >= assignedIdx
+        ? Math.max(statusIdx, assignedIdx)
+        : statusIdx;
   const payPct = total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : 0;
 
   return (
@@ -600,6 +616,28 @@ function payloadLabel(key: string): string {
   );
 }
 
+/** Humanize raw enum-style payload values (e.g. the document-bundle key
+ *  `doc_petition_plus_complete_order`) into reader-friendly text. Falls back to
+ *  the raw string for values we don't recognise. Local to the consumer view. */
+function payloadValueLabel(
+  key: string,
+  value: unknown,
+  courtType?: unknown,
+): string {
+  const raw = String(value);
+  if (key === 'required_documentations') {
+    // Single source for the bundle label, court-tier aware so apex courts show
+    // "Paperbook + Complete Order" rather than the generic "Petition + …".
+    return docBundleLabel(
+      raw,
+      courtTierFromCourtType(
+        typeof courtType === 'string' ? courtType : undefined,
+      ),
+    );
+  }
+  return raw;
+}
+
 /** True if the key is safe to display in the consumer case-details panel.
  *  Allowlisted against PAYLOAD_LABEL — any key not in the curated set is
  *  silently dropped so future server-injected payload keys never surface. */
@@ -663,6 +701,10 @@ export function ConsumerTicketDetail({
     );
   }
 
+  const taxAmount = Number(ticket.taxAmount || 0);
+  const taxRate = Number(ticket.taxRate || 0);
+  const taxLabel = taxRate > 0 ? `Tax (${Math.round(taxRate * 100)}%)` : 'Tax';
+
   const charges: Array<[string, number]> = (
     [
       ['Service', Number(ticket.serviceCost || 0)],
@@ -671,6 +713,7 @@ export function ConsumerTicketDetail({
       ['Attested', Number(ticket.attestedCharges || 0)],
       ['Non-attested', Number(ticket.nonAttestedCharges || 0)],
       ['Additional', Number(ticket.additionalCharges || 0)],
+      [taxLabel, taxAmount],
     ] as Array<[string, number]>
   ).filter((row) => Number(row[1]) !== 0);
 
@@ -681,12 +724,20 @@ export function ConsumerTicketDetail({
   const remaining = Math.max(0, total - paid);
   const discount = Number(ticket.discountPrice || 0);
   const isConsumerCreated = ticket.createdBy === 'CONSUMER';
-  const isUnpaid = ticket.status === 'UNPAID';
+  const isDelivered = ticket.status === 'DELIVERED';
   const isFullyPaid = paid >= total && total > 0;
   const showFinalPayment =
     isConsumerCreated && Boolean(ticket.remainderFinalizedAt) && !isFullyPaid && remaining > 0;
+  // Pay-at-end: a ticket can be assigned/worked while still unpaid, so the Pay
+  // control must not be gated on status==='UNPAID' (that left an assigned digital
+  // ONE_TIME ticket with no way to pay). Show it whenever the phase-1 base is not
+  // yet covered and the ticket isn't fully paid or already delivered.
   const showPayNow =
-    !showFinalPayment && isConsumerCreated && isUnpaid && (base === 0 ? remaining > 0 : paid < base);
+    !showFinalPayment &&
+    isConsumerCreated &&
+    !isFullyPaid &&
+    !isDelivered &&
+    (base === 0 ? remaining > 0 : paid < base);
 
   const nextSteps: Record<string, string> = {
     UNPAID: "Your request is awaiting payment. Complete your payment to proceed.",
@@ -737,9 +788,17 @@ export function ConsumerTicketDetail({
       {/* ── Section 2: Case details ─────────────────────────────────────── */}
       {ticket.formPayload && typeof ticket.formPayload === 'object' && (() => {
         const p = ticket.formPayload as Record<string, unknown>;
+        // De-duplicate by resolved label: intake writes both `city` and
+        // `select_court_city` (both labelled "City"); surface each label once.
+        const seenLabels = new Set<string>();
         const displayKeys = orderCaseDetailKeys(
           Object.keys(p).filter((k) => isCaseDetailKey(k, p[k]))
-        );
+        ).filter((k) => {
+          const label = payloadLabel(k);
+          if (seenLabels.has(label)) return false;
+          seenLabels.add(label);
+          return true;
+        });
         if (displayKeys.length === 0) return null;
         return (
           <section>
@@ -748,7 +807,7 @@ export function ConsumerTicketDetail({
               {displayKeys.map((k) => (
                 <div key={k} className="flex items-start gap-3 px-4 py-2.5 text-sm">
                   <span className="w-32 shrink-0 font-medium text-slate-500">{payloadLabel(k)}</span>
-                  <span className="flex-1 text-slate-800">{String(p[k])}</span>
+                  <span className="flex-1 text-slate-800">{payloadValueLabel(k, p[k], p.select_court_type)}</span>
                 </div>
               ))}
             </div>

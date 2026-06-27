@@ -483,13 +483,20 @@ export function renderField(
     // TODO: integrate a map pin / geocoder for the "Main Area" field in a
     // follow-up iteration — out of scope for this pass.
     const addr = parseDeliveryAddress(value);
-    const cityFromPayload = payload.city ?? addr.city ?? '';
-    const update = (patch: Partial<{ house: string; block: string; mainArea: string }>) => {
+    // Delivery city is pinned to the case city (payload.city) and always
+    // persisted with the address — TCS delivers to the case city. (The owner's
+    // "needs a city" ask was for the Uber flow, which has its own editable
+    // delivery_city field.) Pinning avoids both a misdelivery from a cleared
+    // city and a resumed-draft dead-end from an unsaved one.
+    const cityValue = payload.city ?? '';
+    const update = (
+      patch: Partial<{ house: string; block: string; mainArea: string }>,
+    ) => {
       const next = {
         house: addr.house,
         block: addr.block,
         mainArea: addr.mainArea,
-        ...(cityFromPayload ? { city: cityFromPayload } : {}),
+        ...(cityValue ? { city: cityValue } : {}),
         ...patch,
       };
       onChange(field.key, JSON.stringify(next));
@@ -497,11 +504,14 @@ export function renderField(
     return (
       <div className="space-y-3">
         <div className="text-sm font-semibold text-slate-800">Delivery address</div>
-        {cityFromPayload ? (
-          <div className="text-xs text-slate-500">
-            Delivering to: <span className="font-medium text-slate-700">{cityFromPayload}</span>
+        <div>
+          <label className="block text-xs font-medium text-slate-600 mb-1">
+            Delivering to
+          </label>
+          <div className="rounded-lg border border-border-soft bg-surface-muted px-3 py-2 text-sm text-slate-700">
+            {cityValue || '—'}
           </div>
-        ) : null}
+        </div>
         <div>
           <label className="block text-xs font-medium text-slate-600 mb-1">
             House / Flat / Apartment / Office Number

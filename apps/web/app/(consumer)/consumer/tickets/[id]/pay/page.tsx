@@ -333,7 +333,7 @@ export default function PayTicketPage() {
         <PanelCard className="mb-4">
           <div className="flex items-center gap-2 mb-3">
             <Building2 className="h-4 w-4 text-brand-600" />
-            <h2 className="text-sm font-semibold text-slate-900">Bank transfer details</h2>
+            <h2 className="text-sm font-semibold text-slate-900">Payment details</h2>
           </div>
           <dl className="space-y-2 text-sm">
             <div className="flex items-start justify-between gap-4">
@@ -356,6 +356,26 @@ export default function PayTicketPage() {
                 <dd className="font-mono font-medium text-slate-900 text-right select-all">
                   {bankDetails.iban}
                 </dd>
+              </div>
+            ) : null}
+            {bankDetails.jazzCash || bankDetails.easyPaisa ? (
+              <div className="border-t border-border-soft pt-2 mt-2 space-y-2">
+                {bankDetails.jazzCash ? (
+                  <div className="flex items-start justify-between gap-4">
+                    <dt className="text-slate-500 shrink-0">JazzCash</dt>
+                    <dd className="font-mono font-medium text-slate-900 text-right select-all">
+                      {bankDetails.jazzCash}
+                    </dd>
+                  </div>
+                ) : null}
+                {bankDetails.easyPaisa ? (
+                  <div className="flex items-start justify-between gap-4">
+                    <dt className="text-slate-500 shrink-0">EasyPaisa</dt>
+                    <dd className="font-mono font-medium text-slate-900 text-right select-all">
+                      {bankDetails.easyPaisa}
+                    </dd>
+                  </div>
+                ) : null}
               </div>
             ) : null}
             {bankDetails.instructions ? (

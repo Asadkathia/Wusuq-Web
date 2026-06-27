@@ -28,7 +28,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { UserCircle, MapPin, Tag, RefreshCw, CheckSquare, Clock, History, FileOutput, Eye, PlayCircle, Upload, X, XCircle, Calendar, FileText } from 'lucide-react';
+import { UserCircle, MapPin, Tag, RefreshCw, CheckSquare, Clock, History, FileOutput, Eye, PlayCircle, Upload, X, XCircle, Calendar, FileText, Download } from 'lucide-react';
 import { TicketDetailPanel } from './ticket-detail-panel';
 import { flowKeyToSlug } from '@/lib/intake-flows';
 
@@ -120,6 +120,13 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
   const [tickets, setTickets] = useState<TicketRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
+  // Explicit success/error flag for the status banner — replaces the old
+  // brittle substring heuristic (Bug #10). Every handler sets it via flash().
+  const [messageError, setMessageError] = useState(false);
+  const flash = useCallback((text: string, error = false) => {
+    setMessage(text);
+    setMessageError(error);
+  }, []);
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [bulkAction, setBulkAction] = useState('complete');
@@ -215,15 +222,20 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
     nonAttestedCharges: string;
     printingCharges: string;
     deliveryCharges: string;
+    additionalCharges: string;
   };
   const EMPTY_FINALIZE: FinalizeForm = {
     attestedCharges: '',
     nonAttestedCharges: '',
     printingCharges: '',
     deliveryCharges: '',
+    additionalCharges: '',
   };
   const [finalizeTicket, setFinalizeTicket] = useState<TicketRow | null>(null);
   const [finalizeForm, setFinalizeForm] = useState<FinalizeForm>(EMPTY_FINALIZE);
+  // Full ticket detail (pages breakdown, clerk report, documents, receipt) —
+  // fetched on open since the list row doesn't carry these (Task 4.1).
+  const [finalizeDetail, setFinalizeDetail] = useState<any>(null);
   const [finalizing, setFinalizing] = useState(false);
 
   /** Internal-only: total payout to the clerk given the current finalize form values. */
@@ -234,14 +246,59 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
     Number(form.printingCharges || 0) +
     Number(form.deliveryCharges || 0);
 
-  const openFinalizeModal = (ticket: TicketRow) => {
+  const openFinalizeModal = async (ticket: TicketRow) => {
     setFinalizeTicket(ticket);
+    setFinalizeDetail(null);
     setFinalizeForm({
       attestedCharges: ticket.attestedCharges ? String(ticket.attestedCharges) : '',
       nonAttestedCharges: ticket.nonAttestedCharges ? String(ticket.nonAttestedCharges) : '',
       printingCharges: ticket.printingCharges ? String(ticket.printingCharges) : '',
       deliveryCharges: ticket.deliveryCharges ? String(ticket.deliveryCharges) : '',
+      additionalCharges: ticket.additionalCharges ? String(ticket.additionalCharges) : '',
     });
+    try {
+      const detail = await apiClient.get<any>(`/tickets/${ticket.id}`);
+      setFinalizeDetail(detail);
+      // Prefer the freshly-loaded clerk-entered values for the editable fields.
+      setFinalizeForm((f) => ({
+        attestedCharges: detail.attestedCharges ? String(detail.attestedCharges) : f.attestedCharges,
+        nonAttestedCharges: detail.nonAttestedCharges ? String(detail.nonAttestedCharges) : f.nonAttestedCharges,
+        printingCharges: detail.printingCharges ? String(detail.printingCharges) : f.printingCharges,
+        deliveryCharges: detail.deliveryCharges ? String(detail.deliveryCharges) : f.deliveryCharges,
+        additionalCharges: detail.additionalCharges ? String(detail.additionalCharges) : f.additionalCharges,
+      }));
+    } catch {
+      // Non-fatal: the dialog still works with the list-row values.
+    }
+  };
+
+  // Download the clerk receipt (staff-scoped endpoint) and open it.
+  const viewClerkReceipt = async (ticketId: string) => {
+    try {
+      const { blob } = await apiClient.getBlob(`/tickets/${ticketId}/clerk-receipt/download`);
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank', 'noopener');
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (error: any) {
+      flash(error.message || 'Failed to open clerk receipt', true);
+    }
+  };
+
+  // Download an uploaded ticket document and open it.
+  const viewTicketDocument = async (ticketId: string, docId: string, name?: string) => {
+    try {
+      const { blob, filename } = await apiClient.getBlob(`/tickets/${ticketId}/documents/${docId}/download`);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename || name || 'document';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (error: any) {
+      flash(error.message || 'Failed to download document', true);
+    }
   };
 
   // Admin "Review & Complete": one step — verify the clerk receipt, finalize
@@ -255,13 +312,15 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
         nonAttestedCharges: Number(finalizeForm.nonAttestedCharges) || 0,
         printingCharges: Number(finalizeForm.printingCharges) || 0,
         deliveryCharges: Number(finalizeForm.deliveryCharges) || 0,
+        additionalCharges: Number(finalizeForm.additionalCharges) || 0,
       });
-      setMessage(`Ticket ${finalizeTicket.batchNo} reviewed & completed.`);
+      flash(`Ticket ${finalizeTicket.batchNo} reviewed & completed.`);
       setFinalizeTicket(null);
       setFinalizeForm(EMPTY_FINALIZE);
+      setFinalizeDetail(null);
       loadTickets();
     } catch (error: any) {
-      setMessage(error.message || 'Review & complete failed');
+      flash(error.message || 'Review & complete failed', true);
     } finally {
       setFinalizing(false);
     }
@@ -274,10 +333,10 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
       await apiClient.patch(`/tickets/${ticket.id}/status`, {
         status: 'DELIVERED',
       });
-      setMessage(`Ticket ${ticket.batchNo} marked delivered.`);
+      flash(`Ticket ${ticket.batchNo} marked delivered.`);
       loadTickets();
     } catch (error: any) {
-      setMessage(error.message || 'Failed to mark delivered');
+      flash(error.message || 'Failed to mark delivered', true);
     }
   };
 
@@ -310,11 +369,11 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
       const result = await apiClient.get<any>(`/tickets?${q.toString()}`);
       setTickets(result.items ?? []);
     } catch (error: any) {
-      setMessage(error.message || 'Failed to load tickets');
+      flash(error.message || 'Failed to load tickets', true);
     } finally {
       setLoading(false);
     }
-  }, [status, dateRange, serviceFilter, isClerk, isConsumer, currentUserId]);
+  }, [status, dateRange, serviceFilter, isClerk, isConsumer, currentUserId, flash]);
 
   useEffect(() => {
     loadTickets();
@@ -347,10 +406,10 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
     }
     try {
       await paymentsClient.overrideStatus(ticket.id, newStatus);
-      setMessage(`Ticket ${ticket.batchNo} status set to ${newStatus}`);
+      flash(`Ticket ${ticket.batchNo} status set to ${newStatus}`);
       loadTickets();
     } catch (error: any) {
-      setMessage(error.message || 'Status override failed');
+      flash(error.message || 'Status override failed', true);
     }
   };
 
@@ -412,14 +471,39 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
     ticket.clerkApprovalStatus !== 'VERIFIED';
 
   const runBulkAction = async () => {
-    if (selectedIds.length === 0) return setMessage('Select at least one ticket');
+    if (selectedIds.length === 0) return flash('Select at least one ticket', true);
     try {
       await apiClient.post('/tickets/bulk-actions', { action: bulkAction, ticketIds: selectedIds });
-      setMessage('Bulk action applied');
+      flash('Bulk action applied');
       setSelected({});
       loadTickets();
     } catch (error: any) {
-      setMessage(error.message || 'Bulk action failed');
+      flash(error.message || 'Bulk action failed', true);
+    }
+  };
+
+  // Task 3.3: by default the dropdown is scoped to reps who serve the ticket's
+  // city (the server applies the same match `assign` enforces). Ticking
+  // "Override city restriction" widens it to the full pool.
+  const loadAssignReps = async (ticket: TicketRow, widen: boolean) => {
+    try {
+      const query =
+        !widen && ticket.serviceCity
+          ? `?city=${encodeURIComponent(ticket.serviceCity)}`
+          : '';
+      const reps = await apiClient.get<Representative[]>(`/tickets/representatives${query}`);
+      setRepresentatives(reps);
+      const cityScoped = !widen && Boolean(ticket.serviceCity);
+      setAssignWarning(
+        reps.length
+          ? ''
+          : cityScoped
+            ? `No representative serves ${ticket.serviceCity}. Tick "Override city restriction" to assign one from another city.`
+            : 'No active representatives found. Add a representative user first.',
+      );
+    } catch (error: any) {
+      setRepresentatives([]);
+      setAssignWarning(error?.message || 'Failed to load representatives.');
     }
   };
 
@@ -430,17 +514,7 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
     setOverrideClerkCost(false);
     setForceAssign(false);
     setAssignWarning('');
-    try {
-      const query = ticket.serviceCity ? `?city=${encodeURIComponent(ticket.serviceCity)}` : '';
-      const reps = await apiClient.get<Representative[]>(`/tickets/representatives${query}`);
-      setRepresentatives(reps);
-      if (!reps.length) {
-        setAssignWarning('No active representatives found. Add a representative user first.');
-      }
-    } catch (error: any) {
-      setRepresentatives([]);
-      setAssignWarning(error?.message || 'Failed to load representatives.');
-    }
+    await loadAssignReps(ticket, false);
   };
 
   const submitAssign = async () => {
@@ -460,12 +534,12 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
         forceAssign,
       });
       setAssignTicket(null);
-      setMessage('Ticket assigned');
+      flash('Ticket assigned');
       loadTickets();
     } catch (error: any) {
       const msg = error?.message || 'Assignment failed';
       setAssignWarning(msg);
-      setMessage(msg);
+      flash(msg, true);
     }
   };
 
@@ -475,7 +549,7 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
       setTimeline(result);
       setTimelineTicketId(ticketId);
     } catch (error: any) {
-      setMessage(error.message || 'Failed to load timeline');
+      flash(error.message || 'Failed to load timeline', true);
     }
   };
 
@@ -484,12 +558,12 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
   // for back-compat but is no longer called from the UI.
   const regenerateTicket = (ticketId: string, intakeFlow: string | null | undefined) => {
     if (!intakeFlow) {
-      setMessage('Cannot regenerate: ticket has no intake flow recorded');
+      flash('Cannot regenerate: ticket has no intake flow recorded', true);
       return;
     }
     const slug = flowKeyToSlug(intakeFlow);
     if (!slug) {
-      setMessage('Cannot regenerate: unknown service flow');
+      flash('Cannot regenerate: unknown service flow', true);
       return;
     }
     // Derive the URL segment from the flow key prefix.
@@ -506,26 +580,34 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
     if (!confirm(`Accept ticket ${ticket.batchNo}? This will move it to In Progress.`)) return;
     try {
       await apiClient.post(`/tickets/${ticket.id}/accept-assignment`, {});
-      setMessage(`Ticket ${ticket.batchNo} accepted and moved to In Progress.`);
+      flash(`Ticket ${ticket.batchNo} accepted and moved to In Progress.`);
       loadTickets();
     } catch (error: any) {
-      setMessage(error.message || 'Failed to accept ticket');
+      const msg: string = error?.message || '';
+      // Benign race (Bug #10): the ticket already left ASSIGNED. Refresh the
+      // list instead of showing a red error.
+      if (/only assigned tickets can be accepted/i.test(msg)) {
+        flash(`Ticket ${ticket.batchNo} was already accepted — refreshed.`);
+        loadTickets();
+      } else {
+        flash(msg || 'Failed to accept ticket', true);
+      }
     }
   };
 
   const submitClerkReceipt = async () => {
-    if (!receiptTicket || !receiptFile) return setMessage('Select a receipt image to upload');
+    if (!receiptTicket || !receiptFile) return flash('Select a receipt image to upload', true);
     setSubmittingReceipt(true);
     try {
       const formData = new FormData();
       formData.append('file', receiptFile);
       await apiClient.post(`/tickets/${receiptTicket.id}/clerk-receipt`, formData);
-      setMessage('Submitted to admin for approval');
+      flash('Submitted to admin for approval');
       setReceiptTicket(null);
       setReceiptFile(null);
       loadTickets();
     } catch (error: any) {
-      setMessage(error.message || 'Receipt submission failed');
+      flash(error.message || 'Receipt submission failed', true);
     } finally {
       setSubmittingReceipt(false);
     }
@@ -540,13 +622,13 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
       if (dispatchFile) formData.append('file', dispatchFile);
       if (dispatchTracking.trim()) formData.append('trackingNo', dispatchTracking.trim());
       await apiClient.post(`/tickets/${dispatchTicket.id}/dispatch`, formData);
-      setMessage(`Ticket ${dispatchTicket.batchNo} marked dispatched.`);
+      flash(`Ticket ${dispatchTicket.batchNo} marked dispatched.`);
       setDispatchTicket(null);
       setDispatchFile(null);
       setDispatchTracking('');
       loadTickets();
     } catch (error: any) {
-      setMessage(error.message || 'Dispatch failed');
+      flash(error.message || 'Dispatch failed', true);
     } finally {
       setDispatching(false);
     }
@@ -566,12 +648,12 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
         noOfPages,
         costPerPage,
       });
-      setMessage('Costs submitted — ticket moved to Waiting Approval');
+      flash('Costs submitted — ticket moved to Waiting Approval');
       setCostsTicket(null);
       setClerkCosts(EMPTY_CLERK_COSTS);
       loadTickets();
     } catch (error: any) {
-      setMessage(error.message || 'Failed to submit costs');
+      flash(error.message || 'Failed to submit costs', true);
     }
   };
 
@@ -581,12 +663,12 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
       await apiClient.post(`/tickets/${rejectTicket.id}/reject-assignment`, {
         reason: rejectReason,
       });
-      setMessage(`Ticket ${rejectTicket.batchNo} rejected and returned to pending.`);
+      flash(`Ticket ${rejectTicket.batchNo} rejected and returned to pending.`);
       setRejectTicket(null);
       setRejectReason('');
       loadTickets();
     } catch (error: any) {
-      setMessage(error.message || 'Failed to reject assignment');
+      flash(error.message || 'Failed to reject assignment', true);
     }
   };
 
@@ -597,12 +679,12 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
         sendBackTicket.id,
         sendBackReason || undefined,
       );
-      setMessage(`Ticket ${sendBackTicket.batchNo} sent back to clerk.`);
+      flash(`Ticket ${sendBackTicket.batchNo} sent back to clerk.`);
       setSendBackTicket(null);
       setSendBackReason('');
       loadTickets();
     } catch (error: any) {
-      setMessage(error.message || 'Failed to send ticket back');
+      flash(error.message || 'Failed to send ticket back', true);
     }
   };
 
@@ -613,7 +695,7 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
       ...workFiles.map((f) => ({ file: f, category: 'WORK_DOCUMENT' as const })),
       ...deliverableFiles.map((f) => ({ file: f, category: 'DELIVERABLE_PDF' as const })),
     ];
-    if (allFiles.length === 0) return setMessage('Select at least one file to upload');
+    if (allFiles.length === 0) return flash('Select at least one file to upload', true);
     setUploading(true);
     try {
       const currentTicket = uploadTicket;
@@ -626,14 +708,14 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
         await apiClient.post(`/tickets/${currentTicket.id}/documents/upload`, formData);
         uploadedCount++;
       }
-      setMessage(`${uploadedCount} file(s) uploaded. Add payments to continue.`);
+      flash(`${uploadedCount} file(s) uploaded. Add payments to continue.`);
       setUploadTicket(null);
       setWorkFiles([]);
       setDeliverableFiles([]);
       openCostsModal(currentTicket);
       loadTickets();
     } catch (error: any) {
-      setMessage(error.message || 'Upload failed');
+      flash(error.message || 'Upload failed', true);
     } finally {
       setUploading(false);
     }
@@ -644,7 +726,7 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
     const ids = (status === 'UNPAID' || status === 'PAID')
       ? Object.entries(pendingSelected).filter(([, v]) => v).map(([id]) => id)
       : selectedIds;
-    if (ids.length === 0) return setMessage('Select at least one ticket to bulk-assign');
+    if (ids.length === 0) return flash('Select at least one ticket to bulk-assign', true);
     setBulkRepresentativeId('');
     setBulkForceAssign(false);
     setBulkAssignWarning('');
@@ -678,14 +760,14 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
       const skippedMsg = result.skipped.length
         ? ` Skipped ${result.skipped.length}: ${result.skipped.map((s) => s.reason).join('; ')}`
         : '';
-      setMessage(`Assigned ${result.assigned.length} ticket(s).${skippedMsg}`);
+      flash(`Assigned ${result.assigned.length} ticket(s).${skippedMsg}`);
       setBulkAssignOpen(false);
       setPendingSelected({});
       setSelected({});
       loadTickets();
     } catch (error: any) {
       setBulkAssignWarning(error?.message || 'Bulk assignment failed');
-      setMessage(error?.message || 'Bulk assignment failed');
+      flash(error?.message || 'Bulk assignment failed', true);
     }
   };
 
@@ -697,14 +779,14 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
         scheduledDate: nextHearingDate,
         hearingType: nextHearingType || undefined,
       });
-      setMessage('Next hearing date recorded.');
+      flash('Next hearing date recorded.');
       setNextHearingEnabled(false);
       setNextHearingDate('');
       setNextHearingType('');
       loadTickets();
       return true;
     } catch (error: any) {
-      setMessage(error.message || 'Failed to record next hearing');
+      flash(error.message || 'Failed to record next hearing', true);
       return false;
     }
   };
@@ -714,10 +796,10 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
     if (!confirm(`Generate a follow-up hearing ticket from ${ticket.batchNo}?`)) return;
     try {
       const result = await paymentsClient.generateNextHearing(ticket.id);
-      setMessage(`Follow-up ticket generated: ${result.batchNo}`);
+      flash(`Follow-up ticket generated: ${result.batchNo}`);
       loadTickets();
     } catch (error: any) {
-      setMessage(error.message || 'Failed to generate next-hearing ticket');
+      flash(error.message || 'Failed to generate next-hearing ticket', true);
     }
   };
 
@@ -897,9 +979,12 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
                     const age = statusAge(ticket.statusSince ?? ticket.createdAt ?? null);
                     return (
                       <div className="mt-1 flex items-center gap-2 text-xs">
-                        <span className="text-slate-500">
-                          {total <= 0 ? 'Free' : due > 0 ? `${rs(total)} · ${rs(due)} due` : 'Paid in full'}
-                        </span>
+                        {/* Consumer money is never shown to clerks (audit 1.1). */}
+                        {!isClerk && (
+                          <span className="text-slate-500">
+                            {total <= 0 ? 'Free' : due > 0 ? `${rs(total)} · ${rs(due)} due` : 'Paid in full'}
+                          </span>
+                        )}
                         {age && (
                           <span className={age.stale ? 'text-amber-600 font-medium' : 'text-slate-400'}>
                             · {age.label} in {ticket.status.replace(/_/g, ' ').toLowerCase()}
@@ -1048,18 +1133,13 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
                       </>
                     ) : (
                       <>
-                        {status === 'PAID' && (
+                        {/* Pay-at-end (Task 3.1): a ticket may be assigned
+                            directly from UNPAID — the payment gate is at
+                            DELIVERED, not at assign. */}
+                        {(status === 'PAID' || status === 'UNPAID') && (
                           <button onClick={() => openAssign(ticket)} className="text-primary-600 hover:text-primary-900 bg-primary-50 px-3 py-1.5 rounded-md flex items-center gap-1">
                             <CheckSquare className="h-3.5 w-3.5" /> Assign
                           </button>
-                        )}
-                        {status === 'UNPAID' && (
-                          <span
-                            className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium bg-amber-50 text-amber-700"
-                            title="A ticket must be paid before it can be assigned to a representative."
-                          >
-                            <Clock className="h-3.5 w-3.5" /> Awaiting payment
-                          </span>
                         )}
                         {status === 'WAITING_APPROVAL' && (
                           <>
@@ -1202,7 +1282,13 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
             <input
               type="checkbox"
               checked={forceAssign}
-              onChange={(e) => setForceAssign(e.target.checked)}
+              onChange={(e) => {
+                const widen = e.target.checked;
+                setForceAssign(widen);
+                // Reveal the full pool (or re-scope to the city) immediately.
+                setRepresentativeId('');
+                if (assignTicket) void loadAssignReps(assignTicket, widen);
+              }}
               className="h-4 w-4 rounded border-slate-300 text-primary-600 focus:ring-primary-600"
             />
             Override city restriction and assign anyway
@@ -1635,7 +1721,7 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
       )}
 
       {/* Admin: Finalize Phase-2 Charges */}
-      <Dialog open={Boolean(finalizeTicket)} onOpenChange={(open) => { if (!open) { setFinalizeTicket(null); setFinalizeForm(EMPTY_FINALIZE); } }}>
+      <Dialog open={Boolean(finalizeTicket)} onOpenChange={(open) => { if (!open) { setFinalizeTicket(null); setFinalizeForm(EMPTY_FINALIZE); setFinalizeDetail(null); } }}>
         <DialogContent size="xl">
           <DialogHeader>
             <DialogTitle>Review &amp; Complete{finalizeTicket ? ` — ${finalizeTicket.batchNo}` : ''}</DialogTitle>
@@ -1648,11 +1734,37 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
               <div className="space-y-4">
                 <div className="flex items-center gap-2 rounded-lg bg-emerald-50 px-4 py-2.5 text-sm text-emerald-800 ring-1 ring-inset ring-emerald-100">
                   <CheckSquare className="h-4 w-4 shrink-0" />
-                  {finalizeTicket.clerkReceiptUrl
-                    ? 'Clerk receipt submitted.'
-                    : 'No clerk receipt on file.'}
+                  {finalizeTicket.clerkReceiptUrl ? (
+                    <span>
+                      Clerk receipt submitted.{' '}
+                      <button
+                        type="button"
+                        onClick={() => viewClerkReceipt(finalizeTicket.id)}
+                        className="font-medium text-emerald-700 underline underline-offset-2 hover:text-emerald-900"
+                      >
+                        View receipt
+                      </button>
+                    </span>
+                  ) : (
+                    'No clerk receipt on file.'
+                  )}
                   {!hasAnyCap ? ' No phase-2 charges for this service.' : ''}
                 </div>
+
+                {/* Clerk page breakdown (read-only) — what the clerk entered. */}
+                {(() => {
+                  const pages = Number(finalizeDetail?.noOfPages ?? 0);
+                  const rate = Number(finalizeDetail?.costPerPage ?? 0);
+                  if (!(pages > 0) && !(rate > 0)) return null;
+                  return (
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-700">
+                      <span className="font-medium">Pages:</span>{' '}
+                      {pages} × PKR {rate.toLocaleString()} ={' '}
+                      <span className="font-semibold">PKR {(pages * rate).toLocaleString()}</span>
+                      <span className="ml-1 text-xs text-slate-400">(clerk-entered printing breakdown)</span>
+                    </div>
+                  );
+                })()}
                 <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3">
                   {caps.attestation && (
                     <>
@@ -1682,6 +1794,12 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
                         onChange={(e) => setFinalizeForm((f) => ({ ...f, deliveryCharges: e.target.value }))} />
                     </FormField>
                   )}
+                  {/* Additional Cost — admin-editable, viewable; persisted on finalize. */}
+                  <FormField label="Additional Cost" htmlFor="fin-additional">
+                    <Input id="fin-additional" type="number" min="0" placeholder="0"
+                      value={finalizeForm.additionalCharges}
+                      onChange={(e) => setFinalizeForm((f) => ({ ...f, additionalCharges: e.target.value }))} />
+                  </FormField>
                 </div>
                 <div className="rounded-lg bg-slate-50 px-4 py-3 text-sm text-slate-700">
                   <span className="font-medium">Base (service cost):</span>{' '}
@@ -1691,7 +1809,8 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
                   PKR {(
                     (caps.attestation ? (Number(finalizeForm.attestedCharges) || 0) + (Number(finalizeForm.nonAttestedCharges) || 0) : 0) +
                     (caps.printing ? (Number(finalizeForm.printingCharges) || 0) : 0) +
-                    (caps.delivery ? (Number(finalizeForm.deliveryCharges) || 0) : 0)
+                    (caps.delivery ? (Number(finalizeForm.deliveryCharges) || 0) : 0) +
+                    (Number(finalizeForm.additionalCharges) || 0)
                   ).toLocaleString()}
                 </div>
                 {/* Clerk earnings summary — internal only, never shown to consumers */}
@@ -1712,6 +1831,46 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
                     </div>
                   );
                 })()}
+
+                {/* Clerk availability report — what the clerk reported. */}
+                {finalizeDetail?.clerkReport && (
+                  <div className="rounded-lg border border-slate-200 px-4 py-3 text-sm">
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">Clerk report</p>
+                    <div className="grid grid-cols-2 gap-2 text-slate-700">
+                      <div>Attested available: <span className="font-medium">{finalizeDetail.clerkReport.attestedAvailable ? 'Yes' : 'No'}</span></div>
+                      <div>Non-attested available: <span className="font-medium">{finalizeDetail.clerkReport.nonAttestedAvailable ? 'Yes' : 'No'}</span></div>
+                      <div>Both: <span className="font-medium">{finalizeDetail.clerkReport.bothAvailable ? 'Yes' : 'No'}</span></div>
+                      <div>Partial completion: <span className="font-medium">{finalizeDetail.clerkReport.partialCompletion ? 'Yes' : 'No'}</span></div>
+                      {finalizeDetail.clerkReport.unavailableReason && (
+                        <div className="col-span-2">Reason: <span className="font-medium whitespace-pre-wrap">{finalizeDetail.clerkReport.unavailableReason}</span></div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Uploaded documents — clickable downloads. */}
+                {Array.isArray(finalizeDetail?.documents) && finalizeDetail.documents.length > 0 && (
+                  <div className="rounded-lg border border-slate-200 px-4 py-3 text-sm">
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">
+                      Uploaded documents ({finalizeDetail.documents.length})
+                    </p>
+                    <ul className="space-y-1.5">
+                      {finalizeDetail.documents.map((doc: any) => (
+                        <li key={doc.id} className="flex items-center justify-between gap-2">
+                          <span className="truncate text-slate-700">{doc.name}</span>
+                          <button
+                            type="button"
+                            onClick={() => viewTicketDocument(finalizeTicket.id, doc.id, doc.name)}
+                            className="shrink-0 text-primary-600 hover:text-primary-800"
+                            aria-label={`Download ${doc.name ?? 'document'}`}
+                          >
+                            <Download className="h-4 w-4" />
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </div>
             );
           })()}
@@ -1803,13 +1962,18 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
       )}
 
       {message && (
-        <div className={`mt-4 rounded-lg p-4 text-sm font-medium ${message.toLowerCase().includes('failed') || message.toLowerCase().includes('select') ? 'bg-rose-50 text-rose-800 border border-rose-200' : 'bg-emerald-50 text-emerald-800 border border-emerald-200'}`}>
+        <div className={`mt-4 rounded-lg p-4 text-sm font-medium ${messageError ? 'bg-rose-50 text-rose-800 border border-rose-200' : 'bg-emerald-50 text-emerald-800 border border-emerald-200'}`}>
           {message}
         </div>
       )}
 
       {viewTicketId && (
-        <TicketDetailPanel ticketId={viewTicketId} onClose={() => setViewTicketId(null)} isClerkView={isClerk} />
+        <TicketDetailPanel
+          ticketId={viewTicketId}
+          onClose={() => setViewTicketId(null)}
+          isClerkView={isClerk}
+          onChange={loadTickets}
+        />
       )}
     </div>
   );

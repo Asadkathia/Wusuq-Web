@@ -24,9 +24,11 @@ export default function Home() {
   useEffect(() => {
     const token = localStorage.getItem('wusuq_access_token');
     let isConsumer = false;
+    let isRepresentative = false;
     try {
       const user = JSON.parse(localStorage.getItem('wusuq_user') || 'null') as { role?: string } | null;
       isConsumer = CONSUMER_ROLES.includes(user?.role ?? '');
+      isRepresentative = user?.role === 'representative';
     } catch {}
 
     if (!token || hasExpiredJwt(token)) {
@@ -34,6 +36,13 @@ export default function Home() {
       localStorage.removeItem('wusuq_refresh_token');
       localStorage.removeItem('wusuq_user');
       router.replace(isConsumer ? '/consumer/login' : '/login');
+      return;
+    }
+
+    // Representatives (clerks) lack reports.read and 403 on the admin dashboard;
+    // land them on their work queue instead.
+    if (isRepresentative) {
+      router.replace('/tickets/assigned');
       return;
     }
 

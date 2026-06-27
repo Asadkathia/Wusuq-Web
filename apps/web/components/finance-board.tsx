@@ -82,6 +82,8 @@ export function FinanceBoard() {
     accountTitle: '',
     accountNumber: '',
     iban: '',
+    jazzCash: '',
+    easyPaisa: '',
     instructions: '',
   });
 
@@ -130,6 +132,8 @@ export function FinanceBoard() {
             accountTitle: settings.accountTitle ?? '',
             accountNumber: settings.accountNumber ?? '',
             iban: settings.iban ?? '',
+            jazzCash: settings.jazzCash ?? '',
+            easyPaisa: settings.easyPaisa ?? '',
             instructions: settings.instructions ?? '',
           });
         }
@@ -385,6 +389,8 @@ export function FinanceBoard() {
         accountTitle: bankForm.accountTitle.trim(),
         accountNumber: bankForm.accountNumber.trim(),
         iban: bankForm.iban?.trim() || undefined,
+        jazzCash: bankForm.jazzCash?.trim() || undefined,
+        easyPaisa: bankForm.easyPaisa?.trim() || undefined,
         instructions: bankForm.instructions?.trim() || undefined,
       });
       startTransition(() => {
@@ -652,6 +658,27 @@ export function FinanceBoard() {
                   placeholder="PK36SCBL0000001123456702"
                   value={bankForm.iban ?? ''}
                   onChange={(e) => setBankForm((f) => ({ ...f, iban: e.target.value }))}
+                />
+              </label>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <label className="block">
+                <span className="text-sm font-medium text-slate-700">JazzCash (optional)</span>
+                <input
+                  className="mt-1 block w-full rounded-xl border-0 py-2.5 px-3 text-slate-900 ring-1 ring-inset ring-border-soft placeholder:text-slate-400 focus:ring-2 focus:ring-primary-600 sm:text-sm"
+                  placeholder="0300-1234567"
+                  value={bankForm.jazzCash ?? ''}
+                  onChange={(e) => setBankForm((f) => ({ ...f, jazzCash: e.target.value }))}
+                />
+              </label>
+              <label className="block">
+                <span className="text-sm font-medium text-slate-700">EasyPaisa (optional)</span>
+                <input
+                  className="mt-1 block w-full rounded-xl border-0 py-2.5 px-3 text-slate-900 ring-1 ring-inset ring-border-soft placeholder:text-slate-400 focus:ring-2 focus:ring-primary-600 sm:text-sm"
+                  placeholder="0345-7654321"
+                  value={bankForm.easyPaisa ?? ''}
+                  onChange={(e) => setBankForm((f) => ({ ...f, easyPaisa: e.target.value }))}
                 />
               </label>
             </div>

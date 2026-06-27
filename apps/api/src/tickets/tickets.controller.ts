@@ -78,9 +78,13 @@ export class TicketsController {
     if (isRepresentative && user) {
       query.representativeId = user.sub;
     }
-    // Consumers must never receive internal clerk-cost fields in the list.
+    // Consumers must never receive internal clerk-cost fields in the list;
+    // representatives must never receive consumer money fields (audit 1.1).
+    // forRepresentative is the authoritative role signal — derived from the
+    // JWT role, never from a (spoofable) query filter.
     return this.ticketsService.findAll(query, {
       forConsumer: isConsumer || isRepresentative,
+      forRepresentative: isRepresentative,
     });
   }
 
@@ -433,6 +437,7 @@ export class TicketsController {
     return this.ticketsService.acceptAssignment(id, {
       actorUserId: actor?.sub,
       actorEmail: actor?.email,
+      actorRole: actor?.role,
     });
   }
 
@@ -649,6 +654,31 @@ export class TicketsController {
     return createReadStream(filePath).pipe(res);
   }
 
+  // Staff / assigned-rep download of the clerk's submitted receipt. Service
+  // enforces the role + assignment scope (consumers are rejected).
+  @RequirePermissions('tickets.read')
+  @Get(':id/clerk-receipt/download')
+  async downloadClerkReceipt(
+    @Param('id') id: string,
+    @CurrentUser() user: JwtUser | undefined,
+    @Res() res: Response,
+  ) {
+    if (!user?.sub) {
+      throw new BadRequestException('Authenticated user required');
+    }
+    const { filePath, name, type } =
+      await this.ticketsService.resolveClerkReceiptDownload(id, {
+        userId: user.sub,
+        role: user.role,
+      });
+    res.setHeader('Content-Type', type);
+    res.setHeader(
+      'Content-Disposition',
+      `inline; filename="${encodeURIComponent(name)}"`,
+    );
+    return createReadStream(filePath).pipe(res);
+  }
+
   @RequirePermissions('tickets.clerk')
   @Patch(':id/documents/:docId')
   patchDocument(
@@ -732,8 +762,12 @@ export class TicketsController {
   recordNextHearing(
     @Param('id') id: string,
     @Body() dto: RecordNextHearingDto,
+    @CurrentUser() actor: JwtUser | undefined,
   ) {
-    return this.ticketsService.recordNextHearing(id, dto);
+    return this.ticketsService.recordNextHearing(id, dto, {
+      actorUserId: actor?.sub,
+      actorRole: actor?.role,
+    });
   }
 
   @RequirePermissions('tickets.write')

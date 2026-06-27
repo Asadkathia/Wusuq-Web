@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { FormField } from '@/components/ui/form-field';
 import { CountryPicker } from '@/components/ui/country-picker';
-import { DEFAULT_COUNTRY_CODE, findCountry } from '@/lib/countries';
+import { findCountry } from '@/lib/countries';
 import { advanceOnEnter } from '@/lib/form-utils';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:4000/api';
@@ -22,7 +22,9 @@ export default function ConsumerSignupPage() {
   const [email, setEmail] = useState('');
   // QA B9/B10: country selector unlocks the +92 hardcode; the phone field
   // below stores the local digits without the dial prefix.
-  const [countryCode, setCountryCode] = useState<string>(DEFAULT_COUNTRY_CODE);
+  // Country drives billing currency server-side, so it must be an EXPLICIT
+  // choice — we start UNSET (no silent PK default) and require it before submit.
+  const [countryCode, setCountryCode] = useState<string>('');
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -51,6 +53,10 @@ export default function ConsumerSignupPage() {
     }
     if (password !== confirmPassword) {
       setError('Passwords do not match.');
+      return;
+    }
+    if (!countryCode) {
+      setError('Please select your country.');
       return;
     }
     if (phone.trim()) {
@@ -236,7 +242,7 @@ export default function ConsumerSignupPage() {
               <FormField label="Phone (optional)" htmlFor="phone">
                 <div className="flex items-stretch gap-2">
                   <span className="flex items-center rounded-xl border border-border-soft bg-surface-muted/50 px-3 text-sm font-medium text-slate-700">
-                    +{findCountry(countryCode).dial}
+                    {countryCode ? `+${findCountry(countryCode).dial}` : '+—'}
                   </span>
                   <Input
                     id="phone"

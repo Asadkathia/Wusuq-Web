@@ -6,6 +6,8 @@ export interface PaymentSettings {
   accountTitle: string;
   accountNumber: string;
   iban?: string | null;
+  jazzCash?: string | null;
+  easyPaisa?: string | null;
   instructions?: string | null;
   updatedAt: string;
   updatedByUserId?: string | null;
@@ -16,6 +18,8 @@ export interface UpdatePaymentSettingsPayload {
   accountTitle: string;
   accountNumber: string;
   iban?: string;
+  jazzCash?: string;
+  easyPaisa?: string;
   instructions?: string;
 }
 
