@@ -9,7 +9,7 @@ import { buildRegeneratePayload } from '@/lib/regenerate-ticket';
 import { PanelCard } from '@/components/ui/panel-card';
 import { ChevronRight, CheckCircle2, FolderOpen, Pencil, Sparkles, X } from 'lucide-react';
 import type { IntakeFlow, IntakeStep, CourtTier } from '@/lib/intake-flows';
-import { courtTierFromCourtType, resolveRequired, docBundleLabel, normalizeDraftPayload, isStructuredAddressComplete, computeYearBand, parseBench, showWhenSatisfied, parseCities, stringifyCities, isFlowAvailableForCurrency } from '@/lib/intake-flows';
+import { courtTierFromCourtType, resolveRequired, docBundleLabel, normalizeDraftPayload, isStructuredAddressComplete, computeYearBand, parseBench, showWhenSatisfied, parseCities, stringifyCities, isFlowAvailableForCurrency, parseDeliveryAddress } from '@/lib/intake-flows';
 import { BENCH_TYPE_LABELS } from '@/lib/bench-types';
 import type { YearBand } from '@/lib/intake-flows';
 import { buildPricingResolveInput, computeTicketTotal, computeCaseSearchBase, computeDecidedAgeSurcharge } from '@wusuq/shared';
@@ -437,11 +437,25 @@ export function IntakeWizard({
   // still see a value. No effect-based mirroring — derive on use.
   const withDerivedYear = useCallback(
     (p: Record<string, string | undefined>): Record<string, string | undefined> => {
-      if (p.case_status !== 'Decided Case') return p;
-      if (p.year) return p;
-      const m = /^(\d{4})/.exec(p.decided_date ?? '');
-      if (!m) return p;
-      return { ...p, year: m[1] };
+      let next = p;
+      // Re-stamp the TCS delivery_address city from the (pinned) case city at
+      // every save/submit, so a city change AFTER the address step can't leave a
+      // stale denormalized city in the JSON → dispatch to the wrong city. The
+      // city is read-only in the renderer, so this never overrides user intent.
+      if (next.delivery_address && next.city) {
+        const addr = parseDeliveryAddress(next.delivery_address);
+        if ((addr.city ?? '') !== next.city) {
+          next = {
+            ...next,
+            delivery_address: JSON.stringify({ ...addr, city: next.city }),
+          };
+        }
+      }
+      if (next.case_status !== 'Decided Case') return next;
+      if (next.year) return next;
+      const m = /^(\d{4})/.exec(next.decided_date ?? '');
+      if (!m) return next;
+      return { ...next, year: m[1] };
     },
     [],
   );
