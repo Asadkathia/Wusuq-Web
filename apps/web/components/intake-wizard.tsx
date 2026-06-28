@@ -1951,6 +1951,21 @@ export function IntakeWizard({
     setLoading(true); setApiError('');
     try {
       const p = withDerivedYear(draft.payload);
+
+      // ── Edit-ticket path: PATCH /tickets/:id/reprice instead of create ──
+      if (editMode && editTicketId) {
+        try {
+          await apiClient.patch(`/tickets/${encodeURIComponent(editTicketId)}/reprice`, { payload: p });
+          router.push(`/tickets/${encodeURIComponent(editTicketId)}`);
+          return;
+        } catch (e: any) {
+          setApiError(e?.message ?? 'Could not save the changes.');
+          setLoading(false);
+          submittingRef.current = false;
+          return;
+        }
+      }
+
       const sets =
         p.set_type === 'attested' ? (p.attested_qty ?? '') :
         p.set_type === 'non_attested' ? (p.non_attested_qty ?? '') :
