@@ -20,12 +20,13 @@ import {
   Ticket as TicketIcon,
   Truck,
 } from 'lucide-react';
-import { FLOW_LABELS, isFlowKey, documentCategoryLabel, chargeCapabilitiesFor, orderCaseDetailKeys } from '@wusuq/shared';
+import { FLOW_LABELS, isFlowKey, documentCategoryLabel, chargeCapabilitiesFor } from '@wusuq/shared';
 import {
   parseDeliveryAddress,
-  docBundleLabel,
   courtTierFromCourtType,
 } from '@/lib/intake-flows';
+import { buildCaseView } from '@/lib/case-view';
+import { CaseRecordCard } from '@/components/case-record-card';
 import { apiClient } from '@/lib/api-client';
 import { relativeTime } from '@/lib/relative-time';
 import { Button } from '@/components/ui/button';
@@ -581,75 +582,6 @@ function MiniStat({ label, value, tone = 'slate' }: { label: string; value: stri
 
 // ─── Consumer ticket detail helpers ─────────────────────────────────────────
 
-/** Consumer-friendly labels for formPayload keys (supplements the generic
- *  underscore-to-space transform for well-known intake field names). */
-const PAYLOAD_LABEL: Record<string, string> = {
-  select_court_city: 'City',
-  city: 'City',
-  select_court: 'Court',
-  select_court_type: 'Court type',
-  select_service: 'Service type',
-  case_type: 'Case type',
-  case_type_other: 'Case type (other)',
-  case_petition_no: 'Case no.',
-  case_no: 'Case no.',
-  case_year: 'Case year',
-  year: 'Case year',
-  case_title: 'Case title',
-  judge_designation: 'Judge designation',
-  judge_name: 'Judge',
-  case_date: 'Case date',
-  future_date: 'Next hearing',
-  case_status: 'Case status',
-  search_method: 'Search method',
-  want_pdf_before_dispatch: 'PDF copy',
-  cnic: 'CNIC',
-  required_documentations: 'Document bundle',
-};
-
-function payloadLabel(key: string): string {
-  return (
-    PAYLOAD_LABEL[key] ??
-    key
-      .replace(/_/g, ' ')
-      .replace(/\b\w/g, (c) => c.toUpperCase())
-  );
-}
-
-/** Humanize raw enum-style payload values (e.g. the document-bundle key
- *  `doc_petition_plus_complete_order`) into reader-friendly text. Falls back to
- *  the raw string for values we don't recognise. Local to the consumer view. */
-function payloadValueLabel(
-  key: string,
-  value: unknown,
-  courtType?: unknown,
-): string {
-  const raw = String(value);
-  if (key === 'required_documentations') {
-    // Single source for the bundle label, court-tier aware so apex courts show
-    // "Paperbook + Complete Order" rather than the generic "Petition + …".
-    return docBundleLabel(
-      raw,
-      courtTierFromCourtType(
-        typeof courtType === 'string' ? courtType : undefined,
-      ),
-    );
-  }
-  return raw;
-}
-
-/** True if the key is safe to display in the consumer case-details panel.
- *  Allowlisted against PAYLOAD_LABEL — any key not in the curated set is
- *  silently dropped so future server-injected payload keys never surface. */
-function isCaseDetailKey(key: string, value: unknown): boolean {
-  // Must be a recognized, consumer-safe intake field.
-  if (!(key in PAYLOAD_LABEL)) return false;
-  // Still skip empty / null / binary refs.
-  if (value === null || value === undefined || String(value).trim() === '') return false;
-  if (String(value).includes('upload')) return false;
-  return true;
-}
-
 function statusLabelFull(status: string): string {
   const MAP: Record<string, string> = {
     UNPAID: 'Unpaid — awaiting payment',
@@ -787,29 +719,17 @@ export function ConsumerTicketDetail({
 
       {/* ── Section 2: Case details ─────────────────────────────────────── */}
       {ticket.formPayload && typeof ticket.formPayload === 'object' && (() => {
-        const p = ticket.formPayload as Record<string, unknown>;
-        // De-duplicate by resolved label: intake writes both `city` and
-        // `select_court_city` (both labelled "City"); surface each label once.
-        const seenLabels = new Set<string>();
-        const displayKeys = orderCaseDetailKeys(
-          Object.keys(p).filter((k) => isCaseDetailKey(k, p[k]))
-        ).filter((k) => {
-          const label = payloadLabel(k);
-          if (seenLabels.has(label)) return false;
-          seenLabels.add(label);
-          return true;
-        });
-        if (displayKeys.length === 0) return null;
+        const p = ticket.formPayload as Record<string, string | undefined>;
         return (
           <section>
             <h4 className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Case details</h4>
-            <div className="mt-3 divide-y divide-border-soft rounded-xl ring-1 ring-border-soft bg-surface">
-              {displayKeys.map((k) => (
-                <div key={k} className="flex items-start gap-3 px-4 py-2.5 text-sm">
-                  <span className="w-32 shrink-0 font-medium text-slate-500">{payloadLabel(k)}</span>
-                  <span className="flex-1 text-slate-800">{payloadValueLabel(k, p[k], p.select_court_type)}</span>
-                </div>
-              ))}
+            <div className="mt-3">
+              <CaseRecordCard
+                view={buildCaseView(
+                  p as Record<string, string | undefined>,
+                  courtTierFromCourtType((p.select_court_type as string | undefined) ?? undefined),
+                )}
+              />
             </div>
           </section>
         );
