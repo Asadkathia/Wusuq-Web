@@ -857,12 +857,13 @@ export function IntakeWizard({
         // the logged-in admin) — the regenerate hydration effect overrides it.
         // Skip defaulting here to avoid a transient clobber before the async
         // fetch resolves. For the non-regenerate path this is the correct init.
-        if (!regenerateFromTicketId) {
+        if (!regenerateFromTicketId && !editTicketId) {
           setDraft((current) => ({ ...current, consumerId: user.id }));
         }
         setConsumerLabel(user.name || user.email || user.id);
       }
     } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ── Future-tickets prefill (PDF #2) ──────────────────────────────────────
@@ -887,8 +888,17 @@ export function IntakeWizard({
   const [regenerateSourceLabel, setRegenerateSourceLabel] = useState<string>('');
   const [regenerateConsumerLabel, setRegenerateConsumerLabel] = useState<string>('');
 
+  // ── Edit-ticket mode (Task 5/6) ───────────────────────────────────────────
+  // When the wizard mounts with ?editTicketId=<id> (staff-only), fetch the
+  // ticket and hydrate the draft for in-place editing. Highest precedence:
+  // blocks regenerate, future, and resume-draft effects.
+  const editTicketId = searchParams?.get('editTicketId') ?? null;
+  const editMode = Boolean(editTicketId);
+  const editPrefillAppliedRef = useRef(false);
+
   useEffect(() => {
     if (!regenerateFromTicketId) return;
+    if (editTicketId) return; // edit takes precedence over regenerate
     if (regeneratePrefillAppliedRef.current) return;
     regeneratePrefillAppliedRef.current = true;
     // No cancelled flag: the ref guard ensures exactly-once execution per
@@ -972,6 +982,73 @@ export function IntakeWizard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [regenerateFromTicketId]);
 
+  // ── Edit prefill effect ───────────────────────────────────────────────────
+  useEffect(() => {
+    if (!editTicketId || editPrefillAppliedRef.current) return;
+    editPrefillAppliedRef.current = true;
+    let cancelled = false;
+    (async () => {
+      try {
+        const src = await apiClient.get<{
+          consumerId?: string;
+          formPayload?: Record<string, string>;
+          intakeFlow?: string;
+        }>(`/tickets/${encodeURIComponent(editTicketId)}`);
+        if (cancelled || !src?.formPayload) return;
+        const nextPayload = normalizeDraftPayload({ ...src.formPayload });
+        startTransition(() => {
+          setDraft((c) => ({
+            ...c,
+            consumerId: src.consumerId ?? c.consumerId, // keep the ticket's owner
+            payload: nextPayload,
+            step: 1,
+          }));
+          // Hydrate geoIds so location-dependent selects render correctly.
+          if (nextPayload.city_id || nextPayload.district_id) {
+            setGeoIds((g) => ({
+              ...g,
+              districtId: nextPayload.district_id || g.districtId,
+              cityId: nextPayload.city_id || g.cityId,
+            }));
+          }
+          // Mark hydration done so autosave doesn't trample the prefilled state.
+          didHydrateRef.current = true;
+        });
+        // Load courts for the hydrated city so the Court step isn't blocked.
+        if (nextPayload.city_id) {
+          const reqSeq = ++cityCourtsReqRef.current;
+          startTransition(() => {
+            setCityCourtsLoading(true);
+            setCityCourtsLoaded(false);
+          });
+          apiClient
+            .get<CityCourtGroup[]>(`/geo/cities/${nextPayload.city_id}/courts`)
+            .then((groups) => {
+              if (reqSeq === cityCourtsReqRef.current) setCityCourtGroups(groups ?? []);
+            })
+            .catch(() => {
+              if (reqSeq === cityCourtsReqRef.current) setCityCourtGroups([]);
+            })
+            .finally(() => {
+              if (reqSeq !== cityCourtsReqRef.current) return;
+              if (!cancelled) {
+                setCityCourtsLoading(false);
+                setCityCourtsLoaded(true);
+              }
+            });
+        }
+      } catch (e: any) {
+        if (!cancelled) {
+          startTransition(() => {
+            setApiError(e?.message || 'Could not load the ticket to edit.');
+          });
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editTicketId]);
+
   useEffect(() => {
     if (!futureFromTicketId) return;
     if (regenerateFromTicketId) return;
@@ -1052,7 +1129,7 @@ export function IntakeWizard({
   // active draft for (consumer, flow) so a cleared localStorage / different
   // browser / re-login still resumes where the user left off.
   useEffect(() => {
-    if (futureFromTicketId || regenerateFromTicketId) return; // B3/FT-T3: prefill takes priority
+    if (editTicketId || futureFromTicketId || regenerateFromTicketId) return; // B3/FT-T3: prefill takes priority; edit is highest
     const flowKey = flows[0]?.key;
     if (!flowKey) return;
     if (!draft.consumerId) return; // wait until the consumer id is known
@@ -1120,7 +1197,7 @@ export function IntakeWizard({
     };
   // We intentionally only run this once per (consumerId, first-flow) pairing.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draft.consumerId, flows[0]?.key, futureFromTicketId, regenerateFromTicketId]);
+  }, [draft.consumerId, flows[0]?.key, editTicketId, futureFromTicketId, regenerateFromTicketId]);
 
   useEffect(() => {
     if (!apiError) return;
@@ -1323,6 +1400,7 @@ export function IntakeWizard({
 
   const canAutosaveDraft = useCallback(() => {
     if (!selectedFlow) return false;
+    if (editMode) return false; // edits are not server drafts
     // QA: never autosave while a submit is in flight — the autosave timer
     // would otherwise upsert a phantom draft on the just-deleted server row
     // and the wizard would restore it on the next visit (prefill bug).
@@ -1334,7 +1412,7 @@ export function IntakeWizard({
       draft.serviceId &&
       (!isJudicial || draft.payload.select_court),
     );
-  }, [draft.consumerId, draft.flow, draft.payload.select_court, draft.serviceId, geoIds.cityId, isJudicial, selectedFlow]);
+  }, [draft.consumerId, draft.flow, draft.payload.select_court, draft.serviceId, editMode, geoIds.cityId, isJudicial, selectedFlow]);
 
   useEffect(() => {
     if (!didHydrateRef.current) {
@@ -1990,7 +2068,11 @@ export function IntakeWizard({
       <div className="flex flex-col gap-8 lg:flex-row lg:items-start">
         <div className="min-w-0 flex-1 space-y-8">
 
-      {regenerateFromTicketId && regenerateSourceLabel ? (
+      {editMode ? (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-800">
+          Editing this ticket — your changes update it and re-price the total. No new ticket is created.
+        </div>
+      ) : regenerateFromTicketId && regenerateSourceLabel ? (
         <RegenerateBanner
           sourceTicketLabel={regenerateSourceLabel}
           consumerLabel={regenerateConsumerLabel}
@@ -2006,7 +2088,7 @@ export function IntakeWizard({
         </div>
       ) : null}
 
-      {resumedDraftAt && !futureFromTicketId && !regenerateFromTicketId ? (
+      {resumedDraftAt && !editMode && !futureFromTicketId && !regenerateFromTicketId ? (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-brand-200 bg-brand-50/60 px-4 py-3 text-sm text-brand-800">
           <div className="flex items-start gap-2">
             <FolderOpen className="mt-0.5 h-4 w-4 shrink-0" />
