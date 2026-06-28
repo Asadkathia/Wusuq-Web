@@ -4,6 +4,7 @@ import {
   parseBench,
   type CourtTier,
 } from '@/lib/intake-flows';
+import { BENCH_TYPE_LABELS } from '@/lib/bench-types';
 
 export type CaseTone = 'pending' | 'decided' | 'unknown';
 export type CaseBlock = 'summary' | 'bench' | 'hearings';
@@ -11,7 +12,7 @@ export type CaseView = {
   title: string | null;
   status: { label: string; tone: CaseTone } | null;
   summary: Array<{ label: string; value: string }>;
-  bench: { designation: string | null; judges: string[] } | null;
+  bench: { designation: string | null; judges: string[]; type: string | null } | null;
   hearings: { previous: string | null; next: string | null } | null;
   blockOrder: CaseBlock[];
 };
@@ -26,16 +27,46 @@ function val(p: P, ...keys: string[]): string | null {
   return null;
 }
 
-// Allowlisted summary keys → labels (ids/source/enum keys are intentionally absent).
-const SUMMARY_FIELDS: Array<{ key: string; label: string }> = [
-  { key: 'case_no', label: 'Case No' },
-  { key: 'case_type', label: 'Case Type' },
-  { key: 'select_court', label: 'Court' },
-  { key: 'institution_date', label: 'Institution Date' },
-  { key: 'fir_no', label: 'FIR No' },
-  { key: 'fir_year', label: 'FIR Year' },
-  { key: 'police_station', label: 'Police Station' },
-  { key: 'offence', label: 'Offence' },
+/**
+ * Title-cases snake_case enum-ish values (e.g. 'both' → 'Both',
+ * 'non_attested' → 'Non Attested'). Leaves other values (dates with hyphens,
+ * names with spaces, case numbers with slashes, doc bundles) untouched because
+ * they don't match the all-lowercase/digit + underscore pattern.
+ */
+function humanizeValue(value: string): string {
+  if (/^[a-z0-9]+(_[a-z0-9]+)*$/.test(value)) {
+    return value
+      .split('_')
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+      .join(' ');
+  }
+  return value;
+}
+
+// Allowlisted summary fields → labels.
+// Multiple keys are tried left-to-right (first non-blank wins).
+// `*_id` / `source` / enum-typed keys are intentionally absent.
+const SUMMARY_FIELDS: Array<{ keys: string[]; label: string }> = [
+  { keys: ['case_no'], label: 'Case No' },
+  { keys: ['case_type'], label: 'Case Type' },
+  { keys: ['select_court'], label: 'Court' },
+  { keys: ['case_year', 'year'], label: 'Case Year' },
+  { keys: ['decided_date'], label: 'Decided Date' },
+  { keys: ['case_type_other'], label: 'Case Type (Other)' },
+  { keys: ['set_type'], label: 'Set Type' },
+  { keys: ['sets'], label: 'Sets' },
+  { keys: ['attested_qty'], label: 'Attested Copies' },
+  { keys: ['want_pdf_before_dispatch'], label: 'PDF Copy' },
+  { keys: ['search_method'], label: 'Search Method' },
+  { keys: ['subject_full_name'], label: 'Subject Name' },
+  { keys: ['subject_cnic'], label: 'Subject CNIC' },
+  { keys: ['cnic'], label: 'CNIC' },
+  { keys: ['purpose'], label: 'Purpose' },
+  { keys: ['institution_date'], label: 'Institution Date' },
+  { keys: ['fir_no'], label: 'FIR No' },
+  { keys: ['fir_year'], label: 'FIR Year' },
+  { keys: ['police_station', 'station'], label: 'Police Station' },
+  { keys: ['offence'], label: 'Offence' },
 ];
 
 function statusOf(p: P): CaseView['status'] {
@@ -56,8 +87,16 @@ function benchOf(p: P): CaseView['bench'] {
   const judges = parsed?.judges?.filter((j) => j && j.trim()) ?? [];
   const single = val(p, 'judge_name');
   const names = judges.length ? judges : single ? [single] : [];
-  if (!designation && names.length === 0) return null;
-  return { designation, judges: names };
+  // Only resolve the bench type when the payload actually carried a bench
+  // object — parseBench falls back to 'single_judge' for undefined/empty
+  // values, which would incorrectly show a "Single Judge" label on tickets
+  // that never specified bench data.
+  const hasBenchData = !!(p?.bench && String(p.bench).trim());
+  const type = hasBenchData
+    ? ((BENCH_TYPE_LABELS as Record<string, string>)[parsed.benchType] ?? null)
+    : null;
+  if (!designation && names.length === 0 && !type) return null;
+  return { designation, judges: names, type };
 }
 
 function hearingsOf(p: P): CaseView['hearings'] {
@@ -71,8 +110,8 @@ export function buildCaseView(payload: P, tier: CourtTier | null): CaseView {
   const resolvedTier = tier ?? courtTierFromCourtType(payload?.select_court_type);
   const summary: Array<{ label: string; value: string }> = [];
   for (const f of SUMMARY_FIELDS) {
-    const v = val(payload, f.key);
-    if (v) summary.push({ label: f.label, value: v });
+    const v = val(payload, ...f.keys);
+    if (v) summary.push({ label: f.label, value: humanizeValue(v) });
   }
   const bundle = val(payload, 'required_documentations');
   if (bundle) {

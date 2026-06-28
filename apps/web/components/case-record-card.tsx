@@ -31,6 +31,11 @@ export function CaseRecordCard({ view }: { view: CaseView }) {
       return (
         <div key="bench" className="rounded-xl ring-1 ring-border-soft bg-surface px-4 py-3 text-sm">
           <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Bench</div>
+          {view.bench.type && (
+            <div className="mt-1 text-xs text-slate-500">
+              <span className="font-medium">Type:</span> {view.bench.type}
+            </div>
+          )}
           {view.bench.designation && <div className="mt-1 text-slate-700">{view.bench.designation}</div>}
           {view.bench.judges.length > 0 && (
             <div className="mt-0.5 font-medium text-slate-800">{view.bench.judges.join(', ')}</div>
