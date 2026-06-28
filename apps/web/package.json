@@ -37,7 +37,7 @@
     "eslint-config-next": "16.1.7",
     "jest": "^30.0.0",
     "tailwindcss": "^4",
-    "ts-jest": "^29.2.5",
+    "ts-jest": "^30.0.0",
     "typescript": "^5"
   }
 }
