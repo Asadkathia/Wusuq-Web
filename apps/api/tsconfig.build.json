@@ -1,4 +1,25 @@
 {
   "extends": "./tsconfig.json",
-  "exclude": ["node_modules", "test", "dist", "scripts", "**/*spec.ts"]
+  "compilerOptions": {
+    // Pin rootDir to src so the build is deterministic: app source emits to
+    // dist/<file>.js (start command is `node dist/main.js`). Without this, a
+    // single stray .ts outside src (e.g. data/usd-pricing.ts) makes tsc infer
+    // rootDir as the common ancestor and silently relocate output to
+    // dist/src/main.js — which broke the Render deploy. Pinned, such a stray
+    // now fails the build loudly ("not under rootDir") instead.
+    "rootDir": "./src",
+    // Keep the incremental cache INSIDE dist. With rootDir pinned, tsc's default
+    // buildinfo location moves to ./tsconfig.build.tsbuildinfo (OUTSIDE dist),
+    // which nest's `deleteOutDir` does NOT remove — so a cached build (Render
+    // restores a build cache) reads that stale cache, decides nothing changed,
+    // emits NOTHING, and dist/main.js goes missing. Pointing it back into dist
+    // means `deleteOutDir` wipes it before every `nest build` (guaranteeing a
+    // full emit), while `pnpm typecheck` (tsc --noEmit, never runs deleteOutDir)
+    // still gets to reuse the cache. This is the pre-regression behavior.
+    "tsBuildInfoFile": "./dist/tsconfig.build.tsbuildinfo"
+  },
+  // `data` holds seed-only assets (xlsx/json) + usd-pricing.ts, which is
+  // imported only by the seed scripts (run via tsx), never by the running
+  // server — exclude it from the app build, same as `scripts`.
+  "exclude": ["node_modules", "test", "dist", "scripts", "data", "**/*spec.ts"]
 }

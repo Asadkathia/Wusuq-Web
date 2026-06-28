@@ -1,10 +1,23 @@
+# ⚠️ NOT CURRENTLY CONNECTED (2026-06-23). The live `wusuq-api-sg` service is
+# managed from the Render DASHBOARD, not by this Blueprint — proof:
+# PAYMENT_PROVIDER=disabled below never reached the running service (the API
+# runs with a real provider). So the dashboard is the source of truth for the
+# build command, start command, and env vars TODAY. This file is kept accurate
+# so it (a) documents the required prod config and (b) is correct if the
+# Blueprint is ever connected. The one thing that must be fixed in the
+# DASHBOARD for auto-migrations: set the Build Command to the buildCommand
+# below (it ends with `prisma:migrate:deploy`) — otherwise new migrations will
+# NOT apply on deploy.
 services:
   - type: web
-    # Must match the actual Render service name so this Blueprint governs it.
-    # If they diverge, none of the envVars/buildCommand below apply (that gap
-    # left PAYMENT_PROVIDER unset in prod → the provider factory threw at boot
-    # → every deploy since the June-11 one failed and prod stayed stale).
+    # Must match the live Render service name exactly. If this Blueprint is ever
+    # connected and the name diverges, none of the envVars/buildCommand below
+    # govern the running service — that gap once left PAYMENT_PROVIDER unset in
+    # prod → the provider factory threw at boot → deploys failed.
     name: wusuq-api-sg
+    # The "-sg" service runs in Singapore; pin the region so a Blueprint
+    # connect doesn't try to create it in the default (Oregon) region.
+    region: singapore
     runtime: node
     rootDir: .
     # Persistent disks require a paid plan on Render. Bump from `free` to
@@ -41,4 +54,9 @@ services:
       - key: JWT_ACCESS_SECRET
         sync: false
       - key: JWT_REFRESH_SECRET
+        sync: false
+      # Required at boot in production — loadRuntimeConfig() throws without it
+      # (comma-separated frontend origins, e.g. the Vercel app URL). Env-
+      # specific, so sync:false (set the real value in the dashboard).
+      - key: CORS_ALLOWED_ORIGINS
         sync: false

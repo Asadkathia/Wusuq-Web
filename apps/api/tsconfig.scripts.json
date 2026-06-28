@@ -1,0 +1,14 @@
+{
+  // Type-checks the seed-time code (scripts/ + data/) that the production build
+  // (tsconfig.build.json) deliberately excludes from emit. These files run via
+  // tsx (which does NO type-checking), so without this config a type error in,
+  // e.g., data/usd-pricing.ts or a seed script would only surface at seed
+  // runtime. noEmit + no rootDir (the files legitimately live outside src).
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "incremental": false
+  },
+  "include": ["scripts/**/*.ts", "data/**/*.ts"],
+  "exclude": ["node_modules", "dist"]
+}

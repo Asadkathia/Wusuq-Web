@@ -277,9 +277,10 @@ Both `/consumer/login` and `/consumer/signup` use the shared `CountryPicker` (`c
 
 ## Deployment
 
-- **API:** Render.com (`render.yaml`), Node 22, health check at `GET /api/health`
+- **API:** Render.com (`render.yaml`), Node 22, health check at `GET /api/health`. Start command is `node dist/main.js`.
 - **Web:** Vercel (`apps/web/vercel.json`), region `sin1` (Singapore)
 - CI runs lint → typecheck → build → Playwright E2E on every push/PR to `main`
+- **API build output is pinned to `dist/main.js` (2026-06-28).** `apps/api/tsconfig.build.json` sets `rootDir: "./src"`, points `tsBuildInfoFile` back into `dist`, and excludes `data`. Why: any `.ts` **outside** `src/` that's in the tsc program (e.g. `apps/api/data/usd-pricing.ts`, added with USD pricing) makes tsc infer `rootDir` as the common ancestor and silently relocate output to `dist/src/main.js` → `node dist/main.js` 404s on Render (the 2026-06-28 deploy failure: build "succeeds", start crashes with `MODULE_NOT_FOUND`). Pinning `rootDir` fixes that but moves tsc's incremental cache to `./tsconfig.build.tsbuildinfo` (**outside** `dist`), which nest's `deleteOutDir` doesn't clear — so a **cached** build (Render restores a build cache) reads the stale cache, emits nothing, and `dist/` is left empty; `tsBuildInfoFile: "./dist/..."` puts it back where `deleteOutDir` wipes it each build (full emit guaranteed) while `pnpm typecheck` still reuses it. Don't add compiled `.ts` outside `src/` for the app (seed-only `.ts` belongs in `data`/`scripts`, run via tsx); if you must, it now fails the build loudly ("not under rootDir") instead of breaking the deploy. Excluding `data` from the build would drop it from typecheck, so **`tsconfig.scripts.json` type-checks `scripts/` + `data/`** (wired into the api `typecheck` script) — seed code now has CI type coverage it partly lacked before.
 
 ## Local Dev Seed
 
@@ -329,3 +330,7 @@ When in doubt, the rule's heuristic is "setState that fires synchronously on eve
 ## Session Log
 
 - **2026-06-27** (branch `integration/walkthrough-fixes`) — Implemented the full owner-walkthrough fix set (17 defects + UX/behavior changes) from 4 WhatsApp screen recordings of the ticket lifecycle. Transcribed the Urdu/English voiceover (local whisper large-v3) + frame-by-frame visual pass, traced every issue to root cause, planned (`DOcs/superpowers/plans/2026-06-26-walkthrough-fixes.md`), implemented across 6 parallel worktree agents, then ran 4 code-review passes fixing all findings (incl. a clerk-redaction leak across 7 mutation paths, a `recordNextHearing` IDOR, pay-at-end, currency derivation, city-scoped clerk assignment, JazzCash/EasyPaisa payment settings). 410 API tests green; merged to `main`. DB: applied `add_ticket_clerk_page_breakdown` + `add_payment_settings_wallets` migrations; ran legacy currency backfill.
+
+### 2026-06-28 06:50 · branch main · sess 66e87f2c
+
+- Fixed the Render API deploy failure (build OK, start crashed with `Cannot find module dist/main.js`) — root cause + the `tsconfig.build.json` `rootDir`/`tsBuildInfoFile`/`data`-exclude fix and the new `tsconfig.scripts.json` typecheck are documented in **Deployment** above. Verified: full Render build green, `pnpm typecheck` green (incl. seed code), repeated no-clean `nest build`s all emit `dist/main.js`, and `node dist/main.js` boots fully. Also tidied pre-existing uncommitted `render.yaml` edits (region pin + `CORS_ALLOWED_ORIGINS` env + a now-stale "blueprint disconnected" banner) committed in the same change.
