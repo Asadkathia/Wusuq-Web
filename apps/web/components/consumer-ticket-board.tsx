@@ -25,7 +25,7 @@ import {
   parseDeliveryAddress,
   courtTierFromCourtType,
 } from '@/lib/intake-flows';
-import { buildCaseView } from '@/lib/case-view';
+import { buildCaseView, isCaseViewEmpty } from '@/lib/case-view';
 import { CaseRecordCard } from '@/components/case-record-card';
 import { apiClient } from '@/lib/api-client';
 import { relativeTime } from '@/lib/relative-time';
@@ -720,16 +720,16 @@ export function ConsumerTicketDetail({
       {/* ── Section 2: Case details ─────────────────────────────────────── */}
       {ticket.formPayload && typeof ticket.formPayload === 'object' && (() => {
         const p = ticket.formPayload as Record<string, string | undefined>;
+        const view = buildCaseView(
+          p as Record<string, string | undefined>,
+          courtTierFromCourtType((p.select_court_type as string | undefined) ?? undefined),
+        );
+        if (isCaseViewEmpty(view)) return null;
         return (
           <section>
             <h4 className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Case details</h4>
             <div className="mt-3">
-              <CaseRecordCard
-                view={buildCaseView(
-                  p as Record<string, string | undefined>,
-                  courtTierFromCourtType((p.select_court_type as string | undefined) ?? undefined),
-                )}
-              />
+              <CaseRecordCard view={view} />
             </div>
           </section>
         );

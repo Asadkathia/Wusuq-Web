@@ -1,4 +1,4 @@
-import { buildCaseView } from './case-view';
+import { buildCaseView, isCaseViewEmpty } from './case-view';
 import { BENCH_TYPE_LABELS } from './bench-types';
 
 const lower = {
@@ -216,5 +216,58 @@ describe('buildCaseView', () => {
     expect(blob).not.toContain('next-web-intake');
     // cnic value IS present (it's in the allowlist)
     expect(blob).toContain('42201-9876543-0');
+  });
+
+  // ── Finding 1 (review-4): case_petition_no dual-key ────────────────────
+
+  it('case_petition_no (without case_no) produces a "Case No" summary row', () => {
+    const v = buildCaseView({ case_petition_no: '999/2026' }, null);
+    const row = v.summary.find((r) => r.label === 'Case No');
+    expect(row).toBeDefined();
+    expect(row!.value).toBe('999/2026');
+  });
+
+  it('case_petition_no wins over case_no when both present', () => {
+    const v = buildCaseView({ case_petition_no: '999/2026', case_no: '111/2026' }, null);
+    const row = v.summary.find((r) => r.label === 'Case No');
+    expect(row!.value).toBe('999/2026');
+  });
+
+  // ── Finding 2 (review-4): court type + service type ────────────────────
+
+  it('select_court_type appears as "Court Type" when present', () => {
+    const v = buildCaseView({ ...lower, select_court_type: 'High Court' }, 'high');
+    const row = v.summary.find((r) => r.label === 'Court Type');
+    expect(row).toBeDefined();
+    expect(row!.value).toBe('High Court');
+  });
+
+  it('select_service appears as "Service Type" when present', () => {
+    const v = buildCaseView({ ...lower, select_service: 'Lower Court Paralegal Service' }, 'lower');
+    const row = v.summary.find((r) => r.label === 'Service Type');
+    expect(row).toBeDefined();
+    expect(row!.value).toBe('Lower Court Paralegal Service');
+  });
+
+  // ── Finding 3 (review-4): isCaseViewEmpty ──────────────────────────────
+
+  it('isCaseViewEmpty returns true for an empty payload', () => {
+    expect(isCaseViewEmpty(buildCaseView({}, null))).toBe(true);
+  });
+
+  it('isCaseViewEmpty returns true for a null payload', () => {
+    expect(isCaseViewEmpty(buildCaseView(null, null))).toBe(true);
+  });
+
+  it('isCaseViewEmpty returns false when title is present', () => {
+    expect(isCaseViewEmpty(buildCaseView({ case_title: 'X vs Y' }, null))).toBe(false);
+  });
+
+  it('isCaseViewEmpty returns false when any summary field is present', () => {
+    expect(isCaseViewEmpty(buildCaseView({ case_no: '1/2026' }, null))).toBe(false);
+  });
+
+  it('isCaseViewEmpty returns false when status is present', () => {
+    expect(isCaseViewEmpty(buildCaseView({ case_status: 'Pending Case' }, null))).toBe(false);
   });
 });

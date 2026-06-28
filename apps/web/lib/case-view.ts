@@ -47,9 +47,11 @@ function humanizeValue(value: string): string {
 // Multiple keys are tried left-to-right (first non-blank wins).
 // `*_id` / `source` / enum-typed keys are intentionally absent.
 const SUMMARY_FIELDS: Array<{ keys: string[]; label: string }> = [
-  { keys: ['case_no'], label: 'Case No' },
+  { keys: ['case_petition_no', 'case_no'], label: 'Case No' },
   { keys: ['case_type'], label: 'Case Type' },
   { keys: ['select_court'], label: 'Court' },
+  { keys: ['select_court_type'], label: 'Court Type' },
+  { keys: ['select_service'], label: 'Service Type' },
   { keys: ['case_year', 'year'], label: 'Case Year' },
   { keys: ['decided_date'], label: 'Decided Date' },
   { keys: ['case_type_other'], label: 'Case Type (Other)' },
@@ -104,6 +106,12 @@ function hearingsOf(p: P): CaseView['hearings'] {
   const next = val(p, 'future_date', 'scheduledDate');
   if (!previous && !next) return null;
   return { previous, next };
+}
+
+export function isCaseViewEmpty(view: CaseView): boolean {
+  return (
+    !view.title && !view.status && view.summary.length === 0 && !view.bench && !view.hearings
+  );
 }
 
 export function buildCaseView(payload: P, tier: CourtTier | null): CaseView {

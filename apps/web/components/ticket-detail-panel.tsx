@@ -17,7 +17,7 @@ import {
 import {
   parseDeliveryAddress,
 } from '@/lib/intake-flows';
-import { buildCaseView } from '@/lib/case-view';
+import { buildCaseView, isCaseViewEmpty } from '@/lib/case-view';
 import { CaseRecordCard } from '@/components/case-record-card';
 import { TicketRepriceDialog } from '@/components/ticket-reprice-dialog';
 
@@ -223,17 +223,19 @@ export function TicketDetailPanel({ ticketId, onClose, isClerkView = false, onCh
                         </div>
                       )}
                     </div>
-                    {ticket.formPayload && typeof ticket.formPayload === 'object' && (
-                      <div className="border-t border-slate-100 pt-3">
-                        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Case Details</p>
-                        <CaseRecordCard
-                          view={buildCaseView(
-                            ticket.formPayload as Record<string, string | undefined>,
-                            courtTierFromCourtType((ticket.formPayload as Record<string, string | undefined>).select_court_type),
-                          )}
-                        />
-                      </div>
-                    )}
+                    {ticket.formPayload && typeof ticket.formPayload === 'object' && (() => {
+                      const view = buildCaseView(
+                        ticket.formPayload as Record<string, string | undefined>,
+                        courtTierFromCourtType((ticket.formPayload as Record<string, string | undefined>).select_court_type),
+                      );
+                      if (isCaseViewEmpty(view)) return null;
+                      return (
+                        <div className="border-t border-slate-100 pt-3">
+                          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Case Details</p>
+                          <CaseRecordCard view={view} />
+                        </div>
+                      );
+                    })()}
                   </PanelCard>
 
                   {/* Clerk Cost (clerk view) */}
@@ -293,17 +295,19 @@ export function TicketDetailPanel({ ticketId, onClose, isClerkView = false, onCh
                         </div>
                       )}
                     </div>
-                    {ticket.formPayload && typeof ticket.formPayload === 'object' && (
-                      <div className="border-t border-slate-100 pt-3">
-                        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Case Details</p>
-                        <CaseRecordCard
-                          view={buildCaseView(
-                            ticket.formPayload as Record<string, string | undefined>,
-                            courtTierFromCourtType((ticket.formPayload as Record<string, string | undefined>).select_court_type),
-                          )}
-                        />
-                      </div>
-                    )}
+                    {ticket.formPayload && typeof ticket.formPayload === 'object' && (() => {
+                      const view = buildCaseView(
+                        ticket.formPayload as Record<string, string | undefined>,
+                        courtTierFromCourtType((ticket.formPayload as Record<string, string | undefined>).select_court_type),
+                      );
+                      if (isCaseViewEmpty(view)) return null;
+                      return (
+                        <div className="border-t border-slate-100 pt-3">
+                          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Case Details</p>
+                          <CaseRecordCard view={view} />
+                        </div>
+                      );
+                    })()}
                   </PanelCard>
 
                   {/* Representative */}
