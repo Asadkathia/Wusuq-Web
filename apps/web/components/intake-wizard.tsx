@@ -1051,6 +1051,7 @@ export function IntakeWizard({
 
   useEffect(() => {
     if (!futureFromTicketId) return;
+    if (editTicketId) return; // edit takes precedence
     if (regenerateFromTicketId) return;
     if (futurePrefillAppliedRef.current) return;
     futurePrefillAppliedRef.current = true;
@@ -1122,7 +1123,7 @@ export function IntakeWizard({
         // adjust fields manually.
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [futureFromTicketId, regenerateFromTicketId]);
+  }, [futureFromTicketId, editTicketId, regenerateFromTicketId]);
 
   // Resume from server-side draft. The server is the source of truth; the
   // localStorage id is only a fast-path cache. Always ask the API for the
@@ -1956,6 +1957,7 @@ export function IntakeWizard({
       if (editMode && editTicketId) {
         try {
           await apiClient.patch(`/tickets/${encodeURIComponent(editTicketId)}/reprice`, { payload: p });
+          setLoading(false);
           router.push(`/tickets/${encodeURIComponent(editTicketId)}`);
           return;
         } catch (e: any) {
