@@ -2,6 +2,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import {
   chargeCapabilitiesFor,
@@ -16,10 +17,10 @@ import {
 } from 'lucide-react';
 import {
   parseDeliveryAddress,
+  flowKeyToSlug,
 } from '@/lib/intake-flows';
 import { buildCaseView, isCaseViewEmpty } from '@/lib/case-view';
 import { CaseRecordCard } from '@/components/case-record-card';
-import { TicketRepriceDialog } from '@/components/ticket-reprice-dialog';
 
 type Props = {
   ticketId: string;
@@ -39,6 +40,7 @@ const STATUS_VARIANT: Record<string, 'success' | 'warning' | 'error' | 'neutral'
 };
 
 export function TicketDetailPanel({ ticketId, onClose, isClerkView = false, onChange }: Props) {
+  const router = useRouter();
   const [ticket, setTicket] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -47,7 +49,6 @@ export function TicketDetailPanel({ ticketId, onClose, isClerkView = false, onCh
   const [rejectReason, setRejectReason] = useState('');
   const [actionBusy, setActionBusy] = useState(false);
   const [actionError, setActionError] = useState('');
-  const [repriceOpen, setRepriceOpen] = useState(false);
 
   useEffect(() => {
     try {
@@ -177,9 +178,15 @@ export function TicketDetailPanel({ ticketId, onClose, isClerkView = false, onCh
                 </button>
               </div>
             )}
-            {!isClerkView && ticket && (
+            {!isClerkView && ticket && ticket.status !== 'DELIVERED' && (
               <button
-                onClick={() => setRepriceOpen(true)}
+                onClick={() => {
+                  const flow = ticket.intakeFlow ?? '';
+                  const slug = flowKeyToSlug(flow);
+                  if (!slug) return;
+                  const category = flow.startsWith('judicial_') ? 'judicial' : 'non-judicial';
+                  router.push(`/paralegal-services/${category}/${slug}?editTicketId=${ticket.id}`);
+                }}
                 className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
               >
                 Edit ticket
@@ -662,16 +669,6 @@ export function TicketDetailPanel({ ticketId, onClose, isClerkView = false, onCh
         </div>
       )}
 
-      {repriceOpen && ticket && (
-        <TicketRepriceDialog
-          ticketId={ticketId}
-          formPayload={(ticket.formPayload as Record<string, unknown>) ?? {}}
-          currentTotalAmount={Number(ticket.totalAmount || 0)}
-          currency={(ticket.currency as 'PKR' | 'USD') ?? 'PKR'}
-          onClose={() => setRepriceOpen(false)}
-          onSaved={() => { setRepriceOpen(false); void load(); }}
-        />
-      )}
     </div>
   );
 }
