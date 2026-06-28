@@ -6,7 +6,6 @@ import { apiClient } from '@/lib/api-client';
 import {
   chargeCapabilitiesFor,
   FLOW_LABELS,
-  orderCaseDetailKeys,
   courtTierFromCourtType,
 } from '@wusuq/shared';
 import { PanelCard } from '@/components/ui/panel-card';
@@ -17,10 +16,9 @@ import {
 } from 'lucide-react';
 import {
   parseDeliveryAddress,
-  parseBench,
-  docBundleLabel,
 } from '@/lib/intake-flows';
-import { BENCH_TYPE_LABELS } from '@/lib/bench-types';
+import { buildCaseView } from '@/lib/case-view';
+import { CaseRecordCard } from '@/components/case-record-card';
 import { TicketRepriceDialog } from '@/components/ticket-reprice-dialog';
 
 type Props = {
@@ -32,82 +30,6 @@ type Props = {
   onChange?: () => void;
 };
 
-// ── Case-payload humanizing (Task 4.2) ───────────────────────────────────────
-// Admin/clerk case details. Unlike the consumer side (strict allowlist), staff
-// may see all intake fields — but raw ids and system bookkeeping keys are
-// excluded, and enum-ish values are humanized.
-const ADMIN_PAYLOAD_LABEL: Record<string, string> = {
-  city: 'City',
-  select_court_city: 'City',
-  select_court: 'Court',
-  select_court_type: 'Court type',
-  select_service: 'Service type',
-  case_type: 'Case type',
-  case_type_other: 'Case type (other)',
-  case_petition_no: 'Case no.',
-  case_no: 'Case no.',
-  case_year: 'Case year',
-  year: 'Case year',
-  case_title: 'Case title',
-  judge_designation: 'Judge designation',
-  judge_name: 'Judge',
-  case_date: 'Case date',
-  future_date: 'Next hearing',
-  case_status: 'Case status',
-  search_method: 'Search method',
-  want_pdf_before_dispatch: 'PDF copy',
-  cnic: 'CNIC',
-  required_documentations: 'Document bundle',
-  subject_cnic: 'Subject CNIC',
-  subject_full_name: 'Subject name',
-  purpose: 'Purpose',
-  delivery_mode: 'Delivery mode',
-  delivery_method: 'Delivery method',
-  province: 'Province',
-  station: 'Police station',
-  fir_no: 'FIR no.',
-  fir_year: 'FIR year',
-  notes: 'Notes',
-};
-
-// id / system bookkeeping keys never shown on the case-details panel.
-const PAYLOAD_SYSTEM_KEYS = new Set([
-  'source',
-  'request_id',
-  'requestId',
-  'parent_ticket_id',
-  'consumer_id',
-  'intake_request_id',
-]);
-
-function isExcludedPayloadKey(key: string): boolean {
-  if (PAYLOAD_SYSTEM_KEYS.has(key)) return true;
-  // Any resolved foreign-key id (city_id, select_court_id, district_id, …).
-  if (/_id$/.test(key)) return true;
-  return false;
-}
-
-function adminPayloadLabel(key: string): string {
-  return (
-    ADMIN_PAYLOAD_LABEL[key] ??
-    key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
-  );
-}
-
-// Generic snake_case enum → Title Case fallback for misc payload values.
-// The document bundle (required_documentations) is rendered via the canonical
-// docBundleLabel at the call site instead (court-tier aware), not here.
-function humanizePayloadValue(value: unknown): string {
-  const s = String(value);
-  if (/^[a-z0-9]+(_[a-z0-9]+)+$/.test(s)) {
-    return s
-      .replace(/^doc_/, '')
-      .replace(/_plus_/g, ' + ')
-      .replace(/_/g, ' ')
-      .replace(/\b\w/g, (c) => c.toUpperCase());
-  }
-  return s;
-}
 
 const STATUS_VARIANT: Record<string, 'success' | 'warning' | 'error' | 'neutral' | 'info'> = {
   PENDING: 'warning',
@@ -218,65 +140,6 @@ export function TicketDetailPanel({ ticketId, onClose, isClerkView = false, onCh
     Number(t.printingCharges || 0) +
     Number(t.deliveryCharges || 0);
 
-  const renderPayload = (payload: Record<string, unknown>, opts: { hideKeys?: string[] } = {}) => {
-    const hide = new Set(opts.hideKeys ?? []);
-    const orderedKeys = orderCaseDetailKeys(Object.keys(payload));
-    return orderedKeys
-      .filter(
-        (k) =>
-          !hide.has(k) &&
-          !isExcludedPayloadKey(k) &&
-          payload[k] !== null &&
-          payload[k] !== '' &&
-          !String(payload[k]).includes('upload'),
-      )
-      .map((k) => (
-        <div key={k} className="flex gap-2 text-sm py-1 border-b border-slate-50 last:border-0">
-          <span className="w-40 flex-shrink-0 font-medium text-slate-500">
-            {adminPayloadLabel(k)}
-          </span>
-          <span className="text-slate-800">
-            {k === 'required_documentations'
-              ? docBundleLabel(
-                  String(payload[k]),
-                  courtTierFromCourtType(
-                    payload.select_court_type as string | undefined,
-                  ),
-                )
-              : humanizePayloadValue(payload[k])}
-          </span>
-        </div>
-      ));
-  };
-
-  const renderBenchSection = (payload: Record<string, unknown>) => {
-    const rawBench = payload.bench;
-    if (rawBench === undefined || rawBench === null || rawBench === '') return null;
-    const bench = parseBench(rawBench);
-    const nonEmptyJudges = bench.judges.map((j) => j.trim()).filter(Boolean);
-    // If parseBench fell back to single_judge with no judges and there's no
-    // recognisable benchType, skip — the legacy judge_name row below handles it.
-    if (!(BENCH_TYPE_LABELS as Record<string, string>)[bench.benchType] && nonEmptyJudges.length === 0) return null;
-    const label = (BENCH_TYPE_LABELS as Record<string, string>)[bench.benchType] ?? bench.benchType;
-    const judgesDisplay = nonEmptyJudges
-      .map((j) => (j.toLowerCase().startsWith('j.') ? j : `J. ${j}`))
-      .join(' · ');
-    return (
-      <div className="border border-slate-100 rounded-md bg-slate-50/60 px-3 py-2 mb-3">
-        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Bench</p>
-        <div className="flex gap-2 text-sm py-0.5">
-          <span className="w-40 flex-shrink-0 font-medium text-slate-500">Type</span>
-          <span className="text-slate-800">{label}</span>
-        </div>
-        {nonEmptyJudges.length > 0 && (
-          <div className="flex gap-2 text-sm py-0.5">
-            <span className="w-40 flex-shrink-0 font-medium text-slate-500">Judges</span>
-            <span className="text-slate-800">{judgesDisplay}</span>
-          </div>
-        )}
-      </div>
-    );
-  };
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
@@ -363,13 +226,12 @@ export function TicketDetailPanel({ ticketId, onClose, isClerkView = false, onCh
                     {ticket.formPayload && typeof ticket.formPayload === 'object' && (
                       <div className="border-t border-slate-100 pt-3">
                         <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Case Details</p>
-                        {renderBenchSection(ticket.formPayload as Record<string, unknown>)}
-                        {renderPayload(
-                          ticket.formPayload as Record<string, unknown>,
-                          (ticket.formPayload as Record<string, unknown>).bench
-                            ? { hideKeys: ['bench', 'judge_name'] }
-                            : { hideKeys: ['bench'] },
-                        )}
+                        <CaseRecordCard
+                          view={buildCaseView(
+                            ticket.formPayload as Record<string, string | undefined>,
+                            courtTierFromCourtType((ticket.formPayload as Record<string, string | undefined>).select_court_type),
+                          )}
+                        />
                       </div>
                     )}
                   </PanelCard>
@@ -433,17 +295,13 @@ export function TicketDetailPanel({ ticketId, onClose, isClerkView = false, onCh
                     </div>
                     {ticket.formPayload && typeof ticket.formPayload === 'object' && (
                       <div className="border-t border-slate-100 pt-3">
-                        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Case Payload</p>
-                        {renderBenchSection(ticket.formPayload as Record<string, unknown>)}
-                        {renderPayload(
-                          ticket.formPayload as Record<string, unknown>,
-                          // When a structured bench is present, hide the raw JSON
-                          // value and the derived judge_name row to avoid showing
-                          // the same information twice.
-                          (ticket.formPayload as Record<string, unknown>).bench
-                            ? { hideKeys: ['bench', 'judge_name'] }
-                            : { hideKeys: ['bench'] },
-                        )}
+                        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Case Details</p>
+                        <CaseRecordCard
+                          view={buildCaseView(
+                            ticket.formPayload as Record<string, string | undefined>,
+                            courtTierFromCourtType((ticket.formPayload as Record<string, string | undefined>).select_court_type),
+                          )}
+                        />
                       </div>
                     )}
                   </PanelCard>
