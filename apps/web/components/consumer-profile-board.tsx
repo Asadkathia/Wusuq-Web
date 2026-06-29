@@ -22,7 +22,6 @@ export function ConsumerProfileBoard() {
   const [phone, setPhone] = useState('');
   const [cnic, setCnic] = useState('');
   const [dateOfBirth, setDateOfBirth] = useState('');
-  const [currency, setCurrency] = useState<'PKR' | 'USD'>('PKR');
 
   const [pwCurrent, setPwCurrent] = useState('');
   const [pwNew, setPwNew] = useState('');
@@ -37,7 +36,6 @@ export function ConsumerProfileBoard() {
         setName(u.name ?? '');
         setEmail(u.email ?? '');
         setPhone(u.phone ?? '');
-        if (u.currency) setCurrency(u.currency);
       }
     } catch {}
     apiClient
@@ -48,7 +46,6 @@ export function ConsumerProfileBoard() {
         if (r?.phone) setPhone(r.phone);
         if (r?.cnic) setCnic(r.cnic);
         if (r?.dateOfBirth) setDateOfBirth(String(r.dateOfBirth).slice(0, 10));
-        if (r?.currency) setCurrency(r.currency);
       })
       .catch(() => {});
   }, []);
@@ -105,14 +102,6 @@ export function ConsumerProfileBoard() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Profile</h1>
         <p className="mt-1 text-sm text-slate-500">Manage your account details and security.</p>
-        <span className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700 ring-1 ring-inset ring-slate-200">
-          Billing region:{' '}
-          {currency === 'USD' ? 'International (USD)' : 'Pakistan (PKR)'}
-        </span>
-        <p className="mt-1.5 text-xs text-slate-400">
-          Set from your phone number. Contact support to change it once your
-          account is active.
-        </p>
       </div>
 
       {/* Identity card */}

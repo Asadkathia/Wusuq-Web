@@ -44,10 +44,13 @@ export type PaymentMode = (typeof PAYMENT_MODES)[number];
 
 export const CONSUMER_KINDS = ['LAWYER', 'NON_LAWYER', 'CORPORATE'] as const;
 export type ConsumerKind = (typeof CONSUMER_KINDS)[number];
+// User-facing labels for the account/user type. The enum VALUES stay
+// LAWYER/NON_LAWYER/CORPORATE (no DB migration); only the display labels are
+// the owner's wording: Civilian (= NON_LAWYER) / Lawyer / Company (= CORPORATE).
 export const CONSUMER_KIND_LABELS: Record<ConsumerKind, string> = {
   LAWYER: 'Lawyer',
-  NON_LAWYER: 'Non-Lawyer',
-  CORPORATE: 'Corporate',
+  NON_LAWYER: 'Civilian',
+  CORPORATE: 'Company',
 };
 export const CONSUMER_KIND_DESCRIPTIONS: Record<ConsumerKind, string> = {
   LAWYER: 'Practicing attorney filing or pursuing cases.',
@@ -803,6 +806,47 @@ export function computeTicketTotal(input: TicketMoneyInput): TicketMoneyResult {
   const taxAmount = round2(taxableBase * (input.taxRate ?? 0));
   const totalAmount = round2(taxableBase + taxAmount);
   return { chargesSubtotal, discountTotal, taxableBase, taxAmount, totalAmount };
+}
+
+/**
+ * The clerk's cut of the Rs 300 PDF surcharge. The consumer pays the full 300 at
+ * intake (folded into serviceCost); 100 of it is the clerk's internal earning.
+ */
+export const PDF_CLERK_FEE = 100;
+
+/** Shape accepted by {@link computeClerkEarnings}. Persisted columns or live form values. */
+export interface ClerkEarningsInput {
+  clerkCost?: number | string | null;
+  defaultClerkCost?: number | string | null;
+  attestedCharges?: number | string | null;
+  nonAttestedCharges?: number | string | null;
+  printingCharges?: number | string | null;
+  deliveryCharges?: number | string | null;
+  /** PDF purchased → the clerk earns PDF_CLERK_FEE. Either signal works. */
+  pdfSurcharge?: number | string | null;
+  wantPdf?: boolean | null;
+}
+
+/**
+ * Internal-only total payout to the clerk: their base cost (clerkCost, falling
+ * back to the rule's defaultClerkCost) + the phase-2 charges they entered +
+ * their Rs 100 cut of the PDF surcharge when the ticket purchased a PDF. The
+ * SINGLE source for clerk earnings — the admin finalize dialog, the admin/clerk
+ * ticket detail panel, and the clerk dashboard all call this. Never surfaced to
+ * consumers.
+ */
+export function computeClerkEarnings(t: ClerkEarningsInput): number {
+  const num = (v: number | string | null | undefined): number => Number(v ?? 0) || 0;
+  const base = t.clerkCost != null && t.clerkCost !== '' ? num(t.clerkCost) : num(t.defaultClerkCost);
+  const pdfPurchased = num(t.pdfSurcharge) > 0 || t.wantPdf === true;
+  return round2(
+    base +
+      num(t.attestedCharges) +
+      num(t.nonAttestedCharges) +
+      num(t.printingCharges) +
+      num(t.deliveryCharges) +
+      (pdfPurchased ? PDF_CLERK_FEE : 0),
+  );
 }
 
 /** Resolver input shape produced by {@link buildPricingResolveInput}. */

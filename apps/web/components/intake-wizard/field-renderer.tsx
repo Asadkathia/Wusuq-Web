@@ -168,6 +168,21 @@ export function renderField(
       } else {
         body = 'Select a court and city in Step 1 to see dispatch details.';
       }
+    } else if (field.key === 'pickup_location') {
+      // Self-collection: the pickup point is the court the consumer selected in
+      // Step 1 (we don't store per-court street addresses, so the court + city
+      // IS the pickup location).
+      const court = payload.select_court?.trim();
+      const city = (payload.select_court_city || payload.city)?.trim();
+      if (court && city) {
+        body = (
+          <>
+            Collect your documents from <strong>{court}</strong> in <strong>{city}</strong>.
+          </>
+        );
+      } else {
+        body = 'Select a court and city in Step 1 to see the pickup location.';
+      }
     } else {
       body = field.hint ?? '';
     }

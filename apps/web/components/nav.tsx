@@ -86,9 +86,11 @@ function buildNavItems(counts: Record<string, number>): NavItem[] {
 }
 
 function buildClerkItems(counts: Record<string, number>): NavItem[] {
-  // Representatives lack reports.read and get a 403 on /dashboard, so their nav
-  // lands them on their work queue ("My Assigned Tickets") instead.
+  // The clerk dashboard (/dashboard renders a clerk view backed by
+  // /dashboard/clerk-summary, gated on tickets.read which reps hold) shows their
+  // earnings + metrics; it is their landing page.
   return [
+    { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
     {
       label: 'My Assigned Tickets',
       href: '/tickets/assigned',

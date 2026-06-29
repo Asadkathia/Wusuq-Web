@@ -39,10 +39,10 @@ export default function Home() {
       return;
     }
 
-    // Representatives (clerks) lack reports.read and 403 on the admin dashboard;
-    // land them on their work queue instead.
+    // Representatives (clerks) land on /dashboard, which renders their clerk
+    // view (earnings + metrics) backed by /dashboard/clerk-summary.
     if (isRepresentative) {
-      router.replace('/tickets/assigned');
+      router.replace('/dashboard');
       return;
     }
 

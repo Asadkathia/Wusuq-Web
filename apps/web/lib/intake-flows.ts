@@ -729,10 +729,11 @@ const caseFilesSteps: IntakeStep[] = [
         },
       },
       {
+        // Self-collection has NO input: the pickup point IS the selected court.
+        // The renderer composes "{court}, {city}" from the Step-1 court choice.
         key: 'pickup_location',
         label: 'Pickup Location',
-        type: 'text',
-        required: true,
+        type: 'info',
         showWhen: { field: 'delivery_mode', value: 'Self Collection' },
       },
       { key: 'notes', label: 'Notes', type: 'textarea' },
@@ -1111,10 +1112,11 @@ const caseSearchSteps: IntakeStep[] = [
         },
       },
       {
+        // Self-collection has NO input: the pickup point IS the selected court.
+        // The renderer composes "{court}, {city}" from the Step-1 court choice.
         key: 'pickup_location',
         label: 'Pickup Location',
-        type: 'text',
-        required: true,
+        type: 'info',
         showWhen: { field: 'delivery_mode', value: 'Self Collection' },
       },
       // 2026-05-23 B4: attested/non-attested set_type restricted to Case Files

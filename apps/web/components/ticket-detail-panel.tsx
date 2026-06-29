@@ -8,6 +8,7 @@ import {
   chargeCapabilitiesFor,
   FLOW_LABELS,
   courtTierFromCourtType,
+  computeClerkEarnings,
 } from '@wusuq/shared';
 import { PanelCard } from '@/components/ui/panel-card';
 import { StatusPill } from '@/components/ui/status-pill';
@@ -127,19 +128,10 @@ export function TicketDetailPanel({ ticketId, onClose, isClerkView = false, onCh
   // as their own separate internal line below.
   const customerTotal = ticket ? Number(ticket.totalAmount || 0) : 0;
 
-  /** Internal-only: total payout to the assigned clerk (clerkCost + phase-2 charges). */
-  const computeClerkEarnings = (t: {
-    clerkCost?: number | string | null;
-    attestedCharges?: number | string | null;
-    nonAttestedCharges?: number | string | null;
-    printingCharges?: number | string | null;
-    deliveryCharges?: number | string | null;
-  }): number =>
-    Number(t.clerkCost || 0) +
-    Number(t.attestedCharges || 0) +
-    Number(t.nonAttestedCharges || 0) +
-    Number(t.printingCharges || 0) +
-    Number(t.deliveryCharges || 0);
+  // PDF purchased at intake → the clerk earns their PDF_CLERK_FEE cut (handled
+  // by the shared computeClerkEarnings).
+  const wantPdf =
+    ((ticket?.formPayload ?? {}) as Record<string, unknown>).want_pdf_before_dispatch === 'Yes';
 
 
   return (
@@ -349,7 +341,7 @@ export function TicketDetailPanel({ ticketId, onClose, isClerkView = false, onCh
                         // clerk-earnings line below (Bug #5).
                         ['Discount', ticket.discountPrice ? `-${Number(ticket.discountPrice).toLocaleString()}` : null],
                       ];
-                      const clerkEarnings = computeClerkEarnings(ticket);
+                      const clerkEarnings = computeClerkEarnings({ ...ticket, wantPdf });
                       return (
                         <div className="space-y-2 text-sm">
                           {chargeRows.filter(([, val]) => val !== null && val !== undefined && Number(val) !== 0).map(([label, val]) => (

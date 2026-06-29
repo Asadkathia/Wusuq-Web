@@ -66,7 +66,7 @@ export function ProfileCompletionBanner() {
         <UserCircle2 className="h-5 w-5 shrink-0" />
         <span>
           Complete your profile — add {what} so we can serve you better.{' '}
-          <Link href="/consumer/profile" className="font-semibold underline">
+          <Link href="/consumer/onboarding" className="font-semibold underline">
             Complete now
           </Link>
         </span>

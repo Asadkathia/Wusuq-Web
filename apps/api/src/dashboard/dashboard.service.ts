@@ -1,7 +1,12 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { subDays, startOfDay, endOfDay, format } from 'date-fns';
-import { recommendationsForCase, isFlowKey, type FlowKey } from '@wusuq/shared';
+import {
+  recommendationsForCase,
+  isFlowKey,
+  computeClerkEarnings,
+  type FlowKey,
+} from '@wusuq/shared';
 
 @Injectable()
 export class DashboardService {
@@ -115,6 +120,109 @@ export class DashboardService {
         totalAmount: Number(ticket.totalAmount || 0),
       })),
       myNextHearing,
+    };
+  }
+
+  /**
+   * Clerk (representative) dashboard. Self-scoped to `repId` — earnings split
+   * into realized (work done: COMPLETED + DELIVERED) vs pending (in flight:
+   * IN_PROGRESS + WAITING_APPROVAL), plus this-month realized, status counts,
+   * recent assignments and upcoming hearings. Earnings use the shared
+   * computeClerkEarnings (internal payout; never exposed to consumers).
+   */
+  async getClerkSummary(repId: string) {
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const round2 = (n: number) => Math.round(n * 100) / 100;
+    const toNum = (v: unknown): number | null => (v == null ? null : Number(v));
+
+    const tickets = await this.prisma.ticket.findMany({
+      where: { assignments: { some: { representativeId: repId } }, archivedAt: null },
+      orderBy: { updatedAt: 'desc' },
+      select: {
+        id: true,
+        batchNo: true,
+        status: true,
+        updatedAt: true,
+        scheduledDate: true,
+        hearingType: true,
+        formPayload: true,
+        clerkCost: true,
+        defaultClerkCost: true,
+        attestedCharges: true,
+        nonAttestedCharges: true,
+        printingCharges: true,
+        deliveryCharges: true,
+        service: { select: { name: true } },
+        case: { select: { caseNo: true, title: true } },
+      },
+    });
+
+    const REALIZED = new Set(['COMPLETED', 'DELIVERED']);
+    const PENDING = new Set(['IN_PROGRESS', 'WAITING_APPROVAL']);
+
+    let realized = 0;
+    let pending = 0;
+    let thisMonth = 0;
+    const counts: Record<string, number> = {};
+
+    for (const t of tickets) {
+      counts[t.status] = (counts[t.status] ?? 0) + 1;
+      const wantPdf =
+        ((t.formPayload ?? {}) as Record<string, unknown>).want_pdf_before_dispatch === 'Yes';
+      const earn = computeClerkEarnings({
+        clerkCost: toNum(t.clerkCost),
+        defaultClerkCost: toNum(t.defaultClerkCost),
+        attestedCharges: toNum(t.attestedCharges),
+        nonAttestedCharges: toNum(t.nonAttestedCharges),
+        printingCharges: toNum(t.printingCharges),
+        deliveryCharges: toNum(t.deliveryCharges),
+        wantPdf,
+      });
+      if (REALIZED.has(t.status)) {
+        realized += earn;
+        if (t.updatedAt >= startOfMonth) thisMonth += earn;
+      } else if (PENDING.has(t.status)) {
+        pending += earn;
+      }
+    }
+
+    const recent = tickets.slice(0, 6).map((t) => ({
+      id: t.id,
+      batchNo: t.batchNo,
+      status: t.status,
+      service: t.service?.name ?? null,
+      caseNo: t.case?.caseNo ?? null,
+    }));
+
+    const upcomingHearings = tickets
+      .filter((t) => t.scheduledDate && t.scheduledDate >= now)
+      .sort((a, b) => a.scheduledDate!.getTime() - b.scheduledDate!.getTime())
+      .slice(0, 5)
+      .map((t) => ({
+        id: t.id,
+        batchNo: t.batchNo,
+        scheduledDate: t.scheduledDate,
+        hearingType: t.hearingType,
+        caseTitle: t.case?.title ?? null,
+      }));
+
+    return {
+      earnings: {
+        realized: round2(realized),
+        pending: round2(pending),
+        thisMonth: round2(thisMonth),
+      },
+      counts: {
+        assigned: counts['ASSIGNED'] ?? 0,
+        inProgress: counts['IN_PROGRESS'] ?? 0,
+        waitingApproval: counts['WAITING_APPROVAL'] ?? 0,
+        completed: counts['COMPLETED'] ?? 0,
+        delivered: counts['DELIVERED'] ?? 0,
+      },
+      pendingAcceptance: counts['ASSIGNED'] ?? 0,
+      recent,
+      upcomingHearings,
     };
   }
 

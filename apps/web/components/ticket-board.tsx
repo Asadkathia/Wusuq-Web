@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { TicketStatus } from '@wusuq/shared';
-import { chargeCapabilitiesFor } from '@wusuq/shared';
+import { chargeCapabilitiesFor, computeClerkEarnings } from '@wusuq/shared';
 import { TICKET_STATUSES } from '@wusuq/shared';
 import { apiClient } from '@/lib/api-client';
 import { relativeTime } from '@/lib/relative-time';
@@ -238,13 +238,19 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
   const [finalizeDetail, setFinalizeDetail] = useState<any>(null);
   const [finalizing, setFinalizing] = useState(false);
 
-  /** Internal-only: total payout to the clerk given the current finalize form values. */
-  const computeFinalizeClerkEarnings = (t: TicketRow, form: FinalizeForm): number =>
-    Number(t.clerkCost ?? t.defaultClerkCost ?? 0) +
-    Number(form.attestedCharges || 0) +
-    Number(form.nonAttestedCharges || 0) +
-    Number(form.printingCharges || 0) +
-    Number(form.deliveryCharges || 0);
+  /** Internal-only: total payout to the clerk given the current finalize form
+   *  values. Delegates to the shared single-source formula (adds the PDF clerk
+   *  cut when the ticket purchased a PDF). */
+  const computeFinalizeClerkEarnings = (t: TicketRow, form: FinalizeForm, wantPdf: boolean): number =>
+    computeClerkEarnings({
+      clerkCost: t.clerkCost,
+      defaultClerkCost: t.defaultClerkCost,
+      attestedCharges: form.attestedCharges,
+      nonAttestedCharges: form.nonAttestedCharges,
+      printingCharges: form.printingCharges,
+      deliveryCharges: form.deliveryCharges,
+      wantPdf,
+    });
 
   const openFinalizeModal = async (ticket: TicketRow) => {
     setFinalizeTicket(ticket);
@@ -1730,6 +1736,17 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
           {finalizeTicket && (() => {
             const caps = chargeCapabilitiesFor(finalizeTicket.intakeFlow);
             const hasAnyCap = caps.attestation || caps.printing || caps.delivery || caps.pdf;
+            // PDF purchased → the clerk earns their PDF cut (shared formula).
+            const wantPdf =
+              (((finalizeDetail?.formPayload ?? finalizeTicket.payload) ?? {}) as Record<string, unknown>)
+                .want_pdf_before_dispatch === 'Yes';
+            // What the clerk originally SUBMITTED (persisted; doesn't change as the
+            // admin edits the inputs) — shown beside each field so the admin can
+            // compare submitted vs final.
+            const clerkSubmitted = (
+              field: 'attestedCharges' | 'nonAttestedCharges' | 'printingCharges' | 'deliveryCharges' | 'additionalCharges',
+            ): number =>
+              Number(((finalizeDetail?.[field] ?? (finalizeTicket as Record<string, unknown>)[field]) as unknown) ?? 0);
             return (
               <div className="space-y-4">
                 <div className="flex items-center gap-2 rounded-lg bg-emerald-50 px-4 py-2.5 text-sm text-emerald-800 ring-1 ring-inset ring-emerald-100">
@@ -1765,6 +1782,9 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
                     </div>
                   );
                 })()}
+                <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                  Final charges (admin) — compare against the clerk&rsquo;s submitted values
+                </p>
                 <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3">
                   {caps.attestation && (
                     <>
@@ -1772,11 +1792,13 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
                         <Input id="fin-attested" type="number" min="0" placeholder="0"
                           value={finalizeForm.attestedCharges}
                           onChange={(e) => setFinalizeForm((f) => ({ ...f, attestedCharges: e.target.value }))} />
+                        <p className="mt-1 text-xs text-slate-400">Clerk submitted: PKR {clerkSubmitted('attestedCharges').toLocaleString()}</p>
                       </FormField>
                       <FormField label="Non-Attested Charges" htmlFor="fin-non-attested">
                         <Input id="fin-non-attested" type="number" min="0" placeholder="0"
                           value={finalizeForm.nonAttestedCharges}
                           onChange={(e) => setFinalizeForm((f) => ({ ...f, nonAttestedCharges: e.target.value }))} />
+                        <p className="mt-1 text-xs text-slate-400">Clerk submitted: PKR {clerkSubmitted('nonAttestedCharges').toLocaleString()}</p>
                       </FormField>
                     </>
                   )}
@@ -1785,6 +1807,7 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
                       <Input id="fin-printing" type="number" min="0" placeholder="0"
                         value={finalizeForm.printingCharges}
                         onChange={(e) => setFinalizeForm((f) => ({ ...f, printingCharges: e.target.value }))} />
+                      <p className="mt-1 text-xs text-slate-400">Clerk submitted: PKR {clerkSubmitted('printingCharges').toLocaleString()}</p>
                     </FormField>
                   )}
                   {caps.delivery && (
@@ -1792,6 +1815,7 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
                       <Input id="fin-delivery" type="number" min="0" placeholder="0"
                         value={finalizeForm.deliveryCharges}
                         onChange={(e) => setFinalizeForm((f) => ({ ...f, deliveryCharges: e.target.value }))} />
+                      <p className="mt-1 text-xs text-slate-400">Clerk submitted: PKR {clerkSubmitted('deliveryCharges').toLocaleString()}</p>
                     </FormField>
                   )}
                   {/* Additional Cost — admin-editable, viewable; persisted on finalize. */}
@@ -1799,6 +1823,7 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
                     <Input id="fin-additional" type="number" min="0" placeholder="0"
                       value={finalizeForm.additionalCharges}
                       onChange={(e) => setFinalizeForm((f) => ({ ...f, additionalCharges: e.target.value }))} />
+                    <p className="mt-1 text-xs text-slate-400">Clerk submitted: PKR {clerkSubmitted('additionalCharges').toLocaleString()}</p>
                   </FormField>
                 </div>
                 <div className="rounded-lg bg-slate-50 px-4 py-3 text-sm text-slate-700">
@@ -1816,7 +1841,7 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
                 {/* Clerk earnings summary — internal only, never shown to consumers */}
                 {(() => {
                   const repName = finalizeTicket.assignedRepresentative?.name;
-                  const earnings = computeFinalizeClerkEarnings(finalizeTicket, finalizeForm);
+                  const earnings = computeFinalizeClerkEarnings(finalizeTicket, finalizeForm, wantPdf);
                   return (
                     <div className="rounded-lg border border-amber-100 bg-amber-50 px-4 py-3 text-sm">
                       <div className="flex items-center justify-between">
