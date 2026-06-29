@@ -19,7 +19,7 @@ test.describe('Mobile — no horizontal overflow', () => {
 test.describe('Mobile — inputs are ≥16px (no iOS zoom)', () => {
   test('login email input renders at 16px on mobile', async ({ page }) => {
     await setMobile(page);
-    await page.goto('/consumer/login/email');
+    await page.goto('/consumer/login');
     const input = page.getByPlaceholder('you@example.com');
     await input.waitFor();
     const fontPx = await input.evaluate((el) => parseFloat(getComputedStyle(el).fontSize));

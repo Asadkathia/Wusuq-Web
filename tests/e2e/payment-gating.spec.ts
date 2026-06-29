@@ -10,7 +10,7 @@ test.describe('payment gating', () => {
     'consumer pays via mock gateway and ticket becomes assignable',
     async ({ page }) => {
       // 1. log in as consumer
-      await page.goto('/consumer/login/email');
+      await page.goto('/consumer/login');
       await page.getByLabel(/email/i).fill('testconsumer@wusuq.com');
       await page.getByLabel(/password/i).fill('password123');
       await page.getByRole('button', { name: /log in/i }).click();

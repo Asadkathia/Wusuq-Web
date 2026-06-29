@@ -167,6 +167,7 @@ export class AuthService {
         email: dto.email,
         passwordHash,
         phone: dto.phone,
+        consumerKind: dto.consumerKind,
         country: dto.country ?? null,
         currency: deriveCurrency({ phone: dto.phone, country: dto.country }),
         role: 'consumer',

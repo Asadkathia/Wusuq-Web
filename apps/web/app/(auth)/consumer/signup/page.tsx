@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ArrowRight, Lock, Mail, Phone, Scale, ShieldCheck, Sparkles, User } from 'lucide-react';
+import { CONSUMER_KINDS, CONSUMER_KIND_LABELS, type ConsumerKind } from '@wusuq/shared';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { FormField } from '@/components/ui/form-field';
@@ -26,11 +27,15 @@ export default function ConsumerSignupPage() {
   // choice — we start UNSET (no silent PK default) and require it before submit.
   const [countryCode, setCountryCode] = useState<string>('');
   const [phone, setPhone] = useState('');
+  // Required account/user type — Civilian / Lawyer / Company. Starts unset.
+  const [consumerKind, setConsumerKind] = useState<ConsumerKind | ''>('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [nextPath, setNextPath] = useState('/consumer/dashboard');
+  // Fresh signups land on the onboarding wizard to finish their profile
+  // (address + location). An explicit ?next= (e.g. deep link) still wins below.
+  const [nextPath, setNextPath] = useState('/consumer/onboarding');
   const router = useRouter();
 
   useEffect(() => {
@@ -55,19 +60,27 @@ export default function ConsumerSignupPage() {
       setError('Passwords do not match.');
       return;
     }
+    if (!consumerKind) {
+      setError('Please select your user type.');
+      return;
+    }
     if (!countryCode) {
       setError('Please select your country.');
       return;
     }
-    if (phone.trim()) {
-      const isValid =
-        countryCode === 'PK'
-          ? PK_PHONE_REGEX.test(phone.trim())
-          : GENERIC_PHONE_REGEX.test(phone.trim());
-      if (!isValid) {
-        setError('Enter a valid phone number, or leave it blank.');
-        return;
-      }
+    // Mobile number is required: its dial code determines the billing region
+    // (Pakistan → PKR, otherwise → USD).
+    if (!phone.trim()) {
+      setError('Please enter your mobile number.');
+      return;
+    }
+    const phoneValid =
+      countryCode === 'PK'
+        ? PK_PHONE_REGEX.test(phone.trim())
+        : GENERIC_PHONE_REGEX.test(phone.trim());
+    if (!phoneValid) {
+      setError('Enter a valid mobile number.');
+      return;
     }
 
     setLoading(true);
@@ -84,19 +97,17 @@ export default function ConsumerSignupPage() {
             name: name.trim(),
             email: email.trim().toLowerCase(),
             password,
-            // Country drives billing currency server-side (PKR for PK, else USD).
+            consumerKind,
+            // Country is saved as contact info; the phone's dial code is what
+            // drives billing currency server-side (PKR for PK, else USD).
             country: countryCode,
-            ...(phone.trim()
-              ? {
-                  // Compose +<dial><local>; strip leading + / 0 and skip
-                  // doubling up if the user already typed the dial code.
-                  phone: (() => {
-                    const digits = phone.trim().replace(/[\s\-()]/g, '').replace(/^\+/, '').replace(/^0+/, '');
-                    const dial = findCountry(countryCode).dial;
-                    return digits.startsWith(dial) ? `+${digits}` : `+${dial}${digits}`;
-                  })(),
-                }
-              : {}),
+            // Compose +<dial><local>; strip leading + / 0 and skip doubling up
+            // if the user already typed the dial code.
+            phone: (() => {
+              const digits = phone.trim().replace(/[\s\-()]/g, '').replace(/^\+/, '').replace(/^0+/, '');
+              const dial = findCountry(countryCode).dial;
+              return digits.startsWith(dial) ? `+${digits}` : `+${dial}${digits}`;
+            })(),
           }),
           signal: controller.signal,
         });
@@ -235,11 +246,35 @@ export default function ConsumerSignupPage() {
                 />
               </FormField>
 
-              <FormField label="Country" htmlFor="country">
+              <FormField label="User type" required htmlFor="consumerKind">
+                <div role="radiogroup" aria-label="User type" className="grid grid-cols-3 gap-2">
+                  {CONSUMER_KINDS.map((kind) => {
+                    const selected = consumerKind === kind;
+                    return (
+                      <button
+                        key={kind}
+                        type="button"
+                        role="radio"
+                        aria-checked={selected}
+                        onClick={() => setConsumerKind(kind)}
+                        className={`rounded-xl border px-3 py-2.5 text-sm font-medium transition-colors ${
+                          selected
+                            ? 'border-brand-500 bg-brand-50 text-brand-700 ring-1 ring-inset ring-brand-500'
+                            : 'border-border-soft bg-surface text-slate-600 hover:border-brand-300 hover:text-slate-900'
+                        }`}
+                      >
+                        {CONSUMER_KIND_LABELS[kind]}
+                      </button>
+                    );
+                  })}
+                </div>
+              </FormField>
+
+              <FormField label="Country" required htmlFor="country">
                 <CountryPicker value={countryCode} onChange={setCountryCode} />
               </FormField>
 
-              <FormField label="Phone (optional)" htmlFor="phone">
+              <FormField label="Mobile number" required htmlFor="phone">
                 <div className="flex items-stretch gap-2">
                   <span className="flex items-center rounded-xl border border-border-soft bg-surface-muted/50 px-3 text-sm font-medium text-slate-700">
                     {countryCode ? `+${findCountry(countryCode).dial}` : '+—'}
@@ -254,8 +289,12 @@ export default function ConsumerSignupPage() {
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
                     leftIcon={<Phone className="h-4 w-4" />}
+                    required
                   />
                 </div>
+                <p className="mt-1.5 text-xs text-slate-500">
+                  Used to set your billing region. We won’t send a verification code yet.
+                </p>
               </FormField>
 
               <FormField label="Password" required htmlFor="password">
@@ -309,24 +348,12 @@ export default function ConsumerSignupPage() {
             <p className="mt-8 text-center text-sm text-slate-500">
               Already have an account?{' '}
               <Link
-                href="/consumer/login/email"
+                href="/consumer/login"
                 className="font-semibold text-brand-600 hover:text-brand-700 transition-colors"
               >
                 Sign in
               </Link>
             </p>
-
-            <div className="mt-6 border-t border-border-soft pt-5 text-center">
-              <p className="text-xs text-slate-500">
-                Prefer phone?{' '}
-                <Link
-                  href="/consumer/login"
-                  className="font-semibold text-slate-700 hover:text-brand-600 transition-colors"
-                >
-                  Continue with phone number
-                </Link>
-              </p>
-            </div>
           </div>
         </section>
       </div>
