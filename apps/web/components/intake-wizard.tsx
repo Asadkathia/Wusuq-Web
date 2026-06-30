@@ -2236,8 +2236,14 @@ export function IntakeWizard({
               )}
 
               {isJudicial ? (
-                <label className="space-y-1 block md:col-span-2">
-                  <span className="text-sm font-medium text-slate-700">Court<span className="text-rose-500 ml-0.5">*</span></span>
+                // NOTE: must be a <div>, NOT a <label>. A <label> that wraps a
+                // grid of <button> cards hijacks taps on touch devices (iOS
+                // Safari / Chrome Android forward the tap to the label's first
+                // labelable control instead of the tapped card), so the court
+                // cards become unselectable on mobile. The non-judicial branch
+                // below already uses a <div> for the identical ServiceCardGrid.
+                <div className="space-y-1 md:col-span-2">
+                  <span className="block text-sm font-medium text-slate-700">Court<span className="text-rose-500 ml-0.5">*</span></span>
                   {!draft.payload.city ? (
                     <p className="mt-1 rounded-xl bg-surface-muted/50 p-3 text-sm text-slate-500 ring-1 ring-inset ring-border-soft">
                       Select a city above to see available courts.
@@ -2292,7 +2298,7 @@ export function IntakeWizard({
                       }
                     />
                   )}
-                </label>
+                </div>
               ) : (
                 // Non-judicial flows have no court selection — render the
                 // service tile picker directly without the "Court*" label.

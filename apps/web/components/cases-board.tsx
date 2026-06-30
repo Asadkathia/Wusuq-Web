@@ -233,7 +233,10 @@ export function CasesBoard() {
                 />
               </label>
               
-              <label className="block">
+              {/* Must be a <div>, not a <label>: a <label> wrapping these
+                  type <button>s hijacks taps on touch devices, making the
+                  Judicial / Non-Judicial toggle unselectable on mobile. */}
+              <div className="block">
                 <span className="text-sm font-medium text-slate-700 block mb-1">Case Type</span>
                 <div className="grid grid-cols-2 gap-2 mt-1">
                    <button 
@@ -254,7 +257,7 @@ export function CasesBoard() {
                 <p className="text-xs text-slate-500 mt-2">
                   Select the domain of law to properly configure the default contextual fields.
                 </p>
-              </label>
+              </div>
 
               <button type="submit" className="w-full mt-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 transition-colors">
                 Create Case
