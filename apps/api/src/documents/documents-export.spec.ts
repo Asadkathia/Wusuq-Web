@@ -24,6 +24,7 @@ describe('GET /documents/export consumer scoping (report 3.3a)', () => {
 
     expect(list).toHaveBeenCalledWith(
       expect.objectContaining({ consumerId: 'consumer-A' }),
+      { forConsumer: true },
     );
   });
 

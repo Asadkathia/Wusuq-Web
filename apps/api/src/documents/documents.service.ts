@@ -7,7 +7,7 @@ import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 export class DocumentsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async list(query: PaginationQueryDto) {
+  async list(query: PaginationQueryDto, opts?: { forConsumer?: boolean }) {
     const skip = (query.page - 1) * query.limit;
 
     const where: Prisma.TicketDocumentWhereInput = query.search
@@ -27,16 +27,30 @@ export class DocumentsService {
         }
       : {};
 
+    const ticketWhere: Prisma.TicketWhereInput | undefined = where.ticket as
+      | Prisma.TicketWhereInput
+      | undefined;
+
     const scopedWhere: Prisma.TicketDocumentWhereInput = {
       ...where,
-      ...(query.consumerId
+      ...(query.consumerId || opts?.forConsumer
         ? {
             ticket: {
-              ...(where.ticket as Prisma.TicketWhereInput | undefined),
-              consumerId: query.consumerId,
+              ...ticketWhere,
+              ...(query.consumerId ? { consumerId: query.consumerId } : {}),
+              // Consumer-facing list/export must only surface downloadable
+              // deliverables — same gate as `redactTicketForConsumer`
+              // (tickets.service.ts ~L553-560): visible-to-consumer docs on
+              // a ticket that has reached COMPLETED/DELIVERED. Without
+              // this, internal WORK_DOCUMENTs and docs on still-in-flight
+              // tickets rendered a Download button that then 403'd.
+              ...(opts?.forConsumer
+                ? { status: { in: ['COMPLETED', 'DELIVERED'] } }
+                : {}),
             },
           }
         : {}),
+      ...(opts?.forConsumer ? { visibleToConsumer: true } : {}),
     };
 
     const [items, total] = await this.prisma.$transaction([
