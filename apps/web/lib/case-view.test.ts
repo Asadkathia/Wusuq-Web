@@ -270,4 +270,24 @@ describe('buildCaseView', () => {
   it('isCaseViewEmpty returns false when status is present', () => {
     expect(isCaseViewEmpty(buildCaseView({ case_status: 'Pending Case' }, null))).toBe(false);
   });
+
+  // ── Task 5 (B3): scheduledDate is authoritative for hearings.next ──────
+
+  it('hearings.next prefers opts.scheduledDate over payload.future_date', () => {
+    const v = buildCaseView(lower, 'lower', { scheduledDate: '2026-07-17' });
+    expect(v.hearings).toEqual({ previous: '2026-06-23', next: '2026-07-17' });
+  });
+
+  it('hearings.next falls back to payload.future_date when no scheduledDate is given', () => {
+    const v = buildCaseView(lower, 'lower');
+    expect(v.hearings).toEqual({ previous: '2026-06-23', next: '2026-07-10' });
+  });
+
+  it('hearings.next falls back to payload.future_date when scheduledDate is null/blank', () => {
+    const v1 = buildCaseView(lower, 'lower', { scheduledDate: null });
+    expect(v1.hearings!.next).toBe('2026-07-10');
+
+    const v2 = buildCaseView(lower, 'lower', { scheduledDate: '   ' });
+    expect(v2.hearings!.next).toBe('2026-07-10');
+  });
 });

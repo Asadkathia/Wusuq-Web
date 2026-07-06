@@ -88,13 +88,13 @@ export class DashboardService {
         where: {
           scheduledDate: { gte: now },
           consumerId: userId,
-          caseId: { not: null },
         },
         orderBy: { scheduledDate: 'asc' },
         select: {
           scheduledDate: true,
           hearingType: true,
           case: { select: { title: true } },
+          service: { select: { name: true } },
         },
       }),
     ]);
@@ -119,7 +119,17 @@ export class DashboardService {
         ...ticket,
         totalAmount: Number(ticket.totalAmount || 0),
       })),
-      myNextHearing,
+      // `caseId` may be null (no linked Case row yet) even though the clerk
+      // has set a scheduledDate on the ticket itself — fall back to the
+      // ticket's service name so the FE's `myNextHearing.case.title` render
+      // never sees a null case object.
+      myNextHearing: myNextHearing
+        ? {
+            scheduledDate: myNextHearing.scheduledDate,
+            hearingType: myNextHearing.hearingType,
+            case: { title: myNextHearing.case?.title ?? myNextHearing.service?.name ?? 'Upcoming hearing' },
+          }
+        : null,
     };
   }
 
