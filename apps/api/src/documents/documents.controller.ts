@@ -17,10 +17,11 @@ export class DocumentsController {
     @Query() query: PaginationQueryDto,
     @CurrentUser() user: JwtUser | undefined,
   ) {
-    if (user && isConsumerRole(user.role)) {
-      query.consumerId = user.sub;
+    const forConsumer = Boolean(user && isConsumerRole(user.role));
+    if (forConsumer) {
+      query.consumerId = user!.sub;
     }
-    return this.documentsService.list(query);
+    return this.documentsService.list(query, { forConsumer });
   }
 
   @RequirePermissions('documents.read')
@@ -32,11 +33,19 @@ export class DocumentsController {
   ) {
     // Same consumer scoping as `list` — without it the export dumped every
     // consumer's documents to any documents.read holder (audit 3.3a).
-    const data = await this.documentsService.list({
-      page: 1,
-      limit: 5000,
-      ...(user && isConsumerRole(user.role) ? { consumerId: user.sub } : {}),
-    } as PaginationQueryDto);
+    // `forConsumer` additionally filters to only downloadable deliverables
+    // (visibleToConsumer + COMPLETED/DELIVERED) — B1/B2, otherwise the
+    // export listed internal WORK_DOCUMENTs / in-flight-ticket docs whose
+    // Download button then 403'd.
+    const forConsumer = Boolean(user && isConsumerRole(user.role));
+    const data = await this.documentsService.list(
+      {
+        page: 1,
+        limit: 5000,
+        ...(forConsumer ? { consumerId: user!.sub } : {}),
+      } as PaginationQueryDto,
+      { forConsumer },
+    );
     const rows = data.items;
 
     if (format === 'csv') {
