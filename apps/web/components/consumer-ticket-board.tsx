@@ -836,7 +836,7 @@ export function ConsumerTicketDetail({
           );
         })()}
 
-      {charges.length > 0 || discount > 0 ? (
+      {charges.length > 0 || discount > 0 || total > 0 ? (
         <section>
           <h4 className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Charges</h4>
           <div className="mt-3 divide-y divide-border-soft rounded-xl ring-1 ring-border-soft bg-surface">

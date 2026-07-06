@@ -1,4 +1,5 @@
 import PDFDocument from 'pdfkit';
+import { formatMoney } from '@wusuq/shared';
 
 export interface ConsumerInvoiceInput {
   batchNo: string;
@@ -29,10 +30,8 @@ export interface ConsumerInvoiceInput {
   } | null;
 }
 
-const money = (n: number, c: 'PKR' | 'USD') =>
-  c === 'USD'
-    ? `$${n.toLocaleString(undefined, { minimumFractionDigits: 2 })}`
-    : `PKR ${Math.round(n).toLocaleString()}`;
+// Reuse the single consumer-facing money formatter (CLAUDE.md), not a local one.
+const money = (n: number, c: 'PKR' | 'USD') => formatMoney(n, c);
 
 // Pure — returns the consumer-safe line items (NO clerk cost); phase-2 lines only when finalized.
 export function consumerInvoiceLineItems(

@@ -1749,7 +1749,16 @@ export class TicketsService {
     });
     if (!ticket) throw new NotFoundException('Ticket not found');
 
-    if (isConsumerRole(caller.role) && ticket.consumerId !== caller.userId) {
+    // Only staff (any admin) or the ticket's own consumer may pull the invoice.
+    // Gate on isStaffRole — NOT isConsumerRole — because a `representative` is
+    // neither staff nor consumer-class, so an isConsumerRole check is a no-op
+    // for reps and would let any clerk (holds tickets.read) download any
+    // consumer's PII + money (the 3.1-class IDOR). Archived tickets 404 for
+    // non-staff, matching findOne. 404 (not 403) so ids can't be probed.
+    if (
+      !isStaffRole(caller.role) &&
+      (ticket.consumerId !== caller.userId || ticket.archivedAt)
+    ) {
       throw new NotFoundException('Ticket not found');
     }
 

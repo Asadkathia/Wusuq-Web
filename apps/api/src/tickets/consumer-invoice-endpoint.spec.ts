@@ -101,4 +101,35 @@ describe('buildConsumerInvoice (C14)', () => {
       }),
     ).rejects.toThrow(NotFoundException);
   });
+
+  it('throws NotFoundException for a representative (not staff, not owner) — IDOR guard', async () => {
+    // A rep holds tickets.read but must NOT be able to pull any consumer's
+    // invoice PII/money. The guard gates on isStaffRole, not isConsumerRole.
+    const { service } = makeService(makeTicket());
+    await expect(
+      service.buildConsumerInvoice('ticket-1', {
+        role: 'representative',
+        userId: 'rep-1',
+      }),
+    ).rejects.toThrow(NotFoundException);
+  });
+
+  it('throws NotFoundException for a consumer on their own but ARCHIVED ticket', async () => {
+    const { service } = makeService(makeTicket({ archivedAt: new Date() }));
+    await expect(
+      service.buildConsumerInvoice('ticket-1', {
+        role: 'consumer',
+        userId: 'consumer-1',
+      }),
+    ).rejects.toThrow(NotFoundException);
+  });
+
+  it('allows a staff admin to pull any ticket invoice', async () => {
+    const { service } = makeService(makeTicket({ consumerId: 'someone-else' }));
+    const result = await service.buildConsumerInvoice('ticket-1', {
+      role: 'super-admin',
+      userId: 'admin-1',
+    });
+    expect(result.contentType).toBe('application/pdf');
+  });
 });

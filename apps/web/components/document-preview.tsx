@@ -2,26 +2,10 @@
 
 import { startTransition, useEffect, useState } from 'react';
 import { AlertTriangle, Download, FileText, RefreshCw, X } from 'lucide-react';
+import { apiClient } from '@/lib/api-client';
+import { previewKind } from '@/lib/document-kind';
 
-/**
- * Classifies a document by its filename (extension) or content-type string
- * so the viewer knows whether it can render an inline preview.
- */
-export function previewKind(nameOrType: string): 'pdf' | 'image' | 'other' {
-  const value = (nameOrType ?? '').toLowerCase().trim();
-  if (!value) return 'other';
-
-  // Content-type style, e.g. "application/pdf", "image/png"
-  if (value.startsWith('image/')) return 'image';
-  if (value === 'application/pdf') return 'pdf';
-
-  // Filename style — branch on the extension
-  const extMatch = value.match(/\.([a-z0-9]+)$/);
-  const ext = extMatch?.[1] ?? value;
-  if (ext === 'pdf') return 'pdf';
-  if (['png', 'jpg', 'jpeg', 'gif', 'webp'].includes(ext)) return 'image';
-  return 'other';
-}
+export { previewKind };
 
 interface DocumentPreviewProps {
   url: string;
@@ -37,10 +21,16 @@ export function DocumentPreview({ url, name, onClose }: DocumentPreviewProps) {
   useEffect(() => {
     let cancelled = false;
     let createdUrl: string | null = null;
+    // Reset on every url change so switching to a different document (the modal
+    // is reused across surfaces) shows the loader, not the previous doc.
+    startTransition(() => {
+      setObjectUrl(null);
+      setLoading(true);
+      setError(null);
+    });
 
     (async () => {
       try {
-        const { apiClient } = await import('@/lib/api-client');
         const { blob } = await apiClient.getBlob(url);
         if (cancelled) return;
         createdUrl = URL.createObjectURL(blob);

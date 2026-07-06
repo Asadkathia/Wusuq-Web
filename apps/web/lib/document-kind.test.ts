@@ -1,10 +1,4 @@
-// Node-env unit test (see jest.config.js testEnvironment: 'node'). Render
-// verification for <DocumentPreview> requires jsdom + @testing-library/react,
-// which are not yet web devDependencies (same tradeoff documented in
-// payment-method-details.test.tsx); that coverage is deferred to the Task 8
-// Playwright e2e. Here we cover the pure, environment-agnostic `previewKind`
-// helper.
-import { previewKind } from './document-preview';
+import { previewKind } from './document-kind';
 
 describe('previewKind', () => {
   it('classifies pdf by extension', () => {
