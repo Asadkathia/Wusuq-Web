@@ -101,9 +101,9 @@ function benchOf(p: P): CaseView['bench'] {
   return { designation, judges: names, type };
 }
 
-function hearingsOf(p: P): CaseView['hearings'] {
+function hearingsOf(p: P, opts?: { scheduledDate?: string | null }): CaseView['hearings'] {
   const previous = val(p, 'case_date');
-  const next = val(p, 'future_date', 'scheduledDate');
+  const next = (opts?.scheduledDate ?? '').trim() || val(p, 'future_date');
   if (!previous && !next) return null;
   return { previous, next };
 }
@@ -114,7 +114,11 @@ export function isCaseViewEmpty(view: CaseView): boolean {
   );
 }
 
-export function buildCaseView(payload: P, tier: CourtTier | null): CaseView {
+export function buildCaseView(
+  payload: P,
+  tier: CourtTier | null,
+  opts?: { scheduledDate?: string | null },
+): CaseView {
   const resolvedTier = tier ?? courtTierFromCourtType(payload?.select_court_type);
   const summary: Array<{ label: string; value: string }> = [];
   for (const f of SUMMARY_FIELDS) {
@@ -140,7 +144,7 @@ export function buildCaseView(payload: P, tier: CourtTier | null): CaseView {
     status: statusOf(payload),
     summary,
     bench: benchOf(payload),
-    hearings: hearingsOf(payload),
+    hearings: hearingsOf(payload, opts),
     blockOrder,
   };
 }

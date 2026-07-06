@@ -733,6 +733,7 @@ export function ConsumerTicketDetail({
         const view = buildCaseView(
           p as Record<string, string | undefined>,
           courtTierFromCourtType((p.select_court_type as string | undefined) ?? undefined),
+          { scheduledDate: ticket.scheduledDate },
         );
         if (isCaseViewEmpty(view)) return null;
         return (

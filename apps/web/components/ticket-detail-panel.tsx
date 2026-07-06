@@ -226,6 +226,7 @@ export function TicketDetailPanel({ ticketId, onClose, isClerkView = false, onCh
                       const view = buildCaseView(
                         ticket.formPayload as Record<string, string | undefined>,
                         courtTierFromCourtType((ticket.formPayload as Record<string, string | undefined>).select_court_type),
+                        { scheduledDate: ticket.scheduledDate },
                       );
                       if (isCaseViewEmpty(view)) return null;
                       return (
@@ -298,6 +299,7 @@ export function TicketDetailPanel({ ticketId, onClose, isClerkView = false, onCh
                       const view = buildCaseView(
                         ticket.formPayload as Record<string, string | undefined>,
                         courtTierFromCourtType((ticket.formPayload as Record<string, string | undefined>).select_court_type),
+                        { scheduledDate: ticket.scheduledDate },
                       );
                       if (isCaseViewEmpty(view)) return null;
                       return (
