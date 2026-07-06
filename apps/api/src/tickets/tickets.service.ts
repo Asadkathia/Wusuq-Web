@@ -2253,17 +2253,6 @@ export class TicketsService {
       dto.nonAttestedCharges ?? Number(ticket.nonAttestedCharges);
     const additionalCharges =
       dto.additionalCharges ?? Number(ticket.additionalCharges);
-    // 5-24-26 #23: clerk cost is internal-only and excluded from the
-    // consumer-facing totalAmount (see assignClerk).
-    const totalAmount =
-      Number(ticket.serviceCost) +
-      deliveryCharges +
-      printingCharges +
-      attestedCharges +
-      nonAttestedCharges +
-      additionalCharges +
-      Number(ticket.additionalServiceCost) -
-      Number(ticket.discountPrice);
 
     if (ticket.remainderFinalizedAt) {
       throw new ConflictException(
@@ -2293,7 +2282,10 @@ export class TicketsService {
           // admin Review & Complete dialog can show "pages × rate" (Task 4.1).
           noOfPages: dto.noOfPages ?? ticket.noOfPages,
           costPerPage: dto.costPerPage ?? ticket.costPerPage,
-          totalAmount,
+          // B4: consumer-facing totalAmount is frozen at clerk-submit — it
+          // stays at the phase-1 base until reviewAndComplete finalizes the
+          // remainder (finalizeRemainderCore recomputes via
+          // computeTicketTotal). Do not hand-roll a total here.
           clerkApprovalStatus: 'SUBMITTED',
           status: 'WAITING_APPROVAL',
         },
