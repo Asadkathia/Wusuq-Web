@@ -4,7 +4,6 @@ import {
   IsNumber,
   IsOptional,
   IsString,
-  IsUrl,
   Min,
 } from 'class-validator';
 import { PAYMENT_MODES } from '@wusuq/shared';
@@ -29,7 +28,7 @@ export class TopupWalletDto {
   currency!: string;
 
   @IsOptional()
-  @IsUrl({ require_tld: false })
+  @IsString()
   receiptUrl?: string;
 
   // When present, this top-up is a payment toward a specific ticket: it is
