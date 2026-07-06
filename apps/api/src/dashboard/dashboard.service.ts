@@ -137,7 +137,10 @@ export class DashboardService {
     const toNum = (v: unknown): number | null => (v == null ? null : Number(v));
 
     const tickets = await this.prisma.ticket.findMany({
-      where: { assignments: { some: { representativeId: repId } }, archivedAt: null },
+      where: {
+        assignments: { some: { representativeId: repId } },
+        archivedAt: null,
+      },
       orderBy: { updatedAt: 'desc' },
       select: {
         id: true,
@@ -169,7 +172,8 @@ export class DashboardService {
     for (const t of tickets) {
       counts[t.status] = (counts[t.status] ?? 0) + 1;
       const wantPdf =
-        ((t.formPayload ?? {}) as Record<string, unknown>).want_pdf_before_dispatch === 'Yes';
+        ((t.formPayload ?? {}) as Record<string, unknown>)
+          .want_pdf_before_dispatch === 'Yes';
       const earn = computeClerkEarnings({
         clerkCost: toNum(t.clerkCost),
         defaultClerkCost: toNum(t.defaultClerkCost),

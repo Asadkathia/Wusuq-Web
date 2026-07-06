@@ -36,7 +36,9 @@ describe('SignupDto', () => {
 
   it('rejects a missing or invalid user type', async () => {
     const { consumerKind: _omit, ...noKind } = base;
-    expect((await errorsFor(noKind)).some((e) => e.property === 'consumerKind')).toBe(true);
+    expect(
+      (await errorsFor(noKind)).some((e) => e.property === 'consumerKind'),
+    ).toBe(true);
     const bad = await errorsFor({ ...base, consumerKind: 'CIVILIAN' });
     expect(bad.some((e) => e.property === 'consumerKind')).toBe(true);
   });

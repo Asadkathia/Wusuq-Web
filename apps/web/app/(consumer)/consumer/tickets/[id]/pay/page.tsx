@@ -7,6 +7,7 @@ import { AlertCircle, Building2, CheckCircle2, Clock, Upload } from 'lucide-reac
 import { paymentModelFor, formatMoney } from '@wusuq/shared';
 import { apiClient, ApiError } from '@/lib/api-client';
 import { paymentSettingsClient, PaymentSettings } from '@/lib/payment-settings-client';
+import { PaymentMethodDetails, availableMethods, type PayMethod } from '@/components/payment-method-details';
 import { advanceOnEnter } from '@/lib/form-utils';
 import { PanelCard } from '@/components/ui/panel-card';
 import { Button } from '@/components/ui/button';
@@ -76,6 +77,7 @@ export default function PayTicketPage() {
 
   const [ticket, setTicket] = useState<TicketSummary | null>(null);
   const [bankDetails, setBankDetails] = useState<PaymentSettings | null>(null);
+  const [method, setMethod] = useState<PayMethod | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   // Payment form state
@@ -104,6 +106,7 @@ export default function PayTicketPage() {
         startTransition(() => {
           setTicket(ticketData);
           setBankDetails(settings);
+          setMethod(availableMethods(settings)[0] ?? null);
           // Pre-fill amount with due-now
           const due = computeDueNow(ticketData);
           setAmountStr(due > 0 ? String(due) : '');
@@ -129,7 +132,7 @@ export default function PayTicketPage() {
     e.preventDefault();
     if (!ticketId || submitting) return;
 
-    if (!bankDetails) {
+    if (!bankDetails || availableMethods(bankDetails).length === 0) {
       setSubmitError('Bank details are not available. Please contact support.');
       return;
     }
@@ -160,7 +163,7 @@ export default function PayTicketPage() {
       // forwarded so Task 1.5 can tag it as TICKET_PAYMENT once the DTO is wired.
       await apiClient.post('/wallet/topup', {
         amount,
-        paymentMode: 'BANK_TRANSFER',
+        paymentMode: method ?? 'BANK_TRANSFER',
         currency: currencyOf(ticket),
         receiptUrl,
         ticketId,
@@ -284,6 +287,7 @@ export default function PayTicketPage() {
   // Show "pay full amount upfront" option only for SPLIT flows where total > due-now
   const canPayUpfront = model === 'SPLIT' && fullUpfront > dueNow && fullUpfront > 0;
   const currentAmount = Number(amountStr) || 0;
+  const hasPaymentMethod = availableMethods(bankDetails).length > 0;
 
   // ── Main payment form ─────────────────────────────────────────────────────
 
@@ -328,65 +332,14 @@ export default function PayTicketPage() {
         </div>
       </PanelCard>
 
-      {/* Bank details */}
-      {bankDetails ? (
+      {/* Payment method details */}
+      {availableMethods(bankDetails).length > 0 ? (
         <PanelCard className="mb-4">
           <div className="flex items-center gap-2 mb-3">
             <Building2 className="h-4 w-4 text-brand-600" />
             <h2 className="text-sm font-semibold text-slate-900">Payment details</h2>
           </div>
-          <dl className="space-y-2 text-sm">
-            <div className="flex items-start justify-between gap-4">
-              <dt className="text-slate-500 shrink-0">Bank</dt>
-              <dd className="font-medium text-slate-900 text-right">{bankDetails.bankName}</dd>
-            </div>
-            <div className="flex items-start justify-between gap-4">
-              <dt className="text-slate-500 shrink-0">Account title</dt>
-              <dd className="font-medium text-slate-900 text-right">{bankDetails.accountTitle}</dd>
-            </div>
-            <div className="flex items-start justify-between gap-4">
-              <dt className="text-slate-500 shrink-0">Account number</dt>
-              <dd className="font-mono font-medium text-slate-900 text-right select-all">
-                {bankDetails.accountNumber}
-              </dd>
-            </div>
-            {bankDetails.iban ? (
-              <div className="flex items-start justify-between gap-4">
-                <dt className="text-slate-500 shrink-0">IBAN</dt>
-                <dd className="font-mono font-medium text-slate-900 text-right select-all">
-                  {bankDetails.iban}
-                </dd>
-              </div>
-            ) : null}
-            {bankDetails.jazzCash || bankDetails.easyPaisa ? (
-              <div className="border-t border-border-soft pt-2 mt-2 space-y-2">
-                {bankDetails.jazzCash ? (
-                  <div className="flex items-start justify-between gap-4">
-                    <dt className="text-slate-500 shrink-0">JazzCash</dt>
-                    <dd className="font-mono font-medium text-slate-900 text-right select-all">
-                      {bankDetails.jazzCash}
-                    </dd>
-                  </div>
-                ) : null}
-                {bankDetails.easyPaisa ? (
-                  <div className="flex items-start justify-between gap-4">
-                    <dt className="text-slate-500 shrink-0">EasyPaisa</dt>
-                    <dd className="font-mono font-medium text-slate-900 text-right select-all">
-                      {bankDetails.easyPaisa}
-                    </dd>
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
-            {bankDetails.instructions ? (
-              <div className="border-t border-border-soft pt-2 mt-2">
-                <dt className="text-xs text-slate-500 mb-1">Instructions</dt>
-                <dd className="text-slate-700 text-sm whitespace-pre-line">
-                  {bankDetails.instructions}
-                </dd>
-              </div>
-            ) : null}
-          </dl>
+          <PaymentMethodDetails settings={bankDetails} method={method} onChange={setMethod} />
         </PanelCard>
       ) : (
         <PanelCard className="mb-4">
@@ -473,7 +426,7 @@ export default function PayTicketPage() {
                 type="file"
                 accept="image/*,application/pdf"
                 className="sr-only"
-                disabled={!bankDetails}
+                disabled={!hasPaymentMethod}
                 onChange={(e) => setReceiptFile(e.target.files?.[0] ?? null)}
               />
             </label>
@@ -489,7 +442,7 @@ export default function PayTicketPage() {
               variant="primary"
               size="lg"
               loading={submitting}
-              disabled={!bankDetails || submitting}
+              disabled={!hasPaymentMethod || submitting}
               fullWidth
             >
               Submit payment

@@ -637,14 +637,24 @@ export function ConsumerTicketDetail({
   const taxRate = Number(ticket.taxRate || 0);
   const taxLabel = taxRate > 0 ? `Tax (${Math.round(taxRate * 100)}%)` : 'Tax';
 
+  // Phase-2 clerk charges (delivery/printing/attested/…) are NOT part of the
+  // consumer's owed total until the admin finalizes (B4: the total is frozen at
+  // the phase-1 base through WAITING_APPROVAL). Hide those line-items until
+  // `remainderFinalizedAt` so the breakdown always reconciles with the Total
+  // shown below it; before finalize the consumer sees only Service + Tax.
+  const phase2Visible = Boolean(ticket.remainderFinalizedAt);
   const charges: Array<[string, number]> = (
     [
       ['Service', Number(ticket.serviceCost || 0)],
-      ['Delivery', Number(ticket.deliveryCharges || 0)],
-      ['Printing', Number(ticket.printingCharges || 0)],
-      ['Attested', Number(ticket.attestedCharges || 0)],
-      ['Non-attested', Number(ticket.nonAttestedCharges || 0)],
-      ['Additional', Number(ticket.additionalCharges || 0)],
+      ...(phase2Visible
+        ? ([
+            ['Delivery', Number(ticket.deliveryCharges || 0)],
+            ['Printing', Number(ticket.printingCharges || 0)],
+            ['Attested', Number(ticket.attestedCharges || 0)],
+            ['Non-attested', Number(ticket.nonAttestedCharges || 0)],
+            ['Additional', Number(ticket.additionalCharges || 0)],
+          ] as Array<[string, number]>)
+        : []),
       [taxLabel, taxAmount],
     ] as Array<[string, number]>
   ).filter((row) => Number(row[1]) !== 0);

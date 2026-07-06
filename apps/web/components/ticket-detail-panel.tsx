@@ -328,13 +328,19 @@ export function TicketDetailPanel({ ticketId, onClose, isClerkView = false, onCh
                     {(() => {
                       const caps = chargeCapabilitiesFor(ticket.intakeFlow);
                       const repName = ticket.assignments?.[0]?.representative?.name as string | undefined;
+                      // Phase-2 clerk charges are excluded from the customer
+                      // total until finalize (B4). Gate their rows on
+                      // remainderFinalizedAt so the breakdown reconciles with
+                      // the Total; the admin reviews/edits proposed phase-2
+                      // charges in the Review & Complete dialog, not here.
+                      const phase2Visible = Boolean(ticket.remainderFinalizedAt);
                       const chargeRows: Array<[string, unknown]> = [
                         ['Service Cost', ticket.serviceCost],
-                        ...(caps.delivery ? [['Delivery Charges', ticket.deliveryCharges] as [string, unknown]] : []),
-                        ...(caps.printing ? [['Printing Charges', ticket.printingCharges] as [string, unknown]] : []),
-                        ...(caps.attestation ? [['Attested Charges', ticket.attestedCharges] as [string, unknown]] : []),
-                        ...(caps.attestation ? [['Non-Attested Charges', ticket.nonAttestedCharges] as [string, unknown]] : []),
-                        ['Additional Charges', ticket.additionalCharges],
+                        ...(phase2Visible && caps.delivery ? [['Delivery Charges', ticket.deliveryCharges] as [string, unknown]] : []),
+                        ...(phase2Visible && caps.printing ? [['Printing Charges', ticket.printingCharges] as [string, unknown]] : []),
+                        ...(phase2Visible && caps.attestation ? [['Attested Charges', ticket.attestedCharges] as [string, unknown]] : []),
+                        ...(phase2Visible && caps.attestation ? [['Non-Attested Charges', ticket.nonAttestedCharges] as [string, unknown]] : []),
+                        ...(phase2Visible ? [['Additional Charges', ticket.additionalCharges] as [string, unknown]] : []),
                         ['Additional Service Cost', ticket.additionalServiceCost],
                         // Clerk cost is internal-only and excluded from the
                         // customer total — it appears solely in the separate

@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 'use client';
 
-import { FormEvent, useCallback, useEffect, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useState, useTransition } from 'react';
 import {
   ArrowDownRight,
   ArrowUpRight,
@@ -15,6 +15,8 @@ import {
 import { formatMoney } from '@wusuq/shared';
 import { apiClient } from '@/lib/api-client';
 import { advanceOnEnter } from '@/lib/form-utils';
+import { paymentSettingsClient, PaymentSettings } from '@/lib/payment-settings-client';
+import { PaymentMethodDetails, availableMethods, type PayMethod } from '@/components/payment-method-details';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { FormField } from '@/components/ui/form-field';
@@ -225,18 +227,40 @@ function TopupDialog({
   currency: 'PKR' | 'USD';
 }) {
   const [amount, setAmount] = useState('');
-  const [paymentMode, setPaymentMode] = useState('BANK_TRANSFER');
+  const [paymentMode, setPaymentMode] = useState<PayMethod>('BANK_TRANSFER');
+  const [settings, setSettings] = useState<PaymentSettings | null>(null);
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const toast = useToast();
+  const [, startTransition] = useTransition();
 
   useEffect(() => {
     if (!open) {
       setAmount('');
       setPaymentMode('BANK_TRANSFER');
       setReceiptFile(null);
+      return;
     }
-  }, [open]);
+    let cancelled = false;
+    paymentSettingsClient
+      .get()
+      .then((s) => {
+        if (cancelled) return;
+        startTransition(() => {
+          setSettings(s);
+          setPaymentMode((prev) => {
+            const methods = availableMethods(s);
+            return methods.includes(prev) ? prev : (methods[0] ?? prev);
+          });
+        });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [open, startTransition]);
+
+  const methods = availableMethods(settings);
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -296,28 +320,13 @@ function TopupDialog({
           </FormField>
 
           <FormField label="Payment mode" required htmlFor="paymentMode">
-            <div className="grid grid-cols-2 gap-2">
-              {[
-                { key: 'BANK_TRANSFER', label: 'Bank transfer' },
-                { key: 'JAZZCASH', label: 'JazzCash' },
-                { key: 'EASYPAISA', label: 'Easypaisa' },
-                { key: 'CASH', label: 'Cash' },
-              ].map((opt) => (
-                <button
-                  key={opt.key}
-                  type="button"
-                  onClick={() => setPaymentMode(opt.key)}
-                  className={[
-                    'rounded-xl border px-3 py-2.5 text-sm font-medium transition-[background-color,border-color,color] duration-150',
-                    paymentMode === opt.key
-                      ? 'border-brand-500 bg-brand-50 text-brand-700'
-                      : 'border-border-soft text-slate-700 hover:bg-surface-muted',
-                  ].join(' ')}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
+            {methods.length === 0 ? (
+              <p className="text-sm text-amber-600">
+                Payment details are not configured yet. Please contact support.
+              </p>
+            ) : (
+              <PaymentMethodDetails settings={settings} method={paymentMode} onChange={setPaymentMode} />
+            )}
           </FormField>
 
           <FormField label="Receipt" hint="Upload a photo of your payment receipt (optional, recommended)">
@@ -347,7 +356,7 @@ function TopupDialog({
             <DialogClose asChild>
               <Button type="button" variant="ghost">Cancel</Button>
             </DialogClose>
-            <Button type="submit" variant="brand" loading={loading}>
+            <Button type="submit" variant="brand" loading={loading} disabled={methods.length === 0}>
               Submit top-up
             </Button>
           </DialogFooter>
