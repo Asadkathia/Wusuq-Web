@@ -1101,11 +1101,13 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
                             </button>
                           </>
                         )}
+                        {(status === 'IN_PROGRESS' || status === 'WAITING_APPROVAL') && (
+                          <button onClick={() => setUploadTicket(ticket)} className="text-indigo-600 hover:text-indigo-900 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-md flex items-center gap-1">
+                            <Upload className="h-3.5 w-3.5" /> Upload Work Documents
+                          </button>
+                        )}
                         {status === 'IN_PROGRESS' && (
                           <>
-                            <button onClick={() => setUploadTicket(ticket)} className="text-indigo-600 hover:text-indigo-900 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-md flex items-center gap-1">
-                              <Upload className="h-3.5 w-3.5" /> Upload Work Documents
-                            </button>
                             {!hasSubmittedClerkCosts(ticket) ? (
                               <button
                                 onClick={() => openCostsModal(ticket)}
