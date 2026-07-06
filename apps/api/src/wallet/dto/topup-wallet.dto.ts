@@ -1,11 +1,5 @@
 import { Transform } from 'class-transformer';
-import {
-  IsIn,
-  IsNumber,
-  IsOptional,
-  IsString,
-  Min,
-} from 'class-validator';
+import { IsIn, IsNumber, IsOptional, IsString, Min } from 'class-validator';
 import { PAYMENT_MODES } from '@wusuq/shared';
 
 export class TopupWalletDto {
