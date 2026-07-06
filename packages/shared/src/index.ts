@@ -778,6 +778,12 @@ export interface TicketMoneyInput {
 export interface TicketMoneyResult {
   chargesSubtotal: number;
   discountTotal: number;
+  /**
+   * C1: the *service* base that tax is computed on — max(0, serviceCost +
+   * additionalServiceCost - discountTotal). NOT the whole-bill charges
+   * subtotal; delivery/printing/attested/non-attested/additionalCharges are
+   * excluded here (they're still included in totalAmount, just untaxed).
+   */
   taxableBase: number;
   taxAmount: number;
   totalAmount: number;
@@ -785,7 +791,10 @@ export interface TicketMoneyResult {
 
 /**
  * THE single source for a ticket's total. Order: sum charges → subtract staff
- * discount + promo → tax the remainder → add tax. Every server site that writes
+ * discount + promo from the taxable *service* base (serviceCost +
+ * additionalServiceCost only — delivery/printing/attested/non-attested/
+ * additionalCharges are never taxed) → tax that base → add tax to the
+ * (discount-reduced) charges subtotal. Every server site that writes
  * Ticket.totalAmount (createIntakeTicket, finance.updateCharge,
  * finalizeRemainderCore, reprice) and the wizard's checkout preview call this,
  * so the quote and the charge cannot drift.
@@ -802,9 +811,12 @@ export function computeTicketTotal(input: TicketMoneyInput): TicketMoneyResult {
       c.additionalServiceCost,
   );
   const discountTotal = round2((input.discountPrice ?? 0) + (input.promoDiscount ?? 0));
-  const taxableBase = Math.max(0, round2(chargesSubtotal - discountTotal));
+  // C1: tax the service base only (serviceCost + additionalServiceCost).
+  // Delivery/printing/attested/non-attested/additionalCharges are NOT taxed.
+  const serviceBase = round2(c.serviceCost + c.additionalServiceCost);
+  const taxableBase = Math.max(0, round2(serviceBase - discountTotal));
   const taxAmount = round2(taxableBase * (input.taxRate ?? 0));
-  const totalAmount = round2(taxableBase + taxAmount);
+  const totalAmount = round2(Math.max(0, round2(chargesSubtotal - discountTotal)) + taxAmount);
   return { chargesSubtotal, discountTotal, taxableBase, taxAmount, totalAmount };
 }
 
