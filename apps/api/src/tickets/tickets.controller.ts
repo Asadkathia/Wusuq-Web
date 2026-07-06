@@ -333,6 +333,18 @@ export class TicketsController {
   }
 
   @RequirePermissions('tickets.read')
+  @Get(':id/invoice')
+  async downloadInvoice(
+    @Param('id') id: string,
+    @CurrentUser() user: JwtUser | undefined,
+  ) {
+    return this.ticketsService.buildConsumerInvoice(id, {
+      role: user!.role,
+      userId: user!.sub,
+    });
+  }
+
+  @RequirePermissions('tickets.read')
   @Get(':id')
   findOne(@Param('id') id: string, @CurrentUser() user: JwtUser | undefined) {
     return this.ticketsService.findOne(
@@ -651,7 +663,15 @@ export class TicketsController {
       'Content-Disposition',
       `attachment; filename="${encodeURIComponent(name)}"`,
     );
-    return createReadStream(filePath).pipe(res);
+    const stream = createReadStream(filePath);
+    stream.on('error', () => {
+      if (!res.headersSent) {
+        res.status(404).json({ statusCode: 404, message: 'File not found' });
+      } else {
+        res.destroy();
+      }
+    });
+    return stream.pipe(res);
   }
 
   // Staff / assigned-rep download of the clerk's submitted receipt. Service
@@ -676,7 +696,15 @@ export class TicketsController {
       'Content-Disposition',
       `inline; filename="${encodeURIComponent(name)}"`,
     );
-    return createReadStream(filePath).pipe(res);
+    const stream = createReadStream(filePath);
+    stream.on('error', () => {
+      if (!res.headersSent) {
+        res.status(404).json({ statusCode: 404, message: 'File not found' });
+      } else {
+        res.destroy();
+      }
+    });
+    return stream.pipe(res);
   }
 
   @RequirePermissions('tickets.clerk')

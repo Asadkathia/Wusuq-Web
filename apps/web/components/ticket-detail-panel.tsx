@@ -14,7 +14,7 @@ import { PanelCard } from '@/components/ui/panel-card';
 import { StatusPill } from '@/components/ui/status-pill';
 import {
   X, User, FileText, Package, CreditCard, Clock,
-  Phone, MapPin, Briefcase, Download, Truck, ClipboardCheck
+  Phone, MapPin, Briefcase, Download, Truck, ClipboardCheck, Eye
 } from 'lucide-react';
 import {
   parseDeliveryAddress,
@@ -22,6 +22,7 @@ import {
 } from '@/lib/intake-flows';
 import { buildCaseView, isCaseViewEmpty } from '@/lib/case-view';
 import { CaseRecordCard } from '@/components/case-record-card';
+import { DocumentPreview } from '@/components/document-preview';
 
 type Props = {
   ticketId: string;
@@ -50,6 +51,7 @@ export function TicketDetailPanel({ ticketId, onClose, isClerkView = false, onCh
   const [rejectReason, setRejectReason] = useState('');
   const [actionBusy, setActionBusy] = useState(false);
   const [actionError, setActionError] = useState('');
+  const [previewDoc, setPreviewDoc] = useState<{ url: string; name: string } | null>(null);
 
   useEffect(() => {
     try {
@@ -226,6 +228,7 @@ export function TicketDetailPanel({ ticketId, onClose, isClerkView = false, onCh
                       const view = buildCaseView(
                         ticket.formPayload as Record<string, string | undefined>,
                         courtTierFromCourtType((ticket.formPayload as Record<string, string | undefined>).select_court_type),
+                        { scheduledDate: ticket.scheduledDate },
                       );
                       if (isCaseViewEmpty(view)) return null;
                       return (
@@ -298,6 +301,7 @@ export function TicketDetailPanel({ ticketId, onClose, isClerkView = false, onCh
                       const view = buildCaseView(
                         ticket.formPayload as Record<string, string | undefined>,
                         courtTierFromCourtType((ticket.formPayload as Record<string, string | undefined>).select_court_type),
+                        { scheduledDate: ticket.scheduledDate },
                       );
                       if (isCaseViewEmpty(view)) return null;
                       return (
@@ -523,6 +527,20 @@ export function TicketDetailPanel({ ticketId, onClose, isClerkView = false, onCh
                               </label>
                               <button
                                 type="button"
+                                onClick={() =>
+                                  setPreviewDoc({
+                                    url: `/tickets/${ticketId}/documents/${doc.id}/download`,
+                                    name: doc.name ?? 'Document',
+                                  })
+                                }
+                                className="p-1 text-slate-400 hover:text-primary-600 transition-colors"
+                                aria-label="Preview document"
+                                title={doc.name ?? 'Preview document'}
+                              >
+                                <Eye className="h-4 w-4" />
+                              </button>
+                              <button
+                                type="button"
                                 onClick={async () => {
                                   try {
                                     const { blob, filename } = await apiClient.getBlob(
@@ -542,6 +560,7 @@ export function TicketDetailPanel({ ticketId, onClose, isClerkView = false, onCh
                                 }}
                                 className="p-1 text-slate-400 hover:text-primary-600 transition-colors"
                                 aria-label={`Download ${doc.name ?? 'document'}`}
+                                title="Download"
                               >
                                 <Download className="h-4 w-4" />
                               </button>
@@ -665,6 +684,14 @@ export function TicketDetailPanel({ ticketId, onClose, isClerkView = false, onCh
             </div>
           </div>
         </div>
+      )}
+
+      {previewDoc && (
+        <DocumentPreview
+          url={previewDoc.url}
+          name={previewDoc.name}
+          onClose={() => setPreviewDoc(null)}
+        />
       )}
 
     </div>

@@ -45,6 +45,10 @@ import { NotificationDispatcher } from '../notifications/notification-dispatcher
 import { WalletService } from '../wallet/wallet.service';
 import { SettingsService } from '../settings/settings.service';
 import { PromosService } from '../promos/promos.service';
+import {
+  renderConsumerInvoicePdf,
+  type ConsumerInvoiceInput,
+} from './consumer-invoice.pdf';
 
 const INTAKE_FLOWS = new Set([
   'judicial_case_files',
@@ -1721,6 +1725,89 @@ export class TicketsService {
           ? 'image/png'
           : 'image/jpeg';
     return { filePath, name, type };
+  }
+
+  /**
+   * Builds a consumer-safe downloadable invoice PDF (C14). Never includes
+   * clerkCost — the invoice is a consumer-facing document. Consumer-class
+   * callers requesting a foreign ticket get NotFoundException (probe-proof,
+   * mirrors resolveDocumentDownload / findOne's consumer-404 pattern).
+   */
+  async buildConsumerInvoice(
+    ticketId: string,
+    caller: { role: string; userId: string },
+  ): Promise<{
+    filename: string;
+    contentType: 'application/pdf';
+    content: string;
+  }> {
+    const ticket = await this.prisma.ticket.findUnique({
+      where: { id: ticketId },
+      include: {
+        consumer: { select: { name: true, email: true } },
+      },
+    });
+    if (!ticket) throw new NotFoundException('Ticket not found');
+
+    // Only staff (any admin) or the ticket's own consumer may pull the invoice.
+    // Gate on isStaffRole — NOT isConsumerRole — because a `representative` is
+    // neither staff nor consumer-class, so an isConsumerRole check is a no-op
+    // for reps and would let any clerk (holds tickets.read) download any
+    // consumer's PII + money (the 3.1-class IDOR). Archived tickets 404 for
+    // non-staff, matching findOne. 404 (not 403) so ids can't be probed.
+    if (
+      !isStaffRole(caller.role) &&
+      (ticket.consumerId !== caller.userId || ticket.archivedAt)
+    ) {
+      throw new NotFoundException('Ticket not found');
+    }
+
+    const paymentSettings = await this.prisma.paymentSettings.findUnique({
+      where: { id: 'singleton' },
+    });
+
+    const input: ConsumerInvoiceInput = {
+      batchNo: ticket.batchNo,
+      status: ticket.status,
+      consumer: {
+        name: ticket.consumer?.name ?? null,
+        email: ticket.consumer?.email ?? null,
+      },
+      serviceCost: Number(ticket.serviceCost),
+      additionalServiceCost: Number(ticket.additionalServiceCost),
+      deliveryCharges: Number(ticket.deliveryCharges),
+      printingCharges: Number(ticket.printingCharges),
+      attestedCharges: Number(ticket.attestedCharges),
+      nonAttestedCharges: Number(ticket.nonAttestedCharges),
+      additionalCharges: Number(ticket.additionalCharges),
+      discountPrice: Number(ticket.discountPrice),
+      promoDiscount: Number(ticket.promoDiscount),
+      taxAmount: Number(ticket.taxAmount),
+      taxRate: Number(ticket.taxRate),
+      totalAmount: Number(ticket.totalAmount),
+      amountPaid: Number(ticket.amountPaid),
+      currency: toCurrency(ticket.currency),
+      remainderFinalizedAt: ticket.remainderFinalizedAt
+        ? ticket.remainderFinalizedAt.toISOString()
+        : null,
+      payment: paymentSettings
+        ? {
+            bankName: paymentSettings.bankName,
+            accountTitle: paymentSettings.accountTitle,
+            accountNumber: paymentSettings.accountNumber,
+            iban: paymentSettings.iban,
+            jazzCash: paymentSettings.jazzCash,
+            easyPaisa: paymentSettings.easyPaisa,
+          }
+        : null,
+    };
+
+    const content = await renderConsumerInvoicePdf(input);
+    return {
+      filename: `invoice-${ticket.batchNo}.pdf`,
+      contentType: 'application/pdf',
+      content,
+    };
   }
 
   /**
