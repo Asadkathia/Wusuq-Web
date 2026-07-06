@@ -333,6 +333,18 @@ export class TicketsController {
   }
 
   @RequirePermissions('tickets.read')
+  @Get(':id/invoice')
+  async downloadInvoice(
+    @Param('id') id: string,
+    @CurrentUser() user: JwtUser | undefined,
+  ) {
+    return this.ticketsService.buildConsumerInvoice(id, {
+      role: user!.role,
+      userId: user!.sub,
+    });
+  }
+
+  @RequirePermissions('tickets.read')
   @Get(':id')
   findOne(@Param('id') id: string, @CurrentUser() user: JwtUser | undefined) {
     return this.ticketsService.findOne(
