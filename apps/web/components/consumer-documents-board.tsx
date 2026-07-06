@@ -2,7 +2,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Download, File, FileImage, FileText, Folder, RefreshCw, Search } from 'lucide-react';
+import { Download, Eye, File, FileImage, FileText, Folder, RefreshCw, Search } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { Input } from '@/components/ui/input';
 import { IconButton } from '@/components/ui/icon-button';
@@ -11,6 +11,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { StatusPill } from '@/components/ui/status-pill';
 import { useToast } from '@/components/ui/toast';
 import { documentCategoryLabel } from '@wusuq/shared';
+import { DocumentPreview } from '@/components/document-preview';
 
 type DocumentItem = {
   id: string;
@@ -50,6 +51,7 @@ export function ConsumerDocumentsBoard() {
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [userId, setUserId] = useState('');
+  const [previewDoc, setPreviewDoc] = useState<{ url: string; name: string } | null>(null);
   const toast = useToast();
 
   useEffect(() => {
@@ -156,36 +158,61 @@ export function ConsumerDocumentsBoard() {
               </div>
               <div className="mt-3 flex items-center justify-between">
                 <StatusPill dot label={fileKindLabel(doc.type)} variant="brand" />
-                <button
-                  type="button"
-                  disabled={!doc.ticket?.id}
-                  onClick={async () => {
-                    if (!doc.ticket?.id) return;
-                    try {
-                      const { blob, filename } = await apiClient.getBlob(
-                        `/tickets/${doc.ticket.id}/documents/${doc.id}/download`,
-                      );
-                      const url = URL.createObjectURL(blob);
-                      const a = document.createElement('a');
-                      a.href = url;
-                      a.download = filename || doc.name || 'document';
-                      document.body.appendChild(a);
-                      a.click();
-                      document.body.removeChild(a);
-                      URL.revokeObjectURL(url);
-                    } catch (err: any) {
-                      toast.error('Download failed', err?.message);
-                    }
-                  }}
-                  className="inline-flex items-center gap-1 text-xs font-semibold text-brand-600 hover:text-brand-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <Download className="h-3.5 w-3.5" />
-                  Download
-                </button>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    disabled={!doc.ticket?.id}
+                    onClick={() => {
+                      if (!doc.ticket?.id) return;
+                      setPreviewDoc({
+                        url: `/tickets/${doc.ticket.id}/documents/${doc.id}/download`,
+                        name: doc.name || 'Document',
+                      });
+                    }}
+                    className="inline-flex items-center gap-1 text-xs font-semibold text-slate-600 hover:text-slate-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <Eye className="h-3.5 w-3.5" />
+                    Preview
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!doc.ticket?.id}
+                    onClick={async () => {
+                      if (!doc.ticket?.id) return;
+                      try {
+                        const { blob, filename } = await apiClient.getBlob(
+                          `/tickets/${doc.ticket.id}/documents/${doc.id}/download`,
+                        );
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = filename || doc.name || 'document';
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        URL.revokeObjectURL(url);
+                      } catch (err: any) {
+                        toast.error('Download failed', err?.message);
+                      }
+                    }}
+                    className="inline-flex items-center gap-1 text-xs font-semibold text-brand-600 hover:text-brand-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    Download
+                  </button>
+                </div>
               </div>
             </div>
           ))}
         </div>
+      )}
+
+      {previewDoc && (
+        <DocumentPreview
+          url={previewDoc.url}
+          name={previewDoc.name}
+          onClose={() => setPreviewDoc(null)}
+        />
       )}
     </div>
   );
