@@ -378,3 +378,9 @@ When in doubt, the rule's heuristic is "setState that fires synchronously on eve
 ### 2026-07-03 21:03 · branch main · sess a4ee47d8
 
 ### 2026-07-03 21:03 · branch main · sess 4e95f3f5
+
+### 2026-07-06 · branch feat/ws-a-payments · Workstream A (batch-2 payments & money)
+
+- Owner walkthrough **batch 2** (13 screen recordings + PDF "Wusuq Edits 5-10-26 (2)", 17 items) transcribed (local whisper large-v3) + frame-by-frame visual pass (519 frames, 6 parallel agents). Consolidated grounded backlog → **7-workstream roadmap A→G** (`DOcs/superpowers/specs/2026-07-06-workstream-a-payments-money-design.md` is WS-A).
+- **Shipped Workstream A (payments & money-timing):** **B4** — `submitClerkCosts` no longer writes `Ticket.totalAmount`; consumer total frozen at phase-1 base until admin `reviewAndComplete` (phase-2 breakdown rows gated on `remainderFinalizedAt` in consumer + staff panels so they reconcile). **B5** — top-up/pay unblocked: `TopupWalletDto.receiptUrl` accepts the `/wallet/receipt/<file>` app-relative path (shape-constrained), top-up modal paymentMode keys aligned to the `JAZZ_CASH/EASY_PAISA/BANK_TRANSFER` enum (Cash dropped). **C6** — new shared `PaymentMethodDetails` picker (aliases shared `PaymentMode`) reveals only the selected method's account on the pay page + top-up modal. **C1** — `computeTicketTotal` taxes the base (serviceCost+additionalServiceCost) only, not the whole bill.
+- Subagent-driven, parallel worktrees (4 wave-1 + 1 wave-2), Sonnet review workflow (4 findings fixed). 432 API + 40 web tests green. Roadmap WS-B (documents/deliverables/hearings) is next.
