@@ -14,9 +14,10 @@ describe('TicketsService.assembleFinalizeMoney', () => {
       printing: 500,
       delivery: 800,
     });
-    // subtotal 5300 → tax 901 → total 6201
-    expect(m.totalAmount).toBe(6201);
-    expect(m.taxAmount).toBe(901);
+    // subtotal 5300; tax base = serviceCost only (3000) → tax 510 → total 5810
+    // (C1: delivery/printing/attested/non-attested are not taxed)
+    expect(m.totalAmount).toBe(5810);
+    expect(m.taxAmount).toBe(510);
   });
 
   it('subtracts discount + promo before tax', () => {
