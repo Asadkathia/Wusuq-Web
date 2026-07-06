@@ -10,6 +10,7 @@ import {
   CalendarDays,
   Clock,
   Download,
+  Eye,
   FileText,
   Hash,
   Landmark,
@@ -27,6 +28,7 @@ import {
 } from '@/lib/intake-flows';
 import { buildCaseView, isCaseViewEmpty } from '@/lib/case-view';
 import { CaseRecordCard } from '@/components/case-record-card';
+import { DocumentPreview } from '@/components/document-preview';
 import { apiClient } from '@/lib/api-client';
 import { relativeTime } from '@/lib/relative-time';
 import { Button } from '@/components/ui/button';
@@ -612,6 +614,8 @@ export function ConsumerTicketDetail({
 }) {
   const [ticket, setTicket] = useState<any>(null);
   const [loading, setLoading] = useState(false);
+  const [previewDoc, setPreviewDoc] = useState<{ url: string; name: string } | null>(null);
+  const [invoiceDownloading, setInvoiceDownloading] = useState(false);
 
   useEffect(() => {
     if (!ticketId) return;
@@ -622,6 +626,37 @@ export function ConsumerTicketDetail({
       .catch(() => setTicket(null))
       .finally(() => setLoading(false));
   }, [ticketId]);
+
+  // Fetches the on-the-fly consumer invoice (base64 PDF, matches finance-board's
+  // staff-invoice download pattern) and triggers a client-side download.
+  // Guarded against double-clicks via invoiceDownloading.
+  const downloadInvoice = useCallback(async () => {
+    if (!ticketId || invoiceDownloading) return;
+    setInvoiceDownloading(true);
+    try {
+      const result = await apiClient.get<{
+        filename: string;
+        contentType: string;
+        content: string;
+      }>(`/tickets/${ticketId}/invoice`);
+      const binary = atob(result.content);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      const blob = new Blob([bytes], { type: result.contentType || 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = result.filename || `invoice-${ticketId}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Invoice download failed', err);
+    } finally {
+      setInvoiceDownloading(false);
+    }
+  }, [ticketId, invoiceDownloading]);
 
   if (loading || !ticket) {
     return (
@@ -822,6 +857,17 @@ export function ConsumerTicketDetail({
               <span className="tabular-nums text-slate-900">{money(total, currency)}</span>
             </div>
           </div>
+          <div className="mt-3 flex justify-end">
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={invoiceDownloading}
+              onClick={downloadInvoice}
+              leftIcon={<Download className="h-3.5 w-3.5" />}
+            >
+              {invoiceDownloading ? 'Preparing…' : 'Download invoice'}
+            </Button>
+          </div>
         </section>
       ) : null}
 
@@ -829,43 +875,58 @@ export function ConsumerTicketDetail({
         <section>
           <h4 className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Documents</h4>
           <div className="mt-3 space-y-2">
-            {ticket.documents.map((doc: any) => (
-              <button
-                key={doc.id}
-                type="button"
-                onClick={async () => {
-                  try {
-                    const { blob, filename } = await apiClient.getBlob(
-                      `/tickets/${ticket.id}/documents/${doc.id}/download`,
-                    );
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = filename || doc.name || 'document';
-                    document.body.appendChild(a);
-                    a.click();
-                    document.body.removeChild(a);
-                    URL.revokeObjectURL(url);
-                  } catch (err) {
-                    console.error('Document download failed', err);
-                  }
-                }}
-                className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left ring-1 ring-border-soft bg-surface transition-colors hover:bg-surface-muted"
-              >
-                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-50 text-brand-500">
-                  <FileText className="h-4 w-4" />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-medium text-slate-800">
-                    {documentCategoryLabel(doc.category)}
+            {ticket.documents.map((doc: any) => {
+              const docUrl = `/tickets/${ticket.id}/documents/${doc.id}/download`;
+              const docName = doc.caption || doc.name || 'Document';
+              return (
+                <div
+                  key={doc.id}
+                  className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 ring-1 ring-border-soft bg-surface transition-colors hover:bg-surface-muted"
+                >
+                  <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-50 text-brand-500">
+                    <FileText className="h-4 w-4" />
                   </span>
-                  <span className="block truncate text-[11px] text-slate-400">
-                    {doc.caption || doc.name || 'Document'}
+                  <span className="min-w-0 flex-1 text-left">
+                    <span className="block truncate text-sm font-medium text-slate-800">
+                      {documentCategoryLabel(doc.category)}
+                    </span>
+                    <span className="block truncate text-[11px] text-slate-400">{docName}</span>
                   </span>
-                </span>
-                <Download className="h-4 w-4 shrink-0 text-slate-400" />
-              </button>
-            ))}
+                  <button
+                    type="button"
+                    onClick={() => setPreviewDoc({ url: docUrl, name: docName })}
+                    className="shrink-0 rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-surface-muted hover:text-slate-700"
+                    aria-label="Preview document"
+                    title={docName}
+                  >
+                    <Eye className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        const { blob, filename } = await apiClient.getBlob(docUrl);
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = filename || doc.name || 'document';
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        URL.revokeObjectURL(url);
+                      } catch (err) {
+                        console.error('Document download failed', err);
+                      }
+                    }}
+                    className="shrink-0 rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-surface-muted hover:text-slate-700"
+                    aria-label={`Download ${docName}`}
+                    title="Download"
+                  >
+                    <Download className="h-4 w-4" />
+                  </button>
+                </div>
+              );
+            })}
           </div>
         </section>
       ) : null}
@@ -932,6 +993,14 @@ export function ConsumerTicketDetail({
           </div>
         </PanelCard>
       ) : null}
+
+      {previewDoc && (
+        <DocumentPreview
+          url={previewDoc.url}
+          name={previewDoc.name}
+          onClose={() => setPreviewDoc(null)}
+        />
+      )}
     </div>
   );
 }
