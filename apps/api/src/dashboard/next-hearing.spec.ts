@@ -17,7 +17,9 @@ describe('DashboardService.getConsumerSummary — next-hearing query', () => {
       $transaction: jest.fn(async (ops: unknown[]) => Promise.all(ops)),
       ticket: {
         count: jest.fn(async () => 0),
-        aggregate: jest.fn(async () => ({ _sum: { totalAmount: 0, amountPaid: 0 } })),
+        aggregate: jest.fn(async () => ({
+          _sum: { totalAmount: 0, amountPaid: 0 },
+        })),
         findMany: jest.fn(async () => []),
         findFirst: ticketFindFirst,
       },
@@ -43,10 +45,14 @@ describe('DashboardService.getConsumerSummary — next-hearing query', () => {
     const summary = await service.getConsumerSummary('consumer-1');
 
     // Assert the query itself no longer excludes caseId-less tickets.
-    const args = ticketFindFirst.mock.calls[0][0] as { where: Record<string, unknown> };
+    const args = ticketFindFirst.mock.calls[0][0] as {
+      where: Record<string, unknown>;
+    };
     expect(args.where).not.toHaveProperty('caseId');
     expect(args.where).toMatchObject({ consumerId: 'consumer-1' });
-    expect((args.where.scheduledDate as { gte: Date }).gte).toBeInstanceOf(Date);
+    expect((args.where.scheduledDate as { gte: Date }).gte).toBeInstanceOf(
+      Date,
+    );
 
     // Assert the response still surfaces a hearing (case-less), falling back
     // to the ticket's service name for the title so the FE's
@@ -70,7 +76,9 @@ describe('DashboardService.getConsumerSummary — next-hearing query', () => {
 
     const summary = await service.getConsumerSummary('consumer-1');
 
-    expect(summary.myNextHearing).toMatchObject({ case: { title: 'State vs Ali' } });
+    expect(summary.myNextHearing).toMatchObject({
+      case: { title: 'State vs Ali' },
+    });
   });
 
   it('returns null when there is no upcoming hearing', async () => {

@@ -127,7 +127,12 @@ export class DashboardService {
         ? {
             scheduledDate: myNextHearing.scheduledDate,
             hearingType: myNextHearing.hearingType,
-            case: { title: myNextHearing.case?.title ?? myNextHearing.service?.name ?? 'Upcoming hearing' },
+            case: {
+              title:
+                myNextHearing.case?.title ??
+                myNextHearing.service?.name ??
+                'Upcoming hearing',
+            },
           }
         : null,
     };
