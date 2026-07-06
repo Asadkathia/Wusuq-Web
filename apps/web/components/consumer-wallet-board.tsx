@@ -299,9 +299,8 @@ function TopupDialog({
             <div className="grid grid-cols-2 gap-2">
               {[
                 { key: 'BANK_TRANSFER', label: 'Bank transfer' },
-                { key: 'JAZZCASH', label: 'JazzCash' },
-                { key: 'EASYPAISA', label: 'Easypaisa' },
-                { key: 'CASH', label: 'Cash' },
+                { key: 'JAZZ_CASH', label: 'JazzCash' },
+                { key: 'EASY_PAISA', label: 'Easypaisa' },
               ].map((opt) => (
                 <button
                   key={opt.key}
