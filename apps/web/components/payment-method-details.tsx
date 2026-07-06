@@ -1,4 +1,9 @@
-export type PayMethod = 'BANK_TRANSFER' | 'JAZZ_CASH' | 'EASY_PAISA';
+import type { PaymentMode } from '@wusuq/shared';
+
+// Single source of truth for the payment-mode values is @wusuq/shared's
+// PaymentMode (what the API's TopupWalletDto validates against) — alias it here
+// so this component's picker can never drift from the backend enum.
+export type PayMethod = PaymentMode;
 export interface PaymentSettingsView {
   bankName?: string | null; accountTitle?: string | null; accountNumber?: string | null;
   iban?: string | null; jazzCash?: string | null; easyPaisa?: string | null;

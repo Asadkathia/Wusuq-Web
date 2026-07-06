@@ -1,5 +1,13 @@
 import { Transform } from 'class-transformer';
-import { IsIn, IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import {
+  IsIn,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Matches,
+  MaxLength,
+  Min,
+} from 'class-validator';
 import { PAYMENT_MODES } from '@wusuq/shared';
 
 export class TopupWalletDto {
@@ -21,8 +29,17 @@ export class TopupWalletDto {
   @IsString()
   currency!: string;
 
+  // The receipt is uploaded via POST /wallet/receipt, which returns an
+  // app-relative path `/wallet/receipt/<file>`. Validate that exact shape (not
+  // a bare string) so empty/garbage/oversized values are rejected at the API
+  // boundary rather than persisted into WalletTransaction.receiptUrl. (Full
+  // URLs are not used here; the admin reconcile DTO takes the same path.)
   @IsOptional()
   @IsString()
+  @MaxLength(512)
+  @Matches(/^\/wallet\/receipt\/[^/?#]+$/, {
+    message: 'receiptUrl must be an uploaded /wallet/receipt/<file> path',
+  })
   receiptUrl?: string;
 
   // When present, this top-up is a payment toward a specific ticket: it is
