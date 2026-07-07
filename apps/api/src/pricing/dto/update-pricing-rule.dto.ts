@@ -15,6 +15,7 @@ export class UpdatePricingRuleDto {
   @IsOptional() @IsInt() @Min(1900) yearFrom?: number;
   @IsOptional() @IsInt() @Min(1900) yearTo?: number;
   @IsOptional() @IsString() setType?: string;
+  @IsOptional() @IsString() turnaroundLabel?: string;
   @IsOptional() @IsNumber() @Min(0) basePrice?: number;
   @IsOptional() @IsNumber() @Min(0) attestedPricePerSet?: number;
   @IsOptional() @IsNumber() @Min(0) nonAttestedPricePerSet?: number;
