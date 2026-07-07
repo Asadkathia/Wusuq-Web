@@ -570,6 +570,9 @@ model PricingRule {
   deliveryGuyFee         Decimal  @default(100)
   // v2 informational clerk-side cost (not part of consumer total).
   clerkBaseCost          Decimal?
+  // Free-text turnaround/"time" estimate (e.g. "3–5 working days") shown to
+  // consumers at checkout; editable per-rate on the pricing board (C16).
+  turnaroundLabel        String?
   priority               Int      @default(0)
   isActive               Boolean  @default(true)
   createdAt              DateTime @default(now())
