@@ -350,17 +350,24 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
     setFinalizing(true);
     try {
       // B11: send the editable page counts — the backend recomputes
-      // attested/non-attested/printing charges as pages × rate (falling back
-      // to the persisted clerk-entered columns when a pair is left blank).
+      // attested/non-attested/printing charges as pages × rate. Send a pair
+      // ONLY when both fields are filled; a blank pair OMITS the keys so the
+      // server keeps the persisted clerk-entered charge (an explicit 0 would
+      // win the ?? chain and zero it — critical because finalize is one-shot
+      // and irreversible, so a failed prefill must never silently zero charges).
+      const pagePair = (pagesStr: string, rateStr: string, pagesKey: string, rateKey: string) => {
+        const pages = pagesStr.trim() === '' ? undefined : Number(pagesStr);
+        const rate = rateStr.trim() === '' ? undefined : Number(rateStr);
+        return pages !== undefined && rate !== undefined
+          ? { [pagesKey]: pages, [rateKey]: rate }
+          : {};
+      };
       const payload = {
-        noOfPages: Number(finalizeForm.noOfPages) || 0,
-        costPerPage: Number(finalizeForm.costPerPage) || 0,
-        attestedPages: Number(finalizeForm.attestedPages) || 0,
-        attestedCostPerPage: Number(finalizeForm.attestedCostPerPage) || 0,
-        nonAttestedPages: Number(finalizeForm.nonAttestedPages) || 0,
-        nonAttestedCostPerPage: Number(finalizeForm.nonAttestedCostPerPage) || 0,
         deliveryCharges: Number(finalizeForm.deliveryCharges) || 0,
         additionalCharges: Number(finalizeForm.additionalCharges) || 0,
+        ...pagePair(finalizeForm.noOfPages, finalizeForm.costPerPage, 'noOfPages', 'costPerPage'),
+        ...pagePair(finalizeForm.attestedPages, finalizeForm.attestedCostPerPage, 'attestedPages', 'attestedCostPerPage'),
+        ...pagePair(finalizeForm.nonAttestedPages, finalizeForm.nonAttestedCostPerPage, 'nonAttestedPages', 'nonAttestedCostPerPage'),
       };
       await paymentsClient.reviewAndComplete(finalizeTicket.id, payload);
       flash(`Ticket ${finalizeTicket.batchNo} reviewed & completed.`);
@@ -695,12 +702,18 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
     if (!costsTicket || submittingCosts) return;
     setSubmittingCosts(true);
     try {
-      const noOfPages = Number(clerkCosts.noOfPages) || 0;
-      const costPerPage = Number(clerkCosts.costPerPage) || 0;
-      const attestedPages = Number(clerkCosts.attestedPages) || 0;
-      const attestedCostPerPage = Number(clerkCosts.attestedCostPerPage) || 0;
-      const nonAttestedPages = Number(clerkCosts.nonAttestedPages) || 0;
-      const nonAttestedCostPerPage = Number(clerkCosts.nonAttestedCostPerPage) || 0;
+      // Send a pages+rate pair ONLY when the clerk actually filled both — a
+      // blank field must OMIT the key so the server's `?? persisted` fallback
+      // keeps the existing charge instead of an explicit 0 zeroing it (a 0 wins
+      // the ?? chain). Don't send a computed printingCharges lump either — the
+      // server derives it from noOfPages×costPerPage.
+      const pagePair = (pagesStr: string, rateStr: string, pagesKey: string, rateKey: string) => {
+        const pages = pagesStr.trim() === '' ? undefined : Number(pagesStr);
+        const rate = rateStr.trim() === '' ? undefined : Number(rateStr);
+        return pages !== undefined && rate !== undefined
+          ? { [pagesKey]: pages, [rateKey]: rate }
+          : {};
+      };
 
       // C12: upload the TCS courier receipt first (if attached) — same
       // upload path the "Upload Work Documents" step uses (the dispatch
@@ -728,14 +741,10 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
 
       await apiClient.post(`/tickets/${costsTicket.id}/clerk-costs`, {
         deliveryCharges: Number(clerkCosts.deliveryCharges) || 0,
-        printingCharges: noOfPages * costPerPage,
-        attestedPages,
-        attestedCostPerPage,
-        nonAttestedPages,
-        nonAttestedCostPerPage,
         additionalCharges: Number(clerkCosts.additionalCharges) || 0,
-        noOfPages,
-        costPerPage,
+        ...pagePair(clerkCosts.noOfPages, clerkCosts.costPerPage, 'noOfPages', 'costPerPage'),
+        ...pagePair(clerkCosts.attestedPages, clerkCosts.attestedCostPerPage, 'attestedPages', 'attestedCostPerPage'),
+        ...pagePair(clerkCosts.nonAttestedPages, clerkCosts.nonAttestedCostPerPage, 'nonAttestedPages', 'nonAttestedCostPerPage'),
         ...(dispatchProofUrl ? { dispatchProofUrl } : {}),
         ...(costsTrackingNo.trim() ? { trackingNo: costsTrackingNo.trim() } : {}),
       });
