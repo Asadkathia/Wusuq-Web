@@ -861,6 +861,18 @@ export function computeClerkEarnings(t: ClerkEarningsInput): number {
   );
 }
 
+/**
+ * Wusuq's internal margin on a ticket: the total the consumer was charged
+ * minus the total paid out to the clerk ({@link computeClerkEarnings}).
+ * Staff/admin-only — never surfaced to consumers.
+ */
+export function computeWusuqMargin(
+  totalAmount: number,
+  clerkEarnings: number,
+): number {
+  return round2(totalAmount - clerkEarnings);
+}
+
 /** Resolver input shape produced by {@link buildPricingResolveInput}. */
 export interface PricingResolveInput {
   flow: string;
