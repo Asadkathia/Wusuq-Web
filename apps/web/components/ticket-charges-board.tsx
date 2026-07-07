@@ -162,14 +162,14 @@ export function TicketChargesBoard() {
     }
   };
 
-  const chargeFields: { key: keyof ChargeEdit; label: string }[] = [
+  const chargeFields: { key: keyof ChargeEdit; label: string; hint?: string }[] = [
     { key: 'serviceCost', label: 'Service Cost' },
     { key: 'deliveryCharges', label: 'Delivery' },
     { key: 'printingCharges', label: 'Printing' },
     { key: 'attestedCharges', label: 'Attested' },
     { key: 'nonAttestedCharges', label: 'Non-Attested' },
-    { key: 'additionalCharges', label: 'Additional' },
-    { key: 'additionalServiceCost', label: 'Addl. Service Cost' },
+    { key: 'additionalCharges', label: 'Additional Cost', hint: 'Separate line; not taxed.' },
+    { key: 'additionalServiceCost', label: 'Additional Service Cost', hint: 'Added to the taxable service base.' },
     { key: 'discountPrice', label: 'Discount' },
   ];
 
@@ -318,9 +318,10 @@ export function TicketChargesBoard() {
                         <div className="space-y-4">
                           <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Edit Charges — {item.batchNo}</p>
                           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                            {chargeFields.map(({ key, label }) => (
+                            {chargeFields.map(({ key, label, hint }) => (
                               <label key={key} className="block">
                                 <span className="text-xs font-semibold text-slate-500">{label}</span>
+                                {hint && <span className="block text-xs text-slate-500">{hint}</span>}
                                 <input
                                   type="number" min="0" step="0.01"
                                   className="mt-1 block w-full rounded border border-slate-200 py-1.5 px-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-primary-600"
@@ -350,8 +351,8 @@ export function TicketChargesBoard() {
                               ['Printing', item.charges.printingCharges],
                               ['Attested', item.charges.attestedCharges],
                               ['Non-Attested', item.charges.nonAttestedCharges],
-                              ['Additional', item.charges.additionalCharges],
-                              ['Addl. Service Cost', item.charges.additionalServiceCost],
+                              ['Additional Cost', item.charges.additionalCharges],
+                              ['Additional Service Cost', item.charges.additionalServiceCost],
                             ] as [string, number][])
                               .filter(([, v]) => v > 0)
                               .map(([label, value]) => (
