@@ -8,10 +8,52 @@ import { Select } from '@/components/ui/select';
 
 export type BenchTypeOption = { value: string; label: string; count: number };
 
-// 5-24-26 #13: single-select bundle picker that collapses to the chosen option
-// once selected (the rest disappear), mirroring the city/court pickers. Lives
-// as a component — not inline in renderField — because it owns `useState` and
-// renderField is invoked inside a .map() (rules-of-hooks).
+// 5-24-26 #13 / 7-7-26 C13: shared collapse-to-chip state for any
+// single-select-with-buttons field (checkbox_single, radio). Once a value is
+// set the field collapses to a chip + "Change" button (mirroring the
+// city/court pickers); "Change" re-expands the option grid. Extracted as a
+// hook — not inline in renderField — because it owns `useState` and
+// renderField is invoked inside a .map() (rules-of-hooks); each single-select
+// field type gets its own small wrapper component that calls this hook.
+function useSingleSelectCollapse(value: string, options: string[]) {
+  const [forceOpen, setForceOpen] = useState(false);
+  const selected = options.includes(value) ? value : '';
+  const showChip = Boolean(selected) && !forceOpen;
+  return {
+    selected,
+    showChip,
+    expand: () => setForceOpen(true),
+    collapse: () => setForceOpen(false),
+  };
+}
+
+// Shared chip + "Change" affordance rendered once a single-select field has a
+// value and isn't force-expanded.
+function SelectionChip({ label, onChange }: { label: string; onChange: () => void }) {
+  return (
+    <div className="flex flex-wrap items-center gap-3 pt-1">
+      <span className="inline-flex items-center gap-2 rounded-full border border-brand-200 bg-brand-50 px-4 py-2 text-sm font-medium text-brand-700">
+        <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-md border border-brand-500 bg-brand-500 text-white">
+          <svg viewBox="0 0 12 12" className="h-2.5 w-2.5" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M2.5 6.5l2.5 2.5 4.5-5.5" />
+          </svg>
+        </span>
+        <span className="font-semibold">{label}</span>
+      </span>
+      <button
+        type="button"
+        onClick={onChange}
+        className="inline-flex items-center gap-1.5 rounded-xl border border-border-soft bg-surface px-3 py-1.5 text-xs font-semibold text-slate-700 transition-colors hover:bg-surface-muted"
+      >
+        <Pencil className="h-3.5 w-3.5" />
+        Change
+      </button>
+    </div>
+  );
+}
+
+// Single-select bundle picker (checkbox-tile style) that collapses to the
+// chosen option once selected.
 function CheckboxSingleField({
   field,
   value,
@@ -31,30 +73,12 @@ function CheckboxSingleField({
   hasError: boolean;
   errorMsg: string;
 }) {
-  const [forceOpen, setForceOpen] = useState(false);
-  const selected = options.includes(value) ? value : '';
+  const { selected, showChip, expand, collapse } = useSingleSelectCollapse(value, options);
 
-  if (selected && !forceOpen) {
+  if (showChip) {
     return (
       <>
-        <div className="flex flex-wrap items-center gap-3 pt-1">
-          <span className="inline-flex items-center gap-2 rounded-full border border-brand-200 bg-brand-50 px-4 py-2 text-sm font-medium text-brand-700">
-            <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-md border border-brand-500 bg-brand-500 text-white">
-              <svg viewBox="0 0 12 12" className="h-2.5 w-2.5" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M2.5 6.5l2.5 2.5 4.5-5.5" />
-              </svg>
-            </span>
-            <span className="font-semibold">{labelFor(selected)}</span>
-          </span>
-          <button
-            type="button"
-            onClick={() => setForceOpen(true)}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-border-soft bg-surface px-3 py-1.5 text-xs font-semibold text-slate-700 transition-colors hover:bg-surface-muted"
-          >
-            <Pencil className="h-3.5 w-3.5" />
-            Change
-          </button>
-        </div>
+        <SelectionChip label={labelFor(selected)} onChange={expand} />
         {hasError && <p className="mt-1 text-xs text-rose-600">{errorMsg}</p>}
       </>
     );
@@ -74,7 +98,7 @@ function CheckboxSingleField({
                 onChange(field.key, next);
                 onBlur?.(field.key, next);
                 // Re-collapse to the chosen bundle (no-op when cleared).
-                if (next) setForceOpen(false);
+                if (next) collapse();
               }}
               className={[
                 'flex items-center gap-3 rounded-xl border px-3.5 py-3 text-left text-sm',
@@ -103,6 +127,97 @@ function CheckboxSingleField({
       </div>
       {hasError && <p className="mt-1 text-xs text-rose-600">{errorMsg}</p>}
     </>
+  );
+}
+
+// 7-7-26 C13: radio-style single-select group that collapses to the chosen
+// option, mirroring CheckboxSingleField above (both are single-select-with-
+// buttons; the visual treatment differs — pill buttons + radio dot vs.
+// tile buttons + checkmark — so the button markup isn't shared, but the
+// collapse state + chip affordance is, via useSingleSelectCollapse/SelectionChip).
+function RadioField({
+  field,
+  value,
+  options,
+  customLabel,
+  disabledOptions,
+  onChange,
+  onBlur,
+  hasError,
+  errorMsg,
+}: {
+  field: IntakeField;
+  value: string;
+  options: string[];
+  customLabel: (o: string) => string | undefined;
+  disabledOptions?: Record<string, { disabled: boolean; hint?: string }>;
+  onChange: (key: string, value: string) => void;
+  onBlur?: (key: string, value: string) => void;
+  hasError: boolean;
+  errorMsg: string;
+}) {
+  const { selected, showChip, expand, collapse } = useSingleSelectCollapse(value, options);
+  const labelFor = (o: string) => customLabel(o) ?? o.replace(/_/g, ' ');
+
+  if (showChip) {
+    return (
+      <fieldset>
+        <legend className="sr-only">{field.label}</legend>
+        <SelectionChip label={labelFor(selected)} onChange={expand} />
+        {hasError && <p className="mt-1 text-xs text-rose-600">{errorMsg}</p>}
+      </fieldset>
+    );
+  }
+
+  return (
+    <fieldset>
+      <legend className="sr-only">{field.label}</legend>
+      <div className="flex flex-wrap gap-2 pt-1">
+        {options.map((o) => {
+          const active = value === o;
+          const optMeta = disabledOptions?.[o];
+          const disabled = Boolean(optMeta?.disabled);
+          return (
+            <div key={o} className="flex flex-col">
+              <button
+                type="button"
+                disabled={disabled}
+                onClick={() => {
+                  if (disabled) return;
+                  onChange(field.key, o);
+                  onBlur?.(field.key, o);
+                  collapse();
+                }}
+                className={[
+                  'inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-medium',
+                  'transition-[background-color,border-color,color] duration-150',
+                  disabled
+                    ? 'cursor-not-allowed border-border-soft bg-surface-muted text-slate-400 opacity-60'
+                    : active
+                      ? 'border-brand-500 bg-brand-50 text-brand-700'
+                      : 'border-border-soft bg-surface text-slate-700 hover:bg-surface-muted',
+                ].join(' ')}
+                aria-disabled={disabled}
+              >
+                <span
+                  className={[
+                    'h-3.5 w-3.5 rounded-full border-2 transition-colors',
+                    active && !disabled
+                      ? 'border-brand-500 bg-brand-500 ring-2 ring-inset ring-white'
+                      : 'border-slate-300',
+                  ].join(' ')}
+                />
+                <span className={customLabel(o) ? undefined : 'capitalize'}>{labelFor(o)}</span>
+              </button>
+              {disabled && optMeta?.hint ? (
+                <span className="mt-1 text-[11px] text-slate-500">{optMeta.hint}</span>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+      {hasError && <p className="mt-1 text-xs text-rose-600">{errorMsg}</p>}
+    </fieldset>
   );
 }
 
@@ -349,55 +464,17 @@ export function renderField(
     const customLabel = (o: string) =>
       field.optionsLabel?.(o, payload) ?? field.optionsLabels?.[o];
     return (
-      <fieldset>
-        <legend className="sr-only">{field.label}</legend>
-        <div className="flex flex-wrap gap-2 pt-1">
-          {options.map((o) => {
-            const active = value === o;
-            const optMeta = disabledOptions?.[o];
-            const disabled = Boolean(optMeta?.disabled);
-            return (
-              <div key={o} className="flex flex-col">
-                <button
-                  type="button"
-                  disabled={disabled}
-                  onClick={() => {
-                    if (disabled) return;
-                    onChange(field.key, o);
-                    onBlur?.(field.key, o);
-                  }}
-                  className={[
-                    'inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-medium',
-                    'transition-[background-color,border-color,color] duration-150',
-                    disabled
-                      ? 'cursor-not-allowed border-border-soft bg-surface-muted text-slate-400 opacity-60'
-                      : active
-                        ? 'border-brand-500 bg-brand-50 text-brand-700'
-                        : 'border-border-soft bg-surface text-slate-700 hover:bg-surface-muted',
-                  ].join(' ')}
-                  aria-disabled={disabled}
-                >
-                  <span
-                    className={[
-                      'h-3.5 w-3.5 rounded-full border-2 transition-colors',
-                      active && !disabled
-                        ? 'border-brand-500 bg-brand-500 ring-2 ring-inset ring-white'
-                        : 'border-slate-300',
-                    ].join(' ')}
-                  />
-                  <span className={customLabel(o) ? undefined : 'capitalize'}>
-                    {customLabel(o) ?? o.replace(/_/g, ' ')}
-                  </span>
-                </button>
-                {disabled && optMeta?.hint ? (
-                  <span className="mt-1 text-[11px] text-slate-500">{optMeta.hint}</span>
-                ) : null}
-              </div>
-            );
-          })}
-        </div>
-        {hasError && <p className="mt-1 text-xs text-rose-600">{errorMsg}</p>}
-      </fieldset>
+      <RadioField
+        field={field}
+        value={value}
+        options={options}
+        customLabel={customLabel}
+        disabledOptions={disabledOptions}
+        onChange={onChange}
+        onBlur={onBlur}
+        hasError={hasError}
+        errorMsg={errorMsg ?? ''}
+      />
     );
   }
 

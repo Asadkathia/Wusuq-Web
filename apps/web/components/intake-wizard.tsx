@@ -12,6 +12,7 @@ import type { IntakeFlow, IntakeStep, CourtTier } from '@/lib/intake-flows';
 import { courtTierFromCourtType, resolveRequired, docBundleLabel, normalizeDraftPayload, isStructuredAddressComplete, computeYearBand, parseBench, showWhenSatisfied, parseCities, stringifyCities, isFlowAvailableForCurrency, parseDeliveryAddress } from '@/lib/intake-flows';
 import { BENCH_TYPE_LABELS } from '@/lib/bench-types';
 import type { YearBand } from '@/lib/intake-flows';
+import { judgeDesignationsForCaseType } from '@/lib/judge-designations';
 import { buildPricingResolveInput, computeTicketTotal, computeCaseSearchBase, computeDecidedAgeSurcharge } from '@wusuq/shared';
 
 import type { IntakeWizardProps, TicketDraft, ServiceHit, LocalUser, CityCourtGroup } from './intake-wizard/types';
@@ -246,6 +247,9 @@ export function IntakeWizard({
   const errorBannerRef = useRef<HTMLDivElement>(null);
   const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const didHydrateRef = useRef(false);
+  // B9: guards the delivery-address profile-address prefill so it fires at
+  // most once per consumer (never re-seeds after the user edits/clears it).
+  const deliveryAddressSeededForRef = useRef<string | null>(null);
   const [services, setServices] = useState<ServiceHit[]>([]);
   const [uploadError, setUploadError] = useState('');
   const [isDraggingFiles, setIsDraggingFiles] = useState(false);
@@ -421,6 +425,53 @@ export function IntakeWizard({
       .then((r) => { if (r.currency) startTransition(() => setCurrency(r.currency!)); })
       .catch(() => {});
   }, [draft.consumerId, currentUser?.id]);
+
+  // B9: prefill the structured delivery address's `house` line from the
+  // intake consumer's saved profile address (serializeUser returns
+  // `address`). Unlike the currency effect above, this must ALSO run for
+  // self-intake (cid === currentUser.id) — there's no self-serving endpoint
+  // like /wallet/me for address, so /users/:id is fetched unconditionally
+  // once a consumer id is known. Only fires for flows that actually expose a
+  // `delivery_address` field (Case Files / Case Search TCS branch), seeds at
+  // most once per consumer, and never overwrites a value the user already
+  // entered (draft-resume, or having already typed something in).
+  const flowHasDeliveryAddress = useMemo(
+    () => Boolean(selectedFlow?.steps.some((s) => s.fields.some((f) => f.key === 'delivery_address'))),
+    [selectedFlow],
+  );
+  useEffect(() => {
+    const cid = draft.consumerId;
+    if (!cid || !flowHasDeliveryAddress) return;
+    if (deliveryAddressSeededForRef.current === cid) return;
+    if (parseDeliveryAddress(draft.payload.delivery_address).house.trim()) {
+      // Already has a value (resumed draft, or the user typed one) — don't
+      // fetch or overwrite; mark seeded so we don't re-check every render.
+      deliveryAddressSeededForRef.current = cid;
+      return;
+    }
+    // Self-intake reads /users/me (consumers can't hit the staff-only
+    // /users/:id); staff-on-behalf reads the target consumer's /users/:id.
+    const profileUrl = cid === currentUser?.id ? '/users/me' : `/users/${cid}`;
+    apiClient.get<{ address?: string }>(profileUrl)
+      .then((r) => {
+        deliveryAddressSeededForRef.current = cid;
+        if (!r.address?.trim()) return;
+        startTransition(() => {
+          setDraft((c) => {
+            const existing = parseDeliveryAddress(c.payload.delivery_address);
+            if (existing.house.trim()) return c; // never overwrite a non-empty value
+            return {
+              ...c,
+              payload: {
+                ...c.payload,
+                delivery_address: JSON.stringify({ ...existing, house: r.address!.trim() }),
+              },
+            };
+          });
+        });
+      })
+      .catch(() => { deliveryAddressSeededForRef.current = cid; });
+  }, [draft.consumerId, draft.payload.delivery_address, flowHasDeliveryAddress, currentUser?.id]);
 
   // Clear a stale "Non Attested" selection when the user flips to Decided Case,
   // since that option is hidden in this configuration.
@@ -644,6 +695,10 @@ export function IntakeWizard({
   );
 
   const judgeDesignationOptions: string[] = useMemo(() => {
+    // B7: Family/Guardian case types have exactly one correct designation
+    // regardless of the resolved sub-court — check this first.
+    const byType = judgeDesignationsForCaseType(draft.payload.case_type);
+    if (byType) return byType;
     const subCourt = draft.payload.select_court ?? '';
     if (subCourt && JUDGE_DESIGNATIONS_BY_SERVICE[subCourt]) {
       return JUDGE_DESIGNATIONS_BY_SERVICE[subCourt];
@@ -652,7 +707,7 @@ export function IntakeWizard({
       return JUDGE_DESIGNATIONS_BY_TYPE[selectedCourtType];
     }
     return DEFAULT_JUDGE_DESIGNATIONS;
-  }, [draft.payload.select_court, selectedCourtType]);
+  }, [draft.payload.case_type, draft.payload.select_court, selectedCourtType]);
 
   // When the chosen service + city yields exactly one sub-court for the tier
   // (e.g. Supreme Court → "Supreme Court of Pakistan"), auto-select it so the
