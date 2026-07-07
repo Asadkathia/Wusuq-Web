@@ -598,8 +598,23 @@ export class TicketsService {
 
   async createIntakeTicket(
     dto: CreateTicketIntakeDto,
-    actor?: { actorUserId?: string; actorEmail?: string },
+    actor?: { actorUserId?: string; actorEmail?: string; actorRole?: string },
   ) {
+    // H2 IDOR (audit): a consumer-class actor must never be able to bill a
+    // ticket to another consumer by supplying a foreign dto.consumerId. Bind
+    // to the actor's own id — reject an explicit mismatch, and coerce a
+    // missing/self-matching value so an omitted consumerId still lands on
+    // the caller. Staff/lawyer (non-consumer-class) callers are unaffected
+    // and keep creating tickets on behalf of an explicit consumerId.
+    if (actor?.actorUserId && isConsumerRole(actor.actorRole)) {
+      if (dto.consumerId && dto.consumerId !== actor.actorUserId) {
+        throw new ForbiddenException(
+          'Cannot create a ticket for another consumer',
+        );
+      }
+      dto.consumerId = actor.actorUserId;
+    }
+
     this.ensureFlowSupported(dto.flow);
     this.validateFlowPayload(dto.flow, dto.payload);
 
@@ -898,7 +913,7 @@ export class TicketsService {
   createIntakeTicketFromFlow(
     flow: string,
     dto: Omit<CreateTicketIntakeDto, 'flow'>,
-    actor?: { actorUserId?: string; actorEmail?: string },
+    actor?: { actorUserId?: string; actorEmail?: string; actorRole?: string },
   ) {
     return this.createIntakeTicket({ ...dto, flow }, actor);
   }

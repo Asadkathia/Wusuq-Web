@@ -120,6 +120,7 @@ export class TicketsController {
     return this.ticketsService.createIntakeTicket(dto, {
       actorUserId: actor?.sub,
       actorEmail: actor?.email,
+      actorRole: actor?.role,
     });
   }
 
@@ -135,6 +136,7 @@ export class TicketsController {
       {
         actorUserId: actor?.sub,
         actorEmail: actor?.email,
+        actorRole: actor?.role,
       },
     );
   }
@@ -151,6 +153,7 @@ export class TicketsController {
       {
         actorUserId: actor?.sub,
         actorEmail: actor?.email,
+        actorRole: actor?.role,
       },
     );
   }
@@ -167,6 +170,7 @@ export class TicketsController {
       {
         actorUserId: actor?.sub,
         actorEmail: actor?.email,
+        actorRole: actor?.role,
       },
     );
   }
@@ -183,6 +187,7 @@ export class TicketsController {
       {
         actorUserId: actor?.sub,
         actorEmail: actor?.email,
+        actorRole: actor?.role,
       },
     );
   }
@@ -199,6 +204,7 @@ export class TicketsController {
       {
         actorUserId: actor?.sub,
         actorEmail: actor?.email,
+        actorRole: actor?.role,
       },
     );
   }
@@ -215,6 +221,7 @@ export class TicketsController {
       {
         actorUserId: actor?.sub,
         actorEmail: actor?.email,
+        actorRole: actor?.role,
       },
     );
   }
@@ -231,6 +238,7 @@ export class TicketsController {
       {
         actorUserId: actor?.sub,
         actorEmail: actor?.email,
+        actorRole: actor?.role,
       },
     );
   }
@@ -247,6 +255,7 @@ export class TicketsController {
       {
         actorUserId: actor?.sub,
         actorEmail: actor?.email,
+        actorRole: actor?.role,
       },
     );
   }
