@@ -1,3 +1,4 @@
+import { jest } from '@jest/globals';
 import { UsersController } from './users.controller';
 import type { JwtUser } from '../auth/types/jwt-user.type';
 
