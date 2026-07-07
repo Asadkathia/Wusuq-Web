@@ -328,6 +328,7 @@ export function IntakeWizard({
     deliveryCharge: number;
     serviceCost: number;
     total: number;
+    turnaroundLabel?: string | null;
   } | null>(null);
   // Per-option availability for the Set Type picker. Populated by the
   // /pricing-rules/availability endpoint whenever the relevant context
@@ -1869,6 +1870,11 @@ export function IntakeWizard({
         if (staticDelivery > 0) {
           items.push({ label: 'Delivery', amount: staticDelivery });
         }
+      }
+      // C16: editable per-rule turnaround estimate (display-only — no effect
+      // on submit body or money math).
+      if (pr.turnaroundLabel) {
+        items.push({ label: `Estimated turnaround: ${pr.turnaroundLabel}`, amount: null });
       }
     } else {
       // Keep existing delivery_mode display when no pricing match
