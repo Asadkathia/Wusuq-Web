@@ -449,7 +449,10 @@ export function IntakeWizard({
       deliveryAddressSeededForRef.current = cid;
       return;
     }
-    apiClient.get<{ address?: string }>(`/users/${cid}`)
+    // Self-intake reads /users/me (consumers can't hit the staff-only
+    // /users/:id); staff-on-behalf reads the target consumer's /users/:id.
+    const profileUrl = cid === currentUser?.id ? '/users/me' : `/users/${cid}`;
+    apiClient.get<{ address?: string }>(profileUrl)
       .then((r) => {
         deliveryAddressSeededForRef.current = cid;
         if (!r.address?.trim()) return;
@@ -468,7 +471,7 @@ export function IntakeWizard({
         });
       })
       .catch(() => { deliveryAddressSeededForRef.current = cid; });
-  }, [draft.consumerId, draft.payload.delivery_address, flowHasDeliveryAddress]);
+  }, [draft.consumerId, draft.payload.delivery_address, flowHasDeliveryAddress, currentUser?.id]);
 
   // Clear a stale "Non Attested" selection when the user flips to Decided Case,
   // since that option is hidden in this configuration.

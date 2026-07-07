@@ -33,6 +33,16 @@ export class UsersController {
     return this.usersService.roles();
   }
 
+  // Self-profile — any authenticated user reads their OWN record (no staff
+  // permission), so a consumer can read their saved address/profile (B9 delivery
+  // prefill). Declared BEFORE @Get(':id') so "me" doesn't fall into the
+  // staff-only :id route. No @RequirePermissions → PermissionsGuard passes
+  // (JwtAuthGuard still requires a valid token); scope is bound to actor.sub.
+  @Get('me')
+  me(@CurrentUser() actor: JwtUser | undefined) {
+    return this.usersService.findOne(actor!.sub);
+  }
+
   @RequirePermissions('users.read')
   @Get(':id')
   findOne(@Param('id') id: string) {
