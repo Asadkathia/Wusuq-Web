@@ -4,6 +4,7 @@ import {
   IsIn,
   IsOptional,
   IsString,
+  MaxLength,
   MinLength,
 } from 'class-validator';
 
@@ -16,6 +17,7 @@ export class CreateUserDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(16)
   phone?: string;
 
   @IsString()

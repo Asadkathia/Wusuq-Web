@@ -25,6 +25,7 @@ export class SignupDto {
   // number is saved but not verified.
   @IsString()
   @MinLength(7)
+  @MaxLength(16)
   phone!: string;
 
   // Required account/user type — Civilian / Lawyer / Company (labels), stored as
