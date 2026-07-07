@@ -276,6 +276,27 @@ export class FinanceService {
       );
     }
 
+    // C10: snapshot the applied breakdown for invoice/audit provenance, same
+    // top-level shape (resolver/applied/taxRate) as repriceTicket's
+    // priceBreakdown. There is no pricing re-resolve here (this is a manual
+    // admin override, not a re-price from case fields), so `resolver` is the
+    // overridden charge components rather than a PricingService.resolve()
+    // result. `applied` mirrors the computed money, with totalAmount aligned
+    // to whatever was actually persisted (dto.amount may override it).
+    const priceBreakdown = {
+      resolver: {
+        serviceCost,
+        deliveryCharges,
+        printingCharges,
+        attestedCharges,
+        nonAttestedCharges,
+        additionalCharges,
+        additionalServiceCost,
+      },
+      applied: { ...money, totalAmount },
+      taxRate,
+    };
+
     const updated = await this.prisma.ticket.update({
       where: { id: ticketId },
       data: {
@@ -290,6 +311,7 @@ export class FinanceService {
         promoDiscount,
         taxAmount: money.taxAmount,
         totalAmount,
+        priceBreakdown: priceBreakdown as Prisma.InputJsonValue,
       },
     });
 
