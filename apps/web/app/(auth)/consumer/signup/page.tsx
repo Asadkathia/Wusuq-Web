@@ -87,6 +87,20 @@ export default function ConsumerSignupPage() {
       setError('Enter a valid mobile number.');
       return;
     }
+    // Compose +<dial><local> (strip separators / leading + / leading zeros; don't
+    // double the dial if already typed). Guard the FINAL length against the
+    // server's @MaxLength(16) — the generic local cap alone can't (a multi-digit
+    // dial + a 15-digit local composes past 16); this is the authoritative FE
+    // check so a valid-looking number never 400s at submit (review G4).
+    const composedPhone = (() => {
+      const digits = phone.trim().replace(/[\s\-()]/g, '').replace(/^\+/, '').replace(/^0+/, '');
+      const dial = findCountry(countryCode).dial;
+      return digits.startsWith(dial) ? `+${digits}` : `+${dial}${digits}`;
+    })();
+    if (composedPhone.length > 16) {
+      setError('Enter a valid mobile number.');
+      return;
+    }
 
     setLoading(true);
     try {
@@ -106,13 +120,8 @@ export default function ConsumerSignupPage() {
             // Country is saved as contact info; the phone's dial code is what
             // drives billing currency server-side (PKR for PK, else USD).
             country: countryCode,
-            // Compose +<dial><local>; strip leading + / 0 and skip doubling up
-            // if the user already typed the dial code.
-            phone: (() => {
-              const digits = phone.trim().replace(/[\s\-()]/g, '').replace(/^\+/, '').replace(/^0+/, '');
-              const dial = findCountry(countryCode).dial;
-              return digits.startsWith(dial) ? `+${digits}` : `+${dial}${digits}`;
-            })(),
+            // Composed above and length-guarded against the server cap.
+            phone: composedPhone,
           }),
           signal: controller.signal,
         });

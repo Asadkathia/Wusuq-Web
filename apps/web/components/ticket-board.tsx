@@ -575,10 +575,19 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
 
   const runBulkAction = async () => {
     if (selectedIds.length === 0) return flash('Select at least one ticket', true);
+    // Confirm every bulk action — 'delete' soft-archives (irreversible from the
+    // app). Critical on the Unpaid/Paid tabs where the same checkbox also feeds
+    // "Assign selected to clerk": naming the action + count stops an accidental
+    // Apply from archiving tickets the admin only meant to route (review G1/G2).
+    const verb = bulkAction === 'delete' ? 'Archive' : 'Complete';
+    if (!window.confirm(`${verb} ${selectedIds.length} selected ticket(s)?${bulkAction === 'delete' ? " They're removed from lists, dues, and settlement — this can't be undone from the app." : ''}`)) {
+      return;
+    }
     try {
       await apiClient.post('/tickets/bulk-actions', { action: bulkAction, ticketIds: selectedIds });
       flash('Bulk action applied');
       setSelected({});
+      setPendingSelected({});
       loadTickets();
     } catch (error: any) {
       flash(error.message || 'Bulk action failed', true);
