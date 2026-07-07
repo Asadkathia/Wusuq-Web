@@ -28,7 +28,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { UserCircle, MapPin, Tag, RefreshCw, CheckSquare, Clock, History, FileOutput, Eye, PlayCircle, Upload, X, XCircle, Calendar, FileText, Download } from 'lucide-react';
+import { UserCircle, MapPin, Tag, RefreshCw, CheckSquare, Clock, History, FileOutput, Eye, PlayCircle, Upload, X, XCircle, Calendar, FileText, Download, Trash2 } from 'lucide-react';
 import { TicketDetailPanel } from './ticket-detail-panel';
 import { flowKeyToSlug } from '@/lib/intake-flows';
 
@@ -153,6 +153,9 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
   const [serviceFilter, setServiceFilter] = useState('all');
 
   const [viewTicketId, setViewTicketId] = useState<string | null>(null);
+  // B12: id of a ticket currently being archived via the per-row delete
+  // action, so we can disable/label just that row's button while in flight.
+  const [deletingTicketId, setDeletingTicketId] = useState<string | null>(null);
 
   const [assignTicket, setAssignTicket] = useState<TicketRow | null>(null);
   const [representatives, setRepresentatives] = useState<Representative[]>([]);
@@ -975,6 +978,23 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
     }
   };
 
+  // B12: admin-only per-row archive (soft-delete), reusing the same
+  // bulk-actions endpoint the toolbar "Delete Tickets" option calls with a
+  // single-element ticketIds array.
+  const deleteTicket = async (ticket: TicketRow) => {
+    if (!confirm("Archive this ticket? It's removed from lists, dues, and settlement. This can't be undone from the app.")) return;
+    setDeletingTicketId(ticket.id);
+    try {
+      await apiClient.post('/tickets/bulk-actions', { action: 'delete', ticketIds: [ticket.id] });
+      flash(`Ticket ${ticket.batchNo} archived.`);
+      loadTickets();
+    } catch (error: any) {
+      flash(error.message || 'Failed to archive ticket', true);
+    } finally {
+      setDeletingTicketId(null);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <SectionHeader 
@@ -1020,7 +1040,7 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
                 {isAdmin && (
                   <>
                     <span className="hidden sm:block h-6 w-px bg-slate-200 mx-1" aria-hidden="true"></span>
-                    {status === 'UNPAID' || status === 'PAID' ? (
+                    {(status === 'UNPAID' || status === 'PAID') && (
                       <button
                         type="button"
                         onClick={openBulkAssign}
@@ -1029,28 +1049,26 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
                       >
                         Assign selected to clerk
                       </button>
-                    ) : (
-                      <>
-                        <select
-                          className="w-full sm:w-auto rounded-lg border-0 py-2 pl-3 pr-8 text-slate-900 shadow-sm ring-1 ring-inset ring-border-soft focus:ring-2 focus:ring-primary-600 sm:text-sm"
-                          value={bulkAction}
-                          onChange={(e) => setBulkAction(e.target.value)}
-                        >
-                          <option value="complete">Complete Tickets</option>
-                          <option value="delete">Delete Tickets</option>
-                          <option value="download-invoice">Download Invoice</option>
-                          <option value="send-invoice">Send Invoice</option>
-                        </select>
-                        <button
-                          type="button"
-                          onClick={runBulkAction}
-                          disabled={selectedIds.length === 0}
-                          className="w-full sm:w-auto rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 disabled:opacity-50 transition-colors"
-                        >
-                          Apply
-                        </button>
-                      </>
                     )}
+                    {/* B12: bulk Complete/Delete now available on every tab
+                        (not just non-Unpaid/Paid) — Unpaid/Paid show both
+                        the Assign button above AND this select+Apply. */}
+                    <select
+                      className="w-full sm:w-auto rounded-lg border-0 py-2 pl-3 pr-8 text-slate-900 shadow-sm ring-1 ring-inset ring-border-soft focus:ring-2 focus:ring-primary-600 sm:text-sm"
+                      value={bulkAction}
+                      onChange={(e) => setBulkAction(e.target.value)}
+                    >
+                      <option value="complete">Complete Tickets</option>
+                      <option value="delete">Delete Tickets</option>
+                    </select>
+                    <button
+                      type="button"
+                      onClick={runBulkAction}
+                      disabled={selectedIds.length === 0}
+                      className="w-full sm:w-auto rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 disabled:opacity-50 transition-colors"
+                    >
+                      Apply
+                    </button>
                   </>
                 )}
                 {isClerk && status === 'ASSIGNED' && selectedIds.length > 0 && (
@@ -1088,9 +1106,16 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
                       }
                       onChange={(e) => {
                         if (status === 'UNPAID' || status === 'PAID') {
+                          // B12: Unpaid/Paid checkboxes drive BOTH the
+                          // Assign-to-clerk selection (pendingSelected) and
+                          // the generic bulk Complete/Delete selection
+                          // (selected) — kept in lockstep so `selectedIds`
+                          // (derived from `selected`) is populated on these
+                          // tabs too.
                           const next: Record<string, boolean> = {};
                           filteredTickets.forEach((t) => { next[t.id] = e.target.checked; });
                           setPendingSelected(next);
+                          setSelected(next);
                         } else {
                           toggleAll(e.target.checked);
                         }
@@ -1134,7 +1159,9 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
                         checked={status === 'UNPAID' || status === 'PAID' ? Boolean(pendingSelected[ticket.id]) : Boolean(selected[ticket.id])}
                         onChange={(e) => {
                           if (status === 'UNPAID' || status === 'PAID') {
+                            // B12: keep pendingSelected + selected in sync (see header checkbox comment above).
                             setPendingSelected((s) => ({ ...s, [ticket.id]: e.target.checked }));
+                            setSelected((s) => ({ ...s, [ticket.id]: e.target.checked }));
                           } else {
                             setSelected((s) => ({ ...s, [ticket.id]: e.target.checked }));
                           }
@@ -1398,6 +1425,17 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
                         <button onClick={() => regenerateTicket(ticket.id, ticket.intakeFlow)} className="text-slate-600 hover:text-rose-600 bg-slate-100 hover:bg-rose-50 px-3 py-1.5 rounded-md flex items-center gap-1" title="Regenerate Ticket">
                           <FileOutput className="h-3.5 w-3.5" />
                         </button>
+                        {/* B12: admin-only per-row archive (soft-delete). */}
+                        {isAdmin && (
+                          <button
+                            onClick={() => deleteTicket(ticket)}
+                            disabled={deletingTicketId === ticket.id}
+                            className="text-rose-600 hover:text-rose-900 bg-rose-50 hover:bg-rose-100 px-3 py-1.5 rounded-md flex items-center gap-1 disabled:opacity-50"
+                            title="Archive ticket"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" /> {deletingTicketId === ticket.id ? 'Archiving…' : 'Delete'}
+                          </button>
+                        )}
                       </>
                     )}
                   </div>
