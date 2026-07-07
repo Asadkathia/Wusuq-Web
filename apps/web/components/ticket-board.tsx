@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { TicketStatus } from '@wusuq/shared';
-import { chargeCapabilitiesFor, computeClerkEarnings } from '@wusuq/shared';
+import { chargeCapabilitiesFor, computeClerkEarnings, computeWusuqMargin } from '@wusuq/shared';
 import { TICKET_STATUSES } from '@wusuq/shared';
 import { apiClient } from '@/lib/api-client';
 import { relativeTime } from '@/lib/relative-time';
@@ -1820,42 +1820,59 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
                       <p className="mt-1 text-xs text-slate-400">Clerk submitted: PKR {clerkSubmitted('deliveryCharges').toLocaleString()}</p>
                     </FormField>
                   )}
-                  {/* Additional Cost — admin-editable, viewable; persisted on finalize. */}
+                  {/* Additional Cost — admin-editable, viewable; persisted on finalize. Untaxed (separate line). */}
                   <FormField label="Additional Cost" htmlFor="fin-additional">
                     <Input id="fin-additional" type="number" min="0" placeholder="0"
                       value={finalizeForm.additionalCharges}
                       onChange={(e) => setFinalizeForm((f) => ({ ...f, additionalCharges: e.target.value }))} />
-                    <p className="mt-1 text-xs text-slate-400">Clerk submitted: PKR {clerkSubmitted('additionalCharges').toLocaleString()}</p>
+                    <p className="mt-1 text-xs text-slate-400">Separate line; not taxed.</p>
+                    <p className="mt-0.5 text-xs text-slate-400">Clerk submitted: PKR {clerkSubmitted('additionalCharges').toLocaleString()}</p>
                   </FormField>
                 </div>
-                <div className="rounded-lg bg-slate-50 px-4 py-3 text-sm text-slate-700">
-                  <span className="font-medium">Base (service cost):</span>{' '}
-                  PKR {Number(finalizeTicket.serviceCost || 0).toLocaleString()}
-                  {' + '}
-                  <span className="font-medium">Phase-2 total:</span>{' '}
-                  PKR {(
+                {/* Base + phase-2 total, and the internal earnings/margin summary — share one
+                    total so the "Wusuq earnings" row below is derived from the same figure
+                    shown in this breakdown (Task 4 / C15). */}
+                {(() => {
+                  const phase2Total =
                     (caps.attestation ? (Number(finalizeForm.attestedCharges) || 0) + (Number(finalizeForm.nonAttestedCharges) || 0) : 0) +
                     (caps.printing ? (Number(finalizeForm.printingCharges) || 0) : 0) +
                     (caps.delivery ? (Number(finalizeForm.deliveryCharges) || 0) : 0) +
-                    (Number(finalizeForm.additionalCharges) || 0)
-                  ).toLocaleString()}
-                </div>
-                {/* Clerk earnings summary — internal only, never shown to consumers */}
-                {(() => {
+                    (Number(finalizeForm.additionalCharges) || 0);
+                  const baseAmount = Number(finalizeTicket.serviceCost || 0);
+                  const finalizeTotal = baseAmount + phase2Total;
                   const repName = finalizeTicket.assignedRepresentative?.name;
                   const earnings = computeFinalizeClerkEarnings(finalizeTicket, finalizeForm, wantPdf);
+                  const wusuqEarnings = computeWusuqMargin(finalizeTotal, earnings);
                   return (
-                    <div className="rounded-lg border border-amber-100 bg-amber-50 px-4 py-3 text-sm">
-                      <div className="flex items-center justify-between">
-                        <span className="font-medium text-amber-800">
-                          {repName ? `${repName}'s earnings` : 'Clerk earnings'}
-                        </span>
-                        <span className="font-semibold text-amber-900">PKR {earnings.toLocaleString()}</span>
+                    <>
+                      <div className="rounded-lg bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                        <span className="font-medium">Base (service cost):</span>{' '}
+                        PKR {baseAmount.toLocaleString()}
+                        {' + '}
+                        <span className="font-medium">Phase-2 total:</span>{' '}
+                        PKR {phase2Total.toLocaleString()}
                       </div>
-                      <p className="mt-0.5 text-xs text-amber-700">
-                        Clerk cost{repName ? ` · ${repName}` : ''} + phase-2 charges (internal only)
-                      </p>
-                    </div>
+                      {/* Clerk earnings summary — internal only, never shown to consumers */}
+                      <div className="rounded-lg border border-amber-100 bg-amber-50 px-4 py-3 text-sm">
+                        <div className="flex items-center justify-between">
+                          <span className="font-medium text-amber-800">
+                            {repName ? `${repName}'s earnings` : 'Clerk earnings'}
+                          </span>
+                          <span className="font-semibold text-amber-900">PKR {earnings.toLocaleString()}</span>
+                        </div>
+                        <p className="mt-0.5 text-xs text-amber-700">
+                          Clerk cost{repName ? ` · ${repName}` : ''} + phase-2 charges (internal only)
+                        </p>
+                      </div>
+                      {/* Wusuq earnings (margin) — internal only, never shown to consumers */}
+                      <div className="rounded-lg border border-indigo-100 bg-indigo-50 px-4 py-3 text-sm">
+                        <div className="flex items-center justify-between">
+                          <span className="font-medium text-indigo-800">Wusuq earnings</span>
+                          <span className="font-semibold text-indigo-900">PKR {wusuqEarnings.toLocaleString()}</span>
+                        </div>
+                        <p className="mt-0.5 text-xs text-indigo-700">Total minus clerk earnings (internal only)</p>
+                      </div>
+                    </>
                   );
                 })()}
 
