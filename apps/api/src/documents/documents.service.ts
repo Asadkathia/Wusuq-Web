@@ -34,9 +34,9 @@ export class DocumentsService {
         }
       : {};
 
-    const ticketWhere: Prisma.TicketWhereInput | undefined = where.ticket as
-      | Prisma.TicketWhereInput
-      | undefined;
+    // Note: `where` only ever holds a top-level `OR` (search) or is `{}` — the
+    // `ticket` filter below is a separate top-level key that Prisma ANDs with
+    // the search OR, so there's nothing to merge from `where`.
 
     // A representative is scoped to tickets they hold an assignment on —
     // never to a client-supplied consumerId. `representative` is NOT
@@ -50,7 +50,6 @@ export class DocumentsService {
       ...(opts?.forRepresentative
         ? {
             ticket: {
-              ...ticketWhere,
               assignments: {
                 some: { representativeId: opts.representativeId },
               },
@@ -59,7 +58,6 @@ export class DocumentsService {
         : query.consumerId || opts?.forConsumer
           ? {
               ticket: {
-                ...ticketWhere,
                 ...(query.consumerId ? { consumerId: query.consumerId } : {}),
                 // Consumer-facing list/export must only surface downloadable
                 // deliverables — same gate as `redactTicketForConsumer`
