@@ -118,6 +118,13 @@ export class UsersService {
         serviceFocus: dto.serviceFocus,
         court: dto.court,
         courtCity: dto.courtCity,
+        courtLevel: dto.courtLevel,
+        payoutMethod: dto.payoutMethod,
+        payoutBankName: dto.payoutBankName,
+        payoutAccountTitle: dto.payoutAccountTitle,
+        payoutAccountNumber: dto.payoutAccountNumber,
+        payoutJazzCash: dto.payoutJazzCash,
+        payoutEasyPaisa: dto.payoutEasyPaisa,
         province: dto.province,
         district: dto.district,
         city: dto.city,
@@ -189,6 +196,13 @@ export class UsersService {
         role: dto.role ? mapSharedRoleToPrisma(dto.role) : undefined,
         verified: dto.verified,
         isActive: dto.isActive,
+        courtLevel: dto.courtLevel,
+        payoutMethod: dto.payoutMethod,
+        payoutBankName: dto.payoutBankName,
+        payoutAccountTitle: dto.payoutAccountTitle,
+        payoutAccountNumber: dto.payoutAccountNumber,
+        payoutJazzCash: dto.payoutJazzCash,
+        payoutEasyPaisa: dto.payoutEasyPaisa,
         ...currencyUpdate,
       },
     });
@@ -271,6 +285,21 @@ export class UsersService {
     }
   }
 
+  // Payout fields (+ courtLevel) are staff-only PII (C4/C5). This serializer
+  // is private and only ever reached via UsersController routes, ALL of which
+  // are gated behind `@RequirePermissions('users.read' | 'users.write')` —
+  // permissions held ONLY by staff roles in ROLE_PERMISSIONS
+  // (super-admin/manager-admin/staff-admin/lead-admin; see isStaffRole in
+  // @wusuq/shared). No consumer-class or representative role holds either
+  // permission, so a rep can never list/read another user (or themselves)
+  // through this module, and a consumer can never reach it at all — the route
+  // guard IS the redaction guarantee here. Every OTHER place a User is turned
+  // into an API response (auth.service login/refresh/completeProfile,
+  // representativeCandidates' explicit `select`) builds its own explicit
+  // field allowlist that does not include these columns, so adding them to
+  // the Prisma model does not leak them anywhere else. Don't relax the
+  // `users.read`/`users.write` grants on ROLE_PERMISSIONS without revisiting
+  // this comment.
   private serializeUser(user: User) {
     return {
       id: user.id,
@@ -291,6 +320,13 @@ export class UsersService {
       serviceFocus: user.serviceFocus,
       court: user.court,
       courtCity: user.courtCity,
+      courtLevel: user.courtLevel,
+      payoutMethod: user.payoutMethod,
+      payoutBankName: user.payoutBankName,
+      payoutAccountTitle: user.payoutAccountTitle,
+      payoutAccountNumber: user.payoutAccountNumber,
+      payoutJazzCash: user.payoutJazzCash,
+      payoutEasyPaisa: user.payoutEasyPaisa,
       role: mapPrismaRoleToShared(user.role),
       verified: user.verified,
       isActive: user.isActive,

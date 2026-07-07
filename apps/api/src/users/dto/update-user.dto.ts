@@ -1,4 +1,4 @@
-import { USER_ROLES } from '@wusuq/shared';
+import { COURT_TIERS, PAYMENT_MODES, USER_ROLES } from '@wusuq/shared';
 import {
   IsBoolean,
   IsEmail,
@@ -37,4 +37,35 @@ export class UpdateUserDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  // Same 7 representative fields as CreateRepresentativeDto (C4/C5) — mirrored
+  // here so an existing rep can be edited via PATCH /users/:id. Payout fields
+  // are staff-only PII (see users.service.ts serializeUser / route guards).
+  @IsOptional()
+  @IsIn(COURT_TIERS)
+  courtLevel?: string;
+
+  @IsOptional()
+  @IsIn(PAYMENT_MODES)
+  payoutMethod?: string;
+
+  @IsOptional()
+  @IsString()
+  payoutBankName?: string;
+
+  @IsOptional()
+  @IsString()
+  payoutAccountTitle?: string;
+
+  @IsOptional()
+  @IsString()
+  payoutAccountNumber?: string;
+
+  @IsOptional()
+  @IsString()
+  payoutJazzCash?: string;
+
+  @IsOptional()
+  @IsString()
+  payoutEasyPaisa?: string;
 }
