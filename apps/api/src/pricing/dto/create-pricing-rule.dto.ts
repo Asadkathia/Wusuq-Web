@@ -17,6 +17,7 @@ export class CreatePricingRuleDto {
   @IsOptional() @IsString() setType?: string;
   @IsOptional() @IsString() region?: string;
   @IsOptional() @IsBoolean() isLegacy?: boolean;
+  @IsOptional() @IsString() turnaroundLabel?: string;
   @IsNumber() @Min(0) basePrice!: number;
   @IsNumber() @Min(0) attestedPricePerSet!: number;
   @IsNumber() @Min(0) nonAttestedPricePerSet!: number;

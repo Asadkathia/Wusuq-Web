@@ -99,6 +99,7 @@ export class PricingService {
         setType: dto.setType ?? null,
         region: dto.region ?? null,
         isLegacy: dto.isLegacy ?? false,
+        turnaroundLabel: dto.turnaroundLabel ?? null,
         basePrice: dto.basePrice,
         attestedPricePerSet: dto.attestedPricePerSet,
         nonAttestedPricePerSet: dto.nonAttestedPricePerSet,
@@ -317,6 +318,7 @@ export class PricingService {
     ruleId?: string;
     yearBand?: string | null;
     setType?: string | null;
+    turnaroundLabel: string | null;
     basePrice: number;
     base: number;
     pdfSurcharge: number;
@@ -471,6 +473,7 @@ export class PricingService {
       return {
         matched: false,
         rulesExistForFlow: flowRules.length > 0,
+        turnaroundLabel: null,
         basePrice: 0,
         base: 0,
         pdfSurcharge: 0,
@@ -501,6 +504,7 @@ export class PricingService {
         ruleId: best.id,
         yearBand: best.yearBand,
         setType: best.setType,
+        turnaroundLabel: null,
         basePrice: 0,
         base: 0,
         pdfSurcharge: 0,
@@ -531,6 +535,7 @@ export class PricingService {
         ruleId: best.id,
         yearBand: best.yearBand,
         setType: best.setType,
+        turnaroundLabel: best.turnaroundLabel ?? null,
         basePrice: flat,
         base: flat,
         pdfSurcharge: 0,
@@ -698,6 +703,7 @@ export class PricingService {
       ruleId: best.id,
       yearBand: best.yearBand,
       setType: best.setType,
+      turnaroundLabel: best.turnaroundLabel ?? null,
       basePrice,
       base: basePrice,
       pdfSurcharge,
