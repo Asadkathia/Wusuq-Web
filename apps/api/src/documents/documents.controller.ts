@@ -18,10 +18,19 @@ export class DocumentsController {
     @CurrentUser() user: JwtUser | undefined,
   ) {
     const forConsumer = Boolean(user && isConsumerRole(user.role));
+    // `representative` is NOT consumer-class — without this branch a rep's
+    // request fell through unfiltered and a client `?consumerId=<anyone>`
+    // was honoured verbatim (H1 IDOR). Reps are scoped server-side to their
+    // assigned tickets; any client-supplied consumerId is ignored.
+    const forRepresentative = user?.role === 'representative';
     if (forConsumer) {
       query.consumerId = user!.sub;
     }
-    return this.documentsService.list(query, { forConsumer });
+    return this.documentsService.list(query, {
+      forConsumer,
+      forRepresentative,
+      representativeId: user?.sub,
+    });
   }
 
   @RequirePermissions('documents.read')
@@ -38,13 +47,16 @@ export class DocumentsController {
     // export listed internal WORK_DOCUMENTs / in-flight-ticket docs whose
     // Download button then 403'd.
     const forConsumer = Boolean(user && isConsumerRole(user.role));
+    // Same H1 IDOR guard as `list` — a rep is scoped to their assigned
+    // tickets server-side, never to a client-supplied consumerId.
+    const forRepresentative = user?.role === 'representative';
     const data = await this.documentsService.list(
       {
         page: 1,
         limit: 5000,
         ...(forConsumer ? { consumerId: user!.sub } : {}),
       } as PaginationQueryDto,
-      { forConsumer },
+      { forConsumer, forRepresentative, representativeId: user?.sub },
     );
     const rows = data.items;
 

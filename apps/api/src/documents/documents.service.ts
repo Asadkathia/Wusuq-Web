@@ -7,7 +7,14 @@ import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 export class DocumentsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async list(query: PaginationQueryDto, opts?: { forConsumer?: boolean }) {
+  async list(
+    query: PaginationQueryDto,
+    opts?: {
+      forConsumer?: boolean;
+      forRepresentative?: boolean;
+      representativeId?: string;
+    },
+  ) {
     const skip = (query.page - 1) * query.limit;
 
     const where: Prisma.TicketDocumentWhereInput = query.search
@@ -27,29 +34,43 @@ export class DocumentsService {
         }
       : {};
 
-    const ticketWhere: Prisma.TicketWhereInput | undefined = where.ticket as
-      | Prisma.TicketWhereInput
-      | undefined;
+    // Note: `where` only ever holds a top-level `OR` (search) or is `{}` — the
+    // `ticket` filter below is a separate top-level key that Prisma ANDs with
+    // the search OR, so there's nothing to merge from `where`.
 
+    // A representative is scoped to tickets they hold an assignment on —
+    // never to a client-supplied consumerId. `representative` is NOT
+    // consumer-class, so it previously fell through this gate unfiltered
+    // and a rep could pass `?consumerId=<anyone>` to read any consumer's
+    // documents (H1 IDOR). Mirrors the `assignments: { some: {
+    // representativeId } }` shape used for the same scoping in
+    // `tickets.service.ts` (`countsByStatus`/`findOne`).
     const scopedWhere: Prisma.TicketDocumentWhereInput = {
       ...where,
-      ...(query.consumerId || opts?.forConsumer
+      ...(opts?.forRepresentative
         ? {
             ticket: {
-              ...ticketWhere,
-              ...(query.consumerId ? { consumerId: query.consumerId } : {}),
-              // Consumer-facing list/export must only surface downloadable
-              // deliverables — same gate as `redactTicketForConsumer`
-              // (tickets.service.ts ~L553-560): visible-to-consumer docs on
-              // a ticket that has reached COMPLETED/DELIVERED. Without
-              // this, internal WORK_DOCUMENTs and docs on still-in-flight
-              // tickets rendered a Download button that then 403'd.
-              ...(opts?.forConsumer
-                ? { status: { in: ['COMPLETED', 'DELIVERED'] } }
-                : {}),
+              assignments: {
+                some: { representativeId: opts.representativeId },
+              },
             },
           }
-        : {}),
+        : query.consumerId || opts?.forConsumer
+          ? {
+              ticket: {
+                ...(query.consumerId ? { consumerId: query.consumerId } : {}),
+                // Consumer-facing list/export must only surface downloadable
+                // deliverables — same gate as `redactTicketForConsumer`
+                // (tickets.service.ts ~L553-560): visible-to-consumer docs on
+                // a ticket that has reached COMPLETED/DELIVERED. Without
+                // this, internal WORK_DOCUMENTs and docs on still-in-flight
+                // tickets rendered a Download button that then 403'd.
+                ...(opts?.forConsumer
+                  ? { status: { in: ['COMPLETED', 'DELIVERED'] } }
+                  : {}),
+              },
+            }
+          : {}),
       ...(opts?.forConsumer ? { visibleToConsumer: true } : {}),
     };
 

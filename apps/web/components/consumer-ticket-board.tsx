@@ -29,6 +29,7 @@ import {
 import { buildCaseView, isCaseViewEmpty } from '@/lib/case-view';
 import { CaseRecordCard } from '@/components/case-record-card';
 import { DocumentPreview } from '@/components/document-preview';
+import { regenerateHref } from '@/lib/regenerate-route';
 import { apiClient } from '@/lib/api-client';
 import { relativeTime } from '@/lib/relative-time';
 import { Button } from '@/components/ui/button';
@@ -141,6 +142,37 @@ function money(
   currency: 'PKR' | 'USD',
 ) {
   return formatMoney(Number(value ?? 0), currency);
+}
+
+// Fetches the on-the-fly consumer invoice (base64 PDF, matches finance-board's
+// staff-invoice download pattern) and triggers a client-side download. Shared
+// between `TicketCard` and `ConsumerTicketDetail` so the fetch/blob logic
+// isn't copy-pasted between the two consumer surfaces (C7/C8).
+async function downloadTicketInvoice(ticketId: string, setBusy: (b: boolean) => void) {
+  setBusy(true);
+  try {
+    const result = await apiClient.get<{
+      filename: string;
+      contentType: string;
+      content: string;
+    }>(`/tickets/${ticketId}/invoice`);
+    const binary = atob(result.content);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    const blob = new Blob([bytes], { type: result.contentType || 'application/pdf' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = result.filename || `invoice-${ticketId}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    console.error('Invoice download failed', err);
+  } finally {
+    setBusy(false);
+  }
 }
 
 type FilterTab = 'all' | 'active' | 'completed' | 'unpaid';
@@ -332,6 +364,8 @@ function TicketList({
 }
 
 function TicketCard({ ticket, onOpen }: { ticket: TicketRow; onOpen: () => void }) {
+  const toast = useToast();
+  const [invoiceBusy, setInvoiceBusy] = useState(false);
   const total = Number(ticket.totalAmount ?? 0);
   const paid = Number(ticket.amountPaid ?? 0);
   const currency: 'PKR' | 'USD' = ticket.currency ?? 'PKR';
@@ -340,6 +374,7 @@ function TicketCard({ ticket, onOpen }: { ticket: TicketRow; onOpen: () => void 
   const isConsumerCreated = ticket.createdBy === 'CONSUMER';
   const isDelivered = ticket.status === 'DELIVERED';
   const isFullyPaid = paid >= total && total > 0;
+  const rgHref = isConsumerCreated ? regenerateHref(ticket, 'consumer') : null;
 
   // Show "Final payment due" when: remainder has been finalized but not yet fully paid
   const showFinalPayment =
@@ -528,6 +563,49 @@ function TicketCard({ ticket, onOpen }: { ticket: TicketRow; onOpen: () => void 
           </Link>
         </div>
       ) : null}
+
+      {/* Regenerate / Download invoice / Pay later (C7/C8) */}
+      {rgHref || total > 0 || showFinalPayment || showPayNow ? (
+        <div className="mt-2 flex flex-wrap items-center justify-end gap-2">
+          {rgHref ? (
+            <Link href={rgHref} onClick={(e) => e.stopPropagation()}>
+              <Button variant="secondary" size="sm" leftIcon={<RefreshCw className="h-3.5 w-3.5" />}>
+                Regenerate
+              </Button>
+            </Link>
+          ) : null}
+          {total > 0 ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={invoiceBusy}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (invoiceBusy) return;
+                downloadTicketInvoice(ticket.id, setInvoiceBusy);
+              }}
+              leftIcon={<Download className="h-3.5 w-3.5" />}
+            >
+              {invoiceBusy ? 'Preparing…' : 'Download invoice'}
+            </Button>
+          ) : null}
+          {showFinalPayment || showPayNow ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={(e) => {
+                e.stopPropagation();
+                toast.info(
+                  `${money(remaining, currency)} added to your wallet as due`,
+                  'Pay anytime from My Wallet — your ticket is released for processing once paid.',
+                );
+              }}
+            >
+              Pay later
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -627,36 +705,14 @@ export function ConsumerTicketDetail({
       .finally(() => setLoading(false));
   }, [ticketId]);
 
-  // Fetches the on-the-fly consumer invoice (base64 PDF, matches finance-board's
-  // staff-invoice download pattern) and triggers a client-side download.
-  // Guarded against double-clicks via invoiceDownloading.
-  const downloadInvoice = useCallback(async () => {
+  // Guarded against double-clicks via invoiceDownloading; the actual
+  // fetch/blob/download logic lives in the shared `downloadTicketInvoice`
+  // helper so `TicketCard` can reuse it without copy-pasting (C7/C8).
+  const downloadInvoice = useCallback(() => {
     if (!ticketId || invoiceDownloading) return;
-    setInvoiceDownloading(true);
-    try {
-      const result = await apiClient.get<{
-        filename: string;
-        contentType: string;
-        content: string;
-      }>(`/tickets/${ticketId}/invoice`);
-      const binary = atob(result.content);
-      const bytes = new Uint8Array(binary.length);
-      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-      const blob = new Blob([bytes], { type: result.contentType || 'application/pdf' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = result.filename || `invoice-${ticketId}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      console.error('Invoice download failed', err);
-    } finally {
-      setInvoiceDownloading(false);
-    }
+    downloadTicketInvoice(ticketId, setInvoiceDownloading);
   }, [ticketId, invoiceDownloading]);
+  const toast = useToast();
 
   if (loading || !ticket) {
     return (
@@ -703,6 +759,7 @@ export function ConsumerTicketDetail({
   const isConsumerCreated = ticket.createdBy === 'CONSUMER';
   const isDelivered = ticket.status === 'DELIVERED';
   const isFullyPaid = paid >= total && total > 0;
+  const rgHref = isConsumerCreated ? regenerateHref(ticket, 'consumer') : null;
   const showFinalPayment =
     isConsumerCreated && Boolean(ticket.remainderFinalizedAt) && !isFullyPaid && remaining > 0;
   // Pay-at-end: a ticket can be assigned/worked while still unpaid, so the Pay
@@ -857,7 +914,14 @@ export function ConsumerTicketDetail({
               <span className="tabular-nums text-slate-900">{money(total, currency)}</span>
             </div>
           </div>
-          <div className="mt-3 flex justify-end">
+          <div className="mt-3 flex flex-wrap justify-end gap-2">
+            {rgHref ? (
+              <Link href={rgHref}>
+                <Button variant="secondary" size="sm" leftIcon={<RefreshCw className="h-3.5 w-3.5" />}>
+                  Regenerate
+                </Button>
+              </Link>
+            ) : null}
             <Button
               variant="secondary"
               size="sm"
@@ -941,15 +1005,43 @@ export function ConsumerTicketDetail({
       {showFinalPayment ? (
         <div className="w-full rounded-lg border border-rose-200 bg-rose-50 px-4 py-3">
           <p className="text-sm font-medium text-rose-700 mb-2">Final payment due — {money(remaining, currency)}</p>
-          <Link href={`/consumer/tickets/${ticketId}/pay`}>
-            <Button variant="brand" size="sm" rightIcon={<ArrowUpRight className="h-3.5 w-3.5" />}>Pay now</Button>
-          </Link>
+          <div className="flex flex-wrap items-center gap-2">
+            <Link href={`/consumer/tickets/${ticketId}/pay`}>
+              <Button variant="brand" size="sm" rightIcon={<ArrowUpRight className="h-3.5 w-3.5" />}>Pay now</Button>
+            </Link>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() =>
+                toast.info(
+                  `${money(remaining, currency)} added to your wallet as due`,
+                  'Pay anytime from My Wallet — your ticket is released for processing once paid.',
+                )
+              }
+            >
+              Pay later
+            </Button>
+          </div>
         </div>
       ) : null}
       {showPayNow ? (
-        <Link href={`/consumer/tickets/${ticketId}/pay`} className="inline-block">
-          <Button variant="brand" size="sm" rightIcon={<ArrowUpRight className="h-3.5 w-3.5" />}>Pay now</Button>
-        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          <Link href={`/consumer/tickets/${ticketId}/pay`} className="inline-block">
+            <Button variant="brand" size="sm" rightIcon={<ArrowUpRight className="h-3.5 w-3.5" />}>Pay now</Button>
+          </Link>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() =>
+              toast.info(
+                `${money(remaining, currency)} added to your wallet as due`,
+                'Pay anytime from My Wallet — your ticket is released for processing once paid.',
+              )
+            }
+          >
+            Pay later
+          </Button>
+        </div>
       ) : null}
 
       {/* ── Section 1: Status timeline ─────────────────────────────────── */}
