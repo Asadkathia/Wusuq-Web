@@ -205,8 +205,11 @@ export class TicketsService {
     const skip = (query.page - 1) * query.limit;
 
     const where = {
-      // Audit 4.2: archived (soft-deleted) tickets never appear in lists.
-      archivedAt: null,
+      // Audit 4.2: archived (soft-deleted) tickets never appear in the
+      // default list. `query.archived` (staff-only, enforced by the
+      // controller) flips this to return ONLY archived tickets — used by the
+      // admin Archived view to list/restore them.
+      archivedAt: query.archived ? { not: null } : null,
       ...(query.status ? { status: query.status } : {}),
       ...(query.serviceCity
         ? {
@@ -1597,6 +1600,17 @@ export class TicketsService {
       await this.prisma.ticket.updateMany({
         where: { id: { in: dto.ticketIds }, archivedAt: null },
         data: { archivedAt: new Date() },
+      });
+    }
+
+    if (dto.action === 'restore') {
+      // Mirrors the 'delete' branch: only touches tickets that are actually
+      // archived (conditional updateMany, not read-then-write) and reuses the
+      // audit log write below for the trail. Restored tickets re-enter
+      // findAll / wallet dues / auto-settlement immediately.
+      await this.prisma.ticket.updateMany({
+        where: { id: { in: dto.ticketIds }, archivedAt: { not: null } },
+        data: { archivedAt: null },
       });
     }
     await this.auditLogsService.create({

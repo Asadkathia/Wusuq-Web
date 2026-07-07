@@ -12,4 +12,14 @@ describe('BulkTicketActionDto', () => {
     const errors = validateSync(dto);
     expect(errors.length).toBeGreaterThan(0);
   });
+
+  it('accepts the restore action', () => {
+    const dto = plainToInstance(BulkTicketActionDto, {
+      action: 'restore',
+      ticketIds: ['abc'],
+    });
+
+    const errors = validateSync(dto);
+    expect(errors).toHaveLength(0);
+  });
 });

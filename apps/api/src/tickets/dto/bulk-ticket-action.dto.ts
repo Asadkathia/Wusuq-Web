@@ -1,6 +1,6 @@
 import { IsArray, IsIn, IsString } from 'class-validator';
 
-const ACTIONS = ['complete', 'delete'] as const;
+const ACTIONS = ['complete', 'delete', 'restore'] as const;
 
 export class BulkTicketActionDto {
   @IsIn(ACTIONS)
