@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { advanceOnEnter } from '@/lib/form-utils';
+import { PAYMENT_MODES, courtTierFromCourtType, type PaymentMode } from '@wusuq/shared';
 import { SectionHeader } from '@/components/ui/section-header';
 import { DataTableShell } from '@/components/ui/data-table-shell';
 import { FilterBar } from '@/components/ui/filter-bar';
@@ -11,10 +12,12 @@ import { StatusPill } from '@/components/ui/status-pill';
 import { RefreshCw, UserPlus, Phone, MapPin, Briefcase, Pencil, X, MonitorPlay } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
-// Static catalog — mirrors seeded services/courts in the database
+// Static catalog — mirrors seeded services in the database. Courts are no
+// longer a static catalog (C4/C5): they are fetched live from
+// `/geo/cities/:id/courts`, keyed on the city selected in the territory
+// cascade below, so the picker always reflects real seeded CourtSeat rows.
 // ---------------------------------------------------------------------------
 type ServiceEntry = { id: number; name: string };
-type CourtEntry   = { name: string; level: string; serviceId: number };
 
 const SERVICES: ServiceEntry[] = [
   { id: 1, name: 'Lower Court Paralegal Service' },
@@ -26,63 +29,17 @@ const SERVICES: ServiceEntry[] = [
   { id: 7, name: 'FIR' },
 ];
 
-const COURTS: CourtEntry[] = [
-  // Service 1 – Lower Court
-  { serviceId: 1, level: 'Lower Court',  name: 'Sessions Court' },
-  { serviceId: 1, level: 'Lower Court',  name: 'Magisterial Court' },
-  { serviceId: 1, level: 'Lower Court',  name: 'Civil Court' },
-  { serviceId: 1, level: 'Lower Court',  name: 'Family Court' },
-  // Service 2 – Special Court
-  { serviceId: 2, level: 'Special Court', name: 'Accountability Courts' },
-  { serviceId: 2, level: 'Special Court', name: 'Anti-Corruption Courts (Provincial)' },
-  { serviceId: 2, level: 'Special Court', name: 'Anti-Terrorism Courts' },
-  { serviceId: 2, level: 'Special Court', name: 'Anti-Dumping Appellate Tribunal no bail' },
-  { serviceId: 2, level: 'Special Court', name: 'Appellate Tribunals Inland Revenue' },
-  { serviceId: 2, level: 'Special Court', name: 'Banking Courts' },
-  { serviceId: 2, level: 'Special Court', name: 'Banking Muhtasib' },
-  { serviceId: 2, level: 'Special Court', name: 'Board of Revenue' },
-  { serviceId: 2, level: 'Special Court', name: 'Child Protection Court' },
-  { serviceId: 2, level: 'Special Court', name: 'Commercial Courts' },
-  { serviceId: 2, level: 'Special Court', name: 'Competition Appellate Tribunal' },
-  { serviceId: 2, level: 'Special Court', name: 'Consumer Courts' },
-  { serviceId: 2, level: 'Special Court', name: 'Customs Appellate Tribunals' },
-  { serviceId: 2, level: 'Special Court', name: 'Drug Courts' },
-  { serviceId: 2, level: 'Special Court', name: 'Environmental Protection Tribunals' },
-  { serviceId: 2, level: 'Special Court', name: 'Election Tribunal' },
-  { serviceId: 2, level: 'Special Court', name: 'Federal Insurance Tribunal' },
-  { serviceId: 2, level: 'Special Court', name: 'Federal Ombudsman' },
-  { serviceId: 2, level: 'Special Court', name: 'Federal Service Tribunal' },
-  { serviceId: 2, level: 'Special Court', name: 'Federal Tax Ombudsman' },
-  { serviceId: 2, level: 'Special Court', name: 'Foreign Exchange Regulation Appellate Boards' },
-  { serviceId: 2, level: 'Special Court', name: 'Income Tax Appellate Tribunal' },
-  { serviceId: 2, level: 'Special Court', name: 'Insurance Appellate Tribunal' },
-  { serviceId: 2, level: 'Special Court', name: 'Intellectual Property Tribunal' },
-  { serviceId: 2, level: 'Special Court', name: 'Labor Appellate Tribunals' },
-  { serviceId: 2, level: 'Special Court', name: 'Labor Courts' },
-  { serviceId: 2, level: 'Special Court', name: 'Lahore Development Authority Tribunal' },
-  { serviceId: 2, level: 'Special Court', name: 'National Industrial Relations Commission (NIRC)' },
-  { serviceId: 2, level: 'Special Court', name: 'Pakistan Maritime Carriage Appellate Tribunal' },
-  { serviceId: 2, level: 'Special Court', name: 'Provincial Ombudsman' },
-  { serviceId: 2, level: 'Special Court', name: 'Provincial Service Tribunals' },
-  { serviceId: 2, level: 'Special Court', name: 'Special Courts (Central)' },
-  { serviceId: 2, level: 'Special Court', name: 'Special Courts (Control of Narcotic Substances)' },
-  { serviceId: 2, level: 'Special Court', name: 'Special Courts (Customs, Taxation Anti-Smuggling)' },
-  { serviceId: 2, level: 'Special Court', name: 'Special Courts (Offences in Banks)' },
-  { serviceId: 2, level: 'Special Court', name: 'Special Courts of Public Property (Removal of Encroachment)' },
-  // Service 3 – High Court
-  { serviceId: 3, level: 'High Court', name: 'Lahore High Court' },
-  { serviceId: 3, level: 'High Court', name: 'Sindh High Court' },
-  { serviceId: 3, level: 'High Court', name: 'Peshawar High Court' },
-  { serviceId: 3, level: 'High Court', name: 'Balochistan High Court' },
-  { serviceId: 3, level: 'High Court', name: 'Gilgit High Court' },
-  { serviceId: 3, level: 'High Court', name: 'Azad Kashmir High Court' },
-  { serviceId: 3, level: 'High Court', name: 'Islamabad High Court' },
-  // Service 4 – Federal Shariat Court
-  { serviceId: 4, level: 'Federal Shariat Court', name: 'Islamabad Court' },
-  // Service 5 – Supreme Court
-  { serviceId: 5, level: 'Supreme Court', name: 'Supreme Court' },
-  // Service 6 & 7 – no courts
-];
+// Shape of `/geo/cities/:id/courts` — mirrors CityCourt/CityCourtGroup in
+// intake-wizard/types.ts (kept local here to avoid coupling to the wizard's
+// type module for an unrelated admin screen).
+type CityCourt = { id: string; name: string; isPrincipalSeat: boolean };
+type CityCourtGroup = { type: string; courts: CityCourt[] };
+
+const PAYOUT_METHOD_LABELS: Record<PaymentMode, string> = {
+  BANK_TRANSFER: 'Bank Transfer',
+  JAZZ_CASH: 'JazzCash',
+  EASY_PAISA: 'EasyPaisa',
+};
 
 // ---------------------------------------------------------------------------
 // Types
@@ -98,7 +55,14 @@ type RepData = {
   district: string | null;
   court: string | null;
   courtCity: string | null;
+  courtLevel: string | null;
   serviceFocus: string | null;
+  payoutMethod: string | null;
+  payoutBankName: string | null;
+  payoutAccountTitle: string | null;
+  payoutAccountNumber: string | null;
+  payoutJazzCash: string | null;
+  payoutEasyPaisa: string | null;
   isActive: boolean;
 };
 
@@ -109,12 +73,18 @@ const emptyForm = {
   password: '',
   address: '',
   serviceFocus: '',   // stores service name
-  serviceId: '',      // internal – drives court dropdown
+  serviceId: '',      // internal – drives the Service label select
   court: '',
-  courtCity: '',
+  courtLevel: '',      // derived from the picked court's live seat type
   province: '',
   district: '',
   city: '',
+  payoutMethod: '',
+  payoutBankName: '',
+  payoutAccountTitle: '',
+  payoutAccountNumber: '',
+  payoutJazzCash: '',
+  payoutEasyPaisa: '',
 };
 
 type FormState = typeof emptyForm;
@@ -149,6 +119,13 @@ export function RepresentativesBoard() {
   const [cities, setCities] = useState<GeoOpt[]>([]);
   const [provinceId, setProvinceId] = useState('');
   const [districtId, setDistrictId] = useState('');
+  const [cityId, setCityId] = useState('');
+
+  // Live courts for the selected city (C4/C5) — replaces the old hardcoded
+  // COURTS catalog. Grouped by court type (Lower/Special/High/Shariat/
+  // Supreme) exactly like the intake wizard's `/geo/cities/:id/courts` fetch.
+  const [courtGroups, setCourtGroups] = useState<CityCourtGroup[]>([]);
+  const [courtsLoaded, setCourtsLoaded] = useState(false);
 
   // Effects only FETCH on a truthy id (no synchronous setState in the body —
   // see the react-hooks/set-state-in-effect convention). Clearing happens in
@@ -164,11 +141,21 @@ export function RepresentativesBoard() {
     if (!districtId) return;
     apiClient.get<GeoOpt[]>(`/geo/districts/${districtId}/cities`).then((c) => setCities(c ?? [])).catch(() => {});
   }, [districtId]);
+  useEffect(() => {
+    if (!cityId) return;
+    apiClient
+      .get<CityCourtGroup[]>(`/geo/cities/${cityId}/courts`)
+      .then((groups) => setCourtGroups(groups ?? []))
+      .catch(() => setCourtGroups([]))
+      .finally(() => setCourtsLoaded(true));
+  }, [cityId]);
 
-  // Edit pre-fill: resolve stored province/district NAMES back to ids so the
-  // dependent dropdowns populate and show the saved values.
-  const resolveGeoForEdit = useCallback(async (provName: string | null, distName: string | null) => {
+  // Edit pre-fill: resolve stored province/district/city NAMES back to ids so
+  // the dependent dropdowns (incl. the live court fetch, keyed on cityId)
+  // populate and show the saved values.
+  const resolveGeoForEdit = useCallback(async (provName: string | null, distName: string | null, cityName: string | null) => {
     setProvinceId(''); setDistrictId(''); setDistricts([]); setCities([]);
+    setCityId(''); setCourtGroups([]); setCourtsLoaded(false);
     if (!provName) return;
     const provs = await apiClient.get<GeoOpt[]>('/geo/provinces').catch(() => [] as GeoOpt[]);
     setProvinces(provs ?? []);
@@ -182,12 +169,21 @@ export function RepresentativesBoard() {
     setDistrictId(dist.id);
     const cs = (await apiClient.get<GeoOpt[]>(`/geo/districts/${dist.id}/cities`).catch(() => [] as GeoOpt[])) ?? [];
     setCities(cs);
+    const city = cs.find((c) => c.name === cityName);
+    if (city) setCityId(city.id);
   }, []);
 
-  // Courts filtered by selected service
-  const availableCourts = useMemo(
-    () => COURTS.filter((c) => c.serviceId === Number(form.serviceId)),
-    [form.serviceId],
+  // Flat court list (id/name/type) derived from the live groups, used both to
+  // render <option>s and to resolve courtLevel when one is picked.
+  const courtOptions = useMemo(
+    () => courtGroups.flatMap((g) => g.courts.map((c) => ({ id: c.id, name: c.name, type: g.type }))),
+    [courtGroups],
+  );
+  // The <select>'s value is derived, not stored — it reconciles automatically
+  // once courtOptions loads (edit pre-fill) or when the user picks a court.
+  const selectedCourtId = useMemo(
+    () => courtOptions.find((o) => o.name === form.court)?.id ?? '',
+    [courtOptions, form.court],
   );
 
   const load = useCallback(async () => {
@@ -211,7 +207,9 @@ export function RepresentativesBoard() {
 
   const filtered = reps.filter((r) =>
     r.name.toLowerCase().includes(search.toLowerCase()) ||
-    territory(r).toLowerCase().includes(search.toLowerCase()),
+    territory(r).toLowerCase().includes(search.toLowerCase()) ||
+    (r.court ?? '').toLowerCase().includes(search.toLowerCase()) ||
+    (r.serviceFocus ?? '').toLowerCase().includes(search.toLowerCase()),
   );
 
   // Resolve serviceId from a stored serviceFocus name (for edit pre-fill)
@@ -224,6 +222,7 @@ export function RepresentativesBoard() {
     setEditRep(null);
     setForm(emptyForm);
     setProvinceId(''); setDistrictId(''); setDistricts([]); setCities([]);
+    setCityId(''); setCourtGroups([]); setCourtsLoaded(false);
     setFormError('');
     setShowModal(true);
   };
@@ -240,12 +239,18 @@ export function RepresentativesBoard() {
       serviceFocus: rep.serviceFocus ?? '',
       serviceId: sid,
       court: rep.court ?? '',
-      courtCity: rep.courtCity ?? '',
+      courtLevel: rep.courtLevel ?? '',
       province: rep.province ?? '',
       district: rep.district ?? '',
       city: rep.city ?? '',
+      payoutMethod: rep.payoutMethod ?? '',
+      payoutBankName: rep.payoutBankName ?? '',
+      payoutAccountTitle: rep.payoutAccountTitle ?? '',
+      payoutAccountNumber: rep.payoutAccountNumber ?? '',
+      payoutJazzCash: rep.payoutJazzCash ?? '',
+      payoutEasyPaisa: rep.payoutEasyPaisa ?? '',
     });
-    resolveGeoForEdit(rep.province, rep.district);
+    resolveGeoForEdit(rep.province, rep.district, rep.city);
     setFormError('');
     setShowModal(true);
   };
@@ -264,7 +269,27 @@ export function RepresentativesBoard() {
       ...c,
       serviceId,
       serviceFocus: svc?.name ?? '',
-      court: '',  // reset court when service changes
+    }));
+  };
+
+  const handleCourtChange = (courtId: string) => {
+    const opt = courtOptions.find((o) => o.id === courtId);
+    setForm((c) => ({
+      ...c,
+      court: opt?.name ?? '',
+      courtLevel: opt ? (courtTierFromCourtType(opt.type) ?? '') : '',
+    }));
+  };
+
+  const handlePayoutMethodChange = (method: string) => {
+    setForm((c) => ({
+      ...c,
+      payoutMethod: method,
+      payoutBankName: method === 'BANK_TRANSFER' ? c.payoutBankName : '',
+      payoutAccountTitle: method === 'BANK_TRANSFER' ? c.payoutAccountTitle : '',
+      payoutAccountNumber: method === 'BANK_TRANSFER' ? c.payoutAccountNumber : '',
+      payoutJazzCash: method === 'JAZZ_CASH' ? c.payoutJazzCash : '',
+      payoutEasyPaisa: method === 'EASY_PAISA' ? c.payoutEasyPaisa : '',
     }));
   };
 
@@ -285,10 +310,16 @@ export function RepresentativesBoard() {
           address: form.address,
           serviceFocus: form.serviceFocus,
           court: form.court,
-          courtCity: form.courtCity,
+          courtLevel: form.courtLevel,
           province: form.province,
           district: form.district,
           city: form.city,
+          payoutMethod: form.payoutMethod,
+          payoutBankName: form.payoutBankName,
+          payoutAccountTitle: form.payoutAccountTitle,
+          payoutAccountNumber: form.payoutAccountNumber,
+          payoutJazzCash: form.payoutJazzCash,
+          payoutEasyPaisa: form.payoutEasyPaisa,
         };
         if (form.password.trim()) payload.password = form.password;
         await apiClient.patch(`/users/${editRep.id}`, payload);
@@ -302,10 +333,16 @@ export function RepresentativesBoard() {
           address: form.address || undefined,
           serviceFocus: form.serviceFocus || undefined,
           court: form.court || undefined,
-          courtCity: form.courtCity || undefined,
+          courtLevel: form.courtLevel || undefined,
           province: form.province || undefined,
           district: form.district || undefined,
           city: form.city || undefined,
+          payoutMethod: form.payoutMethod || undefined,
+          payoutBankName: form.payoutBankName || undefined,
+          payoutAccountTitle: form.payoutAccountTitle || undefined,
+          payoutAccountNumber: form.payoutAccountNumber || undefined,
+          payoutJazzCash: form.payoutJazzCash || undefined,
+          payoutEasyPaisa: form.payoutEasyPaisa || undefined,
         });
         setMessage(`${form.name} created successfully.`);
       }
@@ -397,7 +434,7 @@ export function RepresentativesBoard() {
       <DataTableShell
         header={
           <FilterBar
-            searchPlaceholder="Search representatives by name or location..."
+            searchPlaceholder="Search representatives by name, location, court, or focus..."
             onSearch={setSearch}
           />
         }
@@ -512,61 +549,7 @@ export function RepresentativesBoard() {
 
             <form onSubmit={handleSubmit} onKeyDown={advanceOnEnter} className="grid grid-cols-1 md:grid-cols-2 gap-4">
 
-              {/* ── Account fields ── */}
-              {textField('Full Name', 'name', { required: true })}
-              {textField('Email', 'email', { required: !editRep, type: 'email' })}
-              {textField('Phone', 'phone')}
-              {textField(
-                editRep ? 'New Password (leave blank to keep)' : 'Password',
-                'password',
-                { required: !editRep, type: 'password' },
-              )}
-
-              {/* ── Service ── */}
-              <label className="block">
-                <span className="text-sm font-medium text-slate-700">Select Service</span>
-                <select
-                  className={SELECT_CLS}
-                  value={form.serviceId}
-                  onChange={(e) => handleServiceChange(e.target.value)}
-                >
-                  <option value="">— Select Service —</option>
-                  {SERVICES.map((s) => (
-                    <option key={s.id} value={s.id}>{s.name}</option>
-                  ))}
-                </select>
-              </label>
-
-              {/* ── Court (dependent on service) ── */}
-              <label className="block">
-                <span className="text-sm font-medium text-slate-700">Select Court</span>
-                {availableCourts.length > 0 ? (
-                  <select
-                    className={SELECT_CLS}
-                    value={form.court}
-                    onChange={(e) => setField('court', e.target.value)}
-                  >
-                    <option value="">— Select Court —</option>
-                    {availableCourts.map((c) => (
-                      <option key={c.name} value={c.name}>{c.name}</option>
-                    ))}
-                  </select>
-                ) : (
-                  <input
-                    type="text"
-                    placeholder={form.serviceId ? 'No courts for this service' : 'Select a service first'}
-                    disabled={!form.serviceId || availableCourts.length === 0}
-                    className={`${INPUT_CLS} disabled:bg-slate-50 disabled:text-slate-400`}
-                    value={form.court}
-                    onChange={(e) => setField('court', e.target.value)}
-                  />
-                )}
-              </label>
-
-              {/* ── Court City ── */}
-              {textField('Court City', 'courtCity')}
-
-              {/* ── Clerk territory: Province → District → City/Tehsil ── */}
+              {/* ── Territory: Province → District → City/Tehsil ── */}
               <label className="block">
                 <span className="text-sm font-medium text-slate-700">Province</span>
                 <select
@@ -579,7 +562,10 @@ export function RepresentativesBoard() {
                     setDistrictId('');
                     setDistricts([]);
                     setCities([]);
-                    setForm((c) => ({ ...c, province: name, district: '', city: '' }));
+                    setCityId('');
+                    setCourtGroups([]);
+                    setCourtsLoaded(false);
+                    setForm((c) => ({ ...c, province: name, district: '', city: '', court: '', courtLevel: '' }));
                   }}
                 >
                   <option value="">— Select Province —</option>
@@ -600,7 +586,10 @@ export function RepresentativesBoard() {
                     const name = districts.find((d) => d.id === id)?.name ?? '';
                     setDistrictId(id);
                     setCities([]);
-                    setForm((c) => ({ ...c, district: name, city: '' }));
+                    setCityId('');
+                    setCourtGroups([]);
+                    setCourtsLoaded(false);
+                    setForm((c) => ({ ...c, district: name, city: '', court: '', courtLevel: '' }));
                   }}
                 >
                   <option value="">{provinceId ? '— Select District —' : 'Select a province first'}</option>
@@ -614,16 +603,78 @@ export function RepresentativesBoard() {
                 <span className="text-sm font-medium text-slate-700">City / Tehsil</span>
                 <select
                   className={`${SELECT_CLS} disabled:bg-slate-50 disabled:text-slate-400`}
-                  value={form.city}
+                  value={cityId}
                   disabled={!districtId}
-                  onChange={(e) => setField('city', e.target.value)}
+                  onChange={(e) => {
+                    const id = e.target.value;
+                    const name = cities.find((c) => c.id === id)?.name ?? '';
+                    setCityId(id);
+                    setCourtGroups([]);
+                    setCourtsLoaded(false);
+                    setForm((c) => ({ ...c, city: name, court: '', courtLevel: '' }));
+                  }}
                 >
                   <option value="">{districtId ? '— Select City/Tehsil —' : 'Select a district first'}</option>
                   {cities.map((c) => (
-                    <option key={c.id} value={c.name}>{c.name}</option>
+                    <option key={c.id} value={c.id}>{c.name}</option>
                   ))}
                 </select>
               </label>
+
+              {/* ── Service (label/filter only — court comes from live seats) ── */}
+              <label className="block">
+                <span className="text-sm font-medium text-slate-700">Select Service</span>
+                <select
+                  className={SELECT_CLS}
+                  value={form.serviceId}
+                  onChange={(e) => handleServiceChange(e.target.value)}
+                >
+                  <option value="">— Select Service —</option>
+                  {SERVICES.map((s) => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
+                  ))}
+                </select>
+              </label>
+
+              {/* ── Court (live, keyed on the selected city) ── */}
+              <label className="block">
+                <span className="text-sm font-medium text-slate-700">Select Court</span>
+                <select
+                  className={`${SELECT_CLS} disabled:bg-slate-50 disabled:text-slate-400`}
+                  value={selectedCourtId}
+                  disabled={!cityId}
+                  onChange={(e) => handleCourtChange(e.target.value)}
+                >
+                  <option value="">
+                    {!cityId
+                      ? 'Select a city first'
+                      : !courtsLoaded
+                        ? 'Loading courts…'
+                        : courtOptions.length === 0
+                          ? 'No courts available'
+                          : '— Select Court —'}
+                  </option>
+                  {courtGroups.map((g) => (
+                    <optgroup key={g.type} label={g.type}>
+                      {g.courts.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}{c.isPrincipalSeat ? ' (Principal Seat)' : ''}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))}
+                </select>
+              </label>
+
+              {/* ── Account fields ── */}
+              {textField('Full Name', 'name', { required: true })}
+              {textField('Email', 'email', { required: !editRep, type: 'email' })}
+              {textField('Phone', 'phone')}
+              {textField(
+                editRep ? 'New Password (leave blank to keep)' : 'Password',
+                'password',
+                { required: !editRep, type: 'password' },
+              )}
 
               {/* ── Address (full width) ── */}
               <label className="block md:col-span-2">
@@ -635,6 +686,35 @@ export function RepresentativesBoard() {
                   onChange={(e) => setField('address', e.target.value)}
                 />
               </label>
+
+              {/* ── Payout ── */}
+              <div className="md:col-span-2 pt-2 border-t border-slate-100">
+                <span className="text-sm font-semibold text-slate-800">Payout details</span>
+              </div>
+
+              <label className="block">
+                <span className="text-sm font-medium text-slate-700">Payout Method</span>
+                <select
+                  className={SELECT_CLS}
+                  value={form.payoutMethod}
+                  onChange={(e) => handlePayoutMethodChange(e.target.value)}
+                >
+                  <option value="">— Select Method —</option>
+                  {PAYMENT_MODES.map((m) => (
+                    <option key={m} value={m}>{PAYOUT_METHOD_LABELS[m]}</option>
+                  ))}
+                </select>
+              </label>
+
+              {form.payoutMethod === 'BANK_TRANSFER' && (
+                <>
+                  {textField('Bank Name', 'payoutBankName')}
+                  {textField('Account Title', 'payoutAccountTitle')}
+                  {textField('Account Number', 'payoutAccountNumber')}
+                </>
+              )}
+              {form.payoutMethod === 'JAZZ_CASH' && textField('JazzCash Number', 'payoutJazzCash')}
+              {form.payoutMethod === 'EASY_PAISA' && textField('EasyPaisa Number', 'payoutEasyPaisa')}
 
               {/* ── Error ── */}
               {formError && (
