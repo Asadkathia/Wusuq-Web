@@ -554,6 +554,11 @@ export class TicketsService {
     // shown to the consumer — same class as clerkCost.
     delete safe.noOfPages;
     delete safe.costPerPage;
+    // C11: same for the attested/non-attested page breakdown.
+    delete safe.attestedPages;
+    delete safe.attestedCostPerPage;
+    delete safe.nonAttestedPages;
+    delete safe.nonAttestedCostPerPage;
     // DELIVERED included: auto-deliver (digital flows) and the admin's
     // delivery confirmation are terminal — the consumer must keep access to
     // the deliverables they paid for after COMPLETED.
@@ -2347,12 +2352,21 @@ export class TicketsService {
       dto.deliveryCharges ?? Number(ticket.deliveryCharges);
     const printingCharges =
       dto.printingCharges ??
-      this.computePrintingCharges(dto.noOfPages, dto.costPerPage) ??
+      this.computePageCharges(dto.noOfPages, dto.costPerPage) ??
       Number(ticket.printingCharges);
+    // C11: attested/non-attested mirror printing's precedence — explicit
+    // lump wins, then pages × rate, then the persisted value.
     const attestedCharges =
-      dto.attestedCharges ?? Number(ticket.attestedCharges);
+      dto.attestedCharges ??
+      this.computePageCharges(dto.attestedPages, dto.attestedCostPerPage) ??
+      Number(ticket.attestedCharges);
     const nonAttestedCharges =
-      dto.nonAttestedCharges ?? Number(ticket.nonAttestedCharges);
+      dto.nonAttestedCharges ??
+      this.computePageCharges(
+        dto.nonAttestedPages,
+        dto.nonAttestedCostPerPage,
+      ) ??
+      Number(ticket.nonAttestedCharges);
     const additionalCharges =
       dto.additionalCharges ?? Number(ticket.additionalCharges);
 
@@ -2384,6 +2398,17 @@ export class TicketsService {
           // admin Review & Complete dialog can show "pages × rate" (Task 4.1).
           noOfPages: dto.noOfPages ?? ticket.noOfPages,
           costPerPage: dto.costPerPage ?? ticket.costPerPage,
+          // C11: same page-breakdown provenance for attested/non-attested.
+          attestedPages: dto.attestedPages ?? ticket.attestedPages,
+          attestedCostPerPage:
+            dto.attestedCostPerPage ?? ticket.attestedCostPerPage,
+          nonAttestedPages: dto.nonAttestedPages ?? ticket.nonAttestedPages,
+          nonAttestedCostPerPage:
+            dto.nonAttestedCostPerPage ?? ticket.nonAttestedCostPerPage,
+          // C12: capture the TCS receipt/tracking# in the same submit — does
+          // NOT flip deliveryStatus (that's still dispatchDelivery's job).
+          dispatchProofUrl: dto.dispatchProofUrl ?? ticket.dispatchProofUrl,
+          trackingNo: dto.trackingNo ?? ticket.trackingNo,
           // B4: consumer-facing totalAmount is frozen at clerk-submit — it
           // stays at the phase-1 base until reviewAndComplete finalizes the
           // remainder (finalizeRemainderCore recomputes via
@@ -2471,6 +2496,12 @@ export class TicketsService {
         additionalCharges,
         noOfPages: dto.noOfPages,
         costPerPage: dto.costPerPage,
+        attestedPages: dto.attestedPages,
+        attestedCostPerPage: dto.attestedCostPerPage,
+        nonAttestedPages: dto.nonAttestedPages,
+        nonAttestedCostPerPage: dto.nonAttestedCostPerPage,
+        dispatchProofUrl: dto.dispatchProofUrl,
+        trackingNo: dto.trackingNo,
         rejectionReason: dto.rejectionReason,
         filesAvailable: dto.filesAvailable
           ? { ...dto.filesAvailable }
@@ -3123,7 +3154,7 @@ export class TicketsService {
     return user;
   }
 
-  private computePrintingCharges(noOfPages?: number, costPerPage?: number) {
+  private computePageCharges(noOfPages?: number, costPerPage?: number) {
     if (typeof noOfPages === 'number' && typeof costPerPage === 'number') {
       return noOfPages * costPerPage;
     }
