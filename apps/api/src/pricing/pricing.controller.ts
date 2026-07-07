@@ -26,11 +26,13 @@ export class PricingController {
   constructor(private readonly pricingService: PricingService) {}
 
   @RequirePermissions('settings.read')
-  @Get() list() {
+  @Get()
+  list() {
     return this.pricingService.list();
   }
   @RequirePermissions('settings.write')
-  @Post() create(@Body() dto: CreatePricingRuleDto) {
+  @Post()
+  create(@Body() dto: CreatePricingRuleDto) {
     return this.pricingService.create(dto);
   }
   @Post('resolve') resolve(@Body() dto: ResolvePricingDto) {
@@ -40,22 +42,23 @@ export class PricingController {
     return this.pricingService.availabilityFor(dto);
   }
   @RequirePermissions('settings.read')
-  @Get('settings') getSettings() {
+  @Get('settings')
+  getSettings() {
     return this.pricingService.getSettings();
   }
   @RequirePermissions('settings.write')
-  @Patch('settings') updateSettings(@Body() dto: UpdatePricingSettingsDto) {
+  @Patch('settings')
+  updateSettings(@Body() dto: UpdatePricingSettingsDto) {
     return this.pricingService.updateSettings(dto);
   }
   @RequirePermissions('settings.write')
-  @Patch(':id') update(
-    @Param('id') id: string,
-    @Body() dto: UpdatePricingRuleDto,
-  ) {
+  @Patch(':id')
+  update(@Param('id') id: string, @Body() dto: UpdatePricingRuleDto) {
     return this.pricingService.update(id, dto);
   }
   @RequirePermissions('settings.write')
-  @Delete(':id') remove(@Param('id') id: string) {
+  @Delete(':id')
+  remove(@Param('id') id: string) {
     return this.pricingService.remove(id);
   }
 }
