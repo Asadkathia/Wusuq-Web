@@ -66,6 +66,43 @@ export class SubmitClerkCostsDto {
   @Min(0)
   costPerPage?: number;
 
+  // ── Attested / non-attested page breakdown (charge = pages × rate),
+  // mirroring noOfPages/costPerPage for printing (C11). ──────────────────────
+
+  @IsOptional()
+  @Transform(({ value }) => Number(value))
+  @IsNumber()
+  @Min(0)
+  attestedPages?: number;
+
+  @IsOptional()
+  @Transform(({ value }) => Number(value))
+  @IsNumber()
+  @Min(0)
+  attestedCostPerPage?: number;
+
+  @IsOptional()
+  @Transform(({ value }) => Number(value))
+  @IsNumber()
+  @Min(0)
+  nonAttestedPages?: number;
+
+  @IsOptional()
+  @Transform(({ value }) => Number(value))
+  @IsNumber()
+  @Min(0)
+  nonAttestedCostPerPage?: number;
+
+  // ── TCS receipt / tracking capture in the clerk cost dialog (C12). ────────
+
+  @IsOptional()
+  @IsString()
+  dispatchProofUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  trackingNo?: string;
+
   @IsOptional()
   @IsString()
   rejectionReason?: string;
