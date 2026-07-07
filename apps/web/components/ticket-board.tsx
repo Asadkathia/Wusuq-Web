@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { TicketStatus } from '@wusuq/shared';
-import { chargeCapabilitiesFor, computeClerkEarnings, computeWusuqMargin } from '@wusuq/shared';
+import { chargeCapabilitiesFor, computeClerkEarnings, computeTicketTotal, computeWusuqMargin } from '@wusuq/shared';
 import { TICKET_STATUSES } from '@wusuq/shared';
 import { apiClient } from '@/lib/api-client';
 import { relativeTime } from '@/lib/relative-time';
@@ -51,6 +51,13 @@ type TicketRow = {
   serviceCost?: number | string | null;
   totalAmount?: number | string | null;
   amountPaid?: number | string | null;
+  // Money inputs to computeTicketTotal — the API already selects these (findAll),
+  // so the finalize-preview total is computed the same way the server persists it
+  // (tax on the service base; discount/promo applied) rather than hand-rolled.
+  additionalServiceCost?: number | string | null;
+  discountPrice?: number | string | null;
+  promoDiscount?: number | string | null;
+  taxRate?: number | string | null;
   remainderFinalizedAt?: string | null;
   deliveryCharges?: number | string | null;
   printingCharges?: number | string | null;
@@ -1839,7 +1846,24 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
                     (caps.delivery ? (Number(finalizeForm.deliveryCharges) || 0) : 0) +
                     (Number(finalizeForm.additionalCharges) || 0);
                   const baseAmount = Number(finalizeTicket.serviceCost || 0);
-                  const finalizeTotal = baseAmount + phase2Total;
+                  // Compute the finalize total via the single source (computeTicketTotal),
+                  // NOT base + phase2 — that hand-rolled sum omits tax (on the service
+                  // base) + discount/promo and would misstate the margin (money-model
+                  // invariant). Mirrors what finalizeRemainderCore persists on approval.
+                  const { totalAmount: finalizeTotal } = computeTicketTotal({
+                    charges: {
+                      serviceCost: baseAmount,
+                      additionalServiceCost: Number(finalizeTicket.additionalServiceCost || 0),
+                      deliveryCharges: caps.delivery ? Number(finalizeForm.deliveryCharges) || 0 : 0,
+                      printingCharges: caps.printing ? Number(finalizeForm.printingCharges) || 0 : 0,
+                      attestedCharges: caps.attestation ? Number(finalizeForm.attestedCharges) || 0 : 0,
+                      nonAttestedCharges: caps.attestation ? Number(finalizeForm.nonAttestedCharges) || 0 : 0,
+                      additionalCharges: Number(finalizeForm.additionalCharges) || 0,
+                    },
+                    discountPrice: Number(finalizeTicket.discountPrice || 0),
+                    promoDiscount: Number(finalizeTicket.promoDiscount || 0),
+                    taxRate: Number(finalizeTicket.taxRate || 0),
+                  });
                   const repName = finalizeTicket.assignedRepresentative?.name;
                   const earnings = computeFinalizeClerkEarnings(finalizeTicket, finalizeForm, wantPdf);
                   const wusuqEarnings = computeWusuqMargin(finalizeTotal, earnings);
