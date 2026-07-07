@@ -12,7 +12,7 @@ describe('UsersController.me (self-profile, GET /users/me)', () => {
     return { controller, findOne };
   }
 
-  it('returns the caller\'s own record via actor.sub', async () => {
+  it("returns the caller's own record via actor.sub", async () => {
     const { controller, findOne } = makeController();
     const actor = { sub: 'user-1', role: 'consumer' } as JwtUser;
     await controller.me(actor);
