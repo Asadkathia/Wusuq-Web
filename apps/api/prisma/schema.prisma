@@ -170,6 +170,17 @@ model User {
   serviceFocus       String?
   court              String?
   courtCity          String?
+  // Representative machine-readable court tier (a @wusuq/shared CourtTier),
+  // derived from the picked court's type at rep creation — drives tier-scoped
+  // assignment (C3). Payout details = how admin pays this rep their earnings
+  // (staff-only PII; payoutMethod is a shared PaymentMode value). (C4/C5)
+  courtLevel          String?
+  payoutMethod        String?
+  payoutBankName      String?
+  payoutAccountTitle  String?
+  payoutAccountNumber String?
+  payoutJazzCash      String?
+  payoutEasyPaisa     String?
   passwordHash       String?
   hashedRefreshToken String?
   role               UserRole

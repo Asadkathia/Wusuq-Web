@@ -89,13 +89,24 @@ export class TicketsController {
   }
 
   // Staff-only: exposes every representative's contact details (audit 3.3c).
+  // C3: `ticketId` (never a client-supplied `tier`) lets the server derive
+  // the ticket's court tier itself (`deriveTicketTier`) and tag candidates
+  // with `tierMatch` — the tier is never trusted from the query string.
   @RequirePermissions('tickets.write')
   @Get('representatives')
-  representativeCandidates(
+  async representativeCandidates(
     @Query('city') city?: string,
     @Query('district') district?: string,
+    @Query('ticketId') ticketId?: string,
   ) {
-    return this.ticketsService.representativeCandidates({ city, district });
+    const tier = ticketId
+      ? await this.ticketsService.deriveTicketTier(ticketId)
+      : null;
+    return this.ticketsService.representativeCandidates({
+      city,
+      district,
+      tier: tier ?? undefined,
+    });
   }
 
   @RequirePermissions('tickets.write')

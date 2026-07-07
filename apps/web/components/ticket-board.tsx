@@ -87,6 +87,12 @@ type Representative = {
   name: string;
   city?: string | null;
   district?: string | null;
+  court?: string | null;
+  courtLevel?: string | null;
+  // C3: present only when the candidates fetch carried a ticketId (server
+  // derives the ticket's tier itself — never client-trusted) — true/false
+  // per rep, absent entirely when the ticket has no derivable tier.
+  tierMatch?: boolean;
 };
 
 type ClerkCostsForm = {
@@ -155,6 +161,9 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
   const [overrideClerkCost, setOverrideClerkCost] = useState(false);
   const [forceAssign, setForceAssign] = useState(false);
   const [assignWarning, setAssignWarning] = useState('');
+  // C3: separate from the city-override toggle above — reveals reps whose
+  // courtLevel doesn't match the ticket's derived tier.
+  const [showOtherTierReps, setShowOtherTierReps] = useState(false);
 
   const [timelineTicketId, setTimelineTicketId] = useState<string | null>(null);
   const [timeline, setTimeline] = useState<{
@@ -208,6 +217,11 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
 
   // Selected ticket IDs for multi-ticket pending-list checkboxes (admin only)
   const [pendingSelected, setPendingSelected] = useState<Record<string, boolean>>({});
+
+  // C18: clerk bulk-accept for ASSIGNED tickets. Reuses the generic `selected`
+  // map (unused by clerks otherwise — that state only drives admin bulk
+  // actions on non-pending status boards).
+  const [acceptAllBusy, setAcceptAllBusy] = useState(false);
 
   // Clerk receipt submission state (ASA-7)
   const [receiptTicket, setReceiptTicket] = useState<TicketRow | null>(null);
@@ -415,6 +429,28 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
     [selected],
   );
 
+  // C3: tier-scoped Assign dialog grouping. `tierMatch` is present on every
+  // candidate only when the ticket had a derivable court tier server-side —
+  // when absent (e.g. non-judicial flows with no court type), fall back to
+  // the flat list with no split/toggle.
+  const hasRepTierInfo = useMemo(
+    () => representatives.some((rep) => rep.tierMatch !== undefined),
+    [representatives],
+  );
+  const matchingTierReps = useMemo(
+    () => (hasRepTierInfo ? representatives.filter((rep) => rep.tierMatch === true) : representatives),
+    [representatives, hasRepTierInfo],
+  );
+  const otherTierReps = useMemo(
+    () => (hasRepTierInfo ? representatives.filter((rep) => rep.tierMatch !== true) : []),
+    [representatives, hasRepTierInfo],
+  );
+  const repOptionLabel = (rep: Representative) => {
+    const location = `${rep.city || '-'} / ${rep.district || '-'}`;
+    const court = rep.court || (rep.courtLevel ? `${rep.courtLevel} court` : '');
+    return court ? `${rep.name} (${location} — ${court})` : `${rep.name} (${location})`;
+  };
+
   const loadTickets = useCallback(async () => {
     setLoading(true);
     try {
@@ -549,13 +585,15 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
   // Task 3.3: by default the dropdown is scoped to reps who serve the ticket's
   // city (the server applies the same match `assign` enforces). Ticking
   // "Override city restriction" widens it to the full pool.
+  // C3: always passes ticketId so the server can derive the ticket's court
+  // tier itself (never client-trusted) and tag each candidate with
+  // `tierMatch`. Auto-selects the sole matching-tier rep when there's
+  // exactly one.
   const loadAssignReps = async (ticket: TicketRow, widen: boolean) => {
     try {
-      const query =
-        !widen && ticket.serviceCity
-          ? `?city=${encodeURIComponent(ticket.serviceCity)}`
-          : '';
-      const reps = await apiClient.get<Representative[]>(`/tickets/representatives${query}`);
+      const params = new URLSearchParams({ ticketId: ticket.id });
+      if (!widen && ticket.serviceCity) params.set('city', ticket.serviceCity);
+      const reps = await apiClient.get<Representative[]>(`/tickets/representatives?${params.toString()}`);
       setRepresentatives(reps);
       const cityScoped = !widen && Boolean(ticket.serviceCity);
       setAssignWarning(
@@ -565,6 +603,10 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
             ? `No representative serves ${ticket.serviceCity}. Tick "Override city restriction" to assign one from another city.`
             : 'No active representatives found. Add a representative user first.',
       );
+      const matchingTier = reps.filter((rep) => rep.tierMatch === true);
+      if (matchingTier.length === 1 && matchingTier[0]) {
+        setRepresentativeId(matchingTier[0].id);
+      }
     } catch (error: any) {
       setRepresentatives([]);
       setAssignWarning(error?.message || 'Failed to load representatives.');
@@ -577,6 +619,7 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
     setClerkCost(ticket.defaultClerkCost != null ? String(ticket.defaultClerkCost) : '');
     setOverrideClerkCost(false);
     setForceAssign(false);
+    setShowOtherTierReps(false);
     setAssignWarning('');
     await loadAssignReps(ticket, false);
   };
@@ -656,6 +699,31 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
       } else {
         flash(msg || 'Failed to accept ticket', true);
       }
+    }
+  };
+
+  // C18: clerk bulk-accept — accept every selected ASSIGNED ticket in
+  // parallel via Promise.allSettled so one failure (e.g. a benign race where
+  // it was already accepted elsewhere) doesn't block the rest.
+  const runAcceptAll = async () => {
+    if (acceptAllBusy || selectedIds.length === 0) return;
+    setAcceptAllBusy(true);
+    try {
+      const results = await Promise.allSettled(
+        selectedIds.map((id) => apiClient.post(`/tickets/${id}/accept-assignment`, {})),
+      );
+      const accepted = results.filter((r) => r.status === 'fulfilled').length;
+      const failed = results.length - accepted;
+      flash(
+        failed > 0
+          ? `${accepted} accepted, ${failed} failed.`
+          : `${accepted} ticket(s) accepted and moved to In Progress.`,
+        failed > 0 && accepted === 0,
+      );
+      setSelected({});
+      loadTickets();
+    } finally {
+      setAcceptAllBusy(false);
     }
   };
 
@@ -985,6 +1053,19 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
                     )}
                   </>
                 )}
+                {isClerk && status === 'ASSIGNED' && selectedIds.length > 0 && (
+                  <>
+                    <span className="hidden sm:block h-6 w-px bg-slate-200 mx-1" aria-hidden="true"></span>
+                    <button
+                      type="button"
+                      onClick={runAcceptAll}
+                      disabled={acceptAllBusy}
+                      className="w-full sm:w-auto rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-primary-500 disabled:opacity-50 transition-colors"
+                    >
+                      {acceptAllBusy ? 'Accepting…' : `Accept all (${selectedIds.length})`}
+                    </button>
+                  </>
+                )}
               </div>
             }
           />
@@ -1014,6 +1095,17 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
                           toggleAll(e.target.checked);
                         }
                       }}
+                    />
+                    <span>Batch No</span>
+                  </div>
+                ) : isClerk && status === 'ASSIGNED' ? (
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      aria-label="Select all assigned tickets"
+                      className="h-4 w-4 rounded border-slate-300 text-primary-600 focus:ring-primary-600"
+                      checked={filteredTickets.length > 0 && selectedIds.length === filteredTickets.length}
+                      onChange={(e) => toggleAll(e.target.checked)}
                     />
                     <span>Batch No</span>
                   </div>
@@ -1047,6 +1139,14 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
                             setSelected((s) => ({ ...s, [ticket.id]: e.target.checked }));
                           }
                         }}
+                      />
+                    ) : isClerk && status === 'ASSIGNED' ? (
+                      <input
+                        type="checkbox"
+                        aria-label={`Select ticket ${ticket.batchNo}`}
+                        className="h-4 w-4 rounded border-slate-300 text-primary-600 focus:ring-primary-600 mt-0.5"
+                        checked={Boolean(selected[ticket.id])}
+                        onChange={(e) => setSelected((s) => ({ ...s, [ticket.id]: e.target.checked }))}
                       />
                     ) : null}
                     <div>
@@ -1331,6 +1431,10 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
           onClick={(e: React.MouseEvent) => e.stopPropagation()}
         >
           <SectionHeader title={`Assign Ticket ${assignTicket.batchNo}`} description="Select a representative to forward this ticket to." />
+          <div className="mt-4 flex items-center justify-between rounded-lg bg-slate-50 px-4 py-2.5 ring-1 ring-inset ring-border-soft">
+            <span className="text-sm font-medium text-slate-700">Ticket amount</span>
+            <span className="text-sm font-semibold text-slate-900">{rs(Number(assignTicket.totalAmount ?? 0))}</span>
+          </div>
           <div className="mt-6 grid gap-6 md:grid-cols-2">
             <label className="block">
               <span className="text-sm font-medium text-slate-700">Representative</span>
@@ -1340,12 +1444,46 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
                 onChange={(e) => setRepresentativeId(e.target.value)}
               >
                 <option value="">Select Representative</option>
-                {representatives.map((rep) => (
-                  <option key={rep.id} value={rep.id}>
-                    {rep.name} ({rep.city || '-'} / {rep.district || '-'})
-                  </option>
-                ))}
+                {hasRepTierInfo ? (
+                  <>
+                    {matchingTierReps.length > 0 && (
+                      <optgroup label="Matching court tier">
+                        {matchingTierReps.map((rep) => (
+                          <option key={rep.id} value={rep.id}>
+                            {repOptionLabel(rep)}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                    {showOtherTierReps && otherTierReps.length > 0 && (
+                      <optgroup label="Other reps">
+                        {otherTierReps.map((rep) => (
+                          <option key={rep.id} value={rep.id}>
+                            {repOptionLabel(rep)}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                  </>
+                ) : (
+                  representatives.map((rep) => (
+                    <option key={rep.id} value={rep.id}>
+                      {repOptionLabel(rep)}
+                    </option>
+                  ))
+                )}
               </select>
+              {hasRepTierInfo && otherTierReps.length > 0 && (
+                <label className="mt-2 flex items-center gap-2 text-xs text-slate-600 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={showOtherTierReps}
+                    onChange={(e) => setShowOtherTierReps(e.target.checked)}
+                    className="h-3.5 w-3.5 rounded border-slate-300 text-primary-600 focus:ring-primary-600"
+                  />
+                  Show others ({otherTierReps.length} not matching this ticket&apos;s court tier)
+                </label>
+              )}
             </label>
 
             <div className="block">
