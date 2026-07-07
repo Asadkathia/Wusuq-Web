@@ -16,7 +16,12 @@
  *
  * Does NOT touch Postgres — never calls PrismaClient / seed-pricing's main().
  */
-import { buildJudicialRuleRows, type PricingRuleRow } from './seed-pricing';
+import {
+  buildJudicialRuleRows,
+  findImplausibleClerkRows,
+  MIN_PLAUSIBLE_CLERK_COST,
+  type PricingRuleRow,
+} from './seed-pricing';
 
 type Expectation = {
   label: string;
@@ -179,11 +184,25 @@ function main() {
 
   console.log(`\n${EXPECTATIONS.length - failures}/${EXPECTATIONS.length} known-cell assertions passed.`);
 
+  // Surface (don't fail on) placeholder clerk cells — seed-pricing.ts's main()
+  // will REFUSE to seed these without --allow-low-clerk-rates. Parser is correct;
+  // the source cells need fixing.
+  const badClerk = findImplausibleClerkRows(rows);
+  if (badClerk.length > 0) {
+    console.warn(
+      `\n⚠ ${badClerk.length} rule(s) have an implausible clerk rate (< Rs ${MIN_PLAUSIBLE_CLERK_COST}) — ` +
+        'placeholder cells in the xlsx; seed-pricing.ts will abort on these until the source is fixed:',
+    );
+    for (const r of badClerk) {
+      console.warn(`  • ${r.name} (${r.region}/${r.courtLevel}/${r.yearBand}) → clerkBaseCost=${r.clerkBaseCost}`);
+    }
+  }
+
   if (failures > 0) {
     console.error(`\n${failures} assertion(s) FAILED — parser coordinates are still wrong.`);
     process.exit(1);
   }
-  console.log('\nAll checks passed. seed-pricing.ts would NOT abort on this xlsx.');
+  console.log('\nParser checks passed (coordinates correct).');
 }
 
 main();

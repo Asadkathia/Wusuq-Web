@@ -622,11 +622,43 @@ export function buildJudicialRuleRows(): {
   return { rows, totalDrafts: DRAFTS.length, uniqueCount: drafts.length };
 }
 
+// ── Clerk-rate sanity guard ──────────────────────────────────────────────────
+// Some source cells in pricing-sheet.xlsx carry a literal "1" as a placeholder
+// (e.g. the Punjab Case-Record clerk column). A clerkBaseCost of Rs 1 is never a
+// real rate — real clerk rates start in the hundreds — and it flows straight to
+// Ticket.defaultClerkCost → assignBulk auto-fills clerkCost with no admin review,
+// silently paying a clerk Rs 1. The parser faithfully reads what's in the sheet,
+// so this must be caught here (fail-loud, like the MIN_TOTAL_DRAFTS floor) BEFORE
+// the wipe. Fix the source cells, or pass --allow-low-clerk-rates to override.
+export const MIN_PLAUSIBLE_CLERK_COST = 50;
+export function findImplausibleClerkRows(rows: PricingRuleRow[]): PricingRuleRow[] {
+  return rows.filter(
+    (r) =>
+      r.clerkBaseCost != null &&
+      r.clerkBaseCost > 0 &&
+      r.clerkBaseCost < MIN_PLAUSIBLE_CLERK_COST,
+  );
+}
+
 // ── Main ─────────────────────────────────────────────────────────────────────
 
 async function main() {
   console.log(`Loading ${XLSX_PATH}…`);
   const { rows } = buildJudicialRuleRows();
+
+  // Refuse to seed implausibly-low clerk rates (placeholder cells) — see above.
+  const badClerk = findImplausibleClerkRows(rows);
+  if (badClerk.length > 0 && !process.argv.includes('--allow-low-clerk-rates')) {
+    console.error(
+      `${badClerk.length} rule(s) have an implausible clerk rate (< Rs ${MIN_PLAUSIBLE_CLERK_COST}) — ` +
+        'these are almost certainly placeholder cells in pricing-sheet.xlsx. Fix the source ' +
+        'cells (or pass --allow-low-clerk-rates to override). Offending rules:',
+    );
+    for (const r of badClerk) {
+      console.error(`  • ${r.name} (${r.region}/${r.courtLevel}/${r.yearBand}) → clerkBaseCost=${r.clerkBaseCost}`);
+    }
+    process.exit(1);
+  }
 
   // Non-judicial physical-document copies (owner rates 2026-06-12). The xlsx
   // grid is judicial court-tier shaped and carries no rows for these, so the
