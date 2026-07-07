@@ -87,6 +87,12 @@ type Representative = {
   name: string;
   city?: string | null;
   district?: string | null;
+  court?: string | null;
+  courtLevel?: string | null;
+  // C3: present only when the candidates fetch carried a ticketId (server
+  // derives the ticket's tier itself — never client-trusted) — true/false
+  // per rep, absent entirely when the ticket has no derivable tier.
+  tierMatch?: boolean;
 };
 
 type ClerkCostsForm = {
@@ -155,6 +161,9 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
   const [overrideClerkCost, setOverrideClerkCost] = useState(false);
   const [forceAssign, setForceAssign] = useState(false);
   const [assignWarning, setAssignWarning] = useState('');
+  // C3: separate from the city-override toggle above — reveals reps whose
+  // courtLevel doesn't match the ticket's derived tier.
+  const [showOtherTierReps, setShowOtherTierReps] = useState(false);
 
   const [timelineTicketId, setTimelineTicketId] = useState<string | null>(null);
   const [timeline, setTimeline] = useState<{
@@ -420,6 +429,28 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
     [selected],
   );
 
+  // C3: tier-scoped Assign dialog grouping. `tierMatch` is present on every
+  // candidate only when the ticket had a derivable court tier server-side —
+  // when absent (e.g. non-judicial flows with no court type), fall back to
+  // the flat list with no split/toggle.
+  const hasRepTierInfo = useMemo(
+    () => representatives.some((rep) => rep.tierMatch !== undefined),
+    [representatives],
+  );
+  const matchingTierReps = useMemo(
+    () => (hasRepTierInfo ? representatives.filter((rep) => rep.tierMatch === true) : representatives),
+    [representatives, hasRepTierInfo],
+  );
+  const otherTierReps = useMemo(
+    () => (hasRepTierInfo ? representatives.filter((rep) => rep.tierMatch !== true) : []),
+    [representatives, hasRepTierInfo],
+  );
+  const repOptionLabel = (rep: Representative) => {
+    const location = `${rep.city || '-'} / ${rep.district || '-'}`;
+    const court = rep.court || (rep.courtLevel ? `${rep.courtLevel} court` : '');
+    return court ? `${rep.name} (${location} — ${court})` : `${rep.name} (${location})`;
+  };
+
   const loadTickets = useCallback(async () => {
     setLoading(true);
     try {
@@ -554,13 +585,15 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
   // Task 3.3: by default the dropdown is scoped to reps who serve the ticket's
   // city (the server applies the same match `assign` enforces). Ticking
   // "Override city restriction" widens it to the full pool.
+  // C3: always passes ticketId so the server can derive the ticket's court
+  // tier itself (never client-trusted) and tag each candidate with
+  // `tierMatch`. Auto-selects the sole matching-tier rep when there's
+  // exactly one.
   const loadAssignReps = async (ticket: TicketRow, widen: boolean) => {
     try {
-      const query =
-        !widen && ticket.serviceCity
-          ? `?city=${encodeURIComponent(ticket.serviceCity)}`
-          : '';
-      const reps = await apiClient.get<Representative[]>(`/tickets/representatives${query}`);
+      const params = new URLSearchParams({ ticketId: ticket.id });
+      if (!widen && ticket.serviceCity) params.set('city', ticket.serviceCity);
+      const reps = await apiClient.get<Representative[]>(`/tickets/representatives?${params.toString()}`);
       setRepresentatives(reps);
       const cityScoped = !widen && Boolean(ticket.serviceCity);
       setAssignWarning(
@@ -570,6 +603,10 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
             ? `No representative serves ${ticket.serviceCity}. Tick "Override city restriction" to assign one from another city.`
             : 'No active representatives found. Add a representative user first.',
       );
+      const matchingTier = reps.filter((rep) => rep.tierMatch === true);
+      if (matchingTier.length === 1 && matchingTier[0]) {
+        setRepresentativeId(matchingTier[0].id);
+      }
     } catch (error: any) {
       setRepresentatives([]);
       setAssignWarning(error?.message || 'Failed to load representatives.');
@@ -582,6 +619,7 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
     setClerkCost(ticket.defaultClerkCost != null ? String(ticket.defaultClerkCost) : '');
     setOverrideClerkCost(false);
     setForceAssign(false);
+    setShowOtherTierReps(false);
     setAssignWarning('');
     await loadAssignReps(ticket, false);
   };
@@ -1406,12 +1444,46 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
                 onChange={(e) => setRepresentativeId(e.target.value)}
               >
                 <option value="">Select Representative</option>
-                {representatives.map((rep) => (
-                  <option key={rep.id} value={rep.id}>
-                    {rep.name} ({rep.city || '-'} / {rep.district || '-'})
-                  </option>
-                ))}
+                {hasRepTierInfo ? (
+                  <>
+                    {matchingTierReps.length > 0 && (
+                      <optgroup label="Matching court tier">
+                        {matchingTierReps.map((rep) => (
+                          <option key={rep.id} value={rep.id}>
+                            {repOptionLabel(rep)}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                    {showOtherTierReps && otherTierReps.length > 0 && (
+                      <optgroup label="Other reps">
+                        {otherTierReps.map((rep) => (
+                          <option key={rep.id} value={rep.id}>
+                            {repOptionLabel(rep)}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                  </>
+                ) : (
+                  representatives.map((rep) => (
+                    <option key={rep.id} value={rep.id}>
+                      {repOptionLabel(rep)}
+                    </option>
+                  ))
+                )}
               </select>
+              {hasRepTierInfo && otherTierReps.length > 0 && (
+                <label className="mt-2 flex items-center gap-2 text-xs text-slate-600 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={showOtherTierReps}
+                    onChange={(e) => setShowOtherTierReps(e.target.checked)}
+                    className="h-3.5 w-3.5 rounded border-slate-300 text-primary-600 focus:ring-primary-600"
+                  />
+                  Show others ({otherTierReps.length} not matching this ticket&apos;s court tier)
+                </label>
+              )}
             </label>
 
             <div className="block">

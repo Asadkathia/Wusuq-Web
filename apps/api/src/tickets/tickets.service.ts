@@ -18,6 +18,7 @@ import {
   type FlowKey,
   requiredFieldsFor,
   courtTierFromCourtType,
+  type CourtTier,
   paymentModelFor,
   chargeCapabilitiesFor,
   isFullyPaid,
@@ -1432,6 +1433,12 @@ export class TicketsService {
   async representativeCandidates(filters: {
     city?: string;
     district?: string;
+    // C3: optional court-tier scoping. When supplied, every candidate is
+    // tagged with `tierMatch` (rep.courtLevel === tier) so the FE can list
+    // matching-tier reps first with a "Show others" toggle for the rest.
+    // Never trust a client-supplied tier — the controller derives it
+    // server-side from the ticket's own payload (see `deriveTicketTier`).
+    tier?: CourtTier;
   }) {
     const reps = await this.prisma.user.findMany({
       where: {
@@ -1448,9 +1455,22 @@ export class TicketsService {
         serviceFocus: true,
         court: true,
         courtCity: true,
+        courtLevel: true,
       },
       orderBy: { name: 'asc' },
     });
+
+    // Back-compat: no tier supplied → candidates are returned without a
+    // `tierMatch` field (existing FE/tests never asserted its presence).
+    const tagTier = <T extends { courtLevel: string | null }>(
+      list: T[],
+    ): Array<T & { tierMatch?: boolean }> =>
+      filters.tier
+        ? list.map((rep) => ({
+            ...rep,
+            tierMatch: rep.courtLevel === filters.tier,
+          }))
+        : list;
 
     // Task 3.3: when a ticket city is supplied, default the dropdown to reps
     // who serve that city — same case-insensitive includes-both-ways match the
@@ -1460,7 +1480,7 @@ export class TicketsService {
     // When no city is given, every active rep is returned.
     const city = filters.city?.trim().toLowerCase();
     if (!city) {
-      return reps;
+      return tagTier(reps);
     }
     const matching = reps.filter((rep) => {
       const repCities = [rep.courtCity, rep.city]
@@ -1474,7 +1494,30 @@ export class TicketsService {
     // hit a confusing failure. An empty result is the signal for the FE to show
     // "no clerk serves this city — tick Override city restriction", which
     // re-fetches widened (no city filter) and assigns with forceAssign.
-    return matching;
+    return tagTier(matching);
+  }
+
+  /**
+   * C3: derive a ticket's court tier server-side (never client-trusted) for
+   * `representativeCandidates` tier scoping. Mirrors the `select_court_type`
+   * → `courtTierFromCourtType` derivation `validateFlowPayload` uses at
+   * intake. Returns null when the ticket doesn't exist or has no derivable
+   * tier — callers treat that as "no tier scoping".
+   */
+  async deriveTicketTier(ticketId: string): Promise<CourtTier | null> {
+    const ticket = await this.prisma.ticket.findUnique({
+      where: { id: ticketId },
+      select: { formPayload: true },
+    });
+    if (!ticket) {
+      return null;
+    }
+    const payload = (ticket.formPayload ?? {}) as Record<string, unknown>;
+    const courtType =
+      typeof payload['select_court_type'] === 'string'
+        ? payload['select_court_type']
+        : undefined;
+    return courtTierFromCourtType(courtType);
   }
 
   async assignBulk(
