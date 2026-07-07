@@ -16,7 +16,12 @@ const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:4000/
 const REQUEST_TIMEOUT_MS = 15000;
 const CONSUMER_ROLES = ['consumer', 'lawyer', 'company'];
 const PK_PHONE_REGEX = /^(\+?92|0)?3\d{9}$/;
-const GENERIC_PHONE_REGEX = /^\+?\d[\d\s\-()]{5,18}\d$/;
+// Generic (non-PK) numbers: strip everything but digits and bound the count
+// to E.164's 7-15 digit range (a leading '+' isn't a digit so it's ignored
+// by \D). Keeps accepting the existing free-form separators (spaces,
+// dashes, parens) while rejecting anything that would blow past the
+// server's @MaxLength(16) composed-string cap (B6).
+const GENERIC_PHONE_REGEX = /^(?:\D*\d){7,15}\D*$/;
 
 export default function ConsumerSignupPage() {
   const [name, setName] = useState('');
@@ -290,6 +295,7 @@ export default function ConsumerSignupPage() {
                     onChange={(e) => setPhone(e.target.value)}
                     leftIcon={<Phone className="h-4 w-4" />}
                     required
+                    maxLength={countryCode === 'PK' ? 10 : 15}
                   />
                 </div>
                 <p className="mt-1.5 text-xs text-slate-500">

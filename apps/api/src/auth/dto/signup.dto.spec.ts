@@ -34,6 +34,11 @@ describe('SignupDto', () => {
     expect(errors.some((e) => e.property === 'phone')).toBe(true);
   });
 
+  it('rejects a too-long phone (E.164 max is + + 15 digits = 16 chars)', async () => {
+    const errors = await errorsFor({ ...base, phone: '+' + '9'.repeat(20) });
+    expect(errors.some((e) => e.property === 'phone')).toBe(true);
+  });
+
   it('rejects a missing or invalid user type', async () => {
     const { consumerKind: _omit, ...noKind } = base;
     expect(
