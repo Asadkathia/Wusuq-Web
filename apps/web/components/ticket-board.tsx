@@ -234,17 +234,25 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
   const [sendBackReason, setSendBackReason] = useState('');
 
   // Admin: Finalize remainder (phase-2 charges)
+  // B11: printing/attested/non-attested are editable page counts (pages ×
+  // rate), mirroring the clerk cost-entry dialog — NOT lump charges.
   type FinalizeForm = {
-    attestedCharges: string;
-    nonAttestedCharges: string;
-    printingCharges: string;
+    noOfPages: string;
+    costPerPage: string;
+    attestedPages: string;
+    attestedCostPerPage: string;
+    nonAttestedPages: string;
+    nonAttestedCostPerPage: string;
     deliveryCharges: string;
     additionalCharges: string;
   };
   const EMPTY_FINALIZE: FinalizeForm = {
-    attestedCharges: '',
-    nonAttestedCharges: '',
-    printingCharges: '',
+    noOfPages: '',
+    costPerPage: '',
+    attestedPages: '',
+    attestedCostPerPage: '',
+    nonAttestedPages: '',
+    nonAttestedCostPerPage: '',
     deliveryCharges: '',
     additionalCharges: '',
   };
@@ -255,17 +263,26 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
   const [finalizeDetail, setFinalizeDetail] = useState<any>(null);
   const [finalizing, setFinalizing] = useState(false);
 
-  /** Internal-only: total payout to the clerk given the current finalize form
-   *  values. Delegates to the shared single-source formula (adds the PDF clerk
-   *  cut when the ticket purchased a PDF). */
-  const computeFinalizeClerkEarnings = (t: TicketRow, form: FinalizeForm, wantPdf: boolean): number =>
+  /** Internal-only: total payout to the clerk given the current (computed)
+   *  phase-2 charges. Delegates to the shared single-source formula (adds the
+   *  PDF clerk cut when the ticket purchased a PDF). */
+  const computeFinalizeClerkEarnings = (
+    t: TicketRow,
+    charges: {
+      attestedCharges: number;
+      nonAttestedCharges: number;
+      printingCharges: number;
+      deliveryCharges: number;
+    },
+    wantPdf: boolean,
+  ): number =>
     computeClerkEarnings({
       clerkCost: t.clerkCost,
       defaultClerkCost: t.defaultClerkCost,
-      attestedCharges: form.attestedCharges,
-      nonAttestedCharges: form.nonAttestedCharges,
-      printingCharges: form.printingCharges,
-      deliveryCharges: form.deliveryCharges,
+      attestedCharges: charges.attestedCharges,
+      nonAttestedCharges: charges.nonAttestedCharges,
+      printingCharges: charges.printingCharges,
+      deliveryCharges: charges.deliveryCharges,
       wantPdf,
     });
 
@@ -273,20 +290,22 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
     setFinalizeTicket(ticket);
     setFinalizeDetail(null);
     setFinalizeForm({
-      attestedCharges: ticket.attestedCharges ? String(ticket.attestedCharges) : '',
-      nonAttestedCharges: ticket.nonAttestedCharges ? String(ticket.nonAttestedCharges) : '',
-      printingCharges: ticket.printingCharges ? String(ticket.printingCharges) : '',
+      ...EMPTY_FINALIZE,
       deliveryCharges: ticket.deliveryCharges ? String(ticket.deliveryCharges) : '',
       additionalCharges: ticket.additionalCharges ? String(ticket.additionalCharges) : '',
     });
     try {
       const detail = await apiClient.get<any>(`/tickets/${ticket.id}`);
       setFinalizeDetail(detail);
-      // Prefer the freshly-loaded clerk-entered values for the editable fields.
+      // Prefer the freshly-loaded clerk-entered page breakdown for the
+      // editable fields — the admin starts from what the clerk submitted.
       setFinalizeForm((f) => ({
-        attestedCharges: detail.attestedCharges ? String(detail.attestedCharges) : f.attestedCharges,
-        nonAttestedCharges: detail.nonAttestedCharges ? String(detail.nonAttestedCharges) : f.nonAttestedCharges,
-        printingCharges: detail.printingCharges ? String(detail.printingCharges) : f.printingCharges,
+        noOfPages: detail.noOfPages ? String(detail.noOfPages) : f.noOfPages,
+        costPerPage: detail.costPerPage ? String(detail.costPerPage) : f.costPerPage,
+        attestedPages: detail.attestedPages ? String(detail.attestedPages) : f.attestedPages,
+        attestedCostPerPage: detail.attestedCostPerPage ? String(detail.attestedCostPerPage) : f.attestedCostPerPage,
+        nonAttestedPages: detail.nonAttestedPages ? String(detail.nonAttestedPages) : f.nonAttestedPages,
+        nonAttestedCostPerPage: detail.nonAttestedCostPerPage ? String(detail.nonAttestedCostPerPage) : f.nonAttestedCostPerPage,
         deliveryCharges: detail.deliveryCharges ? String(detail.deliveryCharges) : f.deliveryCharges,
         additionalCharges: detail.additionalCharges ? String(detail.additionalCharges) : f.additionalCharges,
       }));
@@ -330,13 +349,20 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
     if (!finalizeTicket) return;
     setFinalizing(true);
     try {
-      await paymentsClient.reviewAndComplete(finalizeTicket.id, {
-        attestedCharges: Number(finalizeForm.attestedCharges) || 0,
-        nonAttestedCharges: Number(finalizeForm.nonAttestedCharges) || 0,
-        printingCharges: Number(finalizeForm.printingCharges) || 0,
+      // B11: send the editable page counts — the backend recomputes
+      // attested/non-attested/printing charges as pages × rate (falling back
+      // to the persisted clerk-entered columns when a pair is left blank).
+      const payload = {
+        noOfPages: Number(finalizeForm.noOfPages) || 0,
+        costPerPage: Number(finalizeForm.costPerPage) || 0,
+        attestedPages: Number(finalizeForm.attestedPages) || 0,
+        attestedCostPerPage: Number(finalizeForm.attestedCostPerPage) || 0,
+        nonAttestedPages: Number(finalizeForm.nonAttestedPages) || 0,
+        nonAttestedCostPerPage: Number(finalizeForm.nonAttestedCostPerPage) || 0,
         deliveryCharges: Number(finalizeForm.deliveryCharges) || 0,
         additionalCharges: Number(finalizeForm.additionalCharges) || 0,
-      });
+      };
+      await paymentsClient.reviewAndComplete(finalizeTicket.id, payload);
       flash(`Ticket ${finalizeTicket.batchNo} reviewed & completed.`);
       setFinalizeTicket(null);
       setFinalizeForm(EMPTY_FINALIZE);
@@ -1924,47 +1950,71 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
                   {!hasAnyCap ? ' No phase-2 charges for this service.' : ''}
                 </div>
 
-                {/* Clerk page breakdown (read-only) — what the clerk entered. */}
-                {(() => {
-                  const pages = Number(finalizeDetail?.noOfPages ?? 0);
-                  const rate = Number(finalizeDetail?.costPerPage ?? 0);
-                  if (!(pages > 0) && !(rate > 0)) return null;
-                  return (
-                    <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-700">
-                      <span className="font-medium">Pages:</span>{' '}
-                      {pages} × PKR {rate.toLocaleString()} ={' '}
-                      <span className="font-semibold">PKR {(pages * rate).toLocaleString()}</span>
-                      <span className="ml-1 text-xs text-slate-400">(clerk-entered printing breakdown)</span>
-                    </div>
-                  );
-                })()}
                 <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-                  Final charges (admin) — compare against the clerk&rsquo;s submitted values
+                  Final charges (admin) — editable page counts, compare against the clerk&rsquo;s submitted totals
                 </p>
                 <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3">
                   {caps.attestation && (
                     <>
-                      <FormField label="Attested Charges" htmlFor="fin-attested">
-                        <Input id="fin-attested" type="number" min="0" placeholder="0"
-                          value={finalizeForm.attestedCharges}
-                          onChange={(e) => setFinalizeForm((f) => ({ ...f, attestedCharges: e.target.value }))} />
+                      <FormField label="Attested Pages" htmlFor="fin-attested-pages">
+                        <Input id="fin-attested-pages" type="number" min="0" placeholder="0"
+                          value={finalizeForm.attestedPages}
+                          onChange={(e) => setFinalizeForm((f) => ({ ...f, attestedPages: e.target.value }))} />
+                      </FormField>
+                      <FormField label="Attested Cost Per Page" htmlFor="fin-attested-rate">
+                        <Input id="fin-attested-rate" type="number" min="0" placeholder="0"
+                          value={finalizeForm.attestedCostPerPage}
+                          onChange={(e) => setFinalizeForm((f) => ({ ...f, attestedCostPerPage: e.target.value }))} />
+                      </FormField>
+                      <FormField label="Attested charges" hint="Computed automatically">
+                        <div className="flex h-11 items-center rounded-xl border border-border-soft bg-surface-muted px-4 text-sm">
+                          <span className="flex-1 font-semibold tabular-nums text-slate-900">
+                            PKR {((Number(finalizeForm.attestedPages) || 0) * (Number(finalizeForm.attestedCostPerPage) || 0)).toLocaleString()}
+                          </span>
+                        </div>
                         <p className="mt-1 text-xs text-slate-400">Clerk submitted: PKR {clerkSubmitted('attestedCharges').toLocaleString()}</p>
                       </FormField>
-                      <FormField label="Non-Attested Charges" htmlFor="fin-non-attested">
-                        <Input id="fin-non-attested" type="number" min="0" placeholder="0"
-                          value={finalizeForm.nonAttestedCharges}
-                          onChange={(e) => setFinalizeForm((f) => ({ ...f, nonAttestedCharges: e.target.value }))} />
+                      <FormField label="Non-Attested Pages" htmlFor="fin-non-attested-pages">
+                        <Input id="fin-non-attested-pages" type="number" min="0" placeholder="0"
+                          value={finalizeForm.nonAttestedPages}
+                          onChange={(e) => setFinalizeForm((f) => ({ ...f, nonAttestedPages: e.target.value }))} />
+                      </FormField>
+                      <FormField label="Non-Attested Cost Per Page" htmlFor="fin-non-attested-rate">
+                        <Input id="fin-non-attested-rate" type="number" min="0" placeholder="0"
+                          value={finalizeForm.nonAttestedCostPerPage}
+                          onChange={(e) => setFinalizeForm((f) => ({ ...f, nonAttestedCostPerPage: e.target.value }))} />
+                      </FormField>
+                      <FormField label="Non-attested charges" hint="Computed automatically">
+                        <div className="flex h-11 items-center rounded-xl border border-border-soft bg-surface-muted px-4 text-sm">
+                          <span className="flex-1 font-semibold tabular-nums text-slate-900">
+                            PKR {((Number(finalizeForm.nonAttestedPages) || 0) * (Number(finalizeForm.nonAttestedCostPerPage) || 0)).toLocaleString()}
+                          </span>
+                        </div>
                         <p className="mt-1 text-xs text-slate-400">Clerk submitted: PKR {clerkSubmitted('nonAttestedCharges').toLocaleString()}</p>
                       </FormField>
                     </>
                   )}
                   {caps.printing && (
-                    <FormField label="Printing Charges" htmlFor="fin-printing">
-                      <Input id="fin-printing" type="number" min="0" placeholder="0"
-                        value={finalizeForm.printingCharges}
-                        onChange={(e) => setFinalizeForm((f) => ({ ...f, printingCharges: e.target.value }))} />
-                      <p className="mt-1 text-xs text-slate-400">Clerk submitted: PKR {clerkSubmitted('printingCharges').toLocaleString()}</p>
-                    </FormField>
+                    <>
+                      <FormField label="No. of Pages" htmlFor="fin-pages">
+                        <Input id="fin-pages" type="number" min="0" placeholder="0"
+                          value={finalizeForm.noOfPages}
+                          onChange={(e) => setFinalizeForm((f) => ({ ...f, noOfPages: e.target.value }))} />
+                      </FormField>
+                      <FormField label="Cost Per Page" htmlFor="fin-rate">
+                        <Input id="fin-rate" type="number" min="0" placeholder="0"
+                          value={finalizeForm.costPerPage}
+                          onChange={(e) => setFinalizeForm((f) => ({ ...f, costPerPage: e.target.value }))} />
+                      </FormField>
+                      <FormField label="Printing charges" hint="Computed automatically">
+                        <div className="flex h-11 items-center rounded-xl border border-border-soft bg-surface-muted px-4 text-sm">
+                          <span className="flex-1 font-semibold tabular-nums text-slate-900">
+                            PKR {((Number(finalizeForm.noOfPages) || 0) * (Number(finalizeForm.costPerPage) || 0)).toLocaleString()}
+                          </span>
+                        </div>
+                        <p className="mt-1 text-xs text-slate-400">Clerk submitted: PKR {clerkSubmitted('printingCharges').toLocaleString()}</p>
+                      </FormField>
+                    </>
                   )}
                   {caps.delivery && (
                     <FormField label="Delivery Charges" htmlFor="fin-delivery">
@@ -1987,9 +2037,14 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
                     total so the "Wusuq earnings" row below is derived from the same figure
                     shown in this breakdown (Task 4 / C15). */}
                 {(() => {
+                  // B11: charges are derived from the editable page counts —
+                  // pages × rate, same precedence the backend applies.
+                  const attestedComputed = (Number(finalizeForm.attestedPages) || 0) * (Number(finalizeForm.attestedCostPerPage) || 0);
+                  const nonAttestedComputed = (Number(finalizeForm.nonAttestedPages) || 0) * (Number(finalizeForm.nonAttestedCostPerPage) || 0);
+                  const printingComputed = (Number(finalizeForm.noOfPages) || 0) * (Number(finalizeForm.costPerPage) || 0);
                   const phase2Total =
-                    (caps.attestation ? (Number(finalizeForm.attestedCharges) || 0) + (Number(finalizeForm.nonAttestedCharges) || 0) : 0) +
-                    (caps.printing ? (Number(finalizeForm.printingCharges) || 0) : 0) +
+                    (caps.attestation ? attestedComputed + nonAttestedComputed : 0) +
+                    (caps.printing ? printingComputed : 0) +
                     (caps.delivery ? (Number(finalizeForm.deliveryCharges) || 0) : 0) +
                     (Number(finalizeForm.additionalCharges) || 0);
                   const baseAmount = Number(finalizeTicket.serviceCost || 0);
@@ -2002,9 +2057,9 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
                       serviceCost: baseAmount,
                       additionalServiceCost: Number(finalizeTicket.additionalServiceCost || 0),
                       deliveryCharges: caps.delivery ? Number(finalizeForm.deliveryCharges) || 0 : 0,
-                      printingCharges: caps.printing ? Number(finalizeForm.printingCharges) || 0 : 0,
-                      attestedCharges: caps.attestation ? Number(finalizeForm.attestedCharges) || 0 : 0,
-                      nonAttestedCharges: caps.attestation ? Number(finalizeForm.nonAttestedCharges) || 0 : 0,
+                      printingCharges: caps.printing ? printingComputed : 0,
+                      attestedCharges: caps.attestation ? attestedComputed : 0,
+                      nonAttestedCharges: caps.attestation ? nonAttestedComputed : 0,
                       additionalCharges: Number(finalizeForm.additionalCharges) || 0,
                     },
                     discountPrice: Number(finalizeTicket.discountPrice || 0),
@@ -2012,7 +2067,16 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
                     taxRate: Number(finalizeTicket.taxRate || 0),
                   });
                   const repName = finalizeTicket.assignedRepresentative?.name;
-                  const earnings = computeFinalizeClerkEarnings(finalizeTicket, finalizeForm, wantPdf);
+                  const earnings = computeFinalizeClerkEarnings(
+                    finalizeTicket,
+                    {
+                      attestedCharges: attestedComputed,
+                      nonAttestedCharges: nonAttestedComputed,
+                      printingCharges: printingComputed,
+                      deliveryCharges: Number(finalizeForm.deliveryCharges) || 0,
+                    },
+                    wantPdf,
+                  );
                   const wusuqEarnings = computeWusuqMargin(finalizeTotal, earnings);
                   return (
                     <>
