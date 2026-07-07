@@ -92,8 +92,11 @@ type Representative = {
 type ClerkCostsForm = {
   deliveryCharges: string;
   printingCharges: string;
-  attestedCharges: string;
-  nonAttestedCharges: string;
+  // C11: attested/non-attested charges are pages × rate, mirroring printing.
+  attestedPages: string;
+  attestedCostPerPage: string;
+  nonAttestedPages: string;
+  nonAttestedCostPerPage: string;
   additionalCharges: string;
   noOfPages: string;
   costPerPage: string;
@@ -115,8 +118,10 @@ function statusAge(iso?: string | null): { label: string; stale: boolean } | nul
 const EMPTY_CLERK_COSTS: ClerkCostsForm = {
   deliveryCharges: '',
   printingCharges: '',
-  attestedCharges: '',
-  nonAttestedCharges: '',
+  attestedPages: '',
+  attestedCostPerPage: '',
+  nonAttestedPages: '',
+  nonAttestedCostPerPage: '',
   additionalCharges: '',
   noOfPages: '',
   costPerPage: '',
@@ -218,6 +223,11 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
   // Admin: verify clerk receipt
   const [costsTicket, setCostsTicket] = useState<TicketRow | null>(null);
   const [clerkCosts, setClerkCosts] = useState<ClerkCostsForm>(EMPTY_CLERK_COSTS);
+  // C12: TCS courier receipt + tracking# captured in the same clerk-costs
+  // dialog (reuses the ticket-documents upload path — see submitClerkCosts).
+  const [costsProofFile, setCostsProofFile] = useState<File | null>(null);
+  const [costsTrackingNo, setCostsTrackingNo] = useState('');
+  const [submittingCosts, setSubmittingCosts] = useState(false);
   const [rejectTicket, setRejectTicket] = useState<TicketRow | null>(null);
   const [rejectReason, setRejectReason] = useState('');
   const [sendBackTicket, setSendBackTicket] = useState<TicketRow | null>(null);
@@ -361,8 +371,10 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
     { label: 'Delivery Charges', key: 'deliveryCharges' },
     { label: 'No. of Pages', key: 'noOfPages' },
     { label: 'Cost Per Page', key: 'costPerPage' },
-    { label: 'Non-Attested Charges', key: 'nonAttestedCharges' },
-    { label: 'Attested Charges', key: 'attestedCharges' },
+    { label: 'Non-Attested Pages', key: 'nonAttestedPages' },
+    { label: 'Non-Attested Cost Per Page', key: 'nonAttestedCostPerPage' },
+    { label: 'Attested Pages', key: 'attestedPages' },
+    { label: 'Attested Cost Per Page', key: 'attestedCostPerPage' },
   ];
 
   const selectedIds = useMemo(
@@ -456,12 +468,18 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
     setClerkCosts({
       deliveryCharges: ticket.deliveryCharges ? String(ticket.deliveryCharges) : '',
       printingCharges: ticket.printingCharges ? String(ticket.printingCharges) : '',
-      attestedCharges: ticket.attestedCharges ? String(ticket.attestedCharges) : '',
-      nonAttestedCharges: ticket.nonAttestedCharges ? String(ticket.nonAttestedCharges) : '',
+      // C11: pages/rate aren't on the list row (same gap as noOfPages/costPerPage
+      // below) — left blank on open, re-entered per submission.
+      attestedPages: '',
+      attestedCostPerPage: '',
+      nonAttestedPages: '',
+      nonAttestedCostPerPage: '',
       additionalCharges: ticket.additionalCharges ? String(ticket.additionalCharges) : '',
       noOfPages: '',
       costPerPage: '',
     });
+    setCostsProofFile(null);
+    setCostsTrackingNo(ticket.trackingNo || '');
   };
 
   const hasSubmittedClerkCosts = (ticket: TicketRow) => {
@@ -648,25 +666,63 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
   };
 
   const submitClerkCosts = async () => {
-    if (!costsTicket) return;
+    if (!costsTicket || submittingCosts) return;
+    setSubmittingCosts(true);
     try {
       const noOfPages = Number(clerkCosts.noOfPages) || 0;
       const costPerPage = Number(clerkCosts.costPerPage) || 0;
+      const attestedPages = Number(clerkCosts.attestedPages) || 0;
+      const attestedCostPerPage = Number(clerkCosts.attestedCostPerPage) || 0;
+      const nonAttestedPages = Number(clerkCosts.nonAttestedPages) || 0;
+      const nonAttestedCostPerPage = Number(clerkCosts.nonAttestedCostPerPage) || 0;
+
+      // C12: upload the TCS courier receipt first (if attached) — same
+      // upload path the "Upload Work Documents" step uses (the dispatch
+      // endpoint itself can't be reused here: it requires status COMPLETED,
+      // which the ticket hasn't reached yet at this point in the lifecycle).
+      // Abort the whole submit on upload failure so costs and the receipt
+      // never desync.
+      let dispatchProofUrl: string | undefined;
+      if (costsProofFile) {
+        try {
+          const formData = new FormData();
+          formData.append('file', costsProofFile);
+          formData.append('category', 'WORK_DOCUMENT');
+          formData.append('visibleToConsumer', 'false');
+          const doc = await apiClient.post<{ fileUrl?: string }>(
+            `/tickets/${costsTicket.id}/documents/upload`,
+            formData,
+          );
+          dispatchProofUrl = doc.fileUrl;
+        } catch (uploadErr: any) {
+          flash(uploadErr.message || 'Receipt upload failed — costs not submitted', true);
+          return;
+        }
+      }
+
       await apiClient.post(`/tickets/${costsTicket.id}/clerk-costs`, {
         deliveryCharges: Number(clerkCosts.deliveryCharges) || 0,
         printingCharges: noOfPages * costPerPage,
-        attestedCharges: Number(clerkCosts.attestedCharges) || 0,
-        nonAttestedCharges: Number(clerkCosts.nonAttestedCharges) || 0,
+        attestedPages,
+        attestedCostPerPage,
+        nonAttestedPages,
+        nonAttestedCostPerPage,
         additionalCharges: Number(clerkCosts.additionalCharges) || 0,
         noOfPages,
         costPerPage,
+        ...(dispatchProofUrl ? { dispatchProofUrl } : {}),
+        ...(costsTrackingNo.trim() ? { trackingNo: costsTrackingNo.trim() } : {}),
       });
       flash('Costs submitted — ticket moved to Waiting Approval');
       setCostsTicket(null);
       setClerkCosts(EMPTY_CLERK_COSTS);
+      setCostsProofFile(null);
+      setCostsTrackingNo('');
       loadTickets();
     } catch (error: any) {
       flash(error.message || 'Failed to submit costs', true);
+    } finally {
+      setSubmittingCosts(false);
     }
   };
 
@@ -1139,7 +1195,7 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
                           chargeCapabilitiesFor(ticket.intakeFlow).delivery &&
                           ticket.deliveryStatus !== 'DISPATCHED' && (
                             <button
-                              onClick={() => { setDispatchTicket(ticket); setDispatchFile(null); setDispatchTracking(''); }}
+                              onClick={() => { setDispatchTicket(ticket); setDispatchFile(null); setDispatchTracking(ticket.trackingNo || ''); }}
                               className="text-indigo-600 hover:text-indigo-900 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-md flex items-center gap-1"
                             >
                               <Upload className="h-3.5 w-3.5" /> Mark Dispatched
@@ -1373,6 +1429,8 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
           setNextHearingEnabled(false);
           setNextHearingDate('');
           setNextHearingType('');
+          setCostsProofFile(null);
+          setCostsTrackingNo('');
         }
       }}>
         <DialogContent size="xl">
@@ -1383,7 +1441,12 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
           {costsTicket && (() => {
             const caps = chargeCapabilitiesFor(costsTicket.intakeFlow);
             const visibleFields = clerkCostFields.filter(({ key }) => {
-              if (key === 'attestedCharges' || key === 'nonAttestedCharges') return caps.attestation;
+              if (
+                key === 'attestedPages' ||
+                key === 'attestedCostPerPage' ||
+                key === 'nonAttestedPages' ||
+                key === 'nonAttestedCostPerPage'
+              ) return caps.attestation;
               if (key === 'deliveryCharges') return caps.delivery;
               if (key === 'additionalCharges') return true; // always show additional
               // noOfPages and costPerPage drive printing
@@ -1424,6 +1487,72 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
                           </span>
                         </div>
                       </FormField>
+                    )}
+                    {caps.attestation && (
+                      <>
+                        <FormField label="Attested charges" hint="Computed automatically">
+                          <div className="flex h-11 items-center rounded-xl border border-border-soft bg-surface-muted px-4 text-sm">
+                            <span className="flex-1 font-semibold tabular-nums text-slate-900">
+                              PKR {((Number(clerkCosts.attestedPages) || 0) * (Number(clerkCosts.attestedCostPerPage) || 0)).toLocaleString()}
+                            </span>
+                            <span className="text-xs text-slate-500">
+                              {clerkCosts.attestedPages || '0'} × {clerkCosts.attestedCostPerPage || '0'}
+                            </span>
+                          </div>
+                        </FormField>
+                        <FormField label="Non-attested charges" hint="Computed automatically">
+                          <div className="flex h-11 items-center rounded-xl border border-border-soft bg-surface-muted px-4 text-sm">
+                            <span className="flex-1 font-semibold tabular-nums text-slate-900">
+                              PKR {((Number(clerkCosts.nonAttestedPages) || 0) * (Number(clerkCosts.nonAttestedCostPerPage) || 0)).toLocaleString()}
+                            </span>
+                            <span className="text-xs text-slate-500">
+                              {clerkCosts.nonAttestedPages || '0'} × {clerkCosts.nonAttestedCostPerPage || '0'}
+                            </span>
+                          </div>
+                        </FormField>
+                      </>
+                    )}
+                  </div>
+                )}
+
+                {/* C12: TCS courier receipt + tracking# — physical-delivery flows only. */}
+                {caps.delivery && (
+                  <div className="rounded-xl border border-border-soft p-4 space-y-3">
+                    <p className="text-sm font-medium text-slate-700">Courier receipt <span className="font-normal text-slate-400">(optional)</span></p>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <FormField label="Tracking number" htmlFor="cc-tracking">
+                        <Input
+                          id="cc-tracking"
+                          type="text"
+                          placeholder="e.g. TCS-123456789"
+                          value={costsTrackingNo}
+                          onChange={(e) => setCostsTrackingNo(e.target.value)}
+                        />
+                      </FormField>
+                      <FormField label="Receipt file" htmlFor="cc-proof">
+                        <input
+                          id="cc-proof"
+                          type="file"
+                          accept=".jpg,.jpeg,.png,.pdf"
+                          className="block w-full text-sm text-slate-700 file:mr-4 file:rounded-lg file:border-0 file:bg-indigo-50 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-indigo-700 hover:file:bg-indigo-100"
+                          onChange={(e) => {
+                            const f = e.target.files?.[0];
+                            if (f && f.size > 10 * 1024 * 1024) {
+                              flash('Receipt must be under 10 MB', true);
+                              e.target.value = '';
+                              return;
+                            }
+                            setCostsProofFile(f ?? null);
+                          }}
+                        />
+                      </FormField>
+                    </div>
+                    <p className="text-xs text-slate-500">Allowed: JPG, PNG, PDF — max 10 MB</p>
+                    {costsProofFile && (
+                      <p className="text-xs text-slate-500">Selected: <span className="font-medium text-slate-800">{costsProofFile.name}</span></p>
+                    )}
+                    {!costsProofFile && costsTicket.dispatchProofUrl && (
+                      <p className="text-xs text-slate-500">A receipt is already on file — leave blank to keep it.</p>
                     )}
                   </div>
                 )}
@@ -1470,9 +1599,22 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
             );
           })()}
           <DialogFooter>
-            <Button variant="ghost" onClick={() => { setCostsTicket(null); setNextHearingEnabled(false); setNextHearingDate(''); setNextHearingType(''); }}>Cancel</Button>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setCostsTicket(null);
+                setNextHearingEnabled(false);
+                setNextHearingDate('');
+                setNextHearingType('');
+                setCostsProofFile(null);
+                setCostsTrackingNo('');
+              }}
+            >
+              Cancel
+            </Button>
             <Button
               variant="primary"
+              disabled={submittingCosts}
               onClick={async () => {
                 if (costsTicket && nextHearingEnabled && nextHearingDate) {
                   const hearingSaved = await submitNextHearing(costsTicket.id);
@@ -1481,7 +1623,7 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
                 submitClerkCosts();
               }}
             >
-              Submit costs
+              {submittingCosts ? 'Submitting…' : 'Submit costs'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1685,8 +1827,13 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
             {dispatchFile && (
               <p className="text-xs text-slate-500">Selected: <span className="font-medium text-slate-800">{dispatchFile.name}</span></p>
             )}
+            {/* C12: the clerk-costs dialog may already have captured a TCS
+                receipt (dispatchProofUrl) — don't force a re-upload here. */}
+            {!dispatchFile && dispatchTicket.dispatchProofUrl && (
+              <p className="text-xs text-slate-500">A courier receipt is already on file — leave blank to keep it, or attach a new one to replace it.</p>
+            )}
             <div className="flex gap-3">
-              <button onClick={submitDispatch} disabled={dispatching || (!dispatchFile && !dispatchTracking.trim())} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 disabled:opacity-50 transition-colors">
+              <button onClick={submitDispatch} disabled={dispatching || (!dispatchFile && !dispatchTracking.trim() && !dispatchTicket.dispatchProofUrl)} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 disabled:opacity-50 transition-colors">
                 {dispatching ? 'Saving…' : 'Mark Dispatched'}
               </button>
               <button onClick={() => { setDispatchTicket(null); setDispatchFile(null); setDispatchTracking(''); }} className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm ring-1 ring-inset ring-border-soft hover:bg-slate-50 transition-colors">Cancel</button>
