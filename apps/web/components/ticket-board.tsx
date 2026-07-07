@@ -28,13 +28,20 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { UserCircle, MapPin, Tag, RefreshCw, CheckSquare, Clock, History, FileOutput, Eye, PlayCircle, Upload, X, XCircle, Calendar, FileText, Download, Trash2 } from 'lucide-react';
+import { UserCircle, MapPin, Tag, RefreshCw, CheckSquare, Clock, History, FileOutput, Eye, PlayCircle, Upload, X, XCircle, Calendar, FileText, Download, Trash2, RotateCcw } from 'lucide-react';
 import { TicketDetailPanel } from './ticket-detail-panel';
 import { flowKeyToSlug } from '@/lib/intake-flows';
 
 type TicketBoardProps = {
   title: string;
   status: TicketStatus;
+  // Restore/unarchive follow-up: when true, this board lists ONLY archived
+  // tickets (server-side `archived=true` filter, staff-only) and swaps the
+  // bulk/per-row "Delete" affordance for "Restore". `status` is still
+  // required by the type but unused for the query in this mode — callers
+  // pass a placeholder tab value (none of the per-tab action gates below key
+  // off DELIVERED, so it renders nothing tab-specific).
+  archived?: boolean;
 };
 
 type TicketRow = {
@@ -133,7 +140,7 @@ const EMPTY_CLERK_COSTS: ClerkCostsForm = {
   costPerPage: '',
 };
 
-export function TicketBoard({ title, status }: TicketBoardProps) {
+export function TicketBoard({ title, status, archived = false }: TicketBoardProps) {
   const router = useRouter();
   const [tickets, setTickets] = useState<TicketRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -457,7 +464,14 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
   const loadTickets = useCallback(async () => {
     setLoading(true);
     try {
-      const q = new URLSearchParams({ status, limit: '200' });
+      const q = new URLSearchParams({ limit: '200' });
+      // Archived view lists across all statuses — the server-side `archived`
+      // filter (staff-only) replaces the per-tab status filter entirely.
+      if (archived) {
+        q.set('archived', 'true');
+      } else {
+        q.set('status', status);
+      }
       if (dateRange !== 'all') q.set('dateRange', dateRange);
       if (serviceFilter !== 'all') q.set('serviceCategory', serviceFilter);
       if (isClerk && currentUserId) q.set('representativeId', currentUserId);
@@ -470,7 +484,7 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
     } finally {
       setLoading(false);
     }
-  }, [status, dateRange, serviceFilter, isClerk, isConsumer, currentUserId, flash]);
+  }, [status, archived, dateRange, serviceFilter, isClerk, isConsumer, currentUserId, flash]);
 
   useEffect(() => {
     loadTickets();
@@ -591,6 +605,23 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
       loadTickets();
     } catch (error: any) {
       flash(error.message || 'Bulk action failed', true);
+    }
+  };
+
+  // Restore/unarchive follow-up: bulk-restores the current selection on the
+  // Archived view, reusing the same bulk-actions endpoint with action:'restore'.
+  const runRestoreSelected = async () => {
+    if (selectedIds.length === 0) return flash('Select at least one ticket', true);
+    if (!window.confirm(`Restore ${selectedIds.length} selected ticket(s)? They re-enter the active workflow.`)) {
+      return;
+    }
+    try {
+      await apiClient.post('/tickets/bulk-actions', { action: 'restore', ticketIds: selectedIds });
+      flash('Selected tickets restored');
+      setSelected({});
+      loadTickets();
+    } catch (error: any) {
+      flash(error.message || 'Restore failed', true);
     }
   };
 
@@ -1004,11 +1035,27 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
     }
   };
 
+  // Restore/unarchive follow-up: per-row restore on the Archived view, mirroring
+  // deleteTicket's shape but flipped (action:'restore', clears archivedAt).
+  const restoreTicket = async (ticket: TicketRow) => {
+    if (!confirm(`Restore ticket ${ticket.batchNo}? It re-enters the active workflow.`)) return;
+    setDeletingTicketId(ticket.id);
+    try {
+      await apiClient.post('/tickets/bulk-actions', { action: 'restore', ticketIds: [ticket.id] });
+      flash(`Ticket ${ticket.batchNo} restored.`);
+      loadTickets();
+    } catch (error: any) {
+      flash(error.message || 'Failed to restore ticket', true);
+    } finally {
+      setDeletingTicketId(null);
+    }
+  };
+
   return (
     <div className="space-y-6">
-      <SectionHeader 
-        title={title} 
-        description={`Manage ${status.toLowerCase()} tickets and assignments.`}
+      <SectionHeader
+        title={title}
+        description={archived ? 'Archived tickets — restore them back into the active workflow.' : `Manage ${status.toLowerCase()} tickets and assignments.`}
         action={
           <button
             onClick={loadTickets}
@@ -1046,7 +1093,20 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
                   <option value="JUDICIAL">Judicial</option>
                   <option value="NON_JUDICIAL">Non-Judicial</option>
                 </select>
-                {isAdmin && (
+                {isAdmin && archived && (
+                  <>
+                    <span className="hidden sm:block h-6 w-px bg-slate-200 mx-1" aria-hidden="true"></span>
+                    <button
+                      type="button"
+                      onClick={runRestoreSelected}
+                      disabled={selectedIds.length === 0}
+                      className="w-full sm:w-auto rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-500 disabled:opacity-50 transition-colors"
+                    >
+                      Restore selected
+                    </button>
+                  </>
+                )}
+                {isAdmin && !archived && (
                   <>
                     <span className="hidden sm:block h-6 w-px bg-slate-200 mx-1" aria-hidden="true"></span>
                     {(status === 'UNPAID' || status === 'PAID') && (
@@ -1377,13 +1437,16 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
                       <>
                         {/* Pay-at-end (Task 3.1): a ticket may be assigned
                             directly from UNPAID — the payment gate is at
-                            DELIVERED, not at assign. */}
-                        {(status === 'PAID' || status === 'UNPAID') && (
+                            DELIVERED, not at assign. None of these
+                            status-gated actions apply on the Archived view
+                            (the tab's `status` prop is a fixed placeholder
+                            there), guarded below with !archived for clarity. */}
+                        {!archived && (status === 'PAID' || status === 'UNPAID') && (
                           <button onClick={() => openAssign(ticket)} className="text-primary-600 hover:text-primary-900 bg-primary-50 px-3 py-1.5 rounded-md flex items-center gap-1">
                             <CheckSquare className="h-3.5 w-3.5" /> Assign
                           </button>
                         )}
-                        {status === 'WAITING_APPROVAL' && (
+                        {!archived && status === 'WAITING_APPROVAL' && (
                           <>
                             {/* One step: verify the clerk receipt + finalize any
                                 charges + complete (digital auto-delivers). */}
@@ -1404,7 +1467,7 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
                             </button>
                           </>
                         )}
-                        {status === 'COMPLETED' &&
+                        {!archived && status === 'COMPLETED' &&
                           chargeCapabilitiesFor(ticket.intakeFlow).delivery &&
                           ticket.deliveryStatus === 'DISPATCHED' && (
                             <button
@@ -1422,7 +1485,7 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
                         <button onClick={() => openTimeline(ticket.id)} className="text-slate-600 hover:text-slate-900 bg-slate-100 px-3 py-1.5 rounded-md flex items-center gap-1">
                           <History className="h-3.5 w-3.5" /> Timeline
                         </button>
-                        {status === 'COMPLETED' && ticket.scheduledDate && (
+                        {!archived && status === 'COMPLETED' && ticket.scheduledDate && (
                           <button
                             onClick={() => generateNextHearing(ticket)}
                             className="text-teal-600 hover:text-teal-900 bg-teal-50 hover:bg-teal-100 px-3 py-1.5 rounded-md flex items-center gap-1"
@@ -1431,11 +1494,25 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
                             <Clock className="h-3.5 w-3.5" /> Next Hearing
                           </button>
                         )}
-                        <button onClick={() => regenerateTicket(ticket.id, ticket.intakeFlow)} className="text-slate-600 hover:text-rose-600 bg-slate-100 hover:bg-rose-50 px-3 py-1.5 rounded-md flex items-center gap-1" title="Regenerate Ticket">
-                          <FileOutput className="h-3.5 w-3.5" />
-                        </button>
-                        {/* B12: admin-only per-row archive (soft-delete). */}
-                        {isAdmin && (
+                        {!archived && (
+                          <button onClick={() => regenerateTicket(ticket.id, ticket.intakeFlow)} className="text-slate-600 hover:text-rose-600 bg-slate-100 hover:bg-rose-50 px-3 py-1.5 rounded-md flex items-center gap-1" title="Regenerate Ticket">
+                            <FileOutput className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                        {/* B12: admin-only per-row archive (soft-delete).
+                            Restore/unarchive follow-up: the Archived view
+                            swaps this for a Restore action instead. */}
+                        {isAdmin && archived && (
+                          <button
+                            onClick={() => restoreTicket(ticket)}
+                            disabled={deletingTicketId === ticket.id}
+                            className="text-emerald-600 hover:text-emerald-900 bg-emerald-50 hover:bg-emerald-100 px-3 py-1.5 rounded-md flex items-center gap-1 disabled:opacity-50"
+                            title="Restore ticket"
+                          >
+                            <RotateCcw className="h-3.5 w-3.5" /> {deletingTicketId === ticket.id ? 'Restoring…' : 'Restore'}
+                          </button>
+                        )}
+                        {isAdmin && !archived && (
                           <button
                             onClick={() => deleteTicket(ticket)}
                             disabled={deletingTicketId === ticket.id}

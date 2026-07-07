@@ -60,6 +60,10 @@ function buildNavItems(counts: Record<string, number>): NavItem[] {
         { label: 'Waiting Approval', href: '/tickets/waiting-approval', count: hrefCount['/tickets/waiting-approval'] },
         { label: 'Completed Tickets', href: '/tickets/completed', count: hrefCount['/tickets/completed'] },
         { label: 'Delivered Tickets', href: '/tickets/delivered', count: hrefCount['/tickets/delivered'] },
+        // Restore/unarchive follow-up: no count badge — /tickets/counts is
+        // scoped to non-archived tickets, and this tab is admin-only anyway
+        // (buildClerkItems below doesn't include it).
+        { label: 'Archived Tickets', href: '/tickets/archived' },
       ],
     },
     { label: 'Finance', href: '/finance', icon: WalletCards },
