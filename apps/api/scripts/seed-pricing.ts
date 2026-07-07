@@ -7,6 +7,12 @@
  * The sheet has four worksheets; this script consumes the first two
  * ("Wusuq Service Rates & Clerk Rat" and "Attested Non Attested Both Rate")
  * and rebuilds the PricingRule table from scratch each run (idempotent).
+ *
+ * The pure parse (xlsx → PricingRule row drafts) is factored into
+ * `buildJudicialRuleRows()` so it can be exercised WITHOUT a database — see
+ * `scripts/verify-pricing-parse.ts`, which asserts every parse block
+ * contributes rows and spot-checks known cells against the current
+ * pricing-sheet.xlsx layout (2026-07 realignment, B13 root-cause fix).
  */
 import { PrismaClient } from '@prisma/client';
 import { buildNonJudicialPricingRows } from '@wusuq/shared';
@@ -156,9 +162,27 @@ type RuleDraft = {
   deliveryGuyFee: number;
 };
 
-const DRAFTS: RuleDraft[] = [];
+export type PricingRuleRow = {
+  name: string;
+  flow: string;
+  courtLevel: string;
+  region: Region;
+  yearBand: YearBand;
+  yearFrom: number | null;
+  yearTo: number | null;
+  setType: SetType | null;
+  basePrice: number;
+  availability: boolean;
+  clerkBaseCost: number | null;
+  pdfSurchargeAmount: number;
+  deliveryGuyFee: number;
+  isLegacy: boolean;
+  isActive: boolean;
+  priority: number;
+};
 
 function pushHeadline(
+  drafts: RuleDraft[],
   flow: string,
   courtLevel: string,
   region: Region,
@@ -171,7 +195,7 @@ function pushHeadline(
   // Search — the "result" is a digital info packet. PDF surcharge stays.
   const flowHasPhysicalDispatch =
     flow !== 'judicial_case_information' && flow !== 'judicial_case_search';
-  DRAFTS.push({
+  drafts.push({
     flow,
     courtLevel,
     region,
@@ -188,6 +212,7 @@ function pushHeadline(
 // Parse a "headline rates" block: rows of services × tiers (WUSUQ/CLERK pairs).
 // `headerRow` defines the tier columns; service rows live in `serviceRows`.
 function parseHeadlineBlock(
+  drafts: RuleDraft[],
   grid: Grid,
   region: Region,
   headerRow: number,
@@ -230,13 +255,14 @@ function parseHeadlineBlock(
     for (const t of tiers) {
       const base = parseCell(row[t.wusuqCol]);
       const clerk = parseCell(row[t.clerkCol]);
-      pushHeadline(targetFlow, t.courtLevel, region, yearBand, base, clerk);
+      pushHeadline(drafts, targetFlow, t.courtLevel, region, yearBand, base, clerk);
     }
   }
 }
 
 // Right-hand Case Record band block.
 function parseCaseRecordBands(
+  drafts: RuleDraft[],
   grid: Grid,
   region: Region,
   tierHeaderRow: number,
@@ -263,13 +289,14 @@ function parseCaseRecordBands(
       // files when the case status is decided." Year-band rates flow onto
       // svc_judicial_case_files (yearBand ∈ y2025…y2016_back) so consumers
       // pick Case Files and set case_status=Decided to land on these rules.
-      pushHeadline('judicial_case_files', t.courtLevel, region, yearBand, base, clerk);
+      pushHeadline(drafts, 'judicial_case_files', t.courtLevel, region, yearBand, base, clerk);
     }
   }
 }
 
 // Case Search band sub-tables.
 function parseCaseSearchBands(
+  drafts: RuleDraft[],
   grid: Grid,
   region: Region,
   tierHeaderRow: number,
@@ -299,7 +326,7 @@ function parseCaseSearchBands(
     for (const t of tiers) {
       const base = parseCell(row[t.wusuqCol]);
       const clerk = parseCell(row[t.clerkCol]);
-      pushHeadline('judicial_case_search', t.courtLevel, region, yb, base, clerk);
+      pushHeadline(drafts, 'judicial_case_search', t.courtLevel, region, yb, base, clerk);
     }
   }
 }
@@ -329,6 +356,7 @@ const PDF_OFFSET = 3;
 const DELIVERY_OFFSET = 4;
 
 function parseSetTypeBlock(
+  drafts: RuleDraft[],
   grid: Grid,
   region: Region,
   tierHeaderRow: number,
@@ -353,7 +381,7 @@ function parseSetTypeBlock(
       const delAmount = delCell.amount ?? 100;
       for (const st of SET_TYPE_COLUMNS) {
         const cell = parseCell(row[t.col + st.offset]);
-        DRAFTS.push({
+        drafts.push({
           flow: 'judicial_case_files',
           courtLevel: t.courtLevel,
           region,
@@ -373,17 +401,17 @@ function parseSetTypeBlock(
 // ── Sheet 5 parser: per-set-type clerk rates ────────────────────────────────
 //
 // Sheet5 mirrors Sheet 2's set-type matrix but interleaves a "Clerk Rates"
-// block after each tier's Wusuq block: each court tier occupies 12 columns —
-// 5 wusuq (atte / non / both / pdf / delivery) + 1 separator + 5 clerk
-// (same shape) + 1 separator. So Lower clerk attested = wusuq attested + 6.
+// block after each tier's Wusuq block: each court tier's clerk block starts 6
+// columns after its wusuq block (5 wusuq cols + 1 "Clerk Rates" label col).
+// E.g. Lower wusuq starts col 1 → Lower clerk attested = col 1 + 6 = col 7.
 //
 // Result: clerkRateMap keyed by `${region}|${courtLevel}|${yearBand}|${setType}`
 // → number, then merged into DRAFTS before insert.
 
 type ClerkKey = string;
-const clerkRateMap = new Map<ClerkKey, number>();
 
 function parseClerkSetTypeBlock(
+  clerkRateMap: Map<ClerkKey, number>,
   grid: Grid,
   region: Region,
   tierHeaderRow: number,
@@ -412,15 +440,15 @@ function parseClerkSetTypeBlock(
   }
 }
 
-// ── Main ─────────────────────────────────────────────────────────────────────
+// ── Pure parse: xlsx → PricingRule row drafts (no DB) ───────────────────────
 
 // Audit 6.2: every parse block uses absolute row/column coordinates — a
 // shifted sheet silently `continue`s rows and yields 0 drafts. Each block
 // must contribute at least one draft or the seed aborts before the wipe.
-function expectContribution(label: string, fn: () => void) {
-  const before = DRAFTS.length;
+function expectContribution(label: string, drafts: RuleDraft[], fn: () => void) {
+  const before = drafts.length;
   fn();
-  const added = DRAFTS.length - before;
+  const added = drafts.length - before;
   if (added <= 0) {
     console.error(
       `Parse block "${label}" contributed 0 drafts — the sheet layout has ` +
@@ -431,29 +459,67 @@ function expectContribution(label: string, fn: () => void) {
   console.log(`  ${label}: +${added} drafts`);
 }
 
-async function main() {
-  console.log(`Loading ${XLSX_PATH}…`);
+function buildName(d: RuleDraft): string {
+  const parts = [d.flow, d.courtLevel, d.region, d.yearBand];
+  if (d.setType) parts.push(d.setType);
+  return parts.join(' – ');
+}
+
+/**
+ * Parses `pricing-sheet.xlsx` sheets 1 ("Wusuq Service Rates & Clerk Rat"),
+ * 2 ("Attested Non Attested Both Rate") and 5 (clerk set-type rates) into
+ * PricingRule row drafts. Pure/no-DB so it can run in a verify script
+ * (`scripts/verify-pricing-parse.ts`) without touching Postgres.
+ *
+ * Row/column coordinates below were remapped 2026-07 against the CURRENT
+ * pricing-sheet.xlsx layout (the previous coordinates assumed the Case
+ * Record / Case Search year-band tables sat immediately right of the
+ * headline rows; they now live in dedicated blocks starting at row 20 —
+ * see the "CASE RECORD - PUNJAB" / "CASE SEARCH - Punjab" etc. section
+ * titles in the sheet). B13 root cause.
+ */
+export function buildJudicialRuleRows(): {
+  rows: PricingRuleRow[];
+  totalDrafts: number;
+  uniqueCount: number;
+} {
   const wb = loadWorkbook();
   const s1 = sheetGrid(wb, 'Wusuq Service Rates & Clerk Rat');
   const s2 = sheetGrid(wb, 'Attested Non Attested Both Rate');
 
-  // Sheet 1 — Punjab headline (rows 1-8) + right-hand Case Record band table.
-  expectContribution('Punjab headline', () =>
-    parseHeadlineBlock(s1, 'Punjab', /*headerRow*/ 1, /*serviceRows*/ [3, 4, 5, 6, 7, 8], /*leftCol*/ 1, /*rightCol*/ 12));
-  expectContribution('Punjab case-record bands', () =>
-    parseCaseRecordBands(s1, 'Punjab', /*tierHeaderRow*/ 1, /*bandRows*/ [3, 4, 5, 6, 7], /*leftCol*/ 15, /*rightCol*/ 26, /*yearsCol*/ 14));
+  const DRAFTS: RuleDraft[] = [];
+  const clerkRateMap = new Map<ClerkKey, number>();
 
-  // Sheet 1 — Other than Punjab headline (rows 11-18) + right-hand bands.
-  expectContribution('Other headline', () =>
-    parseHeadlineBlock(s1, 'other', 11, [13, 14, 15, 16, 17, 18], 1, 12));
-  expectContribution('Other case-record bands', () =>
-    parseCaseRecordBands(s1, 'other', 11, [13, 14, 15, 16, 17], 15, 26, 14));
+  // Sheet 1 — Punjab headline (rows 3-8). Tier columns run leftCol=1..rightCol=16
+  // to cover all six tiers (Lower/Special/High/Federal Shariat/Supreme/Federal
+  // Constitutional) — the tier header row (1) only has a label in the first
+  // column of every WUSUQ/CLERK pair (1, 7, 9, 11, 13, 15).
+  expectContribution('Punjab headline', DRAFTS, () =>
+    parseHeadlineBlock(DRAFTS, s1, 'Punjab', /*headerRow*/ 1, /*serviceRows*/ [3, 4, 5, 6, 7, 8], /*leftCol*/ 1, /*rightCol*/ 16));
+  // Right-hand "CASE RECORD - PUNJAB" band block (title row 20, tier header row
+  // 21, data rows 23-27, years in col 0).
+  expectContribution('Punjab case-record bands', DRAFTS, () =>
+    parseCaseRecordBands(DRAFTS, s1, 'Punjab', /*tierHeaderRow*/ 21, /*bandRows*/ [23, 24, 25, 26, 27], /*leftCol*/ 1, /*rightCol*/ 16, /*yearsCol*/ 0));
 
-  // Sheet 1 — Case Search band sub-tables.
-  expectContribution('Punjab case-search bands', () =>
-    parseCaseSearchBands(s1, 'Punjab', /*tierHeaderRow*/ 26, /*bandRows*/ [28, 29, 30, 31, 32], 1, 8, 0));
-  expectContribution('Other case-search bands', () =>
-    parseCaseSearchBands(s1, 'other', /*tierHeaderRow*/ 34, /*bandRows*/ [36, 37, 38, 39], 1, 8, 0));
+  // Sheet 1 — Other than Punjab headline (rows 13-18).
+  expectContribution('Other headline', DRAFTS, () =>
+    parseHeadlineBlock(DRAFTS, s1, 'other', 11, [13, 14, 15, 16, 17, 18], 1, 16));
+  // "CASE RECORD - OTHER THAN PUNJAB" band block (title row 30, tier header row
+  // 31, data rows 33-37, years in col 0).
+  expectContribution('Other case-record bands', DRAFTS, () =>
+    parseCaseRecordBands(DRAFTS, s1, 'other', 31, [33, 34, 35, 36, 37], 1, 16, 0));
+
+  // Sheet 1 — Case Search band sub-tables. These live to the RIGHT of the Case
+  // Record blocks: "CASE SEARCH - Punjab" (title row 24, col 21) has its tier
+  // header at row 25 (cols 22/24/26/28 — only Lower/Special/High/Supreme have
+  // a Case Search sub-table) and bespoke year-range bands in col 21, rows
+  // 27-31. "CASE SEARCH - Other than Punjab" (title row 32, col 21) mirrors
+  // the shape one tier-header row later (row 33) with single-year bands in
+  // col 21, rows 35-38.
+  expectContribution('Punjab case-search bands', DRAFTS, () =>
+    parseCaseSearchBands(DRAFTS, s1, 'Punjab', /*tierHeaderRow*/ 25, /*bandRows*/ [27, 28, 29, 30, 31], /*leftCol*/ 22, /*rightCol*/ 28, /*yearsCol*/ 21));
+  expectContribution('Other case-search bands', DRAFTS, () =>
+    parseCaseSearchBands(DRAFTS, s1, 'other', /*tierHeaderRow*/ 33, /*bandRows*/ [35, 36, 37, 38], /*leftCol*/ 22, /*rightCol*/ 28, /*yearsCol*/ 21));
 
   // Pending Case Files headline (row 3 Punjab / row 13 Other) is mapped to
   // yearBand=pending above. Add an explicit current-year mirror so callers
@@ -461,21 +527,21 @@ async function main() {
   // Implemented below in the resolver fallback.
 
   // Sheet 2 — Punjab set-type block (rows 2-10) + Other set-type block (rows 13-21).
-  expectContribution('Punjab set-type matrix', () =>
-    parseSetTypeBlock(s2, 'Punjab', /*tierHeaderRow*/ 2, /*bandRows*/ [4, 5, 6, 7, 8, 9, 10]));
-  expectContribution('Other set-type matrix', () =>
-    parseSetTypeBlock(s2, 'other', /*tierHeaderRow*/ 13, /*bandRows*/ [15, 16, 17, 18, 19, 20, 21]));
+  expectContribution('Punjab set-type matrix', DRAFTS, () =>
+    parseSetTypeBlock(DRAFTS, s2, 'Punjab', /*tierHeaderRow*/ 2, /*bandRows*/ [4, 5, 6, 7, 8, 9, 10]));
+  expectContribution('Other set-type matrix', DRAFTS, () =>
+    parseSetTypeBlock(DRAFTS, s2, 'other', /*tierHeaderRow*/ 13, /*bandRows*/ [15, 16, 17, 18, 19, 20, 21]));
 
   // Sheet 5 — clerk rates for set-type rules. Punjab block layout: tier
   // header row 1, data rows 3-9 (pending, current, 2025, 2024-23, 2022-20,
-  // 2019-17, 2016-back). Each tier occupies 12 cols (5 wusuq + sep + 5 clerk
-  // + sep). The canonical file's Sheet5 has no Other-than-Punjab block, so
+  // 2019-17, 2016-back). Each tier's clerk block starts 6 columns after its
+  // wusuq block. The canonical file's Sheet5 has no Other-than-Punjab block, so
   // clerk rates for `region='other'` fall back to null.
   // Audit 6.2: a renamed/missing Sheet5 used to be skipped silently, wiping
   // every set-type clerk rate on the next seed. Fail unless explicitly waived.
   if (wb.SheetNames.includes('Sheet5')) {
     const s5 = sheetGrid(wb, 'Sheet5');
-    parseClerkSetTypeBlock(s5, 'Punjab', /*tierHeaderRow*/ 1, /*bandRows*/ [3, 4, 5, 6, 7, 8, 9]);
+    parseClerkSetTypeBlock(clerkRateMap, s5, 'Punjab', /*tierHeaderRow*/ 1, /*bandRows*/ [3, 4, 5, 6, 7, 8, 9]);
   } else if (process.argv.includes('--allow-missing-clerk-rates')) {
     console.warn('Sheet5 missing — proceeding WITHOUT set-type clerk rates (--allow-missing-clerk-rates).');
   } else {
@@ -531,7 +597,7 @@ async function main() {
     process.exit(1);
   }
 
-  const rows = drafts.map((d) => {
+  const rows: PricingRuleRow[] = drafts.map((d) => {
     const range = YEAR_BAND_RANGES[d.yearBand];
     return {
       name: buildName(d),
@@ -552,6 +618,47 @@ async function main() {
       priority: d.setType ? 10 : d.yearBand === 'current' || d.yearBand === 'pending' ? 0 : 5,
     };
   });
+
+  return { rows, totalDrafts: DRAFTS.length, uniqueCount: drafts.length };
+}
+
+// ── Clerk-rate sanity guard ──────────────────────────────────────────────────
+// Some source cells in pricing-sheet.xlsx carry a literal "1" as a placeholder
+// (e.g. the Punjab Case-Record clerk column). A clerkBaseCost of Rs 1 is never a
+// real rate — real clerk rates start in the hundreds — and it flows straight to
+// Ticket.defaultClerkCost → assignBulk auto-fills clerkCost with no admin review,
+// silently paying a clerk Rs 1. The parser faithfully reads what's in the sheet,
+// so this must be caught here (fail-loud, like the MIN_TOTAL_DRAFTS floor) BEFORE
+// the wipe. Fix the source cells, or pass --allow-low-clerk-rates to override.
+export const MIN_PLAUSIBLE_CLERK_COST = 50;
+export function findImplausibleClerkRows(rows: PricingRuleRow[]): PricingRuleRow[] {
+  return rows.filter(
+    (r) =>
+      r.clerkBaseCost != null &&
+      r.clerkBaseCost > 0 &&
+      r.clerkBaseCost < MIN_PLAUSIBLE_CLERK_COST,
+  );
+}
+
+// ── Main ─────────────────────────────────────────────────────────────────────
+
+async function main() {
+  console.log(`Loading ${XLSX_PATH}…`);
+  const { rows } = buildJudicialRuleRows();
+
+  // Refuse to seed implausibly-low clerk rates (placeholder cells) — see above.
+  const badClerk = findImplausibleClerkRows(rows);
+  if (badClerk.length > 0 && !process.argv.includes('--allow-low-clerk-rates')) {
+    console.error(
+      `${badClerk.length} rule(s) have an implausible clerk rate (< Rs ${MIN_PLAUSIBLE_CLERK_COST}) — ` +
+        'these are almost certainly placeholder cells in pricing-sheet.xlsx. Fix the source ' +
+        'cells (or pass --allow-low-clerk-rates to override). Offending rules:',
+    );
+    for (const r of badClerk) {
+      console.error(`  • ${r.name} (${r.region}/${r.courtLevel}/${r.yearBand}) → clerkBaseCost=${r.clerkBaseCost}`);
+    }
+    process.exit(1);
+  }
 
   // Non-judicial physical-document copies (owner rates 2026-06-12). The xlsx
   // grid is judicial court-tier shaped and carries no rows for these, so the
@@ -593,15 +700,22 @@ async function main() {
   );
 }
 
-function buildName(d: RuleDraft): string {
-  const parts = [d.flow, d.courtLevel, d.region, d.yearBand];
-  if (d.setType) parts.push(d.setType);
-  return parts.join(' – ');
-}
+// Only run against the DB when invoked directly (not when imported by the
+// no-DB verify script or a test). The package is CommonJS (no
+// "type":"module"), so `require.main === module` holds when launched via tsx.
+const isMain = (() => {
+  try {
+    return typeof require !== 'undefined' && require.main === module;
+  } catch {
+    return false;
+  }
+})();
 
-main()
-  .catch((e) => {
-    console.error(e);
-    process.exit(1);
-  })
-  .finally(() => prisma.$disconnect());
+if (isMain) {
+  main()
+    .catch((e) => {
+      console.error(e);
+      process.exit(1);
+    })
+    .finally(() => prisma.$disconnect());
+}

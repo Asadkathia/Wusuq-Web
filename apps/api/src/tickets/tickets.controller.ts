@@ -78,6 +78,12 @@ export class TicketsController {
     if (isRepresentative && user) {
       query.representativeId = user.sub;
     }
+    // The Archived view is staff-only — strip the filter for consumer/rep
+    // callers regardless of what the query string carries (never trust a
+    // client-supplied flag to widen scope past their own tickets).
+    if ((isConsumer || isRepresentative) && query.archived) {
+      query.archived = false;
+    }
     // Consumers must never receive internal clerk-cost fields in the list;
     // representatives must never receive consumer money fields (audit 1.1).
     // forRepresentative is the authoritative role signal — derived from the
