@@ -9,6 +9,7 @@ import {
   FLOW_LABELS,
   courtTierFromCourtType,
   computeClerkEarnings,
+  computeWusuqMargin,
 } from '@wusuq/shared';
 import { PanelCard } from '@/components/ui/panel-card';
 import { StatusPill } from '@/components/ui/status-pill';
@@ -352,6 +353,7 @@ export function TicketDetailPanel({ ticketId, onClose, isClerkView = false, onCh
                         ['Discount', ticket.discountPrice ? `-${Number(ticket.discountPrice).toLocaleString()}` : null],
                       ];
                       const clerkEarnings = computeClerkEarnings({ ...ticket, wantPdf });
+                      const wusuqEarnings = computeWusuqMargin(customerTotal, clerkEarnings);
                       return (
                         <div className="space-y-2 text-sm">
                           {chargeRows.filter(([, val]) => val !== null && val !== undefined && Number(val) !== 0).map(([label, val]) => (
@@ -366,6 +368,10 @@ export function TicketDetailPanel({ ticketId, onClose, isClerkView = false, onCh
                               <span className="font-semibold">PKR {clerkEarnings.toLocaleString()}</span>
                             </div>
                           )}
+                          <div className="flex justify-between border-b border-dashed border-emerald-200 pb-1.5 text-emerald-800">
+                            <span className="font-medium">Wusuq earnings</span>
+                            <span className="font-semibold">PKR {wusuqEarnings.toLocaleString()}</span>
+                          </div>
                           <div className="flex justify-between pt-1 font-semibold text-slate-900">
                             <span>Total</span><span>PKR {customerTotal.toLocaleString()}</span>
                           </div>
