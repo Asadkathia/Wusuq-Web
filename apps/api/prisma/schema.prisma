@@ -226,6 +226,12 @@ model Ticket {
   // clerk entered, not just the computed printing total.
   noOfPages             Int?
   costPerPage           Decimal?            @db.Decimal(10, 2)
+  // Clerk-entered attested / non-attested page breakdown (charge = pages × rate),
+  // mirroring noOfPages/costPerPage for printing. Internal — redacted for consumers.
+  attestedPages          Int?
+  attestedCostPerPage    Decimal?           @db.Decimal(10, 2)
+  nonAttestedPages       Int?
+  nonAttestedCostPerPage Decimal?           @db.Decimal(10, 2)
   discountPrice         Decimal             @default(0)
   promoCodeId           String?
   promoDiscount         Decimal             @default(0)
