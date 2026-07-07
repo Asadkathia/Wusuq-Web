@@ -209,6 +209,11 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
   // Selected ticket IDs for multi-ticket pending-list checkboxes (admin only)
   const [pendingSelected, setPendingSelected] = useState<Record<string, boolean>>({});
 
+  // C18: clerk bulk-accept for ASSIGNED tickets. Reuses the generic `selected`
+  // map (unused by clerks otherwise — that state only drives admin bulk
+  // actions on non-pending status boards).
+  const [acceptAllBusy, setAcceptAllBusy] = useState(false);
+
   // Clerk receipt submission state (ASA-7)
   const [receiptTicket, setReceiptTicket] = useState<TicketRow | null>(null);
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
@@ -659,6 +664,31 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
     }
   };
 
+  // C18: clerk bulk-accept — accept every selected ASSIGNED ticket in
+  // parallel via Promise.allSettled so one failure (e.g. a benign race where
+  // it was already accepted elsewhere) doesn't block the rest.
+  const runAcceptAll = async () => {
+    if (acceptAllBusy || selectedIds.length === 0) return;
+    setAcceptAllBusy(true);
+    try {
+      const results = await Promise.allSettled(
+        selectedIds.map((id) => apiClient.post(`/tickets/${id}/accept-assignment`, {})),
+      );
+      const accepted = results.filter((r) => r.status === 'fulfilled').length;
+      const failed = results.length - accepted;
+      flash(
+        failed > 0
+          ? `${accepted} accepted, ${failed} failed.`
+          : `${accepted} ticket(s) accepted and moved to In Progress.`,
+        failed > 0 && accepted === 0,
+      );
+      setSelected({});
+      loadTickets();
+    } finally {
+      setAcceptAllBusy(false);
+    }
+  };
+
   const submitClerkReceipt = async () => {
     if (!receiptTicket || !receiptFile) return flash('Select a receipt image to upload', true);
     setSubmittingReceipt(true);
@@ -985,6 +1015,19 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
                     )}
                   </>
                 )}
+                {isClerk && status === 'ASSIGNED' && selectedIds.length > 0 && (
+                  <>
+                    <span className="hidden sm:block h-6 w-px bg-slate-200 mx-1" aria-hidden="true"></span>
+                    <button
+                      type="button"
+                      onClick={runAcceptAll}
+                      disabled={acceptAllBusy}
+                      className="w-full sm:w-auto rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-primary-500 disabled:opacity-50 transition-colors"
+                    >
+                      {acceptAllBusy ? 'Accepting…' : `Accept all (${selectedIds.length})`}
+                    </button>
+                  </>
+                )}
               </div>
             }
           />
@@ -1014,6 +1057,17 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
                           toggleAll(e.target.checked);
                         }
                       }}
+                    />
+                    <span>Batch No</span>
+                  </div>
+                ) : isClerk && status === 'ASSIGNED' ? (
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      aria-label="Select all assigned tickets"
+                      className="h-4 w-4 rounded border-slate-300 text-primary-600 focus:ring-primary-600"
+                      checked={filteredTickets.length > 0 && selectedIds.length === filteredTickets.length}
+                      onChange={(e) => toggleAll(e.target.checked)}
                     />
                     <span>Batch No</span>
                   </div>
@@ -1047,6 +1101,14 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
                             setSelected((s) => ({ ...s, [ticket.id]: e.target.checked }));
                           }
                         }}
+                      />
+                    ) : isClerk && status === 'ASSIGNED' ? (
+                      <input
+                        type="checkbox"
+                        aria-label={`Select ticket ${ticket.batchNo}`}
+                        className="h-4 w-4 rounded border-slate-300 text-primary-600 focus:ring-primary-600 mt-0.5"
+                        checked={Boolean(selected[ticket.id])}
+                        onChange={(e) => setSelected((s) => ({ ...s, [ticket.id]: e.target.checked }))}
                       />
                     ) : null}
                     <div>
@@ -1331,6 +1393,10 @@ export function TicketBoard({ title, status }: TicketBoardProps) {
           onClick={(e: React.MouseEvent) => e.stopPropagation()}
         >
           <SectionHeader title={`Assign Ticket ${assignTicket.batchNo}`} description="Select a representative to forward this ticket to." />
+          <div className="mt-4 flex items-center justify-between rounded-lg bg-slate-50 px-4 py-2.5 ring-1 ring-inset ring-border-soft">
+            <span className="text-sm font-medium text-slate-700">Ticket amount</span>
+            <span className="text-sm font-semibold text-slate-900">{rs(Number(assignTicket.totalAmount ?? 0))}</span>
+          </div>
           <div className="mt-6 grid gap-6 md:grid-cols-2">
             <label className="block">
               <span className="text-sm font-medium text-slate-700">Representative</span>
