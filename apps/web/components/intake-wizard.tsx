@@ -2153,8 +2153,14 @@ export function IntakeWizard({
     : 'Complete the multi-step form to file a new paralegal request.';
   const savedLabel = formatRelativeTime(lastSavedAt) || infoMsg;
 
+  // `w-full` on the root below is load-bearing: the wizard is mounted inside a
+  // `flex flex-col` page wrapper, and `mx-auto` (auto horizontal margins) on a
+  // flex item disables the default `align-items: stretch`, so without an
+  // explicit width the root shrink-wraps to its max-content and overflows the
+  // mobile viewport horizontally. `w-full` makes it fill the parent (capped by
+  // max-w-*). Don't remove it.
   return (
-    <div className={`mx-auto ${isConsumerVariant ? 'max-w-5xl' : 'max-w-6xl'}`}>
+    <div className={`mx-auto w-full ${isConsumerVariant ? 'max-w-5xl' : 'max-w-6xl'}`}>
       <div className="mb-8">
         <h2 className={`${isConsumerVariant ? 'text-3xl' : 'text-2xl'} font-bold tracking-tight text-slate-900`}>
           {headingTitle}
@@ -2611,7 +2617,7 @@ export function IntakeWizard({
         )}
 
         <div className="mt-8 border-t border-border-soft pt-6">
-          <div className="mb-4 flex items-center justify-between gap-3">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <button
               type="button"
               onClick={() => setDocumentsPanelOpen(true)}

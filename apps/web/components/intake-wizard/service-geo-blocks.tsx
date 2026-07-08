@@ -618,7 +618,9 @@ export function CaseDateBlock({
 }: CaseDateBlockProps) {
   return (
     <div className="md:col-span-2 rounded-2xl border border-border-soft bg-surface-muted/50 p-5 space-y-5">
-      <div className="flex items-start justify-between gap-3">
+      {/* flex-wrap so the shrink-0 "Mark date as unknown" toggle drops below the
+          header instead of forcing horizontal overflow on narrow mobile widths. */}
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <SectionHeader
           icon={<CalendarDays className="h-4 w-4" />}
           title="Case date"
