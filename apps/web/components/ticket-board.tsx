@@ -28,7 +28,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { UserCircle, MapPin, Tag, RefreshCw, CheckSquare, Clock, History, FileOutput, Eye, PlayCircle, Upload, X, XCircle, Calendar, FileText, Download, Trash2, RotateCcw } from 'lucide-react';
+import { UserCircle, MapPin, Tag, RefreshCw, CheckSquare, Clock, History, FileOutput, Eye, PlayCircle, Upload, X, XCircle, Calendar, FileText, Download, Trash2, RotateCcw, Pencil } from 'lucide-react';
 import { TicketDetailPanel } from './ticket-detail-panel';
 import { flowKeyToSlug } from '@/lib/intake-flows';
 
@@ -720,6 +720,25 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
     const category = intakeFlow.startsWith('judicial_') ? 'judicial' : 'non-judicial';
     router.push(
       `/paralegal-services/${category}/${slug}?regenerateFromTicketId=${encodeURIComponent(ticketId)}`,
+    );
+  };
+
+  // Open the pre-filled intake wizard in EDIT mode (re-prices in place via
+  // PATCH /tickets/:id/reprice). Same route the detail panel's "Edit ticket"
+  // uses — surfaced on the list row so admins don't have to open View Details.
+  const editTicket = (ticketId: string, intakeFlow: string | null | undefined) => {
+    if (!intakeFlow) {
+      flash('Cannot edit: ticket has no intake flow recorded', true);
+      return;
+    }
+    const slug = flowKeyToSlug(intakeFlow);
+    if (!slug) {
+      flash('Cannot edit: unknown service flow', true);
+      return;
+    }
+    const category = intakeFlow.startsWith('judicial_') ? 'judicial' : 'non-judicial';
+    router.push(
+      `/paralegal-services/${category}/${slug}?editTicketId=${encodeURIComponent(ticketId)}`,
     );
   };
 
@@ -1492,6 +1511,15 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
                             title="Generate follow-up hearing ticket"
                           >
                             <Clock className="h-3.5 w-3.5" /> Next Hearing
+                          </button>
+                        )}
+                        {/* Edit ticket (re-price in place) — admin only, mirrors
+                            the detail-panel gating (hidden on DELIVERED + archived),
+                            now surfaced on the row so it's reachable without opening
+                            View Details. */}
+                        {isAdmin && !archived && ticket.status !== 'DELIVERED' && (
+                          <button onClick={() => editTicket(ticket.id, ticket.intakeFlow)} className="text-slate-600 hover:text-primary-600 bg-slate-100 hover:bg-primary-50 px-3 py-1.5 rounded-md flex items-center gap-1" title="Edit ticket">
+                            <Pencil className="h-3.5 w-3.5" />
                           </button>
                         )}
                         {!archived && (

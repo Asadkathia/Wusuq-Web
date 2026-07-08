@@ -981,6 +981,12 @@ export function IntakeWizard({
             // Land at step 1 so staff can review the full form before submitting.
             step: 1,
             payload: nextPayload,
+            // Restore serviceId from the saved court tier (same reason as the
+            // edit-prefill: selectedService/court-tile/judge-designation read
+            // draft.serviceId, not the payload keys).
+            serviceId: nextPayload.select_court_type
+              ? (services.find((s) => s.courtLevel === nextPayload.select_court_type)?.id ?? current.serviceId)
+              : current.serviceId,
             // CRITICAL: bill the regenerated ticket to the SOURCE consumer,
             // not the logged-in admin. The user-load effect already ran and
             // set consumerId = admin.id; override it here with the real owner.
@@ -1056,6 +1062,14 @@ export function IntakeWizard({
           setDraft((c) => ({
             ...c,
             consumerId: src.consumerId ?? c.consumerId, // keep the ticket's owner
+            // Restore serviceId from the saved court tier — the payload keys
+            // hydrate, but selectedService/selectedCourtType (and everything
+            // derived: the highlighted court tile, the judge-designation option
+            // list) read draft.serviceId. Without this the court level shows
+            // unselected and judge designation renders blank on edit.
+            serviceId: nextPayload.select_court_type
+              ? (services.find((s) => s.courtLevel === nextPayload.select_court_type)?.id ?? c.serviceId)
+              : c.serviceId,
             payload: nextPayload,
             step: 1,
           }));
