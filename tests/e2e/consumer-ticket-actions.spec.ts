@@ -91,11 +91,13 @@ test.describe('Consumer ticket card actions: Regenerate / Download invoice / Pay
     expect(href).toContain('regenerateFromTicketId=tkt-1');
 
     // ── Download invoice: fires the invoice endpoint on click ───────────────
-    await page.getByRole('button', { name: /Download invoice/ }).click();
+    // The card + detail can both render a "Download invoice" button; scope to
+    // the first (the card action) to avoid a strict-mode multi-match.
+    await page.getByRole('button', { name: /Download invoice/ }).first().click();
     await expect.poll(() => invoiceHits).toBeGreaterThan(0);
 
     // ── Pay later: toasts, no navigation, no backend call ───────────────────
-    await page.getByRole('button', { name: 'Pay later' }).click();
+    await page.getByRole('button', { name: 'Pay later' }).first().click();
     await expect(page.getByText('PKR 500 added to your wallet as due')).toBeVisible();
     await expect(page).toHaveURL(/\/consumer\/my-tickets/);
   });
