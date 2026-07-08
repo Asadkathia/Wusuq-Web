@@ -78,6 +78,7 @@ export class FinanceService {
         return {
           id: ticket.id,
           batchNo: ticket.batchNo,
+          status: ticket.status,
           consumer: ticket.consumer,
           service: ticket.service,
           serviceCity: ticket.serviceCity,
