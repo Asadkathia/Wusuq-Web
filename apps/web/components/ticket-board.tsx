@@ -28,7 +28,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { UserCircle, MapPin, Tag, RefreshCw, CheckSquare, Clock, History, FileOutput, Eye, PlayCircle, Upload, X, XCircle, Calendar, FileText, Download, Trash2, RotateCcw, Pencil } from 'lucide-react';
+import { UserCircle, MapPin, Tag, RefreshCw, CheckSquare, Clock, History, FileOutput, Eye, PlayCircle, Upload, X, XCircle, Calendar, FileText, Download, Trash2, RotateCcw, Pencil, Coins } from 'lucide-react';
 import { TicketDetailPanel } from './ticket-detail-panel';
 import { flowKeyToSlug } from '@/lib/intake-flows';
 
@@ -119,6 +119,20 @@ const CONSUMER_ROLES = ['consumer', 'lawyer', 'company'] as const;
 
 // Compact money label, e.g. "Rs 3,500".
 const rs = (n: number) => `Rs ${Math.round(n).toLocaleString()}`;
+
+// Admin "Edit cost" — a direct charge override (PATCH /finance/:id/charge, no
+// pricing re-resolve). Distinct from "Edit ticket" (which re-prices from case
+// fields). Labels mirror the manage-cost board + the C9 taxed/untaxed hints.
+const COST_EDIT_FIELDS: { key: string; label: string; hint?: string }[] = [
+  { key: 'serviceCost', label: 'Service Cost' },
+  { key: 'additionalServiceCost', label: 'Additional Service Cost', hint: 'Added to the taxable service base.' },
+  { key: 'additionalCharges', label: 'Additional Cost', hint: 'Separate line; not taxed.' },
+  { key: 'deliveryCharges', label: 'Delivery' },
+  { key: 'printingCharges', label: 'Printing' },
+  { key: 'attestedCharges', label: 'Attested' },
+  { key: 'nonAttestedCharges', label: 'Non-Attested' },
+  { key: 'discountPrice', label: 'Discount' },
+];
 
 // "{N}{d|h}" since the ticket entered its current status; stale past 7 days.
 function statusAge(iso?: string | null): { label: string; stale: boolean } | null {
@@ -280,6 +294,9 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
     deliveryCharges: '',
     additionalCharges: '',
   };
+  const [costEditTicket, setCostEditTicket] = useState<TicketRow | null>(null);
+  const [costEditForm, setCostEditForm] = useState<Record<string, string>>({});
+  const [costEditSaving, setCostEditSaving] = useState(false);
   const [finalizeTicket, setFinalizeTicket] = useState<TicketRow | null>(null);
   const [finalizeForm, setFinalizeForm] = useState<FinalizeForm>(EMPTY_FINALIZE);
   // Full ticket detail (pages breakdown, clerk report, documents, receipt) —
@@ -740,6 +757,46 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
     router.push(
       `/paralegal-services/${category}/${slug}?editTicketId=${encodeURIComponent(ticketId)}`,
     );
+  };
+
+  // Open the direct cost-override editor for a ticket (charge columns → PATCH
+  // /finance/:id/charge). Prefills from the row's own charge fields.
+  const openCostEdit = (t: TicketRow) => {
+    setCostEditForm({
+      serviceCost: String(Number(t.serviceCost ?? 0)),
+      additionalServiceCost: String(Number(t.additionalServiceCost ?? 0)),
+      additionalCharges: String(Number(t.additionalCharges ?? 0)),
+      deliveryCharges: String(Number(t.deliveryCharges ?? 0)),
+      printingCharges: String(Number(t.printingCharges ?? 0)),
+      attestedCharges: String(Number(t.attestedCharges ?? 0)),
+      nonAttestedCharges: String(Number(t.nonAttestedCharges ?? 0)),
+      discountPrice: String(Number(t.discountPrice ?? 0)),
+    });
+    setCostEditTicket(t);
+  };
+
+  const saveCostEdit = async () => {
+    if (!costEditTicket || costEditSaving) return;
+    setCostEditSaving(true);
+    try {
+      await apiClient.patch(`/finance/${costEditTicket.id}/charge`, {
+        serviceCost: Number(costEditForm.serviceCost) || 0,
+        additionalServiceCost: Number(costEditForm.additionalServiceCost) || 0,
+        additionalCharges: Number(costEditForm.additionalCharges) || 0,
+        deliveryCharges: Number(costEditForm.deliveryCharges) || 0,
+        printingCharges: Number(costEditForm.printingCharges) || 0,
+        attestedCharges: Number(costEditForm.attestedCharges) || 0,
+        nonAttestedCharges: Number(costEditForm.nonAttestedCharges) || 0,
+        discountPrice: Number(costEditForm.discountPrice) || 0,
+      });
+      flash('Ticket cost updated');
+      setCostEditTicket(null);
+      loadTickets();
+    } catch (e: any) {
+      flash(e.message || 'Cost update failed', true);
+    } finally {
+      setCostEditSaving(false);
+    }
   };
 
   // Clerk: accept assigned ticket → IN_PROGRESS. Uses the dedicated
@@ -1518,8 +1575,15 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
                             now surfaced on the row so it's reachable without opening
                             View Details. */}
                         {isAdmin && !archived && ticket.status !== 'DELIVERED' && (
-                          <button onClick={() => editTicket(ticket.id, ticket.intakeFlow)} className="text-slate-600 hover:text-primary-600 bg-slate-100 hover:bg-primary-50 px-3 py-1.5 rounded-md flex items-center gap-1" title="Edit ticket">
+                          <button onClick={() => editTicket(ticket.id, ticket.intakeFlow)} className="text-slate-600 hover:text-primary-600 bg-slate-100 hover:bg-primary-50 px-3 py-1.5 rounded-md flex items-center gap-1" title="Edit ticket details">
                             <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                        {/* Edit cost — direct charge override (finance.updateCharge),
+                            admin-only. Separate from "Edit ticket details" above. */}
+                        {isAdmin && !archived && (
+                          <button onClick={() => openCostEdit(ticket)} className="text-slate-600 hover:text-emerald-700 bg-slate-100 hover:bg-emerald-50 px-3 py-1.5 rounded-md flex items-center gap-1" title="Edit ticket cost">
+                            <Coins className="h-3.5 w-3.5" />
                           </button>
                         )}
                         {!archived && (
@@ -1747,6 +1811,67 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
           </div>
         </PanelCard>
       )}
+
+      {/* Admin "Edit cost" — direct charge override (finance.updateCharge). */}
+      <Dialog open={Boolean(costEditTicket)} onOpenChange={(open) => { if (!open) setCostEditTicket(null); }}>
+        <DialogContent size="lg">
+          <DialogHeader>
+            <DialogTitle>Edit ticket cost{costEditTicket ? ` — ${costEditTicket.batchNo}` : ''}</DialogTitle>
+            <DialogDescription>
+              Directly override this ticket&apos;s charges. This does NOT re-resolve pricing from the case
+              (use &quot;Edit ticket details&quot; for that) — the Total recomputes from these values + tax.
+            </DialogDescription>
+          </DialogHeader>
+          {costEditTicket && (() => {
+            const num = (k: string) => Number(costEditForm[k]) || 0;
+            const preview = computeTicketTotal({
+              charges: {
+                serviceCost: num('serviceCost'),
+                additionalServiceCost: num('additionalServiceCost'),
+                deliveryCharges: num('deliveryCharges'),
+                printingCharges: num('printingCharges'),
+                attestedCharges: num('attestedCharges'),
+                nonAttestedCharges: num('nonAttestedCharges'),
+                additionalCharges: num('additionalCharges'),
+              },
+              discountPrice: num('discountPrice'),
+              promoDiscount: Number(costEditTicket.promoDiscount ?? 0),
+              taxRate: Number(costEditTicket.taxRate ?? 0),
+            });
+            return (
+              <div className="space-y-5">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  {COST_EDIT_FIELDS.map(({ key, label, hint }) => (
+                    <FormField key={key} label={label} htmlFor={`cost-${key}`}>
+                      <Input
+                        id={`cost-${key}`}
+                        type="number"
+                        min="0"
+                        value={costEditForm[key] ?? ''}
+                        onChange={(e) => setCostEditForm((f) => ({ ...f, [key]: e.target.value }))}
+                      />
+                      {hint && <p className="mt-1 text-xs text-slate-400">{hint}</p>}
+                    </FormField>
+                  ))}
+                </div>
+                <div className="flex items-center justify-between rounded-lg bg-slate-50 px-4 py-3 text-sm">
+                  <span className="text-slate-600">New total {Number(costEditTicket.taxRate ?? 0) > 0 ? '(incl. tax)' : ''}</span>
+                  <span className="font-semibold text-slate-900">{rs(preview.totalAmount)}</span>
+                </div>
+                {Number(costEditTicket.amountPaid ?? 0) > 0 && (
+                  <p className="text-xs text-amber-700">
+                    Already paid {rs(Number(costEditTicket.amountPaid))} — the new total can&apos;t be set below that.
+                  </p>
+                )}
+              </div>
+            );
+          })()}
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setCostEditTicket(null)}>Cancel</Button>
+            <Button variant="brand" onClick={saveCostEdit} loading={costEditSaving}>Save cost</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={Boolean(costsTicket)} onOpenChange={(open) => {
         if (!open) {

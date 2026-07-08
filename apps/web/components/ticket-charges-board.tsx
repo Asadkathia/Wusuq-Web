@@ -11,8 +11,8 @@ import { StatusPill } from '@/components/ui/status-pill';
 type TicketRow = {
   id: string;
   batchNo: string;
-  consumer: { id: string; name: string };
-  service: { id: string; name: string; category: string };
+  consumer: { id: string; name: string } | null;
+  service: { id: string; name: string; category: string } | null;
   serviceCity: string | null;
   caseType: string | null;
   charges: {
@@ -281,11 +281,11 @@ export function TicketChargesBoard() {
                     {item.serviceCity && <div className="text-xs text-slate-400">{item.serviceCity}</div>}
                   </td>
                   <td className="px-4 py-3">
-                    <div className="text-sm font-medium text-slate-800">{item.consumer.name}</div>
+                    <div className="text-sm font-medium text-slate-800">{item.consumer?.name ?? '—'}</div>
                   </td>
                   <td className="px-4 py-3">
-                    <div className="text-sm text-slate-700">{item.service.name}</div>
-                    <div className="text-xs text-slate-400">{item.service.category}</div>
+                    <div className="text-sm text-slate-700">{item.service?.name ?? '—'}</div>
+                    <div className="text-xs text-slate-400">{item.service?.category ?? ''}</div>
                   </td>
                   <td className="px-4 py-3 text-right text-sm font-bold text-slate-900">
                     PKR {(item.totalAmount ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
