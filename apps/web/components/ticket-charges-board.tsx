@@ -297,7 +297,7 @@ export function TicketChargesBoard() {
                     {(item.remaining ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <StatusPill label={item.status.replace(/_/g, ' ')} variant={statusVariant(item.status)} />
+                    <StatusPill label={(item.status ?? '—').replace(/_/g, ' ')} variant={statusVariant(item.status ?? '')} />
                   </td>
                   <td className="px-4 py-3 text-right" onClick={e => e.stopPropagation()}>
                     <button
