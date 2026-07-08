@@ -12,7 +12,10 @@ import { ArrowLeft, ArrowRight, CheckCircle2, Home, MapPin } from 'lucide-react'
 
 type GeoRow = { id: string; name: string };
 
-const STEPS = ['Address', 'Location', 'Finish'] as const;
+// C19: Location (province→district→city) is captured BEFORE the street address —
+// the owner's onboarding reorder ("place step 2 before step 1") so the geo
+// cascade leads, then the street address.
+const STEPS = ['Location', 'Address', 'Finish'] as const;
 
 export default function ConsumerOnboardingPage() {
   const router = useRouter();
@@ -144,30 +147,6 @@ export default function ConsumerOnboardingPage() {
         {step === 1 && (
           <>
             <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-              <Home className="h-4 w-4 text-brand-500" /> Your address
-            </div>
-            <FormField label="Street address" htmlFor="ob-address">
-              <Input
-                id="ob-address"
-                value={address}
-                onChange={(e) => setAddress(e.target.value)}
-                placeholder="House / street / area"
-              />
-            </FormField>
-            <FormField label="Postal code" htmlFor="ob-postal">
-              <Input
-                id="ob-postal"
-                value={postalCode}
-                onChange={(e) => setPostalCode(e.target.value)}
-                placeholder="e.g. 44000"
-              />
-            </FormField>
-          </>
-        )}
-
-        {step === 2 && (
-          <>
-            <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
               <MapPin className="h-4 w-4 text-brand-500" /> Your location
             </div>
             <FormField label="Province" htmlFor="ob-province">
@@ -207,17 +186,41 @@ export default function ConsumerOnboardingPage() {
           </>
         )}
 
+        {step === 2 && (
+          <>
+            <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+              <Home className="h-4 w-4 text-brand-500" /> Your address
+            </div>
+            <FormField label="Street address" htmlFor="ob-address">
+              <Input
+                id="ob-address"
+                value={address}
+                onChange={(e) => setAddress(e.target.value)}
+                placeholder="House / street / area"
+              />
+            </FormField>
+            <FormField label="Postal code" htmlFor="ob-postal">
+              <Input
+                id="ob-postal"
+                value={postalCode}
+                onChange={(e) => setPostalCode(e.target.value)}
+                placeholder="e.g. 44000"
+              />
+            </FormField>
+          </>
+        )}
+
         {step === 3 && (
           <>
             <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
               <CheckCircle2 className="h-4 w-4 text-emerald-500" /> Review &amp; finish
             </div>
             <dl className="space-y-2 text-sm">
-              <Row label="Address" value={address || '—'} />
-              <Row label="Postal code" value={postalCode || '—'} />
               <Row label="Province" value={provinceName || '—'} />
               <Row label="District" value={districtName || '—'} />
               <Row label="City" value={cityName || '—'} />
+              <Row label="Address" value={address || '—'} />
+              <Row label="Postal code" value={postalCode || '—'} />
             </dl>
             {error ? (
               <div className="rounded-xl border border-rose-100 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>
