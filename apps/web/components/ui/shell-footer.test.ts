@@ -44,15 +44,18 @@ describe('attribution reaches every required surface', () => {
     'app/(auth)/consumer/signup/page.tsx',
   ];
 
-  it.each(AUTH_PAGES)('%s shows the attribution', (rel) => {
-    expect(readFileSync(join(WEB, rel), 'utf8')).toContain('ATTRIBUTION');
+  // Match the JSX usage `{ATTRIBUTION}`, never the bare identifier: a bare
+  // /ATTRIBUTION/ also matches the import line, so these assertions would pass
+  // on a page that imports it and renders it nowhere.
+  const renders = (body: string) => body.match(/\{ATTRIBUTION\}/g) ?? [];
+
+  it.each(AUTH_PAGES)('%s renders the attribution', (rel) => {
+    expect(renders(readFileSync(join(WEB, rel), 'utf8')).length).toBeGreaterThan(0);
   });
 
-  it.each(AUTH_PAGES)('%s shows it on mobile too, not only in the lg-only hero', (rel) => {
-    const body = readFileSync(join(WEB, rel), 'utf8');
-    // The hero is `hidden lg:flex`; the attribution must appear at least twice
-    // (hero + mobile block) or mobile users never see it.
-    const hits = body.match(/ATTRIBUTION/g) ?? [];
-    expect(hits.length).toBeGreaterThanOrEqual(2);
+  it.each(AUTH_PAGES)('%s renders it on mobile too, not only in the lg-only hero', (rel) => {
+    // The hero is `hidden lg:flex`, so a hero-only attribution is invisible
+    // below lg. Two renders = hero + the lg:hidden mobile block.
+    expect(renders(readFileSync(join(WEB, rel), 'utf8')).length).toBeGreaterThanOrEqual(2);
   });
 });
