@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { FormField } from '@/components/ui/form-field';
 import { WusuqLogo } from '@/components/ui/wusuq-logo';
+import { ATTRIBUTION, copyrightLine } from '@/components/ui/shell-footer';
 import { advanceOnEnter } from '@/lib/form-utils';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:4000/api';
@@ -117,7 +118,9 @@ export default function StaffLoginPage() {
           </div>
 
           <p className="relative text-xs text-white/50">
-            © {new Date().getFullYear()} Wusuq · Internal use only
+            {copyrightLine()} · Internal use only
+            <br />
+            {ATTRIBUTION}
           </p>
         </aside>
 
@@ -128,6 +131,7 @@ export default function StaffLoginPage() {
                 <WusuqLogo size={40} />
                 <span className="text-lg font-semibold tracking-tight text-slate-900">Wusuq Staff</span>
               </div>
+              <p className="mt-2 text-[11px] text-slate-400">{ATTRIBUTION}</p>
             </div>
 
             <div className="space-y-1.5">

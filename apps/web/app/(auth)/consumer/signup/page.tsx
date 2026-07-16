@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { FormField } from '@/components/ui/form-field';
 import { CountryPicker } from '@/components/ui/country-picker';
 import { WusuqLogo } from '@/components/ui/wusuq-logo';
+import { ATTRIBUTION, copyrightLine } from '@/components/ui/shell-footer';
 import { findCountry } from '@/lib/countries';
 import { advanceOnEnter } from '@/lib/form-utils';
 
@@ -208,7 +209,9 @@ export default function ConsumerSignupPage() {
           </div>
 
           <p className="relative text-xs text-brand-100/70">
-            © {new Date().getFullYear()} Wusuq · All rights reserved
+            {copyrightLine()} · All rights reserved
+            <br />
+            {ATTRIBUTION}
           </p>
         </aside>
 
@@ -219,6 +222,7 @@ export default function ConsumerSignupPage() {
                 <WusuqLogo size={40} />
                 <span className="text-lg font-semibold tracking-tight text-slate-900">Wusuq</span>
               </div>
+              <p className="mt-2 text-[11px] text-slate-400">{ATTRIBUTION}</p>
             </div>
 
             <div className="space-y-1.5">

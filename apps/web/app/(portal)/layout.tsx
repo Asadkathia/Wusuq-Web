@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { SidebarNav } from '@/components/nav';
 import { Topbar } from '@/components/topbar';
 import { PortalAuthGuard } from '@/components/portal-auth-guard';
+import { ShellFooter } from '@/components/ui/shell-footer';
 
 export default function PortalLayout({ children }: { children: ReactNode }) {
   return (
@@ -11,6 +12,7 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
         <div className="flex flex-1 flex-col min-w-0">
           <Topbar />
           <main className="flex-1 p-4 sm:p-6">{children}</main>
+          <ShellFooter />
         </div>
       </div>
     </PortalAuthGuard>
