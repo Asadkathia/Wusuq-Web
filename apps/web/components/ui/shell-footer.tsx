@@ -1,5 +1,8 @@
+/** The developer credit alone, without the "Developed by" prefix. */
+export const DEVELOPER = '@2026-Klarus AI';
+
 /** Attribution for the team that built this portal. Exact string — do not reword. */
-export const ATTRIBUTION = 'Developed by @2026-Klarus AI';
+export const ATTRIBUTION = `Developed by ${DEVELOPER}`;
 
 export function copyrightLine(year: number = new Date().getFullYear()): string {
   return `© ${year} Wusuq`;

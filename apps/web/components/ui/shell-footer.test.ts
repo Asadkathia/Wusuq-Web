@@ -1,13 +1,21 @@
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { join, dirname } from 'path';
-import { ATTRIBUTION, copyrightLine } from './shell-footer';
+import { ATTRIBUTION, DEVELOPER, copyrightLine } from './shell-footer';
 
 const currentDir = dirname(fileURLToPath(import.meta.url));
 
 describe('attribution', () => {
-  it('is the exact agreed string', () => {
+  it('DEVELOPER is the exact credit without prefix', () => {
+    expect(DEVELOPER).toBe('@2026-Klarus AI');
+  });
+
+  it('ATTRIBUTION is the exact agreed string', () => {
     expect(ATTRIBUTION).toBe('Developed by @2026-Klarus AI');
+  });
+
+  it('ATTRIBUTION is composed from DEVELOPER', () => {
+    expect(ATTRIBUTION).toBe(`Developed by ${DEVELOPER}`);
   });
 
   it('builds the copyright line for a given year', () => {

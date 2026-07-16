@@ -33,6 +33,12 @@ describe('About page', () => {
     expect(pageSource).toContain('ATTRIBUTION');
   });
 
+  it('uses DEVELOPER constant for the dl entry, not a hardcoded string', () => {
+    expect(pageSource).toContain('{DEVELOPER}');
+    // Ensure the hardcoded literal is NOT present in the dd
+    expect(pageSource).not.toMatch(/<dd[^>]*>@2026-Klarus AI<\/dd>/);
+  });
+
   it('imports the shared ShellFooter helpers, not a hardcoded string', () => {
     expect(pageSource).toContain("from '@/components/ui/shell-footer'");
   });

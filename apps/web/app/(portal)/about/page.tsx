@@ -1,5 +1,5 @@
 import { WusuqLogo } from '@/components/ui/wusuq-logo';
-import { ATTRIBUTION, copyrightLine } from '@/components/ui/shell-footer';
+import { ATTRIBUTION, DEVELOPER, copyrightLine } from '@/components/ui/shell-footer';
 import pkg from '../../../package.json';
 
 export const metadata = { title: 'About · Wusuq' };
@@ -24,7 +24,7 @@ export default function AboutPage() {
           </div>
           <div className="flex items-center justify-between">
             <dt className="text-slate-500">Developed by</dt>
-            <dd className="font-medium text-ink-900">@2026-Klarus AI</dd>
+            <dd className="font-medium text-ink-900">{DEVELOPER}</dd>
           </div>
         </dl>
 
