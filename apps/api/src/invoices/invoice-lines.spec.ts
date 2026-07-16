@@ -45,7 +45,10 @@ describe('formatInvoiceNo', () => {
 
 describe('buildInvoiceLines', () => {
   it('numbers positions from 1', () => {
-    const lines = buildInvoiceLines([base, { ...base, id: 't2', batchNo: '345579' }]);
+    const lines = buildInvoiceLines([
+      base,
+      { ...base, id: 't2', batchNo: '345579' },
+    ]);
     expect(lines.map((l) => l.position)).toEqual([1, 2]);
   });
 
@@ -59,7 +62,10 @@ describe('buildInvoiceLines', () => {
 
   it('falls back to the generic city key when select_court_city is absent', () => {
     const [l] = buildInvoiceLines([
-      { ...base, formPayload: { select_court: 'Family Court', city: 'Lahore' } },
+      {
+        ...base,
+        formPayload: { select_court: 'Family Court', city: 'Lahore' },
+      },
     ]);
     expect(l.courtLine).toBe('(Family Court - Lahore)');
   });
@@ -68,14 +74,20 @@ describe('buildInvoiceLines', () => {
     const [l] = buildInvoiceLines([
       {
         ...base,
-        formPayload: { select_court: 'Family Court', select_court_city: 'Islamabad', city: 'Lahore' },
+        formPayload: {
+          select_court: 'Family Court',
+          select_court_city: 'Islamabad',
+          city: 'Lahore',
+        },
       },
     ]);
     expect(l.courtLine).toBe('(Family Court - Islamabad)');
   });
 
   it('resolves caseTitle through the shared case_title aliases (title, title_party_a)', () => {
-    const withTitle = buildInvoiceLines([{ ...base, formPayload: { title: 'Aliased Title' } }]);
+    const withTitle = buildInvoiceLines([
+      { ...base, formPayload: { title: 'Aliased Title' } },
+    ]);
     expect(withTitle[0].caseTitle).toBe('Aliased Title');
 
     const withTitleParty = buildInvoiceLines([
@@ -108,14 +120,22 @@ describe('buildInvoiceLines', () => {
 
   it('sums lineTotal across the six money columns, excluding tax/discount', () => {
     const [l] = buildInvoiceLines([
-      { ...base, attestedCharges: 1000, deliveryCharges: 1200, additionalCharges: 300, discountPrice: 9999 },
+      {
+        ...base,
+        attestedCharges: 1000,
+        deliveryCharges: 1200,
+        additionalCharges: 300,
+        discountPrice: 9999,
+      },
     ]);
     // 2500 service + 2450 printing + 1000 attested + 1200 delivery + 300 additional
     expect(l.lineTotal).toBe(7450);
   });
 
   it('omits the judge when absent (never renders empty parens)', () => {
-    const [l] = buildInvoiceLines([{ ...base, formPayload: { case_title: 'X' } }]);
+    const [l] = buildInvoiceLines([
+      { ...base, formPayload: { case_title: 'X' } },
+    ]);
     expect(l.judge).toBeNull();
   });
 
@@ -126,7 +146,10 @@ describe('buildInvoiceLines', () => {
         formPayload: {
           case_title: 'X',
           select_court_type: 'High Court',
-          bench: JSON.stringify({ benchType: 'single_judge', judges: ['Amina Asif Butt'] }),
+          bench: JSON.stringify({
+            benchType: 'single_judge',
+            judges: ['Amina Asif Butt'],
+          }),
         },
       },
     ]);
@@ -135,12 +158,15 @@ describe('buildInvoiceLines', () => {
 
   it('still resolves the judge from the flat `judge_name` field (Lower/Special Court shape)', () => {
     const [l] = buildInvoiceLines([
-      { ...base, formPayload: { case_title: 'X', judge_name: 'Justice Tariq Mehmood' } },
+      {
+        ...base,
+        formPayload: { case_title: 'X', judge_name: 'Justice Tariq Mehmood' },
+      },
     ]);
     expect(l.judge).toBe('Justice Tariq Mehmood');
   });
 
-  it('joins a multi-judge bench with a comma (matches the case card\'s rendering)', () => {
+  it("joins a multi-judge bench with a comma (matches the case card's rendering)", () => {
     const [l] = buildInvoiceLines([
       {
         ...base,
@@ -163,7 +189,10 @@ describe('buildInvoiceLines', () => {
         formPayload: {
           case_title: 'X',
           judge_name: 'Stale Flat Judge',
-          bench: JSON.stringify({ benchType: 'single_judge', judges: ['Fresh Bench Judge'] }),
+          bench: JSON.stringify({
+            benchType: 'single_judge',
+            judges: ['Fresh Bench Judge'],
+          }),
         },
       },
     ]);
@@ -177,7 +206,10 @@ describe('buildInvoiceLines', () => {
         formPayload: {
           case_title: 'X',
           judge_name: 'Fallback Judge',
-          bench: JSON.stringify({ benchType: 'single_judge', judges: ['', '   '] }),
+          bench: JSON.stringify({
+            benchType: 'single_judge',
+            judges: ['', '   '],
+          }),
         },
       },
     ]);
@@ -193,13 +225,17 @@ describe('buildInvoiceLines', () => {
       null,
     ];
     for (const bench of cases) {
-      const [l] = buildInvoiceLines([{ ...base, formPayload: { case_title: 'X', bench } }]);
+      const [l] = buildInvoiceLines([
+        { ...base, formPayload: { case_title: 'X', bench } },
+      ]);
       expect(l.judge).toBeNull();
     }
   });
 
   it('survives a legacy ticket with no formPayload', () => {
-    const [l] = buildInvoiceLines([{ ...base, formPayload: null, service: null }]);
+    const [l] = buildInvoiceLines([
+      { ...base, formPayload: null, service: null },
+    ]);
     expect(l.courtLine).toBeNull();
     expect(l.caseTitle).toBeNull();
     expect(l.description).toBe('Ticket 035210');
@@ -207,24 +243,26 @@ describe('buildInvoiceLines', () => {
 });
 
 describe('summariseInvoice', () => {
-  const lines = buildInvoiceLines([base]);  // lineTotal 4950, service 2500
+  const lines = buildInvoiceLines([base]); // lineTotal 4950, service 2500
 
   it('sums subtotal from line totals', () => {
-    expect(summariseInvoice(lines, { taxRate: 0, discountTotal: 0 }).subtotal).toBe(4950);
+    expect(
+      summariseInvoice(lines, { taxRate: 0, discountTotal: 0 }).subtotal,
+    ).toBe(4950);
   });
 
   it('taxes the SERVICE base only, not the whole bill', () => {
     const s = summariseInvoice(lines, { taxRate: 0.17, discountTotal: 0 });
-    expect(s.taxableBase).toBe(2500);          // service only, NOT 4950
-    expect(s.taxAmount).toBe(425);             // 2500 * 0.17
-    expect(s.grandTotal).toBe(5375);           // 4950 + 425
+    expect(s.taxableBase).toBe(2500); // service only, NOT 4950
+    expect(s.taxAmount).toBe(425); // 2500 * 0.17
+    expect(s.grandTotal).toBe(5375); // 4950 + 425
   });
 
   it('applies discount before tax and to the grand total', () => {
     const s = summariseInvoice(lines, { taxRate: 0.17, discountTotal: 500 });
-    expect(s.taxableBase).toBe(2000);          // 2500 - 500
+    expect(s.taxableBase).toBe(2000); // 2500 - 500
     expect(s.taxAmount).toBe(340);
-    expect(s.grandTotal).toBe(4790);           // (4950 - 500) + 340
+    expect(s.grandTotal).toBe(4790); // (4950 - 500) + 340
   });
 
   it('never goes negative on an over-large discount', () => {
@@ -236,11 +274,20 @@ describe('summariseInvoice', () => {
 
   it('sums a 4-ticket invoice like the owner sample', () => {
     const many = buildInvoiceLines([
-      { ...base, id: 'a', serviceCost: 10500, printingCharges: 24500, deliveryCharges: 4500, additionalCharges: 7000 },
+      {
+        ...base,
+        id: 'a',
+        serviceCost: 10500,
+        printingCharges: 24500,
+        deliveryCharges: 4500,
+        additionalCharges: 7000,
+      },
       { ...base, id: 'b', serviceCost: 2500, printingCharges: 2450 },
       { ...base, id: 'c', serviceCost: 1500, printingCharges: 0 },
       { ...base, id: 'd', serviceCost: 2000, printingCharges: 0 },
     ]);
-    expect(summariseInvoice(many, { taxRate: 0, discountTotal: 0 }).subtotal).toBe(54950);
+    expect(
+      summariseInvoice(many, { taxRate: 0, discountTotal: 0 }).subtotal,
+    ).toBe(54950);
   });
 });

@@ -33,6 +33,7 @@ import { CaseTypesModule } from './case-types/case-types.module';
 import { PaymentSettingsModule } from './payment-settings/payment-settings.module';
 import { SettingsModule } from './settings/settings.module';
 import { PromosModule } from './promos/promos.module';
+import { InvoicesModule } from './invoices/invoices.module';
 
 @Module({
   imports: [
@@ -86,6 +87,7 @@ import { PromosModule } from './promos/promos.module';
     PaymentSettingsModule,
     SettingsModule,
     PromosModule,
+    InvoicesModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

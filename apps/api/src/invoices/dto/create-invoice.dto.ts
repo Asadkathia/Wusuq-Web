@@ -1,4 +1,10 @@
-import { ArrayMaxSize, ArrayMinSize, ArrayUnique, IsArray, IsString } from 'class-validator';
+import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  ArrayUnique,
+  IsArray,
+  IsString,
+} from 'class-validator';
 
 export class CreateInvoiceDto {
   @IsArray()

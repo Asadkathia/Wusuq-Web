@@ -1,16 +1,32 @@
 import { jest } from '@jest/globals';
-import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { InvoicesService } from './invoices.service';
 
 type Ticket = Record<string, unknown>;
 
 const ticket = (over: Partial<Ticket> = {}): Ticket => ({
-  id: 't1', batchNo: '035210', consumerId: 'c1', currency: 'PKR', archivedAt: null,
-  intakeFlow: 'judicial_case_files', formPayload: {},
-  serviceCost: 2500, additionalServiceCost: 0, printingCharges: 2450,
-  attestedCharges: 0, nonAttestedCharges: 0, deliveryCharges: 0, additionalCharges: 0,
-  discountPrice: 0, promoDiscount: 0, service: { name: 'Case Files Lower Court 2025' },
+  id: 't1',
+  batchNo: '035210',
+  consumerId: 'c1',
+  currency: 'PKR',
+  archivedAt: null,
+  intakeFlow: 'judicial_case_files',
+  formPayload: {},
+  serviceCost: 2500,
+  additionalServiceCost: 0,
+  printingCharges: 2450,
+  attestedCharges: 0,
+  nonAttestedCharges: 0,
+  deliveryCharges: 0,
+  additionalCharges: 0,
+  discountPrice: 0,
+  promoDiscount: 0,
+  service: { name: 'Case Files Lower Court 2025' },
   invoiceItem: null,
   ...over,
 });
@@ -51,8 +67,23 @@ function makeService(tickets: Ticket[], opts: { taxRate?: number } = {}) {
     $queryRawUnsafe: jest.fn(() => Promise.resolve([{ nextval: 1n }])),
     $transaction: jest.fn(async (fn: (t: unknown) => unknown) => fn(tx)),
   };
-  const settings = { getTaxRate: jest.fn(() => Promise.resolve(opts.taxRate ?? 0)) };
-  return { svc: new InvoicesService(prisma as never, settings as never), created, prisma, tx };
+  const settings = {
+    getTaxRate: jest.fn(() => Promise.resolve(opts.taxRate ?? 0)),
+  };
+  const auditLogsService = {
+    create: jest.fn(() => Promise.resolve(undefined)),
+  };
+  return {
+    svc: new InvoicesService(
+      prisma as never,
+      settings as never,
+      auditLogsService as never,
+    ),
+    created,
+    prisma,
+    tx,
+    auditLogsService,
+  };
 }
 
 const STAFF = { sub: 'admin1', role: 'super-admin' } as never;
@@ -60,22 +91,38 @@ const STAFF = { sub: 'admin1', role: 'super-admin' } as never;
 describe('InvoicesService.generate guards', () => {
   it('rejects an empty selection', async () => {
     const { svc } = makeService([]);
-    await expect(svc.generate([], 'admin1')).rejects.toBeInstanceOf(BadRequestException);
+    await expect(svc.generate([], 'admin1')).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
   });
 
   it('rejects tickets from more than one consumer', async () => {
-    const { svc } = makeService([ticket(), ticket({ id: 't2', consumerId: 'c2' })]);
-    await expect(svc.generate(['t1', 't2'], 'admin1')).rejects.toThrow(/one consumer/i);
+    const { svc } = makeService([
+      ticket(),
+      ticket({ id: 't2', consumerId: 'c2' }),
+    ]);
+    await expect(svc.generate(['t1', 't2'], 'admin1')).rejects.toThrow(
+      /one consumer/i,
+    );
   });
 
   it('rejects mixed currency (PKR and USD cannot sum)', async () => {
-    const { svc } = makeService([ticket(), ticket({ id: 't2', currency: 'USD' })]);
-    await expect(svc.generate(['t1', 't2'], 'admin1')).rejects.toThrow(/currency/i);
+    const { svc } = makeService([
+      ticket(),
+      ticket({ id: 't2', currency: 'USD' }),
+    ]);
+    await expect(svc.generate(['t1', 't2'], 'admin1')).rejects.toThrow(
+      /currency/i,
+    );
   });
 
   it('rejects a ticket already on another invoice', async () => {
-    const { svc } = makeService([ticket({ invoiceItem: { invoiceId: 'inv-old' } })]);
-    await expect(svc.generate(['t1'], 'admin1')).rejects.toBeInstanceOf(ConflictException);
+    const { svc } = makeService([
+      ticket({ invoiceItem: { invoiceId: 'inv-old' } }),
+    ]);
+    await expect(svc.generate(['t1'], 'admin1')).rejects.toBeInstanceOf(
+      ConflictException,
+    );
   });
 
   it('rejects an archived ticket', async () => {
@@ -85,7 +132,9 @@ describe('InvoicesService.generate guards', () => {
 
   it('rejects when a requested id does not exist', async () => {
     const { svc } = makeService([ticket()]);
-    await expect(svc.generate(['t1', 'missing'], 'admin1')).rejects.toBeInstanceOf(NotFoundException);
+    await expect(
+      svc.generate(['t1', 'missing'], 'admin1'),
+    ).rejects.toBeInstanceOf(NotFoundException);
   });
 });
 
@@ -106,25 +155,37 @@ describe('InvoicesService.generate', () => {
     // transaction client" from "drew it from the top-level client outside
     // the transaction", which the pre-fix mock could not.
     expect(tx.$queryRawUnsafe).toHaveBeenCalledTimes(1);
-    expect(tx.$queryRawUnsafe).toHaveBeenCalledWith(`SELECT nextval('invoice_no_seq')`);
+    expect(tx.$queryRawUnsafe).toHaveBeenCalledWith(
+      `SELECT nextval('invoice_no_seq')`,
+    );
     expect(prisma.$queryRawUnsafe).not.toHaveBeenCalled();
   });
 
   it('snapshots the line items onto the invoice', async () => {
     const { svc, created } = makeService([ticket()]);
     await svc.generate(['t1'], 'admin1');
-    const items = (created[0].items as { create: Record<string, unknown>[] }).create;
+    const items = (created[0].items as { create: Record<string, unknown>[] })
+      .create;
     expect(items).toHaveLength(1);
     expect(items[0]).toMatchObject({
-      ticketId: 't1', batchNo: '035210', position: 1,
-      serviceCost: 2500, printing: 2450, lineTotal: 4950,
+      ticketId: 't1',
+      batchNo: '035210',
+      position: 1,
+      serviceCost: 2500,
+      printing: 2450,
+      lineTotal: 4950,
     });
   });
 
   it('snapshots the tax rate and currency', async () => {
     const { svc, created } = makeService([ticket()], { taxRate: 0.17 });
     await svc.generate(['t1'], 'admin1');
-    expect(created[0]).toMatchObject({ currency: 'PKR', taxRate: 0.17, taxAmount: 425, grandTotal: 5375 });
+    expect(created[0]).toMatchObject({
+      currency: 'PKR',
+      taxRate: 0.17,
+      taxAmount: 425,
+      grandTotal: 5375,
+    });
   });
 
   it('never writes clerkCost onto the invoice', async () => {
@@ -132,6 +193,35 @@ describe('InvoicesService.generate', () => {
     await svc.generate(['t1'], 'admin1');
     expect(JSON.stringify(created[0])).not.toContain('999');
     expect(JSON.stringify(created[0]).toLowerCase()).not.toContain('clerk');
+  });
+
+  it('writes an INVOICE_GENERATED audit row for the issuing actor, AFTER the invoice is created', async () => {
+    const { svc, auditLogsService } = makeService([ticket()], {
+      taxRate: 0.17,
+    });
+    const out = await svc.generate(['t1'], 'admin1');
+
+    expect(auditLogsService.create).toHaveBeenCalledTimes(1);
+    expect(auditLogsService.create).toHaveBeenCalledWith({
+      action: 'INVOICE_GENERATED',
+      entity: 'INVOICE',
+      entityId: out.id,
+      actorUserId: 'admin1',
+      metadata: {
+        invoiceNo: out.invoiceNo,
+        ticketIds: ['t1'],
+        consumerId: 'c1',
+        currency: 'PKR',
+        grandTotal: 5375,
+      },
+    });
+  });
+
+  it('does not let clerkCost leak into the audit metadata either', async () => {
+    const { svc, auditLogsService } = makeService([ticket({ clerkCost: 999 })]);
+    await svc.generate(['t1'], 'admin1');
+    const call = auditLogsService.create.mock.calls[0]?.[0];
+    expect(JSON.stringify(call).toLowerCase()).not.toContain('clerk');
   });
 });
 
@@ -149,15 +239,36 @@ describe('InvoicesService.generate — concurrent double-generate (P2002 race)',
 
   it('converts a P2002 on InvoiceItem.ticketId into a ConflictException, not a raw 500', async () => {
     const { svc, tx } = makeService([ticket()]);
-    tx.invoice.create.mockImplementationOnce(() => Promise.reject(ticketIdP2002));
-    await expect(svc.generate(['t1'], 'admin1')).rejects.toBeInstanceOf(ConflictException);
+    tx.invoice.create.mockImplementationOnce(() =>
+      Promise.reject(ticketIdP2002),
+    );
+    await expect(svc.generate(['t1'], 'admin1')).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+  });
+
+  it('does not write an audit row when the invoice was never created (rolled back)', async () => {
+    const { svc, tx, auditLogsService } = makeService([ticket()]);
+    tx.invoice.create.mockImplementationOnce(() =>
+      Promise.reject(ticketIdP2002),
+    );
+    await expect(svc.generate(['t1'], 'admin1')).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+    expect(auditLogsService.create).not.toHaveBeenCalled();
   });
 
   it('names the conflicting ticket by batchNo when it can find one', async () => {
     const { svc, tx, prisma } = makeService([ticket()]);
-    tx.invoice.create.mockImplementationOnce(() => Promise.reject(ticketIdP2002));
-    prisma.ticket.findFirst.mockImplementationOnce(() => Promise.resolve({ batchNo: '035210' }));
-    await expect(svc.generate(['t1'], 'admin1')).rejects.toThrow(/035210.*already on another invoice/i);
+    tx.invoice.create.mockImplementationOnce(() =>
+      Promise.reject(ticketIdP2002),
+    );
+    prisma.ticket.findFirst.mockImplementationOnce(() =>
+      Promise.resolve({ batchNo: '035210' }),
+    );
+    await expect(svc.generate(['t1'], 'admin1')).rejects.toThrow(
+      /035210.*already on another invoice/i,
+    );
   });
 
   it('does NOT swallow an unrelated P2002 (e.g. a different unique constraint) — real bugs still surface', async () => {
@@ -166,13 +277,19 @@ describe('InvoicesService.generate — concurrent double-generate (P2002 race)',
       'Unique constraint failed on the fields: (`invoiceNo`)',
       { code: 'P2002', clientVersion: 'test', meta: { target: ['invoiceNo'] } },
     );
-    tx.invoice.create.mockImplementationOnce(() => Promise.reject(otherConstraint));
+    tx.invoice.create.mockImplementationOnce(() =>
+      Promise.reject(otherConstraint),
+    );
     await expect(svc.generate(['t1'], 'admin1')).rejects.toBe(otherConstraint);
   });
 
   it('keeps the up-front guard for the common (non-racing) case — no DB round trip needed', async () => {
-    const { svc, tx, prisma } = makeService([ticket({ invoiceItem: { invoiceId: 'inv-old' } })]);
-    await expect(svc.generate(['t1'], 'admin1')).rejects.toBeInstanceOf(ConflictException);
+    const { svc, tx, prisma } = makeService([
+      ticket({ invoiceItem: { invoiceId: 'inv-old' } }),
+    ]);
+    await expect(svc.generate(['t1'], 'admin1')).rejects.toBeInstanceOf(
+      ConflictException,
+    );
     expect(tx.invoice.create).not.toHaveBeenCalled();
     expect(prisma.ticket.findFirst).not.toHaveBeenCalled();
   });
@@ -182,33 +299,52 @@ describe('InvoicesService.findOne authorization', () => {
   const invoice = { id: 'inv1', consumerId: 'c1', items: [], consumer: {} };
 
   function svcWith(inv: unknown) {
-    const prisma = { invoice: { findUnique: jest.fn(() => Promise.resolve(inv)) } };
-    return new InvoicesService(prisma as never, { getTaxRate: jest.fn() } as never);
+    const prisma = {
+      invoice: { findUnique: jest.fn(() => Promise.resolve(inv)) },
+    };
+    return new InvoicesService(
+      prisma as never,
+      { getTaxRate: jest.fn() } as never,
+      { create: jest.fn() } as never,
+    );
   }
 
   it('lets staff read any invoice', async () => {
-    await expect(svcWith(invoice).findOne('inv1', STAFF)).resolves.toMatchObject({ id: 'inv1' });
+    await expect(
+      svcWith(invoice).findOne('inv1', STAFF),
+    ).resolves.toMatchObject({ id: 'inv1' });
   });
 
   it('lets the owning consumer read their own', async () => {
     await expect(
-      svcWith(invoice).findOne('inv1', { sub: 'c1', role: 'consumer' } as never),
+      svcWith(invoice).findOne('inv1', {
+        sub: 'c1',
+        role: 'consumer',
+      } as never),
     ).resolves.toMatchObject({ id: 'inv1' });
   });
 
   it('404s a non-owning consumer (ids must not be probeable)', async () => {
     await expect(
-      svcWith(invoice).findOne('inv1', { sub: 'c9', role: 'consumer' } as never),
+      svcWith(invoice).findOne('inv1', {
+        sub: 'c9',
+        role: 'consumer',
+      } as never),
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it('404s a representative — a clerk must never pull a consumer invoice (3.1-class IDOR)', async () => {
     await expect(
-      svcWith(invoice).findOne('inv1', { sub: 'rep1', role: 'representative' } as never),
+      svcWith(invoice).findOne('inv1', {
+        sub: 'rep1',
+        role: 'representative',
+      } as never),
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it('404s a missing invoice', async () => {
-    await expect(svcWith(null).findOne('nope', STAFF)).rejects.toBeInstanceOf(NotFoundException);
+    await expect(svcWith(null).findOne('nope', STAFF)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
   });
 });

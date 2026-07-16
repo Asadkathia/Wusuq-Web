@@ -8,15 +8,31 @@ import { Prisma } from '@prisma/client';
 import { isStaffRole, round2 } from '@wusuq/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { SettingsService } from '../settings/settings.service';
+import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { JwtUser } from '../auth/types/jwt-user.type';
-import { buildInvoiceLines, formatInvoiceNo, summariseInvoice } from './invoice-lines';
+import {
+  buildInvoiceLines,
+  formatInvoiceNo,
+  summariseInvoice,
+} from './invoice-lines';
 
 const TICKET_SELECT = {
-  id: true, batchNo: true, consumerId: true, currency: true, archivedAt: true,
-  intakeFlow: true, formPayload: true,
-  serviceCost: true, additionalServiceCost: true, printingCharges: true,
-  attestedCharges: true, nonAttestedCharges: true, deliveryCharges: true,
-  additionalCharges: true, discountPrice: true, promoDiscount: true,
+  id: true,
+  batchNo: true,
+  consumerId: true,
+  currency: true,
+  archivedAt: true,
+  intakeFlow: true,
+  formPayload: true,
+  serviceCost: true,
+  additionalServiceCost: true,
+  printingCharges: true,
+  attestedCharges: true,
+  nonAttestedCharges: true,
+  deliveryCharges: true,
+  additionalCharges: true,
+  discountPrice: true,
+  promoDiscount: true,
   service: { select: { name: true } },
   invoiceItem: { select: { invoiceId: true } },
   // NOTE: clerkCost is deliberately NOT selected. It must never reach an invoice.
@@ -27,6 +43,17 @@ export class InvoicesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly settings: SettingsService,
+    // Required, not optional — issuing an invoice is a financial act and
+    // CLAUDE.md's convention ("Every sensitive auth action is written to
+    // AuditLog") must not be satisfiable by a wiring accident. Unlike
+    // `settingsService?`/`promosService?` on TicketsService (made optional
+    // solely to keep ~30 pre-existing 6-arg test instantiations compiling),
+    // there is no such legacy call-site pressure here — every construction
+    // site (this service's own spec + the future controller/module) is
+    // updated in the same change that introduces this parameter, so making
+    // it required costs nothing and guarantees the audit write can never be
+    // silently absent in production.
+    private readonly auditLogsService: AuditLogsService,
   ) {}
 
   /**
@@ -36,10 +63,21 @@ export class InvoicesService {
    * must not change when the underlying tickets are later edited.
    */
   async generate(ticketIds: string[], actorUserId: string) {
-    if (!ticketIds.length) throw new BadRequestException('Select at least one ticket to invoice.');
+    if (!ticketIds.length)
+      throw new BadRequestException('Select at least one ticket to invoice.');
+
+    // Populated inside the transaction below and read only after it commits,
+    // so the audit write always reflects a real, durable invoice.
+    let issued: {
+      id: string;
+      invoiceNo: string;
+      consumerId: string;
+      currency: string;
+      grandTotal: number;
+    };
 
     try {
-      return await this.prisma.$transaction(async (tx) => {
+      issued = await this.prisma.$transaction(async (tx) => {
         const tickets = await tx.ticket.findMany({
           where: { id: { in: ticketIds } },
           select: TICKET_SELECT,
@@ -51,12 +89,16 @@ export class InvoicesService {
 
         const archived = tickets.find((t) => t.archivedAt);
         if (archived) {
-          throw new BadRequestException(`Ticket ${archived.batchNo} is archived and cannot be invoiced.`);
+          throw new BadRequestException(
+            `Ticket ${archived.batchNo} is archived and cannot be invoiced.`,
+          );
         }
 
         const consumerIds = new Set(tickets.map((t) => t.consumerId));
         if (consumerIds.size > 1) {
-          throw new BadRequestException('All tickets on an invoice must belong to one consumer.');
+          throw new BadRequestException(
+            'All tickets on an invoice must belong to one consumer.',
+          );
         }
 
         const currencies = new Set(tickets.map((t) => t.currency ?? 'PKR'));
@@ -68,19 +110,28 @@ export class InvoicesService {
 
         const already = tickets.find((t) => t.invoiceItem);
         if (already) {
-          throw new ConflictException(`Ticket ${already.batchNo} is already on another invoice.`);
+          throw new ConflictException(
+            `Ticket ${already.batchNo} is already on another invoice.`,
+          );
         }
 
         const num = (v: unknown) => Number(v ?? 0);
         const lines = buildInvoiceLines(
           tickets.map((t) => ({
-            id: t.id, batchNo: t.batchNo, currency: t.currency ?? 'PKR',
-            intakeFlow: t.intakeFlow, formPayload: t.formPayload,
-            serviceCost: num(t.serviceCost), additionalServiceCost: num(t.additionalServiceCost),
-            printingCharges: num(t.printingCharges), attestedCharges: num(t.attestedCharges),
-            nonAttestedCharges: num(t.nonAttestedCharges), deliveryCharges: num(t.deliveryCharges),
+            id: t.id,
+            batchNo: t.batchNo,
+            currency: t.currency ?? 'PKR',
+            intakeFlow: t.intakeFlow,
+            formPayload: t.formPayload,
+            serviceCost: num(t.serviceCost),
+            additionalServiceCost: num(t.additionalServiceCost),
+            printingCharges: num(t.printingCharges),
+            attestedCharges: num(t.attestedCharges),
+            nonAttestedCharges: num(t.nonAttestedCharges),
+            deliveryCharges: num(t.deliveryCharges),
             additionalCharges: num(t.additionalCharges),
-            discountPrice: num(t.discountPrice), promoDiscount: num(t.promoDiscount),
+            discountPrice: num(t.discountPrice),
+            promoDiscount: num(t.promoDiscount),
             service: t.service,
           })),
         );
@@ -91,9 +142,13 @@ export class InvoicesService {
         const firstTicket = tickets[0]!;
         const currency = firstTicket.currency ?? 'PKR';
         // USD is an all-inclusive flat price list — no tax (CLAUDE.md, country pricing).
-        const taxRate = currency === 'USD' ? 0 : await this.settings.getTaxRate();
+        const taxRate =
+          currency === 'USD' ? 0 : await this.settings.getTaxRate();
         const discountTotal = round2(
-          tickets.reduce((s, t) => s + num(t.discountPrice) + num(t.promoDiscount), 0),
+          tickets.reduce(
+            (s, t) => s + num(t.discountPrice) + num(t.promoDiscount),
+            0,
+          ),
         );
         const totals = summariseInvoice(lines, { taxRate, discountTotal });
 
@@ -122,11 +177,19 @@ export class InvoicesService {
             grandTotal: totals.grandTotal,
             items: {
               create: lines.map((l) => ({
-                ticketId: l.ticketId, position: l.position, batchNo: l.batchNo,
-                description: l.description, courtLine: l.courtLine,
-                caseTitle: l.caseTitle, judge: l.judge,
-                serviceCost: l.serviceCost, printing: l.printing, attested: l.attested,
-                nonAttested: l.nonAttested, delivery: l.delivery, additional: l.additional,
+                ticketId: l.ticketId,
+                position: l.position,
+                batchNo: l.batchNo,
+                description: l.description,
+                courtLine: l.courtLine,
+                caseTitle: l.caseTitle,
+                judge: l.judge,
+                serviceCost: l.serviceCost,
+                printing: l.printing,
+                attested: l.attested,
+                nonAttested: l.nonAttested,
+                delivery: l.delivery,
+                additional: l.additional,
                 lineTotal: l.lineTotal,
               })),
             },
@@ -134,7 +197,13 @@ export class InvoicesService {
           select: { id: true, invoiceNo: true },
         });
 
-        return created;
+        return {
+          id: created.id,
+          invoiceNo: created.invoiceNo,
+          consumerId: firstTicket.consumerId,
+          currency,
+          grandTotal: totals.grandTotal,
+        };
       });
     } catch (error) {
       // Concurrent double-generate: two racing calls both pass the up-front
@@ -162,6 +231,28 @@ export class InvoicesService {
       }
       throw error;
     }
+
+    // Written AFTER the transaction commits, never inside it — an audit row
+    // for an invoice that rolled back would be a lie (same reasoning as
+    // reviewAndComplete's post-commit wallet settlement, CLAUDE.md). This is
+    // a financial act: an auditor must be able to see who billed whom, for
+    // what tickets, and how much, so the metadata carries the invoice
+    // number, the billed ticket ids, the consumer, currency, and total.
+    await this.auditLogsService.create({
+      action: 'INVOICE_GENERATED',
+      entity: 'INVOICE',
+      entityId: issued.id,
+      actorUserId,
+      metadata: {
+        invoiceNo: issued.invoiceNo,
+        ticketIds,
+        consumerId: issued.consumerId,
+        currency: issued.currency,
+        grandTotal: issued.grandTotal,
+      },
+    });
+
+    return { id: issued.id, invoiceNo: issued.invoiceNo };
   }
 
   /** Staff see all; a consumer sees their own; anyone else (e.g. a clerk) sees none. */
@@ -172,8 +263,12 @@ export class InvoicesService {
       where: staff ? {} : { consumerId: actor.sub },
       orderBy: { issueDate: 'desc' },
       select: {
-        id: true, invoiceNo: true, issueDate: true, currency: true,
-        grandTotal: true, status: true,
+        id: true,
+        invoiceNo: true,
+        issueDate: true,
+        currency: true,
+        grandTotal: true,
+        status: true,
         consumer: { select: { id: true, name: true, email: true } },
         _count: { select: { items: true } },
       },
@@ -193,7 +288,13 @@ export class InvoicesService {
       include: {
         items: { orderBy: { position: 'asc' } },
         consumer: {
-          select: { id: true, name: true, email: true, phone: true, address: true },
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            phone: true,
+            address: true,
+          },
         },
       },
     });
