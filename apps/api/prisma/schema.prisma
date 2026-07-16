@@ -83,7 +83,6 @@ enum DocumentCategory {
 
 enum InvoiceStatus {
   GENERATED
-  SENT
   PARTIALLY_PAID
   PAID
 }
@@ -200,6 +199,7 @@ model User {
   cases              Case[]
   personalFiles      PersonalFile[]
   storageUsage       UserStorageUsage?
+  invoices           Invoice[]
 }
 
 model Service {
@@ -302,7 +302,7 @@ model Ticket {
   walletPayments  WalletTransaction[]
   caseEvents      CaseEvent[]
   caseDocuments   CaseDocument[]
-  invoice         Invoice?
+  invoiceItem     InvoiceItem?
   clerkReport     TicketClerkReport?
   personalFiles  PersonalFile[]
   payments        Payment[]
@@ -517,19 +517,56 @@ model WalletTransaction {
 }
 
 model Invoice {
-  id          String      @id @default(cuid())
-  ticketId    String      @unique
-  invoiceNo   String      @unique
-  totalAmount Decimal
-  amountPaid  Decimal     @default(0)
-  dueAmount   Decimal
-  status      InvoiceStatus @default(GENERATED)
-  sentAt      DateTime?
-  paidAt      DateTime?
-  pdfUrl      String?
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
-  ticket      Ticket      @relation(fields: [ticketId], references: [id])
+  id         String        @id @default(cuid())
+  /// Sequential, zero-padded 6 digits (e.g. "000348"). From invoice_no_seq.
+  invoiceNo  String        @unique
+  consumerId String
+  /// Snapshotted from the tickets' currency. All items must agree — an invoice
+  /// cannot sum PKR and USD. Mirrors Ticket.currency (String, not an enum).
+  currency   String        @default("PKR")
+  issueDate  DateTime      @default(now())
+  subtotal   Decimal
+  /// Snapshotted so a later tax-rate change never rewrites an issued invoice.
+  taxRate    Decimal       @default(0)
+  taxAmount  Decimal       @default(0)
+  grandTotal Decimal
+  status     InvoiceStatus @default(GENERATED)
+  paidAt     DateTime?
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+  consumer   User          @relation(fields: [consumerId], references: [id])
+  items      InvoiceItem[]
+
+  @@index([consumerId, issueDate])
+}
+
+/// One billed ticket on an invoice. Every money field is a SNAPSHOT frozen at
+/// issue: an issued invoice is a legal document and must not change when the
+/// underlying ticket's charges are later edited. (The retired finance PDF read
+/// totals from Invoice but the breakdown from the live Ticket, so its lines
+/// stopped summing to its total after any charge edit.)
+model InvoiceItem {
+  id          String  @id @default(cuid())
+  invoiceId   String
+  /// A ticket lands on at most ONE invoice. This unique IS the double-bill guard.
+  ticketId    String  @unique
+  position    Int
+  batchNo     String
+  description String
+  courtLine   String?
+  caseTitle   String?
+  judge       String?
+  serviceCost Decimal @default(0)
+  printing    Decimal @default(0)
+  attested    Decimal @default(0)
+  nonAttested Decimal @default(0)
+  delivery    Decimal @default(0)
+  additional  Decimal @default(0)
+  lineTotal   Decimal @default(0)
+  invoice     Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  ticket      Ticket  @relation(fields: [ticketId], references: [id])
+
+  @@index([invoiceId, position])
 }
 
 model Payment {
