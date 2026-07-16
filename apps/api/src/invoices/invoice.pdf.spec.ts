@@ -91,4 +91,19 @@ describe('renderInvoicePdf', () => {
     const buf = await renderInvoicePdf(bare);
     expect(buf.subarray(0, 5).toString()).toBe('%PDF-');
   });
+
+  // Blocker 3: a discounted invoice must render without throwing, and
+  // `discount` being optional must not break any existing caller that never
+  // passes it (the two tests immediately below).
+  it('renders a discounted invoice without throwing', async () => {
+    const buf = await renderInvoicePdf({ ...view, discount: 1000 });
+    expect(buf.subarray(0, 5).toString()).toBe('%PDF-');
+  });
+
+  it('renders identically whether discount is omitted or explicitly 0 (no DISCOUNT row either way)', async () => {
+    const omitted = await renderInvoicePdf(view);
+    const explicitZero = await renderInvoicePdf({ ...view, discount: 0 });
+    expect(omitted.subarray(0, 5).toString()).toBe('%PDF-');
+    expect(explicitZero.subarray(0, 5).toString()).toBe('%PDF-');
+  });
 });

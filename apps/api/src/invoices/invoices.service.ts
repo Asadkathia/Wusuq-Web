@@ -7,7 +7,6 @@ import {
 import { Prisma } from '@prisma/client';
 import { isStaffRole, round2 } from '@wusuq/shared';
 import { PrismaService } from '../prisma/prisma.service';
-import { SettingsService } from '../settings/settings.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { JwtUser } from '../auth/types/jwt-user.type';
 import {
@@ -22,6 +21,7 @@ const TICKET_SELECT = {
   consumerId: true,
   currency: true,
   archivedAt: true,
+  status: true,
   intakeFlow: true,
   formPayload: true,
   serviceCost: true,
@@ -33,16 +33,32 @@ const TICKET_SELECT = {
   additionalCharges: true,
   discountPrice: true,
   promoDiscount: true,
+  // Stamped at pricing/reprice/finalize time (CLAUDE.md money model) — the
+  // invoice MUST bill the rate the ticket actually charged, never the live
+  // settings rate (blocker 2: a rate change after pricing must not change
+  // what an already-priced ticket bills).
+  taxRate: true,
+  // Gates the five phase-2 clerk charge columns below (blocker 1): between
+  // submitClerkCosts and the admin's reviewAndComplete those columns hold the
+  // clerk's unapproved PROPOSAL, not a billable amount — same invariant the
+  // consumer/staff boards already enforce (CLAUDE.md B4).
+  remainderFinalizedAt: true,
   service: { select: { name: true } },
   invoiceItem: { select: { invoiceId: true } },
   // NOTE: clerkCost is deliberately NOT selected. It must never reach an invoice.
 } as const;
 
+/** 6dp is ample precision for a tax-rate fraction (e.g. 0.175 = 17.5%) while
+ * absorbing any binary floating-point noise from the Decimal->Number cast —
+ * using round2 (money's 2dp) here would misround a 17.5% rate to 18%. */
+function roundRate(n: number): number {
+  return Math.round(n * 1e6) / 1e6;
+}
+
 @Injectable()
 export class InvoicesService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly settings: SettingsService,
     // Required, not optional — issuing an invoice is a financial act and
     // CLAUDE.md's convention ("Every sensitive auth action is written to
     // AuditLog") must not be satisfiable by a wiring accident. Unlike
@@ -108,6 +124,23 @@ export class InvoicesService {
           );
         }
 
+        // A ticket lands on at most ONE invoice (InvoiceItem.ticketId is
+        // unique) — so invoicing a ticket while its clerk-submitted phase-2
+        // charges are still mid-review permanently forfeits ever invoicing
+        // those charges: once the admin later reviews & finalizes, the
+        // remainder is added to Ticket.totalAmount but this ticket can never
+        // be attached to another invoice to capture it. That's an
+        // unrecoverable data gap, not just a display nit, so it's rejected
+        // outright rather than merely gated (which the phase-2 zeroing below
+        // still also does, belt-and-braces, for any ticket that reaches
+        // WAITING_APPROVAL via a path this guard doesn't anticipate).
+        const midReview = tickets.find((t) => t.status === 'WAITING_APPROVAL');
+        if (midReview) {
+          throw new BadRequestException(
+            `Ticket ${midReview.batchNo} is awaiting admin review (WAITING_APPROVAL) — its phase-2 charges are not final yet. Invoice it after Review & Complete.`,
+          );
+        }
+
         const already = tickets.find((t) => t.invoiceItem);
         if (already) {
           throw new ConflictException(
@@ -116,6 +149,12 @@ export class InvoicesService {
         }
 
         const num = (v: unknown) => Number(v ?? 0);
+        // Blocker 1: printing/attested/nonAttested/delivery/additional are
+        // the clerk's phase-2 PROPOSAL until the admin's reviewAndComplete
+        // stamps remainderFinalizedAt (CLAUDE.md B4) — bill 0 for any of them
+        // until then, exactly like the consumer/staff charge breakdowns do.
+        const phase2 = (t: (typeof tickets)[number], v: unknown) =>
+          t.remainderFinalizedAt ? num(v) : 0;
         const lines = buildInvoiceLines(
           tickets.map((t) => ({
             id: t.id,
@@ -125,11 +164,11 @@ export class InvoicesService {
             formPayload: t.formPayload,
             serviceCost: num(t.serviceCost),
             additionalServiceCost: num(t.additionalServiceCost),
-            printingCharges: num(t.printingCharges),
-            attestedCharges: num(t.attestedCharges),
-            nonAttestedCharges: num(t.nonAttestedCharges),
-            deliveryCharges: num(t.deliveryCharges),
-            additionalCharges: num(t.additionalCharges),
+            printingCharges: phase2(t, t.printingCharges),
+            attestedCharges: phase2(t, t.attestedCharges),
+            nonAttestedCharges: phase2(t, t.nonAttestedCharges),
+            deliveryCharges: phase2(t, t.deliveryCharges),
+            additionalCharges: phase2(t, t.additionalCharges),
             discountPrice: num(t.discountPrice),
             promoDiscount: num(t.promoDiscount),
             service: t.service,
@@ -141,14 +180,47 @@ export class InvoicesService {
         // tickets[0] always exists here.
         const firstTicket = tickets[0]!;
         const currency = firstTicket.currency ?? 'PKR';
-        // USD is an all-inclusive flat price list — no tax (CLAUDE.md, country pricing).
-        const taxRate =
-          currency === 'USD' ? 0 : await this.settings.getTaxRate();
+        // Blocker 2: bill the ticket's OWN stamped Ticket.taxRate (snapshotted
+        // at pricing/reprice/finalize time), never the live settings rate —
+        // otherwise a later rate change silently re-bills or under-bills
+        // historical tickets. USD is an all-inclusive flat price list with no
+        // tax regardless of what's stamped (CLAUDE.md, country pricing).
+        let taxRate: number;
+        if (currency === 'USD') {
+          taxRate = 0;
+        } else {
+          const rates = new Set(tickets.map((t) => roundRate(num(t.taxRate))));
+          if (rates.size > 1) {
+            throw new BadRequestException(
+              `Cannot invoice tickets with mixed tax rates (${[...rates]
+                .map((r) => `${roundRate(r * 100)}%`)
+                .join(
+                  ', ',
+                )}) — an invoice can only state one rate. Split into separate invoices.`,
+            );
+          }
+          // Safe: `rates` always has >= 1 entry — tickets.length >= 1 is
+          // guaranteed by the guards above.
+          taxRate = [...rates][0]!;
+        }
+
+        // Blocker 3: clamp EACH ticket's discount to that ticket's own
+        // lineTotal BEFORE summing, so one ticket's excess discount (e.g. an
+        // admin reprice discount larger than that ticket's remaining charges)
+        // can never erode another ticket's contribution to subtotal/
+        // grandTotal — summariseInvoice only sees the (already-safe)
+        // aggregate.
         const discountTotal = round2(
-          tickets.reduce(
-            (s, t) => s + num(t.discountPrice) + num(t.promoDiscount),
-            0,
-          ),
+          tickets.reduce((s, t, i) => {
+            const raw = num(t.discountPrice) + num(t.promoDiscount);
+            // lines[i] corresponds 1:1 with tickets[i] — buildInvoiceLines
+            // maps in the same order it was given.
+            const clamped = Math.min(
+              Math.max(0, raw),
+              Math.max(0, lines[i]!.lineTotal),
+            );
+            return s + clamped;
+          }, 0),
         );
         const totals = summariseInvoice(lines, { taxRate, discountTotal });
 
@@ -172,6 +244,7 @@ export class InvoicesService {
             consumerId: firstTicket.consumerId,
             currency,
             subtotal: totals.subtotal,
+            discount: totals.discount,
             taxRate,
             taxAmount: totals.taxAmount,
             grandTotal: totals.grandTotal,

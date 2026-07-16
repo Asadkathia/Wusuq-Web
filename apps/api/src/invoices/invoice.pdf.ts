@@ -18,6 +18,12 @@ export interface InvoiceView {
   };
   lines: InvoiceLine[];
   subtotal: number;
+  /// Aggregate discount actually applied (per-ticket-clamped, already
+  /// subtracted into taxAmount/grandTotal by summariseInvoice). Optional so
+  /// this addition can't break any existing caller of renderInvoicePdf —
+  /// undefined/0 renders no DISCOUNT row at all, matching invoices with no
+  /// discount (the common case, and the owner's own sample invoices).
+  discount?: number;
   taxRate: number;
   taxAmount: number;
   grandTotal: number;
@@ -296,11 +302,21 @@ function drawTotals(
   y: number,
 ): number {
   const right = M + CONTENT_W;
+  const discount = v.discount ?? 0;
   const rows: Array<[string, number, boolean]> = [
     ['SUBTOTAL', v.subtotal, false],
+  ];
+  // Rendered only when non-zero — an invoice with no discount shows no line,
+  // matching the owner's own sample invoices (none of which carried one).
+  // When there IS one, this is what makes SUBTOTAL - DISCOUNT + TAX =
+  // GRAND TOTAL actually reconstructible from the printed page (blocker 3):
+  // previously the discount was subtracted silently and nothing on the face
+  // of the document explained the gap.
+  if (discount) rows.push(['DISCOUNT', -discount, false]);
+  rows.push(
     [taxLabel(v.taxRate), v.taxAmount, false],
     ['GRAND TOTAL', v.grandTotal, true],
-  ];
+  );
   let cur = y + 10;
   for (const [label, amount, strong] of rows) {
     doc

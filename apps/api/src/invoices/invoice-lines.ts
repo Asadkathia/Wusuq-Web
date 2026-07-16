@@ -160,6 +160,14 @@ export function buildInvoiceLines(
  * (serviceCost + additionalServiceCost, already folded into line.serviceCost),
  * NOT the whole bill. Delivery/printing/attested/non-attested/additional stay
  * in the total but untaxed.
+ *
+ * `opts.discountTotal` MUST already be the sum of PER-TICKET-CLAMPED
+ * discounts (each ticket's discountPrice+promoDiscount capped at that
+ * ticket's own lineTotal before summing) — the caller (InvoicesService)
+ * does that clamping, since this function only sees the aggregate. Passing
+ * a naive un-clamped sum here lets one ticket's over-large discount erode
+ * every other ticket's contribution to subtotal/grandTotal, which is exactly
+ * the bug this contract exists to prevent.
  */
 export function summariseInvoice(
   lines: InvoiceLine[],
@@ -169,6 +177,7 @@ export function summariseInvoice(
   taxableBase: number;
   taxAmount: number;
   grandTotal: number;
+  discount: number;
 } {
   const subtotal = round2(lines.reduce((s, l) => s + l.lineTotal, 0));
   const serviceBase = round2(lines.reduce((s, l) => s + l.serviceCost, 0));
@@ -181,5 +190,5 @@ export function summariseInvoice(
     round2(Math.max(0, subtotal - discount) + taxAmount),
   );
 
-  return { subtotal, taxableBase, taxAmount, grandTotal };
+  return { subtotal, taxableBase, taxAmount, grandTotal, discount };
 }

@@ -15,6 +15,11 @@ const ticket = (over: Partial<Ticket> = {}): Ticket => ({
   consumerId: 'c1',
   currency: 'PKR',
   archivedAt: null,
+  // A status past the clerk-review gate, and a finalized remainder — i.e. an
+  // ordinary "safe to invoice" ticket. Tests for blocker 1 (unapproved
+  // phase-2 charges / WAITING_APPROVAL) explicitly override both.
+  status: 'DELIVERED',
+  remainderFinalizedAt: new Date('2026-01-01T00:00:00Z'),
   intakeFlow: 'judicial_case_files',
   formPayload: {},
   serviceCost: 2500,
@@ -26,12 +31,15 @@ const ticket = (over: Partial<Ticket> = {}): Ticket => ({
   additionalCharges: 0,
   discountPrice: 0,
   promoDiscount: 0,
+  // Stamped tax rate (blocker 2) — 0 by default so tests that don't care
+  // about tax get taxAmount 0 without needing to pass anything.
+  taxRate: 0,
   service: { name: 'Case Files Lower Court 2025' },
   invoiceItem: null,
   ...over,
 });
 
-function makeService(tickets: Ticket[], opts: { taxRate?: number } = {}) {
+function makeService(tickets: Ticket[]) {
   const created: Record<string, unknown>[] = [];
   // `tx` and `prisma` are two DISTINCT mock objects, each with their OWN
   // jest.fn instances (never spread/shared) — this is what lets a test tell
@@ -67,18 +75,11 @@ function makeService(tickets: Ticket[], opts: { taxRate?: number } = {}) {
     $queryRawUnsafe: jest.fn(() => Promise.resolve([{ nextval: 1n }])),
     $transaction: jest.fn(async (fn: (t: unknown) => unknown) => fn(tx)),
   };
-  const settings = {
-    getTaxRate: jest.fn(() => Promise.resolve(opts.taxRate ?? 0)),
-  };
   const auditLogsService = {
     create: jest.fn(() => Promise.resolve(undefined)),
   };
   return {
-    svc: new InvoicesService(
-      prisma as never,
-      settings as never,
-      auditLogsService as never,
-    ),
+    svc: new InvoicesService(prisma as never, auditLogsService as never),
     created,
     prisma,
     tx,
@@ -178,7 +179,7 @@ describe('InvoicesService.generate', () => {
   });
 
   it('snapshots the tax rate and currency', async () => {
-    const { svc, created } = makeService([ticket()], { taxRate: 0.17 });
+    const { svc, created } = makeService([ticket({ taxRate: 0.17 })]);
     await svc.generate(['t1'], 'admin1');
     expect(created[0]).toMatchObject({
       currency: 'PKR',
@@ -196,9 +197,7 @@ describe('InvoicesService.generate', () => {
   });
 
   it('writes an INVOICE_GENERATED audit row for the issuing actor, AFTER the invoice is created', async () => {
-    const { svc, auditLogsService } = makeService([ticket()], {
-      taxRate: 0.17,
-    });
+    const { svc, auditLogsService } = makeService([ticket({ taxRate: 0.17 })]);
     const out = await svc.generate(['t1'], 'admin1');
 
     expect(auditLogsService.create).toHaveBeenCalledTimes(1);
@@ -295,6 +294,142 @@ describe('InvoicesService.generate — concurrent double-generate (P2002 race)',
   });
 });
 
+describe('InvoicesService.generate — blocker 1: unapproved phase-2 charges', () => {
+  it("zeroes the clerk's unapproved phase-2 columns when remainderFinalizedAt is null — bills the phase-1 base only", async () => {
+    const { svc, created } = makeService([
+      ticket({
+        status: 'IN_PROGRESS',
+        remainderFinalizedAt: null,
+        printingCharges: 8000,
+        attestedCharges: 1000,
+        nonAttestedCharges: 500,
+        deliveryCharges: 800,
+        additionalCharges: 200,
+      }),
+    ]);
+    await svc.generate(['t1'], 'admin1');
+    const items = (created[0].items as { create: Record<string, unknown>[] })
+      .create;
+    expect(items[0]).toMatchObject({
+      serviceCost: 2500,
+      printing: 0,
+      attested: 0,
+      nonAttested: 0,
+      delivery: 0,
+      additional: 0,
+      lineTotal: 2500,
+    });
+    expect(created[0]).toMatchObject({ subtotal: 2500, grandTotal: 2500 });
+  });
+
+  it('bills the full phase-2 charges once the admin has finalized (remainderFinalizedAt set)', async () => {
+    const { svc, created } = makeService([
+      ticket({
+        remainderFinalizedAt: new Date('2026-02-01T00:00:00Z'),
+        printingCharges: 8000,
+        attestedCharges: 1000,
+      }),
+    ]);
+    await svc.generate(['t1'], 'admin1');
+    const items = (created[0].items as { create: Record<string, unknown>[] })
+      .create;
+    expect(items[0]).toMatchObject({
+      serviceCost: 2500,
+      printing: 8000,
+      attested: 1000,
+      lineTotal: 11500,
+    });
+  });
+
+  it('rejects invoicing a WAITING_APPROVAL ticket outright — once invoiced a ticket can never be re-invoiced for the eventual phase-2 remainder', async () => {
+    const { svc, tx } = makeService([
+      ticket({ status: 'WAITING_APPROVAL', remainderFinalizedAt: null }),
+    ]);
+    await expect(svc.generate(['t1'], 'admin1')).rejects.toThrow(
+      /WAITING_APPROVAL/,
+    );
+    expect(tx.invoice.create).not.toHaveBeenCalled();
+  });
+});
+
+describe('InvoicesService.generate — blocker 2: bills the stamped tax rate, not the live setting', () => {
+  it("bills the ticket's own stamped taxRate", async () => {
+    const { svc, created } = makeService([ticket({ taxRate: 0.17 })]);
+    await svc.generate(['t1'], 'admin1');
+    expect(created[0]).toMatchObject({
+      taxRate: 0.17,
+      taxAmount: 425,
+      grandTotal: 5375,
+    });
+  });
+
+  it('a lower stamped rate still bills correctly even if a hypothetical live setting were higher (proves no live lookup is consulted)', async () => {
+    const { svc, created } = makeService([ticket({ taxRate: 0.05 })]);
+    await svc.generate(['t1'], 'admin1');
+    // 2500 * 0.05 = 125; if the live rate (e.g. 0.17) were used instead this
+    // would be 425 — the mock has no settings service to consult at all, so
+    // any lookup of a "live" rate would throw, not silently fall back.
+    expect(created[0]).toMatchObject({ taxRate: 0.05, taxAmount: 125 });
+  });
+
+  it('rejects a mixed-tax-rate selection rather than averaging or silently picking one', async () => {
+    const { svc, tx } = makeService([
+      ticket({ id: 't1', batchNo: '035210', taxRate: 0.17 }),
+      ticket({ id: 't2', batchNo: '345579', taxRate: 0.05 }),
+    ]);
+    await expect(svc.generate(['t1', 't2'], 'admin1')).rejects.toThrow(
+      /mixed tax rates/i,
+    );
+    expect(tx.invoice.create).not.toHaveBeenCalled();
+  });
+
+  it('USD tickets are always taxed at 0 regardless of any stamped taxRate', async () => {
+    const { svc, created } = makeService([
+      ticket({ currency: 'USD', taxRate: 0.17 }),
+    ]);
+    await svc.generate(['t1'], 'admin1');
+    expect(created[0]).toMatchObject({
+      currency: 'USD',
+      taxRate: 0,
+      taxAmount: 0,
+    });
+  });
+});
+
+describe('InvoicesService.generate — blocker 3: per-ticket discount clamp', () => {
+  it("clamps EACH ticket's discount to its own lineTotal before summing, so one ticket's oversized discount can't erode the others' contribution", async () => {
+    const { svc, created } = makeService([
+      ticket({
+        id: 'a',
+        batchNo: 'A',
+        serviceCost: 10500,
+        printingCharges: 24500,
+        deliveryCharges: 4500,
+        additionalCharges: 7000,
+        // Wildly exceeds this ticket's own lineTotal (46500) — a naive
+        // aggregate-then-clamp would let this eat into b/c/d below too.
+        discountPrice: 5_000_000,
+      }),
+      ticket({
+        id: 'b',
+        batchNo: 'B',
+        serviceCost: 2500,
+        printingCharges: 2450,
+      }),
+      ticket({ id: 'c', batchNo: 'C', serviceCost: 1500, printingCharges: 0 }),
+      ticket({ id: 'd', batchNo: 'D', serviceCost: 2000, printingCharges: 0 }),
+    ]);
+    await svc.generate(['a', 'b', 'c', 'd'], 'admin1');
+    expect(created[0]).toMatchObject({
+      subtotal: 54950, // 46500 (a) + 4950 (b) + 1500 (c) + 2000 (d)
+      // Clamped to a's own lineTotal (10500+24500+4500+7000=46500), not the
+      // raw 5,000,000 — so b/c/d's combined 8450 survives untouched below.
+      discount: 46500,
+      grandTotal: 8450, // 54950 - 46500 = b+c+d's 8450, not floored to 0
+    });
+  });
+});
+
 describe('InvoicesService.findOne authorization', () => {
   const invoice = { id: 'inv1', consumerId: 'c1', items: [], consumer: {} };
 
@@ -302,11 +437,7 @@ describe('InvoicesService.findOne authorization', () => {
     const prisma = {
       invoice: { findUnique: jest.fn(() => Promise.resolve(inv)) },
     };
-    return new InvoicesService(
-      prisma as never,
-      { getTaxRate: jest.fn() } as never,
-      { create: jest.fn() } as never,
-    );
+    return new InvoicesService(prisma as never, { create: jest.fn() } as never);
   }
 
   it('lets staff read any invoice', async () => {

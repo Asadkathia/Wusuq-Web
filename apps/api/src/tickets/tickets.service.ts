@@ -301,7 +301,10 @@ export class TicketsService {
           // download. Non-sensitive (just a linkage + number); no redaction
           // needed for any caller class.
           invoiceItem: {
-            select: { invoiceId: true, invoice: { select: { invoiceNo: true } } },
+            select: {
+              invoiceId: true,
+              invoice: { select: { invoiceNo: true } },
+            },
           },
         },
       }),

@@ -1,3 +1,4 @@
+import { round2 } from '@wusuq/shared';
 import {
   buildInvoiceLines,
   summariseInvoice,
@@ -270,6 +271,33 @@ describe('summariseInvoice', () => {
     expect(s.taxableBase).toBe(0);
     expect(s.taxAmount).toBe(0);
     expect(s.grandTotal).toBe(0);
+  });
+
+  // Blocker 3: the arithmetic silently subtracted a discount that was never
+  // returned, persisted, or rendered — an issued invoice's printed SUBTOTAL /
+  // TAX / GRAND TOTAL didn't add up with no way for an auditor to reconstruct
+  // the gap. `discount` must come back out so the caller can persist it and
+  // the PDF can render an honest DISCOUNT row.
+  it('returns the applied discount', () => {
+    const s = summariseInvoice(lines, { taxRate: 0.17, discountTotal: 500 });
+    expect(s.discount).toBe(500);
+    // The face of the document must reconcile: subtotal - discount + tax = grandTotal.
+    expect(round2(s.subtotal - s.discount + s.taxAmount)).toBe(s.grandTotal);
+  });
+
+  it('clamps a negative discountTotal to zero when returning it', () => {
+    const s = summariseInvoice(lines, { taxRate: 0, discountTotal: -100 });
+    expect(s.discount).toBe(0);
+  });
+
+  it('the returned discount is also floored — an over-large discount reports the true (0-floored-effective) grandTotal gap, never a negative reconstruction', () => {
+    const s = summariseInvoice(lines, { taxRate: 0.17, discountTotal: 99999 });
+    // subtotal(4950) - discount(99999) would be very negative; grandTotal is
+    // floored at 0, so the reconciliation must use the SAME floor, not the
+    // raw (unfloored) discount value.
+    expect(round2(Math.max(0, s.subtotal - s.discount) + s.taxAmount)).toBe(
+      s.grandTotal,
+    );
   });
 
   it('sums a 4-ticket invoice like the owner sample', () => {

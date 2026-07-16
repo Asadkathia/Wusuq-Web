@@ -74,6 +74,7 @@ export class InvoicesController {
         lineTotal: Number(i.lineTotal),
       })),
       subtotal: Number(inv.subtotal),
+      discount: Number(inv.discount),
       taxRate: Number(inv.taxRate),
       taxAmount: Number(inv.taxAmount),
       grandTotal: Number(inv.grandTotal),

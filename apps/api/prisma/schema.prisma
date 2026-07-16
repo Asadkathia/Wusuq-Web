@@ -526,6 +526,11 @@ model Invoice {
   currency   String        @default("PKR")
   issueDate  DateTime      @default(now())
   subtotal   Decimal
+  /// Aggregate discountPrice+promoDiscount actually applied across the
+  /// invoice's lines, PER-TICKET-CLAMPED then summed (a single ticket's
+  /// excess discount can never erode another ticket's contribution).
+  /// Snapshotted at issue like every other money field here.
+  discount   Decimal       @default(0)
   /// Snapshotted so a later tax-rate change never rewrites an issued invoice.
   taxRate    Decimal       @default(0)
   taxAmount  Decimal       @default(0)
