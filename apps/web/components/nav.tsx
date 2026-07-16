@@ -6,6 +6,7 @@ import {
   BriefcaseBusiness,
   FileText,
   FolderOpen,
+  Info,
   LayoutDashboard,
   Scale,
   Settings,
@@ -73,6 +74,7 @@ function buildNavItems(counts: Record<string, number>): NavItem[] {
     { label: 'Invoices', href: '#', icon: FileText },
     { label: 'Elections & Cabinet', href: '/elections-cabinet/elections', icon: Vote },
     { label: 'Promo Codes', href: '/promos', icon: Tag },
+    { label: 'About', href: '/about', icon: Info },
     {
       label: 'Settings',
       icon: Settings,
