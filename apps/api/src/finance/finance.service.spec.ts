@@ -12,7 +12,6 @@ describe('FinanceService', () => {
           consumerId: 'user-1',
           totalAmount: 100,
           amountPaid: 90,
-          invoice: null,
         }),
       },
     };

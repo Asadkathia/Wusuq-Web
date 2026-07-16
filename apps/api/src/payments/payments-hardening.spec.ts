@@ -25,7 +25,6 @@ const makePrisma = () => {
       update: jest.fn(),
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
     },
-    invoice: { upsert: jest.fn() },
   };
   prisma.$transaction = jest.fn(async (cb: any) => cb(prisma));
   return prisma;

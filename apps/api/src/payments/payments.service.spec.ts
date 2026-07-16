@@ -22,7 +22,6 @@ const makePrisma = () => ({
     update: jest.fn(),
     updateMany: jest.fn().mockResolvedValue({ count: 1 }),
   },
-  invoice: { upsert: jest.fn() },
   $transaction: jest.fn(async (cb: any) => cb(prisma)),
 });
 
@@ -169,7 +168,6 @@ describe('PaymentsService', () => {
           data: expect.objectContaining({ status: 'PAID' }),
         }),
       );
-      expect(prisma.invoice.upsert).toHaveBeenCalled();
     });
 
     it('is idempotent — re-deliveries of a SUCCESS callback no-op', async () => {

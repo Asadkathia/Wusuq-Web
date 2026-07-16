@@ -15,7 +15,6 @@ describe('FinanceService.reconcilePayment — receiptUrl', () => {
           amountPaid: 0,
           serviceCost: 500,
           status: 'UNPAID',
-          invoice: null,
         }),
         update: jest
           .fn()
@@ -28,9 +27,6 @@ describe('FinanceService.reconcilePayment — receiptUrl', () => {
           capturedCreateData = args.data as Record<string, unknown>;
           return Promise.resolve({ id: 'txn-1', ...args.data });
         }),
-      },
-      invoice: {
-        upsert: jest.fn().mockResolvedValue({}),
       },
     };
 
@@ -72,7 +68,6 @@ describe('FinanceService.reconcilePayment — receiptUrl', () => {
           amountPaid: 0,
           serviceCost: 300,
           status: 'UNPAID',
-          invoice: null,
         }),
         update: jest
           .fn()
@@ -85,9 +80,6 @@ describe('FinanceService.reconcilePayment — receiptUrl', () => {
           capturedCreateData = args.data as Record<string, unknown>;
           return Promise.resolve({ id: 'txn-2', ...args.data });
         }),
-      },
-      invoice: {
-        upsert: jest.fn().mockResolvedValue({}),
       },
     };
 

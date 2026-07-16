@@ -207,33 +207,9 @@ export class PaymentsService {
             data: { status: 'PAID' as TicketStatus },
           });
         }
-        const newPaid = new Decimal(updatedTicket.amountPaid);
-        const due = Decimal.max(
-          new Decimal(updatedTicket.totalAmount).minus(newPaid),
-          new Decimal(0),
-        );
-        await tx.invoice.upsert({
-          where: { ticketId: payment.ticket.id },
-          create: {
-            ticketId: payment.ticket.id,
-            invoiceNo: `INV-${Date.now()}-${payment.ticket.id.slice(-6)}`,
-            totalAmount: new Decimal(updatedTicket.totalAmount),
-            amountPaid: newPaid,
-            dueAmount: due,
-            status: due.lte(0)
-              ? ('PAID' as const)
-              : ('PARTIALLY_PAID' as const),
-            paidAt: due.lte(0) ? new Date() : null,
-          },
-          update: {
-            amountPaid: newPaid,
-            dueAmount: due,
-            status: due.lte(0)
-              ? ('PAID' as const)
-              : ('PARTIALLY_PAID' as const),
-            paidAt: due.lte(0) ? new Date() : null,
-          },
-        });
+        // A payment no longer creates/updates an Invoice as a side effect —
+        // invoices are issued deliberately by an admin from the unified,
+        // multi-ticket invoice pipeline (apps/api/src/invoices).
         return { idempotent: false as const };
       });
 

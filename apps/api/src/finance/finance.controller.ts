@@ -53,36 +53,6 @@ export class FinanceController {
     });
   }
 
-  @RequirePermissions('finance.write')
-  @Post(':ticketId/invoice/generate')
-  generateInvoice(
-    @Param('ticketId') ticketId: string,
-    @CurrentUser() actor: JwtUser | undefined,
-  ) {
-    return this.financeService.generateInvoice(ticketId, {
-      actorUserId: actor?.sub,
-      actorEmail: actor?.email,
-    });
-  }
-
-  @RequirePermissions('finance.read')
-  @Get(':ticketId/invoice/download')
-  downloadInvoice(@Param('ticketId') ticketId: string) {
-    return this.financeService.downloadInvoice(ticketId);
-  }
-
-  @RequirePermissions('finance.write')
-  @Post(':ticketId/invoice/send')
-  sendInvoice(
-    @Param('ticketId') ticketId: string,
-    @CurrentUser() actor: JwtUser | undefined,
-  ) {
-    return this.financeService.sendInvoice(ticketId, {
-      actorUserId: actor?.sub,
-      actorEmail: actor?.email,
-    });
-  }
-
   @RequirePermissions('finance.read')
   @Get('export')
   async export(@Query('format') format: string, @Res() res: Response) {
