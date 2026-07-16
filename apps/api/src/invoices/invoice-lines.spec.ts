@@ -10,10 +10,13 @@ const base: InvoiceTicketInput = {
   batchNo: '035210',
   currency: 'PKR',
   intakeFlow: 'judicial_case_files',
+  // Realistic wizard payload shape (apps/web/components/intake-wizard.tsx):
+  // select_court + select_court_city, NOT the fabricated court_name/service_city
+  // keys the pre-fix code read.
   formPayload: {
     case_title: 'Ali Ijaz vs Mrs Maryam Ali Ijaz',
-    court_name: 'Family Court',
-    city: 'Islamabad',
+    select_court: 'Family Court',
+    select_court_city: 'Islamabad',
     judge_name: 'Amina Asif Butt',
   },
   serviceCost: 2500,
@@ -46,12 +49,56 @@ describe('buildInvoiceLines', () => {
     expect(lines.map((l) => l.position)).toEqual([1, 2]);
   });
 
-  it('builds the template description block', () => {
+  it('builds the template description block from the real wizard payload shape', () => {
     const [l] = buildInvoiceLines([base]);
     expect(l.description).toBe('Case Files Lower Court 2025');
     expect(l.courtLine).toBe('(Family Court - Islamabad)');
     expect(l.caseTitle).toBe('Ali Ijaz vs Mrs Maryam Ali Ijaz');
     expect(l.judge).toBe('Amina Asif Butt');
+  });
+
+  it('falls back to the generic city key when select_court_city is absent', () => {
+    const [l] = buildInvoiceLines([
+      { ...base, formPayload: { select_court: 'Family Court', city: 'Lahore' } },
+    ]);
+    expect(l.courtLine).toBe('(Family Court - Lahore)');
+  });
+
+  it('prefers select_court_city over a plain city key when both are present', () => {
+    const [l] = buildInvoiceLines([
+      {
+        ...base,
+        formPayload: { select_court: 'Family Court', select_court_city: 'Islamabad', city: 'Lahore' },
+      },
+    ]);
+    expect(l.courtLine).toBe('(Family Court - Islamabad)');
+  });
+
+  it('resolves caseTitle through the shared case_title aliases (title, title_party_a)', () => {
+    const withTitle = buildInvoiceLines([{ ...base, formPayload: { title: 'Aliased Title' } }]);
+    expect(withTitle[0].caseTitle).toBe('Aliased Title');
+
+    const withTitleParty = buildInvoiceLines([
+      { ...base, formPayload: { title_party_a: 'Aliased Party Title' } },
+    ]);
+    expect(withTitleParty[0].caseTitle).toBe('Aliased Party Title');
+  });
+
+  it('does not read the fabricated court_name/service_city/caseTitle/judge keys', () => {
+    const [l] = buildInvoiceLines([
+      {
+        ...base,
+        formPayload: {
+          court_name: 'Fabricated Court',
+          service_city: 'Fabricated City',
+          caseTitle: 'Fabricated Case Title',
+          judge: 'Fabricated Judge',
+        },
+      },
+    ]);
+    expect(l.courtLine).toBeNull();
+    expect(l.caseTitle).toBeNull();
+    expect(l.judge).toBeNull();
   });
 
   it('folds additionalServiceCost into the Service Cost column', () => {

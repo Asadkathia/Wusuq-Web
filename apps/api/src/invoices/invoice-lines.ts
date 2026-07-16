@@ -1,4 +1,4 @@
-import { round2 } from '@wusuq/shared';
+import { round2, readAliased } from '@wusuq/shared';
 
 export interface InvoiceTicketInput {
   id: string;
@@ -48,11 +48,24 @@ function str(payload: Record<string, unknown>, ...keys: string[]): string | null
   return null;
 }
 
+/** Reads a canonical field via the shared alias table, trimming to a string. */
+function strAliased(payload: Record<string, unknown>, canonical: string): string | null {
+  const v = readAliased<unknown>(payload, canonical);
+  return typeof v === 'string' && v.trim() ? v.trim() : null;
+}
+
 function buildLine(t: InvoiceTicketInput, position: number): InvoiceLine {
   const payload = (t.formPayload ?? {}) as Record<string, unknown>;
 
-  const court = str(payload, 'court_name', 'select_court', 'court');
-  const city = str(payload, 'city', 'service_city');
+  // 'select_court' is the only real wizard key (intake-wizard.tsx writes it
+  // at select_court: court.name / select_court: only.name). 'court_name' and
+  // bare 'court' never appear anywhere in the codebase — removed.
+  const court = str(payload, 'select_court');
+  // Precedence mirrors buildPricingResolveInput's city resolution EXACTLY
+  // (packages/shared/src/index.ts: `p.select_court_city ?? p.city ?? p.select_city`).
+  // select_court_city is what the wizard actually writes for judicial flows
+  // (intake-wizard.tsx); do not reorder or the city silently drops again.
+  const city = str(payload, 'select_court_city', 'city', 'select_city');
   const courtLine =
     court && city ? `(${court} - ${city})` : court ? `(${court})` : city ? `(${city})` : null;
 
@@ -69,10 +82,20 @@ function buildLine(t: InvoiceTicketInput, position: number): InvoiceLine {
     batchNo: t.batchNo,
     description: t.service?.name?.trim() || `Ticket ${t.batchNo}`,
     courtLine,
-    caseTitle: str(payload, 'case_title', 'caseTitle'),
+    // case_title is canonical; PAYLOAD_FIELD_ALIASES['case_title'] = ['title',
+    // 'title_party_a']. Resolved via the shared readAliased helper (not a
+    // hand-rolled key list) so this stays in lock-step with the API's intake
+    // normalisation. 'caseTitle' (camelCase) is not a real formPayload key —
+    // removed.
+    caseTitle: strAliased(payload, 'case_title'),
     // The owner's sample renders "Case Judge ()" when empty. That's a defect —
     // null here means the renderer omits the line entirely.
-    judge: str(payload, 'judge_name', 'judge'),
+    // 'judge_name' is the only real wizard key (intake-flows.ts). Bare 'judge'
+    // never appears anywhere — removed. (Bench-based tiers additionally carry
+    // judge names inside the structured `bench` field, read via parseBench()
+    // in case-view.ts; this invoice line intentionally stays scoped to the
+    // flat judge_name field, matching this file's existing behaviour.)
+    judge: str(payload, 'judge_name'),
     serviceCost,
     printing,
     attested,
