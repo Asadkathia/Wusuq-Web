@@ -11,13 +11,13 @@ describe('WusuqLogo', () => {
     expect(src).not.toMatch(/<img\s/);
   });
 
-  it('references the generated brand assets by their @1x path', () => {
+  it('references the generated brand assets', () => {
     expect(src).toContain('/brand/wusuq-mark.png');
     expect(src).toContain('/brand/wusuq-mark-white.png');
     expect(src).toContain('/brand/wusuq-full.png');
   });
 
-  it('never hardcodes the @2x paths (next/image derives srcSet)', () => {
+  it('hardcodes no @2x path — next/image downscales one high-res source', () => {
     expect(src).not.toContain('@2x');
   });
 

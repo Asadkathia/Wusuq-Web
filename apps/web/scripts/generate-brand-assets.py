@@ -42,13 +42,13 @@ def main() -> None:
     full = src.crop(FULL_BOX)
     mark_white = knockout_white(mark)
 
+    # ONE high-resolution asset per variant. next/image downscales it to each
+    # call site's width (incl. retina) via /_next/image?w=…; it does NOT
+    # substitute "@2x" sibling files, so shipping them would be dead weight.
     print("brand assets:")
-    save(mark, "wusuq-mark.png", 96)
-    save(mark, "wusuq-mark@2x.png", 192)
-    save(mark_white, "wusuq-mark-white.png", 96)
-    save(mark_white, "wusuq-mark-white@2x.png", 192)
-    save(full, "wusuq-full.png", 240)
-    save(full, "wusuq-full@2x.png", 480)
+    save(mark, "wusuq-mark.png", 192)
+    save(mark_white, "wusuq-mark-white.png", 192)
+    save(full, "wusuq-full.png", 480)
 
     # Favicon: square-pad the mark so it isn't distorted by .ico's square sizes.
     side = max(mark.size)
