@@ -71,7 +71,7 @@ function buildNavItems(counts: Record<string, number>): NavItem[] {
     { label: 'Reports', href: '/reports', icon: BarChart3 },
     { label: 'Documents', href: '/documents', icon: FolderOpen },
     { label: 'Wallet', href: '/wallet', icon: Wallet },
-    { label: 'Invoices', href: '#', icon: FileText },
+    { label: 'Invoices', href: '/invoices', icon: FileText },
     { label: 'Elections & Cabinet', href: '/elections-cabinet/elections', icon: Vote },
     { label: 'Promo Codes', href: '/promos', icon: Tag },
     { label: 'About', href: '/about', icon: Info },

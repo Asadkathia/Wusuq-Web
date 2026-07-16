@@ -33,7 +33,6 @@ type TicketRow = {
   remaining: number;
   status: string;
   clerkPayout: number;
-  invoice: { invoiceNo: string; status: string } | null;
 };
 
 type Filters = {

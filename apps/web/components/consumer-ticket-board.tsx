@@ -30,6 +30,7 @@ import { buildCaseView, isCaseViewEmpty } from '@/lib/case-view';
 import { CaseRecordCard } from '@/components/case-record-card';
 import { DocumentPreview } from '@/components/document-preview';
 import { regenerateHref } from '@/lib/regenerate-route';
+import { downloadInvoice } from '@/lib/download-invoice';
 import { apiClient } from '@/lib/api-client';
 import { relativeTime } from '@/lib/relative-time';
 import { Button } from '@/components/ui/button';
@@ -79,6 +80,11 @@ type TicketRow = {
   scheduledDate?: string | null;
   deliveryStatus?: 'PENDING' | 'DISPATCHED' | null;
   trackingNo?: string | null;
+  // Plan B (unified invoice): present only once this ticket has been pulled
+  // onto an admin-issued invoice — the "Download invoice" control renders
+  // ONLY when this is populated (an un-invoiced ticket has nothing to
+  // download; invoices are admin-issued batches, not one-per-ticket anymore).
+  invoiceItem?: { invoiceId: string; invoice: { invoiceNo: string } } | null;
 };
 
 // Lifecycle order for the compact progress strip on each card.
@@ -142,37 +148,6 @@ function money(
   currency: 'PKR' | 'USD',
 ) {
   return formatMoney(Number(value ?? 0), currency);
-}
-
-// Fetches the on-the-fly consumer invoice (base64 PDF, matches finance-board's
-// staff-invoice download pattern) and triggers a client-side download. Shared
-// between `TicketCard` and `ConsumerTicketDetail` so the fetch/blob logic
-// isn't copy-pasted between the two consumer surfaces (C7/C8).
-async function downloadTicketInvoice(ticketId: string, setBusy: (b: boolean) => void) {
-  setBusy(true);
-  try {
-    const result = await apiClient.get<{
-      filename: string;
-      contentType: string;
-      content: string;
-    }>(`/tickets/${ticketId}/invoice`);
-    const binary = atob(result.content);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-    const blob = new Blob([bytes], { type: result.contentType || 'application/pdf' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = result.filename || `invoice-${ticketId}.pdf`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  } catch (err) {
-    console.error('Invoice download failed', err);
-  } finally {
-    setBusy(false);
-  }
 }
 
 type FilterTab = 'all' | 'active' | 'completed' | 'unpaid';
@@ -375,6 +350,11 @@ function TicketCard({ ticket, onOpen }: { ticket: TicketRow; onOpen: () => void 
   const isDelivered = ticket.status === 'DELIVERED';
   const isFullyPaid = paid >= total && total > 0;
   const rgHref = isConsumerCreated ? regenerateHref(ticket, 'consumer') : null;
+  // Plan B: "Download invoice" only renders once this ticket is actually on
+  // an issued invoice — invoices are admin-issued multi-ticket batches now,
+  // not generated per-ticket, so an un-invoiced ticket has nothing to fetch.
+  const invoiceId = ticket.invoiceItem?.invoiceId ?? null;
+  const invoiceNo = ticket.invoiceItem?.invoice?.invoiceNo ?? null;
 
   // Show "Final payment due" when: remainder has been finalized but not yet fully paid
   const showFinalPayment =
@@ -565,7 +545,7 @@ function TicketCard({ ticket, onOpen }: { ticket: TicketRow; onOpen: () => void 
       ) : null}
 
       {/* Regenerate / Download invoice / Pay later (C7/C8) */}
-      {rgHref || total > 0 || showFinalPayment || showPayNow ? (
+      {rgHref || invoiceId || showFinalPayment || showPayNow ? (
         <div className="mt-2 flex flex-wrap items-center justify-end gap-2">
           {rgHref ? (
             <Link href={rgHref} onClick={(e) => e.stopPropagation()}>
@@ -574,15 +554,22 @@ function TicketCard({ ticket, onOpen }: { ticket: TicketRow; onOpen: () => void 
               </Button>
             </Link>
           ) : null}
-          {total > 0 ? (
+          {invoiceId && invoiceNo ? (
             <Button
               variant="secondary"
               size="sm"
               disabled={invoiceBusy}
-              onClick={(e) => {
+              onClick={async (e) => {
                 e.stopPropagation();
                 if (invoiceBusy) return;
-                downloadTicketInvoice(ticket.id, setInvoiceBusy);
+                setInvoiceBusy(true);
+                try {
+                  await downloadInvoice(invoiceId, invoiceNo);
+                } catch (err: any) {
+                  toast.error('Download failed', err?.message);
+                } finally {
+                  setInvoiceBusy(false);
+                }
               }}
               leftIcon={<Download className="h-3.5 w-3.5" />}
             >
@@ -705,14 +692,26 @@ export function ConsumerTicketDetail({
       .finally(() => setLoading(false));
   }, [ticketId]);
 
-  // Guarded against double-clicks via invoiceDownloading; the actual
-  // fetch/blob/download logic lives in the shared `downloadTicketInvoice`
-  // helper so `TicketCard` can reuse it without copy-pasting (C7/C8).
-  const downloadInvoice = useCallback(() => {
-    if (!ticketId || invoiceDownloading) return;
-    downloadTicketInvoice(ticketId, setInvoiceDownloading);
-  }, [ticketId, invoiceDownloading]);
   const toast = useToast();
+
+  // Plan B: only render/allow the download once this ticket is actually on
+  // an issued invoice (invoices are admin-issued multi-ticket batches now).
+  // Guarded against double-clicks via invoiceDownloading; the fetch/blob
+  // logic itself lives in the shared `downloadInvoice` helper (imported
+  // above) so this and `TicketCard` don't copy-paste it (C7/C8).
+  const invoiceId: string | null = ticket?.invoiceItem?.invoiceId ?? null;
+  const invoiceNo: string | null = ticket?.invoiceItem?.invoice?.invoiceNo ?? null;
+  const handleDownloadInvoice = useCallback(async () => {
+    if (!invoiceId || !invoiceNo || invoiceDownloading) return;
+    setInvoiceDownloading(true);
+    try {
+      await downloadInvoice(invoiceId, invoiceNo);
+    } catch (err: any) {
+      toast.error('Download failed', err?.message);
+    } finally {
+      setInvoiceDownloading(false);
+    }
+  }, [invoiceId, invoiceNo, invoiceDownloading, toast]);
 
   if (loading || !ticket) {
     return (
@@ -922,15 +921,17 @@ export function ConsumerTicketDetail({
                 </Button>
               </Link>
             ) : null}
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={invoiceDownloading}
-              onClick={downloadInvoice}
-              leftIcon={<Download className="h-3.5 w-3.5" />}
-            >
-              {invoiceDownloading ? 'Preparing…' : 'Download invoice'}
-            </Button>
+            {invoiceId && invoiceNo ? (
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={invoiceDownloading}
+                onClick={handleDownloadInvoice}
+                leftIcon={<Download className="h-3.5 w-3.5" />}
+              >
+                {invoiceDownloading ? 'Preparing…' : 'Download invoice'}
+              </Button>
+            ) : null}
           </div>
         </section>
       ) : null}

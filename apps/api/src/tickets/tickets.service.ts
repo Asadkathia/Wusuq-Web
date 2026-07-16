@@ -294,6 +294,15 @@ export class TicketsService {
             take: 1,
             select: { createdAt: true },
           },
+          // Plan B (unified invoice, Task 8): expose whether a ticket has been
+          // pulled onto an issued invoice, and its number, so consumer/staff
+          // surfaces can gate a "Download invoice" control on the invoice
+          // actually existing — an un-invoiced ticket has no invoice to
+          // download. Non-sensitive (just a linkage + number); no redaction
+          // needed for any caller class.
+          invoiceItem: {
+            select: { invoiceId: true, invoice: { select: { invoiceNo: true } } },
+          },
         },
       }),
       this.prisma.ticket.count({ where }),
@@ -345,6 +354,7 @@ export class TicketsService {
         // ("Out for delivery" chip); the proof file path is admin-only.
         deliveryStatus: ticket.deliveryStatus,
         trackingNo: ticket.trackingNo,
+        invoiceItem: ticket.invoiceItem ?? null,
         // Clerk cost and internal ops state are back-office only — never expose
         // to consumers (CLAUDE.md). Admin/staff AND the assigned representative
         // (their own pay-out) still carry them.
@@ -430,6 +440,12 @@ export class TicketsService {
         documents: true,
         history: { orderBy: { createdAt: 'asc' } },
         clerkReport: true,
+        // Plan B (unified invoice, Task 8): same linkage as findAll — lets the
+        // consumer detail view + staff panel gate "Download invoice" on the
+        // ticket actually being on an issued invoice.
+        invoiceItem: {
+          select: { invoiceId: true, invoice: { select: { invoiceNo: true } } },
+        },
       },
     });
 

@@ -1,5 +1,4 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-/* eslint-disable @typescript-eslint/no-unused-vars */
 
 
 'use client';
@@ -14,7 +13,7 @@ import { DataTableShell } from '@/components/ui/data-table-shell';
 import { FilterBar } from '@/components/ui/filter-bar';
 import { StatCard } from '@/components/ui/stat-card';
 import { StatusPill } from '@/components/ui/status-pill';
-import { Banknote, FileText, Send, Download, CheckCircle, RefreshCw, HandCoins, Pencil, X, Check, CheckCircle2, XCircle, ExternalLink, Building2, SlidersHorizontal, Upload } from 'lucide-react';
+import { Banknote, FileText, CheckCircle, RefreshCw, HandCoins, Pencil, X, Check, CheckCircle2, XCircle, ExternalLink, Building2, SlidersHorizontal, Upload } from 'lucide-react';
 import { STAFF_LOGIN_PATH } from '@/lib/staff-routes';
 
 type FinanceItem = {
@@ -37,7 +36,6 @@ type FinanceItem = {
   remaining: number;
   clerkPayout: number;
   status: string;
-  invoice?: { invoiceNo: string; status: string } | null;
 };
 
 export function FinanceBoard() {
@@ -155,14 +153,13 @@ export function FinanceBoard() {
   const stats = useMemo(() => {
     const totalOut = items.reduce((acc, item) => acc + item.remaining, 0);
     const totalCol = items.reduce((acc, item) => acc + item.amountPaid, 0);
-    const generated = items.filter(i => i.invoice).length;
-    return { outstanding: totalOut, collected: totalCol, invoices: generated };
+    return { outstanding: totalOut, collected: totalCol };
   }, [items]);
 
   const filteredItems = useMemo(() => {
     if (!search) return items;
     const l = search.toLowerCase();
-    return items.filter(i => i.batchNo.toLowerCase().includes(l) || i.consumer.name.toLowerCase().includes(l) || i.service.name.toLowerCase().includes(l) || (i.invoice?.invoiceNo || '').toLowerCase().includes(l));
+    return items.filter(i => i.batchNo.toLowerCase().includes(l) || i.consumer.name.toLowerCase().includes(l) || i.service.name.toLowerCase().includes(l));
   }, [items, search]);
 
   const reconcile = async (ticketId: string) => {
@@ -249,51 +246,6 @@ export function FinanceBoard() {
       load();
     } catch (error: any) {
       setMessage(error.message || 'Update failed');
-    }
-  };
-
-  const generateInvoice = async (ticketId: string) => {
-    try {
-      await apiClient.post(`/finance/${ticketId}/invoice/generate`);
-      setMessage('Invoice generated');
-      load();
-    } catch (error: any) {
-      setMessage(error.message || 'Generate failed');
-    }
-  };
-
-  const sendInvoice = async (ticketId: string) => {
-    try {
-      await apiClient.post(`/finance/${ticketId}/invoice/send`);
-      setMessage('Invoice sent');
-      load();
-    } catch (error: any) {
-      setMessage(error.message || 'Send failed');
-    }
-  };
-
-  const downloadInvoice = async (ticketId: string) => {
-    try {
-      const result = await apiClient.get<any>(`/finance/${ticketId}/invoice/download`);
-      const isPdf = result.contentType === 'application/pdf';
-      let blob: Blob;
-      if (isPdf) {
-        const binary = atob(result.content);
-        const bytes = new Uint8Array(binary.length);
-        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-        blob = new Blob([bytes], { type: 'application/pdf' });
-      } else {
-        blob = new Blob([result.content], { type: result.contentType });
-      }
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = result.filename || `invoice-${ticketId}.pdf`;
-      a.click();
-      URL.revokeObjectURL(url);
-      setMessage('Invoice downloaded');
-    } catch (error: any) {
-      setMessage(error.message || 'Download failed');
     }
   };
 
@@ -432,10 +384,9 @@ export function FinanceBoard() {
       />
 
       {/* KPI Row */}
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2">
         <StatCard title="Outstanding Balance" value={`PKR ${stats.outstanding.toLocaleString()}`} icon={<Banknote className="h-6 w-6 text-slate-400" />} />
         <StatCard title="Total Collected" value={`PKR ${stats.collected.toLocaleString()}`} icon={<HandCoins className="h-6 w-6 text-slate-400" />} />
-        <StatCard title="Issued Invoices" value={stats.invoices.toString()} icon={<FileText className="h-6 w-6 text-slate-400" />} />
       </div>
 
       {/* ── Payment Approval Queue ─────────────────────────────────────── */}
@@ -725,7 +676,6 @@ export function FinanceBoard() {
               <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Order</th>
               <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Financials</th>
               <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Status</th>
-              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Invoice</th>
               <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-slate-500 uppercase tracking-wider">Action Rail</th>
             </tr>
           </thead>
@@ -778,14 +728,6 @@ export function FinanceBoard() {
                         : 'info'
                     }
                   />
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  {item.invoice ? (
-                    <div>
-                      <div className="text-sm font-medium text-slate-900 flex items-center gap-1.5"><FileText className="h-4 w-4 text-slate-400" /> {item.invoice.invoiceNo}</div>
-                      <div className="text-xs text-slate-500 mt-1 uppercase tracking-wider">{item.invoice.status}</div>
-                    </div>
-                  ) : <span className="text-sm text-slate-400">-</span>}
                 </td>
                 <td className="px-6 py-4">
                   <div className="flex flex-col gap-2 items-end">
@@ -848,31 +790,13 @@ export function FinanceBoard() {
                         </label>
                       </div>
                     )}
-                    
-                    {/* Invoice Actions Row */}
-                    <div className="flex gap-2">
-                       {!item.invoice ? (
-                         <button onClick={() => generateInvoice(item.id)} className="text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 px-3 py-1.5 rounded-md shadow-sm text-xs font-semibold flex items-center gap-1.5">
-                           <FileText className="h-3.5 w-3.5 text-slate-400" /> Generate Invoice
-                         </button>
-                       ) : (
-                         <>
-                           <button onClick={() => downloadInvoice(item.id)} className="text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 p-1.5 rounded-md shadow-sm" title="Download Invoice">
-                             <Download className="h-4 w-4" />
-                           </button>
-                           <button onClick={() => sendInvoice(item.id)} className="text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 p-1.5 rounded-md shadow-sm" title="Send Invoice Email">
-                             <Send className="h-4 w-4" />
-                           </button>
-                         </>
-                       )}
-                    </div>
                   </div>
                 </td>
               </tr>
             ))}
             {filteredItems.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-6 py-12 text-center text-sm text-slate-500">
+                <td colSpan={4} className="px-6 py-12 text-center text-sm text-slate-500">
                   No records found matching your criteria.
                 </td>
               </tr>

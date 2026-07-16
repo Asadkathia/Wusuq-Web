@@ -33,6 +33,7 @@ export const consumerNavItems: NavItem[] = [
   },
   { label: 'Documents', href: '/consumer/documents', icon: FileText },
   { label: 'My Files', href: '/consumer/files', icon: HardDrive },
+  { label: 'Invoices', href: '/consumer/invoices', icon: FileText },
   { label: 'Profile', href: '/consumer/profile', icon: BriefcaseBusiness },
 ];
 

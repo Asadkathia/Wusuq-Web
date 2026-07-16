@@ -203,6 +203,10 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [isClerk, setIsClerk] = useState(false);
   const [isConsumer, setIsConsumer] = useState(false);
+  // Plan B: `POST /invoices` requires `finance.write`, which only super-admin
+  // holds — so "Generate invoice" must be gated on the exact role, not the
+  // broader `isAdmin` (any non-clerk/non-consumer staff member) below.
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   useEffect(() => {
     try {
       const u = JSON.parse(localStorage.getItem('wusuq_user') || 'null');
@@ -215,6 +219,9 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
       if (CONSUMER_ROLES.includes(u.role as (typeof CONSUMER_ROLES)[number])) {
         setIsConsumer(true);
         setCurrentUserId(u.id ?? null);
+      }
+      if (u.role === 'super-admin') {
+        setIsSuperAdmin(true);
       }
     } catch {}
   }, []);
@@ -639,6 +646,35 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
       loadTickets();
     } catch (error: any) {
       flash(error.message || 'Restore failed', true);
+    }
+  };
+
+  // Plan B: bundle the selected tickets into one multi-ticket invoice.
+  // `POST /invoices` is `finance.write` (super-admin only) — every other
+  // caller 403s, so the control itself is gated on isSuperAdmin above.
+  const [generatingInvoice, setGeneratingInvoice] = useState(false);
+  const runGenerateInvoice = async () => {
+    if (generatingInvoice) return;
+    if (selectedIds.length === 0) return flash('Select at least one ticket', true);
+    if (!window.confirm(`Generate one invoice covering ${selectedIds.length} selected ticket(s)?`)) {
+      return;
+    }
+    setGeneratingInvoice(true);
+    try {
+      const invoice = await apiClient.post<{ id: string; invoiceNo: string }>('/invoices', {
+        ticketIds: selectedIds,
+      });
+      flash(`Invoice ${invoice.invoiceNo} generated`);
+      setSelected({});
+      setPendingSelected({});
+      loadTickets();
+    } catch (error: any) {
+      // Surface the server's guard message verbatim — these are written for
+      // humans ("Ticket 035210 is already on another invoice.", "All tickets
+      // on an invoice must belong to one consumer.").
+      flash(error.message || 'Invoice generation failed', true);
+    } finally {
+      setGeneratingInvoice(false);
     }
   };
 
@@ -1214,6 +1250,19 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
                     >
                       Apply
                     </button>
+                    {/* Plan B: POST /invoices is finance.write — super-admin
+                        only. Every other staff role 403s, so this is gated on
+                        the exact role rather than the broader isAdmin. */}
+                    {isSuperAdmin && (
+                      <button
+                        type="button"
+                        onClick={runGenerateInvoice}
+                        disabled={selectedIds.length === 0 || generatingInvoice}
+                        className="w-full sm:w-auto rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 disabled:opacity-50 transition-colors"
+                      >
+                        {generatingInvoice ? 'Generating…' : 'Generate invoice'}
+                      </button>
+                    )}
                   </>
                 )}
                 {isClerk && status === 'ASSIGNED' && selectedIds.length > 0 && (
