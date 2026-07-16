@@ -1,5 +1,6 @@
 import { jest } from '@jest/globals';
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { InvoicesService } from './invoices.service';
 
 type Ticket = Record<string, unknown>;
@@ -16,13 +17,38 @@ const ticket = (over: Partial<Ticket> = {}): Ticket => ({
 
 function makeService(tickets: Ticket[], opts: { taxRate?: number } = {}) {
   const created: Record<string, unknown>[] = [];
+  // `tx` and `prisma` are two DISTINCT mock objects, each with their OWN
+  // jest.fn instances (never spread/shared) — this is what lets a test tell
+  // "drew the sequence from the transaction client" apart from "drew it from
+  // the top-level client outside the transaction". A prior version built
+  // `prisma` as `{ ...tx, $transaction: ... }`, which made e.g.
+  // `tx.$queryRawUnsafe` and `prisma.$queryRawUnsafe` the SAME jest.fn
+  // reference, so an assertion on either was meaningless — a regression that
+  // called `this.prisma.$queryRawUnsafe` from OUTSIDE the transaction still
+  // made every assertion pass.
   const tx = {
     ticket: { findMany: jest.fn(() => Promise.resolve(tickets)) },
-    invoice: { create: jest.fn((a: { data: Record<string, unknown> }) => { created.push(a.data); return Promise.resolve({ id: 'inv1', invoiceNo: a.data.invoiceNo }); }) },
+    invoice: {
+      create: jest.fn((a: { data: Record<string, unknown> }) => {
+        created.push(a.data);
+        return Promise.resolve({ id: 'inv1', invoiceNo: a.data.invoiceNo });
+      }),
+    },
     $queryRawUnsafe: jest.fn(() => Promise.resolve([{ nextval: 348n }])),
   };
   const prisma = {
-    ...tx,
+    ticket: {
+      // Used only by the P2002-conflict catch path, to name the ticket that
+      // lost the race. Defaults to "no match found" for tests that never hit
+      // that path. Real code never calls `this.prisma.ticket.findMany` — the
+      // main lookup always runs as `tx.ticket.findMany` inside the
+      // transaction.
+      findFirst: jest.fn(() => Promise.resolve(null)),
+    },
+    invoice: { create: jest.fn() },
+    // A separate jest.fn from tx.$queryRawUnsafe above. Real code must NEVER
+    // call this one — nextval has to be drawn inside the transaction.
+    $queryRawUnsafe: jest.fn(() => Promise.resolve([{ nextval: 1n }])),
     $transaction: jest.fn(async (fn: (t: unknown) => unknown) => fn(tx)),
   };
   const settings = { getTaxRate: jest.fn(() => Promise.resolve(opts.taxRate ?? 0)) };
@@ -75,7 +101,13 @@ describe('InvoicesService.generate', () => {
     const { svc, prisma, tx } = makeService([ticket()]);
     await svc.generate(['t1'], 'admin1');
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
-    expect(tx.$queryRawUnsafe).toHaveBeenCalled();
+    // `tx` and `prisma` are distinct jest.fn instances (see makeService) —
+    // this pair of assertions actually distinguishes "drew nextval from the
+    // transaction client" from "drew it from the top-level client outside
+    // the transaction", which the pre-fix mock could not.
+    expect(tx.$queryRawUnsafe).toHaveBeenCalledTimes(1);
+    expect(tx.$queryRawUnsafe).toHaveBeenCalledWith(`SELECT nextval('invoice_no_seq')`);
+    expect(prisma.$queryRawUnsafe).not.toHaveBeenCalled();
   });
 
   it('snapshots the line items onto the invoice', async () => {
@@ -100,6 +132,49 @@ describe('InvoicesService.generate', () => {
     await svc.generate(['t1'], 'admin1');
     expect(JSON.stringify(created[0])).not.toContain('999');
     expect(JSON.stringify(created[0]).toLowerCase()).not.toContain('clerk');
+  });
+});
+
+describe('InvoicesService.generate — concurrent double-generate (P2002 race)', () => {
+  // Two racing `generate(['t1'])` calls can both pass the up-front `already`
+  // guard under READ COMMITTED (both see invoiceItem: null before either
+  // commits); the second `tx.invoice.create` then hits the real
+  // `InvoiceItem.ticketId @unique` constraint and Prisma throws P2002. The
+  // service must convert that into the same ConflictException the up-front
+  // guard throws, not let it surface as a raw 500.
+  const ticketIdP2002 = new Prisma.PrismaClientKnownRequestError(
+    'Unique constraint failed on the fields: (`ticketId`)',
+    { code: 'P2002', clientVersion: 'test', meta: { target: ['ticketId'] } },
+  );
+
+  it('converts a P2002 on InvoiceItem.ticketId into a ConflictException, not a raw 500', async () => {
+    const { svc, tx } = makeService([ticket()]);
+    tx.invoice.create.mockImplementationOnce(() => Promise.reject(ticketIdP2002));
+    await expect(svc.generate(['t1'], 'admin1')).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('names the conflicting ticket by batchNo when it can find one', async () => {
+    const { svc, tx, prisma } = makeService([ticket()]);
+    tx.invoice.create.mockImplementationOnce(() => Promise.reject(ticketIdP2002));
+    prisma.ticket.findFirst.mockImplementationOnce(() => Promise.resolve({ batchNo: '035210' }));
+    await expect(svc.generate(['t1'], 'admin1')).rejects.toThrow(/035210.*already on another invoice/i);
+  });
+
+  it('does NOT swallow an unrelated P2002 (e.g. a different unique constraint) — real bugs still surface', async () => {
+    const { svc, tx } = makeService([ticket()]);
+    const otherConstraint = new Prisma.PrismaClientKnownRequestError(
+      'Unique constraint failed on the fields: (`invoiceNo`)',
+      { code: 'P2002', clientVersion: 'test', meta: { target: ['invoiceNo'] } },
+    );
+    tx.invoice.create.mockImplementationOnce(() => Promise.reject(otherConstraint));
+    await expect(svc.generate(['t1'], 'admin1')).rejects.toBe(otherConstraint);
+  });
+
+  it('keeps the up-front guard for the common (non-racing) case — no DB round trip needed', async () => {
+    const { svc, tx, prisma } = makeService([ticket({ invoiceItem: { invoiceId: 'inv-old' } })]);
+    await expect(svc.generate(['t1'], 'admin1')).rejects.toBeInstanceOf(ConflictException);
+    expect(tx.invoice.create).not.toHaveBeenCalled();
+    expect(prisma.ticket.findFirst).not.toHaveBeenCalled();
   });
 });
 
