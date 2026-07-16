@@ -42,3 +42,20 @@ describe('no hand-rolled W tiles remain', () => {
     expect(body).not.toMatch(/>\s*\n\s*W\s*\n\s*</);
   });
 });
+
+describe('tone/surface pairing — the art is purple-on-transparent', () => {
+  // A regression here (default `tone="brand"` used on a dark surface) renders
+  // a near-invisible purple-on-dark-purple/near-black mark. Assert the JSX
+  // usage directly (`<WusuqLogo ... tone="white"`), not just that the string
+  // "tone" appears somewhere in the file.
+  const DARK_SURFACE_SITES = [
+    ['../../app/staff-portal/page.tsx', 'ink-900 hero'],
+    ['../../app/(auth)/consumer/login/page.tsx', 'brand-500 hero'],
+    ['../../app/(auth)/consumer/signup/page.tsx', 'brand-500 hero'],
+  ] as const;
+
+  it.each(DARK_SURFACE_SITES)('%s (%s) renders WusuqLogo with tone="white"', (rel) => {
+    const body = readFileSync(join(currentDir, rel), 'utf8');
+    expect(body).toMatch(/<WusuqLogo[^>]*tone="white"/);
+  });
+});

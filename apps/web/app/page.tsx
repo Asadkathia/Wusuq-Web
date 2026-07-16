@@ -2,9 +2,7 @@
 
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { STAFF_LOGIN_PATH } from '@/lib/staff-routes';
-
-const CONSUMER_ROLES = ['consumer', 'lawyer', 'company'];
+import { landingPathFor } from '@/lib/staff-routes';
 
 function hasExpiredJwt(token: string) {
   try {
@@ -29,28 +27,18 @@ export default function Home() {
       const user = JSON.parse(localStorage.getItem('wusuq_user') || 'null') as { role?: string } | null;
       role = user?.role ?? '';
     } catch {}
-    const isConsumer = CONSUMER_ROLES.includes(role);
-    const isRepresentative = role === 'representative';
-    const isKnownStaff = role !== '' && !isConsumer;
 
-    if (!token || hasExpiredJwt(token)) {
+    const hasValidToken = Boolean(token) && !hasExpiredJwt(token as string);
+    if (!hasValidToken) {
       localStorage.removeItem('wusuq_access_token');
       localStorage.removeItem('wusuq_refresh_token');
       localStorage.removeItem('wusuq_user');
-      // Unknown visitors land on the consumer portal; only a known staff role
-      // is sent to the staff door (spec 2026-07-16, Part 2).
-      router.replace(isKnownStaff ? STAFF_LOGIN_PATH : '/consumer/login');
-      return;
     }
 
-    // Representatives (clerks) land on /dashboard, which renders their clerk
-    // view (earnings + metrics) backed by /dashboard/clerk-summary.
-    if (isRepresentative) {
-      router.replace('/dashboard');
-      return;
-    }
-
-    router.replace(isConsumer ? '/consumer/dashboard' : '/dashboard');
+    // The role -> destination decision is a pure function (landingPathFor)
+    // unit-tested in lib/staff-routes.test.ts; keep this effect a thin
+    // browser-state reader, not a place to reimplement the branching.
+    router.replace(landingPathFor(role, hasValidToken));
   }, [router]);
 
   return (

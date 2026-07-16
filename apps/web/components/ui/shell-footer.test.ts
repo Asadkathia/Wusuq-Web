@@ -35,7 +35,11 @@ describe('attribution reaches every required surface', () => {
   ];
 
   it.each(SURFACES)('%s renders ShellFooter', (rel) => {
-    expect(readFileSync(join(WEB, rel), 'utf8')).toContain('ShellFooter');
+    // Match the JSX usage `<ShellFooter`, never the bare identifier: a bare
+    // /ShellFooter/ also matches the import line, so this would pass even on
+    // a layout that imports the footer and renders it nowhere (the exact
+    // hazard this file's own comment below documents for ATTRIBUTION).
+    expect(readFileSync(join(WEB, rel), 'utf8')).toMatch(/<ShellFooter\b/);
   });
 
   const AUTH_PAGES = [

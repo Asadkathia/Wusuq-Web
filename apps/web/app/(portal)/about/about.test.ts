@@ -30,7 +30,10 @@ function extractFunctionBody(source: string, fnName: string): string {
 
 describe('About page', () => {
   it('renders the exact attribution string', () => {
-    expect(pageSource).toContain('ATTRIBUTION');
+    // Match the JSX usage `{ATTRIBUTION}`, never the bare identifier: a bare
+    // /ATTRIBUTION/ also matches the import line, so this would pass even on
+    // a page that imports it and renders it nowhere.
+    expect(pageSource).toMatch(/\{ATTRIBUTION\}/);
   });
 
   it('uses DEVELOPER constant for the dl entry, not a hardcoded string', () => {

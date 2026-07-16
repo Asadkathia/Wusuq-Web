@@ -6,6 +6,7 @@ import {
   staffLoginHref,
   safeNextPath,
   safeConsumerNextPath,
+  landingPathFor,
 } from './staff-routes';
 
 const currentDir = dirname(fileURLToPath(import.meta.url));
@@ -203,5 +204,118 @@ describe('no source links to the legacy /login path', () => {
     const body = readFileSync(join(WEB, 'app/staff-portal/page.tsx'), 'utf8');
     expect(body).not.toContain('/consumer/login');
     expect(body.toLowerCase()).not.toContain('client portal');
+  });
+});
+
+describe('legacy /login redirect is wired to staffLoginHref (source-level)', () => {
+  const body = readFileSync(join(WEB, 'app/login/page.tsx'), 'utf8');
+
+  it('imports staffLoginHref from the shared guard module', () => {
+    expect(body).toMatch(/import\s*\{[^}]*staffLoginHref[^}]*\}\s*from\s*['"]@\/lib\/staff-routes['"]/);
+  });
+
+  it('passes the resolved next searchParam into staffLoginHref, not a raw value', () => {
+    // The binding constraint is "old /login MUST preserve ?next=" — assert
+    // the redirect call actually threads the derived `next` through, not
+    // just that staffLoginHref appears somewhere in the file.
+    expect(body).toMatch(/redirect\(staffLoginHref\(next\)\)/);
+  });
+
+  it('handles a duplicated ?next= query param (string[] from searchParams)', () => {
+    // Next.js hands back an array when a query key repeats
+    // (?next=/a&next=/b); the page must pick the first entry rather than
+    // stringifying/crashing on the array.
+    expect(body).toMatch(/Array\.isArray\(raw\)\s*\?\s*raw\[0\]\s*:\s*raw/);
+  });
+});
+
+describe('landingPathFor (pure decision behind the app/page.tsx default-landing redirect)', () => {
+  it('no token / no stored user -> consumer login (unknown visitor)', () => {
+    expect(landingPathFor('', false)).toBe('/consumer/login');
+  });
+
+  it('expired token, unknown role -> consumer login', () => {
+    expect(landingPathFor('', false)).toBe('/consumer/login');
+  });
+
+  it('expired token, known staff role -> staff login (not silently dropped to consumer)', () => {
+    expect(landingPathFor('admin', false)).toBe(STAFF_LOGIN_PATH);
+  });
+
+  it('expired token, consumer-class role -> consumer login', () => {
+    expect(landingPathFor('consumer', false)).toBe('/consumer/login');
+  });
+
+  it('no stored user, valid token -> /dashboard (default, not consumer)', () => {
+    expect(landingPathFor('', true)).toBe('/dashboard');
+  });
+
+  it('corrupt JSON (caller normalises to role="") , valid token -> /dashboard', () => {
+    expect(landingPathFor('', true)).toBe('/dashboard');
+  });
+
+  it.each(['consumer', 'lawyer', 'company'])('%s role, valid token -> /consumer/dashboard', (role) => {
+    expect(landingPathFor(role, true)).toBe('/consumer/dashboard');
+  });
+
+  it('representative role, valid token -> /dashboard (clerk view)', () => {
+    expect(landingPathFor('representative', true)).toBe('/dashboard');
+  });
+
+  it('staff role, valid token -> /dashboard', () => {
+    expect(landingPathFor('admin', true)).toBe('/dashboard');
+  });
+});
+
+describe('open-redirect regression: post-slash tab/LF/CR (finding 1)', () => {
+  // WHATWG URL strips ASCII tab/LF/CR before parsing, so `/\t/evil.test`
+  // resolves to host `evil.test`. Assert on the resolved ORIGIN, not on
+  // string equality against the attack payload — string equality is
+  // exactly what let three prior bypasses (`//`, `/\`, now this) through
+  // undetected, because each fix only covered the one shape it was shown.
+  const ORIGIN_BASE = 'https://wusuq.app/staff-portal';
+  const SAME_ORIGIN = 'https://wusuq.app';
+  const FALLBACK = '/dashboard';
+
+  const ATTACKS = [
+    '/\t/evil.test',
+    '/\n/evil.test',
+    '/\r/evil.test',
+    '/\t\t//evil.test',
+    '/%09/evil.test',
+    '/%0A/evil.test',
+  ];
+
+  it.each(ATTACKS)('safeNextPath(%j) resolves same-origin (falls back)', (attack) => {
+    const result = safeNextPath(attack, FALLBACK);
+    expect(new URL(result, ORIGIN_BASE).origin).toBe(SAME_ORIGIN);
+    expect(result).toBe(FALLBACK);
+  });
+
+  it.each(ATTACKS)('staffLoginHref(%j) resolves same-origin (falls back)', (attack) => {
+    const result = staffLoginHref(attack);
+    expect(new URL(result, ORIGIN_BASE).origin).toBe(SAME_ORIGIN);
+    expect(result).toBe(STAFF_LOGIN_PATH);
+  });
+
+  it.each(ATTACKS)('safeConsumerNextPath(%j) resolves same-origin (falls back)', (attack) => {
+    const fallback = '/consumer/dashboard';
+    const result = safeConsumerNextPath(attack, fallback);
+    expect(new URL(result, ORIGIN_BASE).origin).toBe(SAME_ORIGIN);
+    expect(result).toBe(fallback);
+  });
+
+  it('legitimate paths still resolve same-origin and are NOT over-blocked', () => {
+    const legit = [
+      '/tickets',
+      '/finance?tab=a&x=1',
+      '/consumerX/dashboard',
+      '/search?q=100%25off',
+    ];
+    for (const path of legit) {
+      const result = safeNextPath(path, FALLBACK);
+      expect(new URL(result, ORIGIN_BASE).origin).toBe(SAME_ORIGIN);
+      expect(result).toBe(path);
+    }
   });
 });
