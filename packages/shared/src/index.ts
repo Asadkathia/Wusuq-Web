@@ -725,6 +725,64 @@ export function parsePayloadCities(value: unknown): string[] {
   return [trimmed];
 }
 
+/**
+ * Shape of the payload value stored under `bench`. `benchType` is one of the
+ * tier-specific bench-type values (see BENCH_TYPES_BY_TIER in
+ * apps/web/components/intake-wizard.tsx). `judges` is an array of judge names
+ * in seniority order; its length is governed by the bench-type's expected
+ * count, with trailing empty strings allowed during editing.
+ *
+ * Single source of truth for both the web wizard/case-card
+ * (apps/web/lib/intake-flows.ts re-exports these) and the API invoice line
+ * builder (apps/api/src/invoices/invoice-lines.ts) — the judge identity for
+ * High/Supreme/Shariat/FCC tickets lives ONLY inside this structured field
+ * (the flat `judge_name` field is Lower/Special Court only), so both
+ * consumers must parse it the same way.
+ */
+export type Bench = {
+  benchType: string;
+  judges: string[];
+};
+
+/**
+ * Parse a `bench` payload value (object or JSON string) into a {@link Bench}.
+ * Falls back to a single-judge bench with no judges when the value is
+ * malformed/missing — never throws.
+ */
+export function parseBench(value: unknown): Bench {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const obj = value as Record<string, unknown>;
+    const benchType =
+      typeof obj.benchType === 'string' && obj.benchType ? obj.benchType : 'single_judge';
+    const judges = Array.isArray(obj.judges)
+      ? (obj.judges as unknown[]).map((j) => (typeof j === 'string' ? j : ''))
+      : [];
+    return { benchType, judges };
+  }
+  if (typeof value === 'string' && value.trim().startsWith('{')) {
+    try {
+      const parsed = JSON.parse(value) as Record<string, unknown>;
+      return parseBench(parsed);
+    } catch {
+      // fall through
+    }
+  }
+  return { benchType: 'single_judge', judges: [] };
+}
+
+/**
+ * Format the bench judges into the display string convention
+ * `J. <name1> & J. <name2> ...`, skipping empty names. Returns '' when no
+ * non-empty names are present.
+ */
+export function formatBenchJudgeName(judges: string[]): string {
+  return judges
+    .map((j) => j.trim())
+    .filter(Boolean)
+    .map((j) => (j.toLowerCase().startsWith('j.') ? j : `J. ${j}`))
+    .join(' & ');
+}
+
 // ─────────────────────────────────────────────
 // Canonical money math — single source of truth
 // ─────────────────────────────────────────────

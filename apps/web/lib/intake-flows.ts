@@ -2,7 +2,13 @@
 // Pricing year bands (single source: @wusuq/shared)
 // ─────────────────────────────────────────────
 
-import { deriveYearBand, type YearBand as SharedYearBand } from '@wusuq/shared';
+import {
+  deriveYearBand,
+  type YearBand as SharedYearBand,
+  parseBench as sharedParseBench,
+  formatBenchJudgeName as sharedFormatBenchJudgeName,
+  type Bench as SharedBench,
+} from '@wusuq/shared';
 
 /**
  * Canonical year-band keys understood by the pricing resolver. Re-exported
@@ -42,53 +48,15 @@ export type IntakeFieldType =
 // ─────────────────────────────────────────────
 
 /**
- * Shape of the payload value stored under `bench`. `benchType` is one of the
- * tier-specific bench-type values (see BENCH_TYPES_BY_TIER in
- * intake-wizard.tsx). `judges` is an array of judge names in seniority order;
- * its length is governed by the bench-type's expected count, with trailing
- * empty strings allowed during editing.
+ * Shape of the payload value stored under `bench`, and its parser/formatter.
+ * Single source of truth: `@wusuq/shared` (also consumed by the API's invoice
+ * line builder, which needs the same judge-name resolution for bench-tier
+ * tickets). Re-exported here so existing wizard/case-card imports from
+ * `@/lib/intake-flows` keep working unchanged.
  */
-export type Bench = {
-  benchType: string;
-  judges: string[];
-};
-
-/**
- * Parse a `bench` payload value (object or JSON string) into a {@link Bench}.
- * Falls back to a single-judge bench when the value is malformed/missing.
- */
-export function parseBench(value: unknown): Bench {
-  if (value && typeof value === 'object' && !Array.isArray(value)) {
-    const obj = value as Record<string, unknown>;
-    const benchType = typeof obj.benchType === 'string' && obj.benchType ? obj.benchType : 'single_judge';
-    const judges = Array.isArray(obj.judges)
-      ? (obj.judges as unknown[]).map((j) => (typeof j === 'string' ? j : ''))
-      : [];
-    return { benchType, judges };
-  }
-  if (typeof value === 'string' && value.trim().startsWith('{')) {
-    try {
-      const parsed = JSON.parse(value) as Record<string, unknown>;
-      return parseBench(parsed);
-    } catch {
-      // fall through
-    }
-  }
-  return { benchType: 'single_judge', judges: [] };
-}
-
-/**
- * Format the bench judges into the display string convention
- * `J. <name1> & J. <name2> ...`, skipping empty names. Returns '' when no
- * non-empty names are present.
- */
-export function formatBenchJudgeName(judges: string[]): string {
-  return judges
-    .map((j) => j.trim())
-    .filter(Boolean)
-    .map((j) => (j.toLowerCase().startsWith('j.') ? j : `J. ${j}`))
-    .join(' & ');
-}
+export type Bench = SharedBench;
+export const parseBench = sharedParseBench;
+export const formatBenchJudgeName = sharedFormatBenchJudgeName;
 
 // ─────────────────────────────────────────────
 // Structured delivery address (PDF #31b)

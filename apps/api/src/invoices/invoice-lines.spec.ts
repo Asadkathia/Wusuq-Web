@@ -119,6 +119,85 @@ describe('buildInvoiceLines', () => {
     expect(l.judge).toBeNull();
   });
 
+  it('resolves the judge from a structured `bench` payload (High/Supreme/Shariat/FCC shape)', () => {
+    const [l] = buildInvoiceLines([
+      {
+        ...base,
+        formPayload: {
+          case_title: 'X',
+          select_court_type: 'High Court',
+          bench: JSON.stringify({ benchType: 'single_judge', judges: ['Amina Asif Butt'] }),
+        },
+      },
+    ]);
+    expect(l.judge).toBe('Amina Asif Butt');
+  });
+
+  it('still resolves the judge from the flat `judge_name` field (Lower/Special Court shape)', () => {
+    const [l] = buildInvoiceLines([
+      { ...base, formPayload: { case_title: 'X', judge_name: 'Justice Tariq Mehmood' } },
+    ]);
+    expect(l.judge).toBe('Justice Tariq Mehmood');
+  });
+
+  it('joins a multi-judge bench with a comma (matches the case card\'s rendering)', () => {
+    const [l] = buildInvoiceLines([
+      {
+        ...base,
+        formPayload: {
+          case_title: 'X',
+          bench: JSON.stringify({
+            benchType: 'db_2',
+            judges: ['Justice A. Rehman', 'Justice B. Khan'],
+          }),
+        },
+      },
+    ]);
+    expect(l.judge).toBe('Justice A. Rehman, Justice B. Khan');
+  });
+
+  it('prefers a non-empty bench over a stale flat judge_name (bench is authoritative for its tier)', () => {
+    const [l] = buildInvoiceLines([
+      {
+        ...base,
+        formPayload: {
+          case_title: 'X',
+          judge_name: 'Stale Flat Judge',
+          bench: JSON.stringify({ benchType: 'single_judge', judges: ['Fresh Bench Judge'] }),
+        },
+      },
+    ]);
+    expect(l.judge).toBe('Fresh Bench Judge');
+  });
+
+  it('falls back to flat judge_name when the bench has no non-empty judges', () => {
+    const [l] = buildInvoiceLines([
+      {
+        ...base,
+        formPayload: {
+          case_title: 'X',
+          judge_name: 'Fallback Judge',
+          bench: JSON.stringify({ benchType: 'single_judge', judges: ['', '   '] }),
+        },
+      },
+    ]);
+    expect(l.judge).toBe('Fallback Judge');
+  });
+
+  it('returns null when a malformed/unparseable `bench` value is present with no flat judge_name', () => {
+    const cases: unknown[] = [
+      'not json {{{',
+      42,
+      { judges: 'not-an-array' },
+      ['array', 'not', 'object'],
+      null,
+    ];
+    for (const bench of cases) {
+      const [l] = buildInvoiceLines([{ ...base, formPayload: { case_title: 'X', bench } }]);
+      expect(l.judge).toBeNull();
+    }
+  });
+
   it('survives a legacy ticket with no formPayload', () => {
     const [l] = buildInvoiceLines([{ ...base, formPayload: null, service: null }]);
     expect(l.courtLine).toBeNull();

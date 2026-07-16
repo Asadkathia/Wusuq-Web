@@ -1,4 +1,4 @@
-import { round2, readAliased } from '@wusuq/shared';
+import { round2, readAliased, parseBench } from '@wusuq/shared';
 
 export interface InvoiceTicketInput {
   id: string;
@@ -54,6 +54,32 @@ function strAliased(payload: Record<string, unknown>, canonical: string): string
   return typeof v === 'string' && v.trim() ? v.trim() : null;
 }
 
+/**
+ * Resolves the judge for the invoice's `Case Judge (...)` line, mirroring
+ * `benchOf()` in apps/web/lib/case-view.ts EXACTLY: for High/Supreme/Shariat/
+ * FCC tickets the judge identity lives ONLY inside the structured `bench`
+ * field (the wizard's flat `judge_name` field is rendered exclusively for
+ * Lower/Special Court — see intake-flows.ts:616-651), so reading `judge_name`
+ * alone silently omitted the judge for the entire bench-tier class.
+ *
+ * `parseBench` (shared with the web case card) never throws on a malformed
+ * value — it falls back to zero judges — so this always degrades to the flat
+ * `judge_name` fallback rather than crashing.
+ *
+ * Multi-judge benches join with ', ' (matches the case card's rendering —
+ * `view.bench.judges.join(', ')` in case-record-card.tsx) rather than the
+ * wizard's internal `J. <name> & J. <name>` convention, which is only used to
+ * synthesize the single-judge legacy `judge_name` field, not to display a
+ * multi-judge bench.
+ */
+function judgeOf(payload: Record<string, unknown>): string | null {
+  const benchJudges = parseBench(payload.bench)
+    .judges.map((j) => (typeof j === 'string' ? j.trim() : ''))
+    .filter(Boolean);
+  if (benchJudges.length) return benchJudges.join(', ');
+  return str(payload, 'judge_name');
+}
+
 function buildLine(t: InvoiceTicketInput, position: number): InvoiceLine {
   const payload = (t.formPayload ?? {}) as Record<string, unknown>;
 
@@ -90,12 +116,10 @@ function buildLine(t: InvoiceTicketInput, position: number): InvoiceLine {
     caseTitle: strAliased(payload, 'case_title'),
     // The owner's sample renders "Case Judge ()" when empty. That's a defect —
     // null here means the renderer omits the line entirely.
-    // 'judge_name' is the only real wizard key (intake-flows.ts). Bare 'judge'
-    // never appears anywhere — removed. (Bench-based tiers additionally carry
-    // judge names inside the structured `bench` field, read via parseBench()
-    // in case-view.ts; this invoice line intentionally stays scoped to the
-    // flat judge_name field, matching this file's existing behaviour.)
-    judge: str(payload, 'judge_name'),
+    // Bare 'judge' never appears anywhere in the codebase — not read. See
+    // judgeOf() above: bench-tier tickets (High/Supreme/Shariat/FCC) carry the
+    // judge only inside the structured `bench` field, not `judge_name`.
+    judge: judgeOf(payload),
     serviceCost,
     printing,
     attested,
