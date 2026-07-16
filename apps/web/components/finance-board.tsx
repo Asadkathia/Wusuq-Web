@@ -15,6 +15,7 @@ import { FilterBar } from '@/components/ui/filter-bar';
 import { StatCard } from '@/components/ui/stat-card';
 import { StatusPill } from '@/components/ui/status-pill';
 import { Banknote, FileText, Send, Download, CheckCircle, RefreshCw, HandCoins, Pencil, X, Check, CheckCircle2, XCircle, ExternalLink, Building2, SlidersHorizontal, Upload } from 'lucide-react';
+import { STAFF_LOGIN_PATH } from '@/lib/staff-routes';
 
 type FinanceItem = {
   id: string;
@@ -884,7 +885,7 @@ export function FinanceBoard() {
         <div className={`mt-4 rounded-lg p-4 text-sm font-medium ${message.toLowerCase().includes('failed') || message.toLowerCase().includes('valid amount') || message.toLowerCase().includes('expired') ? 'bg-rose-50 text-rose-800 border border-rose-200' : 'bg-emerald-50 text-emerald-800 border border-emerald-200'}`}>
           {message}
           {message.includes('sign in') && (
-            <Link className="ml-2 font-semibold underline" href="/login">
+            <Link className="ml-2 font-semibold underline" href={STAFF_LOGIN_PATH}>
               Go to login
             </Link>
           )}

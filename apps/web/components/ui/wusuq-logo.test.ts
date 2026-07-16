@@ -29,7 +29,7 @@ describe('WusuqLogo', () => {
 describe('no hand-rolled W tiles remain', () => {
   const SITES = [
     './shell-nav.tsx',
-    '../../app/login/page.tsx',
+    '../../app/staff-portal/page.tsx',
     '../../app/(auth)/consumer/login/page.tsx',
     '../../app/(auth)/consumer/signup/page.tsx',
     '../../app/elections/page.tsx',

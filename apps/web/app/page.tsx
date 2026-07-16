@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { STAFF_LOGIN_PATH } from '@/lib/staff-routes';
 
 const CONSUMER_ROLES = ['consumer', 'lawyer', 'company'];
 
@@ -23,19 +24,22 @@ export default function Home() {
 
   useEffect(() => {
     const token = localStorage.getItem('wusuq_access_token');
-    let isConsumer = false;
-    let isRepresentative = false;
+    let role = '';
     try {
       const user = JSON.parse(localStorage.getItem('wusuq_user') || 'null') as { role?: string } | null;
-      isConsumer = CONSUMER_ROLES.includes(user?.role ?? '');
-      isRepresentative = user?.role === 'representative';
+      role = user?.role ?? '';
     } catch {}
+    const isConsumer = CONSUMER_ROLES.includes(role);
+    const isRepresentative = role === 'representative';
+    const isKnownStaff = role !== '' && !isConsumer;
 
     if (!token || hasExpiredJwt(token)) {
       localStorage.removeItem('wusuq_access_token');
       localStorage.removeItem('wusuq_refresh_token');
       localStorage.removeItem('wusuq_user');
-      router.replace(isConsumer ? '/consumer/login' : '/login');
+      // Unknown visitors land on the consumer portal; only a known staff role
+      // is sent to the staff door (spec 2026-07-16, Part 2).
+      router.replace(isKnownStaff ? STAFF_LOGIN_PATH : '/consumer/login');
       return;
     }
 

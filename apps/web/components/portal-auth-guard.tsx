@@ -3,6 +3,7 @@
 import { startTransition, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { refreshAccessToken } from '@/lib/api-client';
+import { staffLoginHref } from '@/lib/staff-routes';
 
 type PortalAuthGuardProps = {
   children: ReactNode;
@@ -35,7 +36,7 @@ export function PortalAuthGuard({ children }: PortalAuthGuardProps) {
       localStorage.removeItem('wusuq_access_token');
       localStorage.removeItem('wusuq_refresh_token');
       localStorage.removeItem('wusuq_user');
-      router.replace(`/login?next=${encodeURIComponent(nextPath)}`);
+      router.replace(staffLoginHref(nextPath));
       setIsAuthorized(false);
     };
 

@@ -1,4 +1,10 @@
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { join, dirname } from 'path';
 import { STAFF_LOGIN_PATH, staffLoginHref } from './staff-routes';
+
+const currentDir = dirname(fileURLToPath(import.meta.url));
+const WEB = join(currentDir, '..');
 
 describe('STAFF_LOGIN_PATH', () => {
   it('is /staff-portal', () => {
@@ -84,5 +90,32 @@ describe('staffLoginHref', () => {
     // an open-redirect shape, so it is allowed through, correctly encoded.
     expect(staffLoginHref('/%')).toBe('/staff-portal?next=%2F%25');
     expect(staffLoginHref('/%tickets')).toBe('/staff-portal?next=%2F%25tickets');
+  });
+});
+
+describe('no source links to the legacy /login path', () => {
+  const FILES = [
+    'app/page.tsx',
+    'components/topbar.tsx',
+    'components/finance-board.tsx',
+    'components/portal-auth-guard.tsx',
+    'app/(auth)/consumer/login/page.tsx',
+  ];
+
+  it.each(FILES)('%s does not reference /login', (rel) => {
+    const body = readFileSync(join(WEB, rel), 'utf8');
+    expect(body).not.toMatch(/["'`]\/login\b/);
+  });
+
+  it('the consumer login page has no staff link at all', () => {
+    const body = readFileSync(join(WEB, 'app/(auth)/consumer/login/page.tsx'), 'utf8');
+    expect(body).not.toContain('staff-portal');
+    expect(body.toLowerCase()).not.toContain('staff login');
+  });
+
+  it('the staff login page no longer links to the consumer portal', () => {
+    const body = readFileSync(join(WEB, 'app/staff-portal/page.tsx'), 'utf8');
+    expect(body).not.toContain('/consumer/login');
+    expect(body.toLowerCase()).not.toContain('client portal');
   });
 });

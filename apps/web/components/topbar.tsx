@@ -2,6 +2,7 @@
 
 import { ShellTopbar } from './ui/shell-topbar';
 import { useStaffNavItems } from './nav';
+import { STAFF_LOGIN_PATH } from '@/lib/staff-routes';
 
 export function Topbar() {
   const mobileNavItems = useStaffNavItems();
@@ -13,7 +14,7 @@ export function Topbar() {
     localStorage.removeItem('wusuq_impersonator_access_token');
     localStorage.removeItem('wusuq_impersonator_refresh_token');
     localStorage.removeItem('wusuq_impersonator_user');
-    window.location.href = '/login';
+    window.location.href = STAFF_LOGIN_PATH;
   };
 
   return <ShellTopbar variant="staff" profileHref="/profile" onSignOut={signOut} mobileNavItems={mobileNavItems} />;
