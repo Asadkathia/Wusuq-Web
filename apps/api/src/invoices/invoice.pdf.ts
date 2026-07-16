@@ -47,6 +47,23 @@ function fmtDate(d: Date): string {
   return `${p(d.getUTCDate())}-${p(d.getUTCMonth() + 1)}-${d.getUTCFullYear()}`;
 }
 
+/**
+ * Bare, thousands-separated number with NO currency prefix — for line-item
+ * money cells, which are too narrow (45pt) to carry `formatMoney`'s "PKR "/"$"
+ * prefix without wrapping to two lines. `formatMoney` (packages/shared) isn't
+ * exported as a prefix-less variant, so this mirrors its exact decimal rule
+ * (USD 2dp, PKR 0dp) via the same `Intl.NumberFormat` call rather than
+ * inventing a different one. The totals block still uses `formatMoney`
+ * directly — it has room and the prefix matters most there.
+ */
+function bareAmount(amount: number, currency: Currency): string {
+  const decimals = currency === 'USD' ? 2 : 0;
+  return new Intl.NumberFormat(currency === 'USD' ? 'en-US' : 'en-PK', {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  }).format(amount);
+}
+
 /** Exact rate — "TAX (17.5%)", never Math.round (which made the old PDF lie). */
 function taxLabel(rate: number): string {
   if (!rate) return 'TAX';
@@ -102,8 +119,15 @@ function drawBillTo(doc: PDFKit.PDFDocument, v: InvoiceView): number {
     .text(`INVOICE ${v.invoiceNo}`, right - 240, top, { width: 240, align: 'right' });
   doc.fillColor(MUTED).fontSize(8)
     .text(`Date of Invoice: ${fmtDate(v.issueDate)}`, right - 240, top + 26, { width: 240, align: 'right' });
+  // Currency stated ONCE here (not per money cell) — bold + ink so a USD
+  // invoice can never be mistaken for PKR now that line-item cells are bare
+  // numbers. Placed beside the invoice's other identity facts (No., Date),
+  // where a reader already looks, rather than squeezed into a 45pt-wide
+  // 7pt column header ("Service (PKR)") that has no room left after this fix.
+  doc.font('Helvetica-Bold').fillColor(INK)
+    .text(`Currency: ${v.currency}`, right - 240, top + 38, { width: 240, align: 'right' });
 
-  return Math.max(y, top + 46) + 18;
+  return Math.max(y, top + 58) + 18;
 }
 
 function drawTableHeader(doc: PDFKit.PDFDocument, y: number): number {
@@ -147,8 +171,10 @@ function drawLine(doc: PDFKit.PDFDocument, line: InvoiceLine, y: number, c: Curr
   const amounts = [line.serviceCost, line.printing, line.attested, line.nonAttested, line.delivery, line.additional, line.lineTotal];
   doc.fillColor(INK).font('Helvetica').fontSize(8);
   amounts.forEach((amt, i) => {
+    // Bare number, no currency prefix — currency is stated once near the
+    // invoice identity (drawBillTo), not per cell (that's what wrapped).
     // Explicit x + width — `continued: true` + align:'right' does NOT make a column.
-    doc.text(formatMoney(amt, c), moneyX(i), y + h / 2 - 4, { width: MONEY_W - 4, align: 'right' });
+    doc.text(bareAmount(amt, c), moneyX(i), y + h / 2 - 4, { width: MONEY_W - 4, align: 'right' });
   });
 
   return y + h;
