@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { startTransition, useEffect, useState, type ComponentType } from 'react';
 import { ChevronDown, ChevronRight, ShieldCheck } from 'lucide-react';
+import { WusuqLogo } from './wusuq-logo';
 
 export type NavSubItem = { label: string; href: string; count?: number };
 
@@ -64,9 +65,7 @@ export function ShellNavBody({ items, variant, onNavigate }: ShellNavBodyProps) 
       {/* Brand */}
       <div className="px-5 py-5">
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-500 text-sm font-bold tracking-[0.08em] text-white shadow-elev-1">
-            W
-          </div>
+          <WusuqLogo size={40} />
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold tracking-tight text-ink-900">Wusuq</p>
             <p className="text-[10px] font-medium uppercase tracking-[0.1em] text-slate-400">

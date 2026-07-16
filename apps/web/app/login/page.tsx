@@ -7,6 +7,7 @@ import { ArrowRight, Gavel, Lock, ShieldCheck, Sparkles, Mail } from 'lucide-rea
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { FormField } from '@/components/ui/form-field';
+import { WusuqLogo } from '@/components/ui/wusuq-logo';
 import { advanceOnEnter } from '@/lib/form-utils';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:4000/api';
@@ -92,8 +93,8 @@ export default function StaffLoginPage() {
           <div className="pointer-events-none absolute -bottom-40 -left-24 h-96 w-96 rounded-full bg-brand-700 opacity-30 blur-[120px]" />
 
           <div className="relative flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/10 text-xl font-bold tracking-[0.1em] ring-1 ring-inset ring-white/20 backdrop-blur-sm">
-              W
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/10 ring-1 ring-inset ring-white/20 backdrop-blur-sm">
+              <WusuqLogo tone="white" size={28} priority />
             </div>
             <div>
               <p className="text-lg font-semibold tracking-tight">Wusuq</p>
@@ -125,9 +126,7 @@ export default function StaffLoginPage() {
           <div className="w-full max-w-md">
             <div className="mb-8 lg:hidden">
               <div className="flex items-center gap-2.5">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-ink-900 text-base font-bold text-white">
-                  W
-                </div>
+                <WusuqLogo size={40} />
                 <span className="text-lg font-semibold tracking-tight text-slate-900">Wusuq Staff</span>
               </div>
             </div>

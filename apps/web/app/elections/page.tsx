@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { Trophy, Users, Search } from 'lucide-react';
+import { WusuqLogo } from '@/components/ui/wusuq-logo';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:4000/api';
 
@@ -71,7 +72,7 @@ export default function PublicElectionsPage() {
       {/* Header */}
       <header className="bg-white border-b border-slate-200 px-6 py-4">
         <div className="max-w-5xl mx-auto flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center bg-brand-500 text-white text-lg font-bold">W</div>
+          <WusuqLogo size={40} />
           <div>
             <h1 className="text-lg font-bold text-slate-900">Wusuq Elections</h1>
             <p className="text-xs text-slate-500">Public results and candidate profiles</p>

@@ -25,3 +25,20 @@ describe('WusuqLogo', () => {
     expect(src).toMatch(/export function WusuqLogo/);
   });
 });
+
+describe('no hand-rolled W tiles remain', () => {
+  const SITES = [
+    './shell-nav.tsx',
+    '../../app/login/page.tsx',
+    '../../app/(auth)/consumer/login/page.tsx',
+    '../../app/(auth)/consumer/signup/page.tsx',
+    '../../app/elections/page.tsx',
+  ];
+
+  it.each(SITES)('%s renders WusuqLogo, not a letter-W div', (rel) => {
+    const body = readFileSync(join(currentDir, rel), 'utf8');
+    expect(body).toContain('WusuqLogo');
+    // The old tiles were a <div className="...">\n  W\n</div>
+    expect(body).not.toMatch(/>\s*\n\s*W\s*\n\s*</);
+  });
+});
