@@ -1,7 +1,12 @@
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { join, dirname } from 'path';
-import { STAFF_LOGIN_PATH, staffLoginHref } from './staff-routes';
+import {
+  STAFF_LOGIN_PATH,
+  staffLoginHref,
+  safeNextPath,
+  safeConsumerNextPath,
+} from './staff-routes';
 
 const currentDir = dirname(fileURLToPath(import.meta.url));
 const WEB = join(currentDir, '..');
@@ -90,6 +95,87 @@ describe('staffLoginHref', () => {
     // an open-redirect shape, so it is allowed through, correctly encoded.
     expect(staffLoginHref('/%')).toBe('/staff-portal?next=%2F%25');
     expect(staffLoginHref('/%tickets')).toBe('/staff-portal?next=%2F%25tickets');
+  });
+});
+
+describe('safeNextPath (inbound guard — the live open-redirect fix)', () => {
+  const FALLBACK = '/dashboard';
+
+  it('drops every open-redirect shape, falling back', () => {
+    expect(safeNextPath('//evil.test', FALLBACK)).toBe(FALLBACK);
+    expect(safeNextPath('/\\evil.test', FALLBACK)).toBe(FALLBACK);
+    expect(safeNextPath('\\\\evil.test', FALLBACK)).toBe(FALLBACK);
+    expect(safeNextPath('/\\\\evil.test', FALLBACK)).toBe(FALLBACK);
+    expect(safeNextPath('/\\/evil.test', FALLBACK)).toBe(FALLBACK);
+    expect(safeNextPath('https://evil.test/x', FALLBACK)).toBe(FALLBACK);
+    expect(safeNextPath('javascript:alert(1)', FALLBACK)).toBe(FALLBACK);
+    expect(safeNextPath('/%2f%2fevil.test', FALLBACK)).toBe(FALLBACK);
+  });
+
+  it('drops a consumer-side next, case-insensitively', () => {
+    expect(safeNextPath('/consumer/dashboard', FALLBACK)).toBe(FALLBACK);
+    expect(safeNextPath('/CONSUMER/dashboard', FALLBACK)).toBe(FALLBACK);
+  });
+
+  it('fails closed (does not throw) on non-string / nullish / empty input', () => {
+    expect(safeNextPath(123 as unknown as string, FALLBACK)).toBe(FALLBACK);
+    expect(safeNextPath({} as unknown as string, FALLBACK)).toBe(FALLBACK);
+    expect(safeNextPath(null, FALLBACK)).toBe(FALLBACK);
+    expect(safeNextPath(undefined, FALLBACK)).toBe(FALLBACK);
+    expect(safeNextPath('', FALLBACK)).toBe(FALLBACK);
+  });
+
+  it('preserves legitimate staff paths, unmodified', () => {
+    expect(safeNextPath('/tickets', FALLBACK)).toBe('/tickets');
+    expect(safeNextPath('/finance?tab=a&x=1', FALLBACK)).toBe('/finance?tab=a&x=1');
+    // A real staff path that merely starts with the substring "consumer" —
+    // must NOT be over-blocked by the consumer-prefix guard.
+    expect(safeNextPath('/consumerX/dashboard', FALLBACK)).toBe('/consumerX/dashboard');
+    expect(safeNextPath('/search?q=100%25off', FALLBACK)).toBe('/search?q=100%25off');
+  });
+});
+
+describe('safeConsumerNextPath (inbound guard — consumer login/signup)', () => {
+  const FALLBACK = '/consumer/dashboard';
+
+  it('preserves a real consumer path', () => {
+    expect(safeConsumerNextPath('/consumer/wallet', FALLBACK)).toBe('/consumer/wallet');
+  });
+
+  it('drops anything not under /consumer, falling back', () => {
+    expect(safeConsumerNextPath('/dashboard', FALLBACK)).toBe(FALLBACK);
+    expect(safeConsumerNextPath('https://evil.test/x', FALLBACK)).toBe(FALLBACK);
+  });
+
+  it('is safe against every open-redirect shape by construction (verifies the reasoning, not just the behaviour)', () => {
+    // None of these can ever satisfy startsWith('/consumer') — the character
+    // immediately after the leading '/' must be 'c', which rules out every
+    // form (//, /\, \/, \\) a browser's URL parser treats as host-establishing.
+    expect(safeConsumerNextPath('//evil.test', FALLBACK)).toBe(FALLBACK);
+    expect(safeConsumerNextPath('/\\evil.test', FALLBACK)).toBe(FALLBACK);
+    expect(safeConsumerNextPath('\\\\evil.test', FALLBACK)).toBe(FALLBACK);
+    expect(safeConsumerNextPath('javascript:alert(1)', FALLBACK)).toBe(FALLBACK);
+  });
+
+  it('fails closed on non-string / nullish / empty input', () => {
+    expect(safeConsumerNextPath(null, FALLBACK)).toBe(FALLBACK);
+    expect(safeConsumerNextPath(undefined, FALLBACK)).toBe(FALLBACK);
+    expect(safeConsumerNextPath('', FALLBACK)).toBe(FALLBACK);
+  });
+});
+
+describe('staff-portal next-param guard is wired to safeNextPath (source-level)', () => {
+  const body = readFileSync(join(WEB, 'app/staff-portal/page.tsx'), 'utf8');
+
+  it('imports and calls safeNextPath', () => {
+    expect(body).toMatch(/import\s*\{[^}]*safeNextPath[^}]*\}\s*from\s*['"]@\/lib\/staff-routes['"]/);
+    expect(body).toContain('safeNextPath(');
+  });
+
+  it('no longer contains the raw inline open-redirect check', () => {
+    // This is the exact shape of the vulnerable inline check the fix
+    // replaced. If the page is ever reverted to it, this assertion fails.
+    expect(body).not.toMatch(/candidate\.startsWith\(['"]\/['"]\)/);
   });
 });
 

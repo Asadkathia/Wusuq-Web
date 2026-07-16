@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, startTransition, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ArrowRight, Lock, Mail, Scale, ShieldCheck, Sparkles } from 'lucide-react';
@@ -10,6 +10,7 @@ import { FormField } from '@/components/ui/form-field';
 import { WusuqLogo } from '@/components/ui/wusuq-logo';
 import { ATTRIBUTION, copyrightLine } from '@/components/ui/shell-footer';
 import { advanceOnEnter } from '@/lib/form-utils';
+import { safeConsumerNextPath } from '@/lib/staff-routes';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:4000/api';
 const LOGIN_TIMEOUT_MS = 15000;
@@ -25,8 +26,9 @@ export default function ConsumerLoginPage() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const candidate = params.get('next');
-    if (candidate && candidate.startsWith('/consumer')) setNextPath(candidate);
+    startTransition(() =>
+      setNextPath(safeConsumerNextPath(params.get('next'), '/consumer/dashboard')),
+    );
   }, []);
 
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {

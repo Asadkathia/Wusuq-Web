@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, startTransition, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowRight, Gavel, Lock, ShieldCheck, Sparkles, Mail } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -9,6 +9,7 @@ import { FormField } from '@/components/ui/form-field';
 import { WusuqLogo } from '@/components/ui/wusuq-logo';
 import { ATTRIBUTION, copyrightLine } from '@/components/ui/shell-footer';
 import { advanceOnEnter } from '@/lib/form-utils';
+import { safeNextPath } from '@/lib/staff-routes';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:4000/api';
 const LOGIN_TIMEOUT_MS = 15000;
@@ -24,8 +25,9 @@ export default function StaffLoginPage() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const candidate = params.get('next');
-    if (candidate && candidate.startsWith('/') && !candidate.startsWith('/consumer')) setNextPath(candidate);
+    // Inbound value — an attacker's, not ours — so it goes through the
+    // validating guard, never the raw query string (open-redirect fix).
+    startTransition(() => setNextPath(safeNextPath(params.get('next'), '/dashboard')));
   }, []);
 
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
