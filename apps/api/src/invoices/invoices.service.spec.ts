@@ -394,6 +394,37 @@ describe('InvoicesService.generate — blocker 2: bills the stamped tax rate, no
       taxAmount: 0,
     });
   });
+
+  it('a multi-ticket USD invoice bills 0 tax even when its tickets carry DIFFERENT stamped taxRates — the currency check must short-circuit BEFORE the mixed-tax-rate guard, not after', async () => {
+    // Two USD tickets with different stamped rates (e.g. one priced before a
+    // PKR tax-rate setting changed, one after — plausible for legacy/edited
+    // tickets since USD ignores tax entirely and never re-derives it). If the
+    // currency short-circuit were evaluated AFTER the mixed-rate guard (or
+    // dropped in favour of always computing `rates` first), this legitimate
+    // USD invoice would incorrectly reject with "mixed tax rates" instead of
+    // succeeding at 0 — CLAUDE.md: USD is an all-inclusive flat price list,
+    // tax-rate provenance on the underlying tickets is simply irrelevant.
+    const { svc, created } = makeService([
+      ticket({
+        id: 't1',
+        batchNo: 'A',
+        currency: 'USD',
+        taxRate: 0.17,
+      }),
+      ticket({
+        id: 't2',
+        batchNo: 'B',
+        currency: 'USD',
+        taxRate: 0.05,
+      }),
+    ]);
+    await expect(svc.generate(['t1', 't2'], 'admin1')).resolves.toBeDefined();
+    expect(created[0]).toMatchObject({
+      currency: 'USD',
+      taxRate: 0,
+      taxAmount: 0,
+    });
+  });
 });
 
 describe('InvoicesService.generate — blocker 3: per-ticket discount clamp', () => {
@@ -477,5 +508,90 @@ describe('InvoicesService.findOne authorization', () => {
     await expect(svcWith(null).findOne('nope', STAFF)).rejects.toBeInstanceOf(
       NotFoundException,
     );
+  });
+});
+
+describe('InvoicesService.list scoping', () => {
+  // `list` is the enumeration surface for a broad permission (tickets.read,
+  // held by staff, consumer-class roles, AND representatives). In-service
+  // scoping by role is the ONLY thing standing between a consumer and every
+  // other consumer's billing data — there is no controller-level filter.
+  // These tests assert the actual `where` clause handed to Prisma, not just
+  // the returned rows: a mock that ignores the filter entirely would still
+  // return whatever rows it's told to, so asserting on rows alone can pass
+  // for the wrong reason (see the representative case below).
+  const STAFF_ROLES = [
+    'super-admin',
+    'manager-admin',
+    'staff-admin',
+    'lead-admin',
+  ] as const;
+  const CONSUMER_CLASS_ROLES = ['consumer', 'lawyer', 'company'] as const;
+
+  function svcWithFindMany(rows: unknown[] = []) {
+    const findMany = jest.fn(() => Promise.resolve(rows));
+    const prisma = { invoice: { findMany } };
+    const svc = new InvoicesService(
+      prisma as never,
+      {
+        create: jest.fn(),
+      } as never,
+    );
+    return { svc, findMany };
+  }
+
+  it.each(STAFF_ROLES)(
+    'staff role %s sees every invoice — passes an UNFILTERED where',
+    async (role) => {
+      const { svc, findMany } = svcWithFindMany();
+      await svc.list({ sub: 'staff1', role } as never);
+      expect(findMany).toHaveBeenCalledTimes(1);
+      const arg = findMany.mock.calls[0]![0] as { where: unknown };
+      expect(arg.where).toEqual({});
+    },
+  );
+
+  it.each(CONSUMER_CLASS_ROLES)(
+    'consumer-class role %s is scoped to where: { consumerId: actor.sub }',
+    async (role) => {
+      const { svc, findMany } = svcWithFindMany();
+      await svc.list({ sub: 'c1', role } as never);
+      const arg = findMany.mock.calls[0]![0] as { where: unknown };
+      expect(arg.where).toEqual({ consumerId: 'c1' });
+    },
+  );
+
+  it('a representative is scoped to where: { consumerId: actor.sub } too — the empty result in practice comes from the FILTER, not a role-based early return', async () => {
+    const { svc, findMany } = svcWithFindMany();
+    const rows = await svc.list({
+      sub: 'rep1',
+      role: 'representative',
+    } as never);
+    expect(findMany).toHaveBeenCalledTimes(1);
+    const arg = findMany.mock.calls[0]![0] as { where: unknown };
+    // A rep's own user id is never a Ticket/Invoice consumerId, so this
+    // filter naturally yields no rows against a real DB — but the guard
+    // under test is that the FILTER is applied at all, not merely that the
+    // mock happens to return []. A version of `list` that dropped scoping
+    // entirely would still make this specific assertion on `rows` pass
+    // (the mock returns whatever `rows` is told to), which is exactly why
+    // the `where` clause itself is asserted here, not just the output.
+    expect(arg.where).toEqual({ consumerId: 'rep1' });
+    expect(rows).toEqual([]);
+  });
+
+  it('a consumer-class actor with no sub gets [] without ever touching Prisma', async () => {
+    const { svc, findMany } = svcWithFindMany([{ id: 'leaked' }]);
+    const rows = await svc.list({ sub: '', role: 'consumer' } as never);
+    expect(rows).toEqual([]);
+    expect(findMany).not.toHaveBeenCalled();
+  });
+
+  it('returns exactly the rows Prisma resolves, unmodified', async () => {
+    const rows = [{ id: 'inv1' }, { id: 'inv2' }];
+    const { svc } = svcWithFindMany(rows);
+    await expect(
+      svc.list({ sub: 'c1', role: 'consumer' } as never),
+    ).resolves.toBe(rows);
   });
 });

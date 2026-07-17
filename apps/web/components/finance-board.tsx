@@ -361,7 +361,7 @@ export function FinanceBoard() {
     <div className="space-y-6">
       <SectionHeader 
         title="Finance Ledger" 
-        description="Monitor receivables, reconcile payments, and manage invoices."
+        description="Monitor receivables, reconcile payments, and manage wallet top-ups and bank details."
         action={
           <div className="flex gap-2">
             <a
