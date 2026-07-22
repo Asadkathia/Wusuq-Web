@@ -88,8 +88,9 @@ describe('finance clerkPayout uses the shared capped earnings', () => {
     const result = await service.findAll({ page: 1, limit: 10 } as never);
 
     // 400 (clerkCost) + 250 (capped non-attested) + 200 (delivery) = 850.
-    // The old hand-rolled sum would have produced 1100 (adding the 999
-    // additionalCharges) — this assertion fails against that formula.
+    // The old hand-rolled sum produced 2099 for this fixture — it summed the
+    // admin-overwritten 500 non-attested instead of the clerk's 250, and added
+    // the 999 additionalCharges. This assertion fails against that formula.
     expect(result.items[0].clerkPayout).toBe(850);
   });
 
