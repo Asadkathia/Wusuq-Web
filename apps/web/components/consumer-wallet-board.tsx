@@ -306,7 +306,7 @@ function TopupDialog({
         </DialogHeader>
 
         <form onSubmit={submit} onKeyDown={advanceOnEnter} className="space-y-4">
-          <FormField label="Amount (PKR)" required htmlFor="amount">
+          <FormField label={`Amount (${currency})`} required htmlFor="amount">
             <Input
               id="amount"
               type="number"

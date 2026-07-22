@@ -4,7 +4,7 @@ import { FormEvent, useEffect, useRef, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { AlertCircle, Building2, CheckCircle2, Clock, Upload } from 'lucide-react';
-import { paymentModelFor, formatMoney } from '@wusuq/shared';
+import { paymentModelFor, formatMoney, convertToPkr } from '@wusuq/shared';
 import { apiClient, ApiError } from '@/lib/api-client';
 import { paymentSettingsClient, PaymentSettings } from '@/lib/payment-settings-client';
 import { PaymentMethodDetails, availableMethods, type PayMethod } from '@/components/payment-method-details';
@@ -25,6 +25,7 @@ interface TicketSummary {
   amountPaid?: number | string | null;
   remainderFinalizedAt?: string | null;
   currency?: 'PKR' | 'USD' | null;
+  fxRateToPkr?: number | string | null;
   service?: { name?: string | null } | null;
 }
 
@@ -107,9 +108,15 @@ export default function PayTicketPage() {
           setTicket(ticketData);
           setBankDetails(settings);
           setMethod(availableMethods(settings)[0] ?? null);
-          // Pre-fill amount with due-now
+          // Pre-fill amount with due-now. The destination account is a
+          // Pakistani bank, so the payable figure is always PKR: USD tickets
+          // convert via the FX rate stamped at intake. When no rate is
+          // stamped, do NOT prefill an unconverted number — leave the field
+          // empty and let the FX-missing message tell the consumer why.
           const due = computeDueNow(ticketData);
-          setAmountStr(due > 0 ? String(due) : '');
+          const payable =
+            currencyOf(ticketData) === 'USD' ? convertToPkr(due, ticketData.fxRateToPkr) : due;
+          setAmountStr(payable !== null && payable > 0 ? String(payable) : '');
         });
       } catch (err) {
         if (cancelled) return;
@@ -137,10 +144,27 @@ export default function PayTicketPage() {
       return;
     }
 
-    const amount = Number(amountStr);
-    if (!amount || amount <= 0) {
+    const enteredAmount = Number(amountStr);
+    if (!enteredAmount || enteredAmount <= 0) {
       setSubmitError('Please enter a valid amount.');
       return;
+    }
+
+    // The Amount field is always denominated in PKR (the destination account
+    // is a Pakistani bank). The wallet ledger and outstanding-dues math are
+    // computed in the ticket's OWN billing currency, so for a USD ticket the
+    // entered PKR figure must be converted back to USD before it is credited
+    // — submitting the raw PKR number would wildly over-credit a USD wallet
+    // (e.g. crediting "9975" as if it were $9,975). A PKR ticket's entered
+    // amount already IS its billing-currency amount, so no conversion runs.
+    let amount = enteredAmount;
+    if (currencyOf(ticket) === 'USD') {
+      const rate = Number(ticket?.fxRateToPkr);
+      if (!Number.isFinite(rate) || rate <= 0) {
+        setSubmitError('FX rate not set — please contact support.');
+        return;
+      }
+      amount = Math.round((enteredAmount / rate) * 100) / 100;
     }
 
     startTransition(() => {
@@ -289,6 +313,14 @@ export default function PayTicketPage() {
   const currentAmount = Number(amountStr) || 0;
   const hasPaymentMethod = availableMethods(bankDetails).length > 0;
 
+  // The pay-page destination is always a Pakistani bank account, so a USD
+  // ticket's payable figure is its PKR equivalent at the FX rate stamped at
+  // intake — never the raw USD number. When no rate was stamped, there is no
+  // safe conversion: show a support message instead of an unconverted figure.
+  const isUsd = currency === 'USD';
+  const payablePkr = isUsd ? convertToPkr(dueNow, ticket.fxRateToPkr) : dueNow;
+  const fxRateMissing = isUsd && payablePkr === null;
+
   // ── Main payment form ─────────────────────────────────────────────────────
 
   return (
@@ -353,15 +385,26 @@ export default function PayTicketPage() {
       {/* Payment form */}
       <PanelCard className="mb-4">
         <form onSubmit={handleSubmit} onKeyDown={advanceOnEnter} className="space-y-4">
-          <FormField label="Amount (PKR)" required htmlFor="pay-amount">
+          <FormField
+            label="Amount (PKR)"
+            required
+            htmlFor="pay-amount"
+            error={fxRateMissing ? 'FX rate not set — please contact support' : undefined}
+            hint={
+              !fxRateMissing && isUsd
+                ? `Billed ${formatMoney(dueNow, currency)} · payable ${formatMoney(payablePkr ?? 0, 'PKR')} at the rate stamped when you ordered`
+                : undefined
+            }
+          >
             <Input
               id="pay-amount"
               type="number"
               inputMode="numeric"
               min={1}
-              placeholder={`e.g., ${dueNow > 0 ? dueNow : 5000}`}
+              placeholder={fxRateMissing ? '' : `e.g., ${payablePkr && payablePkr > 0 ? payablePkr : 5000}`}
               value={amountStr}
               onChange={(e) => setAmountStr(e.target.value)}
+              disabled={fxRateMissing}
               required
             />
           </FormField>
@@ -442,7 +485,7 @@ export default function PayTicketPage() {
               variant="primary"
               size="lg"
               loading={submitting}
-              disabled={!hasPaymentMethod || submitting}
+              disabled={!hasPaymentMethod || submitting || fxRateMissing}
               fullWidth
             >
               Submit payment
