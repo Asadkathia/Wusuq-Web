@@ -286,6 +286,12 @@ model Ticket {
   serviceCost     Decimal             @default(0)
   // Billing currency snapshotted from User.currency at intake (PKR | USD).
   currency        String              @default("PKR")
+  /// FX rate to PKR captured at intake for non-PKR tickets, so a historical
+  /// ticket's staff-side PKR figure never moves when the rate is later updated
+  /// (same stamping rule as taxRate). NULL for PKR tickets (no conversion is
+  /// needed) and for USD tickets created before this feature — those render an
+  /// explicit "rate not set" marker, never an unconverted number.
+  fxRateToPkr           Decimal?            @db.Decimal(18, 6)
   caseId          String?
   // Scheduling / outcome fields (replaces deleted Hearing model — see
   // spec 2026-05-04-cases-workflow-redesign-design.md). Optional: only

@@ -1,0 +1,1 @@
+ALTER TABLE "Ticket" ADD COLUMN "fxRateToPkr" DECIMAL(18,6);
