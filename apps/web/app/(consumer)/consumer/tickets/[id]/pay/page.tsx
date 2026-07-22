@@ -4,10 +4,11 @@ import { FormEvent, useEffect, useRef, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { AlertCircle, Building2, CheckCircle2, Clock, Upload } from 'lucide-react';
-import { paymentModelFor, formatMoney, convertToPkr } from '@wusuq/shared';
+import { paymentModelFor, formatMoney } from '@wusuq/shared';
 import { apiClient, ApiError } from '@/lib/api-client';
 import { paymentSettingsClient, PaymentSettings } from '@/lib/payment-settings-client';
 import { PaymentMethodDetails, availableMethods, type PayMethod } from '@/components/payment-method-details';
+import { payableInPkr, submitAmountFromPkr } from '@/lib/pay-amount';
 import { advanceOnEnter } from '@/lib/form-utils';
 import { PanelCard } from '@/components/ui/panel-card';
 import { Button } from '@/components/ui/button';
@@ -114,8 +115,7 @@ export default function PayTicketPage() {
           // stamped, do NOT prefill an unconverted number — leave the field
           // empty and let the FX-missing message tell the consumer why.
           const due = computeDueNow(ticketData);
-          const payable =
-            currencyOf(ticketData) === 'USD' ? convertToPkr(due, ticketData.fxRateToPkr) : due;
+          const payable = payableInPkr(due, currencyOf(ticketData), ticketData.fxRateToPkr);
           setAmountStr(payable !== null && payable > 0 ? String(payable) : '');
         });
       } catch (err) {
@@ -157,14 +157,10 @@ export default function PayTicketPage() {
     // — submitting the raw PKR number would wildly over-credit a USD wallet
     // (e.g. crediting "9975" as if it were $9,975). A PKR ticket's entered
     // amount already IS its billing-currency amount, so no conversion runs.
-    let amount = enteredAmount;
-    if (currencyOf(ticket) === 'USD') {
-      const rate = Number(ticket?.fxRateToPkr);
-      if (!Number.isFinite(rate) || rate <= 0) {
-        setSubmitError('FX rate not set — please contact support.');
-        return;
-      }
-      amount = Math.round((enteredAmount / rate) * 100) / 100;
+    const amount = submitAmountFromPkr(enteredAmount, currencyOf(ticket), ticket?.fxRateToPkr);
+    if (amount === null) {
+      setSubmitError('FX rate not set — please contact support.');
+      return;
     }
 
     startTransition(() => {
@@ -318,7 +314,7 @@ export default function PayTicketPage() {
   // intake — never the raw USD number. When no rate was stamped, there is no
   // safe conversion: show a support message instead of an unconverted figure.
   const isUsd = currency === 'USD';
-  const payablePkr = isUsd ? convertToPkr(dueNow, ticket.fxRateToPkr) : dueNow;
+  const payablePkr = payableInPkr(dueNow, currency, ticket.fxRateToPkr);
   const fxRateMissing = isUsd && payablePkr === null;
 
   // ── Main payment form ─────────────────────────────────────────────────────
