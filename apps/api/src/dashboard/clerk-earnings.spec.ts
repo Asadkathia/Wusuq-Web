@@ -1,4 +1,4 @@
-import { computeClerkEarnings, PDF_CLERK_FEE } from '@wusuq/shared';
+import { computeClerkEarnings, computeClerkEarningsBreakdown, PDF_CLERK_FEE } from '@wusuq/shared';
 
 describe('computeClerkEarnings', () => {
   it('sums base + phase-2 charges', () => {
@@ -53,8 +53,6 @@ describe('computeClerkEarnings', () => {
     ).toBe(800);
   });
 });
-
-import { computeClerkEarningsBreakdown } from '@wusuq/shared';
 
 describe('computeClerkEarningsBreakdown — admin markup is capped out', () => {
   it('pays the clerk their submitted rate when the admin marks UP', () => {
@@ -114,5 +112,24 @@ describe('computeClerkEarningsBreakdown — admin markup is capped out', () => {
       .toBe(b.total);
     expect(b.pdfFee).toBe(100);
     expect(computeClerkEarnings(input)).toBe(b.total);
+  });
+
+  it('null clerk columns must not cap the payout to zero', () => {
+    const b = computeClerkEarningsBreakdown({
+      clerkCost: 400,
+      nonAttestedCharges: 500,
+      clerkNonAttestedCharges: null,
+    });
+    expect(b.total).toBe(900);
+  });
+
+  it('a clerk-submitted 0 caps to 0 and does not fall back to the marked-up final', () => {
+    const b = computeClerkEarningsBreakdown({
+      clerkCost: 400,
+      nonAttestedCharges: 500,
+      clerkNonAttestedCharges: 0,
+    });
+    expect(b.nonAttested).toBe(0);
+    expect(b.total).toBe(400);
   });
 });

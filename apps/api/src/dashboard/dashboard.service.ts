@@ -4,7 +4,7 @@ import { subDays, startOfDay, endOfDay, format } from 'date-fns';
 import {
   recommendationsForCase,
   isFlowKey,
-  computeClerkEarnings,
+  computeClerkEarningsBreakdown,
   type FlowKey,
 } from '@wusuq/shared';
 
@@ -143,7 +143,8 @@ export class DashboardService {
    * into realized (work done: COMPLETED + DELIVERED) vs pending (in flight:
    * IN_PROGRESS + WAITING_APPROVAL), plus this-month realized, status counts,
    * recent assignments and upcoming hearings. Earnings use the shared
-   * computeClerkEarnings (internal payout; never exposed to consumers).
+   * computeClerkEarningsBreakdown, capped per-line at what the clerk actually
+   * submitted (internal payout; never exposed to consumers).
    */
   async getClerkSummary(repId: string) {
     const now = new Date();
@@ -171,6 +172,10 @@ export class DashboardService {
         nonAttestedCharges: true,
         printingCharges: true,
         deliveryCharges: true,
+        clerkAttestedCharges: true,
+        clerkNonAttestedCharges: true,
+        clerkPrintingCharges: true,
+        clerkDeliveryCharges: true,
         service: { select: { name: true } },
         case: { select: { caseNo: true, title: true } },
       },
@@ -182,6 +187,7 @@ export class DashboardService {
     let realized = 0;
     let pending = 0;
     let thisMonth = 0;
+    const breakdown = { base: 0, attested: 0, nonAttested: 0, printing: 0, delivery: 0, pdfFee: 0, total: 0 };
     const counts: Record<string, number> = {};
 
     for (const t of tickets) {
@@ -189,17 +195,25 @@ export class DashboardService {
       const wantPdf =
         ((t.formPayload ?? {}) as Record<string, unknown>)
           .want_pdf_before_dispatch === 'Yes';
-      const earn = computeClerkEarnings({
+      const b = computeClerkEarningsBreakdown({
         clerkCost: toNum(t.clerkCost),
         defaultClerkCost: toNum(t.defaultClerkCost),
         attestedCharges: toNum(t.attestedCharges),
         nonAttestedCharges: toNum(t.nonAttestedCharges),
         printingCharges: toNum(t.printingCharges),
         deliveryCharges: toNum(t.deliveryCharges),
+        clerkAttestedCharges: t.clerkAttestedCharges == null ? null : toNum(t.clerkAttestedCharges),
+        clerkNonAttestedCharges: t.clerkNonAttestedCharges == null ? null : toNum(t.clerkNonAttestedCharges),
+        clerkPrintingCharges: t.clerkPrintingCharges == null ? null : toNum(t.clerkPrintingCharges),
+        clerkDeliveryCharges: t.clerkDeliveryCharges == null ? null : toNum(t.clerkDeliveryCharges),
         wantPdf,
       });
+      const earn = b.total;
       if (REALIZED.has(t.status)) {
         realized += earn;
+        for (const k of Object.keys(breakdown) as (keyof typeof breakdown)[]) {
+          breakdown[k] += b[k];
+        }
         if (t.updatedAt >= startOfMonth) thisMonth += earn;
       } else if (PENDING.has(t.status)) {
         pending += earn;
@@ -231,6 +245,15 @@ export class DashboardService {
         realized: round2(realized),
         pending: round2(pending),
         thisMonth: round2(thisMonth),
+        breakdown: {
+          base: round2(breakdown.base),
+          attested: round2(breakdown.attested),
+          nonAttested: round2(breakdown.nonAttested),
+          printing: round2(breakdown.printing),
+          delivery: round2(breakdown.delivery),
+          pdfFee: round2(breakdown.pdfFee),
+          total: round2(breakdown.total),
+        },
       },
       counts: {
         assigned: counts['ASSIGNED'] ?? 0,
