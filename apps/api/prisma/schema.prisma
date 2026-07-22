@@ -243,6 +243,15 @@ model Ticket {
   attestedCostPerPage    Decimal?           @db.Decimal(10, 2)
   nonAttestedPages       Int?
   nonAttestedCostPerPage Decimal?           @db.Decimal(10, 2)
+  // What the CLERK submitted, snapshotted at submitClerkCosts and never
+  // overwritten by the admin's finalize edits. Clerk payout is capped at
+  // these values so an admin markup is Wusuq margin, not clerk pay.
+  // NULL = no clerk submission recorded (admin filled charges directly) →
+  // payout falls back to the final columns.
+  clerkAttestedCharges     Decimal?           @db.Decimal(10, 2)
+  clerkNonAttestedCharges  Decimal?           @db.Decimal(10, 2)
+  clerkPrintingCharges     Decimal?           @db.Decimal(10, 2)
+  clerkDeliveryCharges     Decimal?           @db.Decimal(10, 2)
   discountPrice         Decimal             @default(0)
   promoCodeId           String?
   promoDiscount         Decimal             @default(0)
