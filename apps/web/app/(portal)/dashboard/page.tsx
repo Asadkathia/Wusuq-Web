@@ -15,6 +15,7 @@ import { OperationalQueue } from '@/components/dashboard/operational-queue';
 import { TodaysHearings, type HearingItem } from '@/components/dashboard/todays-hearings';
 import { TopParalegals, type Paralegal } from '@/components/dashboard/top-paralegals';
 import { apiClient } from '@/lib/api-client';
+import { formatMoney } from '@wusuq/shared';
 import {
   Ticket,
   CheckCircle2,
@@ -374,6 +375,18 @@ export default function DashboardPage() {
                       <td className="px-4 py-3">
                         <StatusPill label={ticket.status} variant={getStatusVariant(ticket.status)} />
                       </td>
+                      {/* Not converted: renderConsumerDashboard is unreachable
+                          in practice (PortalAuthGuard bounces every consumer-
+                          class role to /consumer/dashboard before this branch
+                          can render — see components/portal-auth-guard.tsx),
+                          and even if it were reached, GET /dashboard/my-summary
+                          selects no currency/fxRateToPkr on myRecentTickets to
+                          feed formatStaffMoney with. It's also a consumer's
+                          own-ticket view, not a staff view, so the correct
+                          call here (if this endpoint ever gains currency) is
+                          formatMoney(amount, currency) — the consumer's own
+                          currency, never a staff PKR conversion. Flagged in
+                          the task-5 report rather than guessed at. */}
                       <td className="px-4 py-3 text-right text-sm text-slate-700">{Number(ticket.totalAmount || 0).toLocaleString()}</td>
                     </tr>
                   ))}
@@ -421,13 +434,16 @@ export default function DashboardPage() {
   const renderClerkDashboard = () => {
     if (!data) return null;
     const s = data as ClerkSummary;
-    const rs = (n: number) => `PKR ${Number(n || 0).toLocaleString()}`;
 
     return (
       <div className="mt-8 space-y-6">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <div>
-            <StatCard title="Earned (realized)" value={rs(s.earnings.realized)} icon={<DollarSign className="opacity-50" />} />
+            {/* Clerk earnings are clerk-facing and stay PKR unconditionally —
+                clerk payouts are domestic regardless of the consumer's
+                billing currency — so these use the shared PKR formatter
+                directly rather than formatStaffMoney. */}
+            <StatCard title="Earned (realized)" value={formatMoney(Number(s.earnings.realized || 0), 'PKR')} icon={<DollarSign className="opacity-50" />} />
             {s.earnings.breakdown && (
               <p className="mt-1.5 px-1 text-xs text-slate-500">
                 {[
@@ -444,8 +460,8 @@ export default function DashboardPage() {
               </p>
             )}
           </div>
-          <StatCard title="Pending earnings" value={rs(s.earnings.pending)} icon={<WalletCards className="opacity-50" />} />
-          <StatCard title="This month" value={rs(s.earnings.thisMonth)} icon={<CheckCircle2 className="opacity-50" />} />
+          <StatCard title="Pending earnings" value={formatMoney(Number(s.earnings.pending || 0), 'PKR')} icon={<WalletCards className="opacity-50" />} />
+          <StatCard title="This month" value={formatMoney(Number(s.earnings.thisMonth || 0), 'PKR')} icon={<CheckCircle2 className="opacity-50" />} />
           <StatCard title="To accept" value={s.pendingAcceptance} icon={<Ticket className="opacity-50" />} />
         </div>
 

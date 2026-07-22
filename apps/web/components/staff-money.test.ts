@@ -29,3 +29,21 @@ describe('PKR-denominated config boards keep their literal PKR', () => {
     });
   }
 });
+
+describe('finance and dashboard rows use the shared converter', () => {
+  it('finance-board calls formatStaffMoney', () => {
+    expect(read('finance-board.tsx')).toMatch(/formatStaffMoney\(/);
+  });
+
+  it('operational-queue labels its amounts', () => {
+    expect(read('dashboard/operational-queue.tsx')).toMatch(/formatStaffMoney\(/);
+  });
+
+  it('dashboard page no longer defines the hand-rolled rs() helper', () => {
+    const dashboardPage = readFileSync(
+      join(here, '..', 'app', '(portal)', 'dashboard', 'page.tsx'),
+      'utf8',
+    );
+    expect(dashboardPage).not.toMatch(/const rs = \(n: number\)/);
+  });
+});

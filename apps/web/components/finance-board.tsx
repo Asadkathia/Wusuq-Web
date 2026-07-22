@@ -15,6 +15,7 @@ import { StatCard } from '@/components/ui/stat-card';
 import { StatusPill } from '@/components/ui/status-pill';
 import { Banknote, FileText, CheckCircle, RefreshCw, HandCoins, Pencil, X, Check, CheckCircle2, XCircle, ExternalLink, Building2, SlidersHorizontal, Upload } from 'lucide-react';
 import { STAFF_LOGIN_PATH } from '@/lib/staff-routes';
+import { formatStaffMoney, toCurrency } from '@wusuq/shared';
 
 type FinanceItem = {
   id: string;
@@ -34,8 +35,16 @@ type FinanceItem = {
   totalAmount: number;
   amountPaid: number;
   remaining: number;
+  // Clerk-facing payout — stays PKR unconditionally regardless of the
+  // ticket's billing currency (clerk payouts are domestic), so this is
+  // never fed through formatStaffMoney. See the render site below.
   clerkPayout: number;
   status: string;
+  // Billing currency + the FX rate stamped at intake (non-PKR tickets only).
+  // Feed both into formatStaffMoney so a USD ticket's total/paid/remaining
+  // render as their PKR equivalent for staff, same as ticket-board.tsx.
+  currency?: string | null;
+  fxRateToPkr?: number | string | null;
 };
 
 export function FinanceBoard() {
@@ -314,6 +323,12 @@ export function FinanceBoard() {
     setAdjustLoading(true);
     try {
       await paymentsClient.adjustWallet(adjustUserId.trim(), amount, adjustNote.trim());
+      // Deliberately NOT converted: the admin pastes a bare user ID and types
+      // a raw amount with no currency selector, so there's no currency/rate
+      // available at this call site to feed formatStaffMoney (the backend
+      // stamps the adjustment with that user's OWN currency server-side —
+      // see WalletService.adjustWallet — which this form never queries).
+      // Out of scope for this task; flagged in the task-5 report.
       setMessage(
         `Wallet ${amount >= 0 ? 'credited' : 'debited'} by PKR ${Math.abs(amount).toLocaleString()}.`,
       );
@@ -432,7 +447,11 @@ export function FinanceBoard() {
                   />
                 </td>
                 <td className="px-6 py-4">
-                  <div className="text-sm font-bold text-slate-900">PKR {Number(tx.amount).toLocaleString()}</div>
+                  {/* WalletTransaction has no fxRateToPkr column (unlike Ticket),
+                      so a non-PKR pending transaction can't be converted to its
+                      PKR equivalent here — formatStaffMoney correctly renders
+                      "(rate not set)" rather than a wrong number in that case. */}
+                  <div className="text-sm font-bold text-slate-900">{formatStaffMoney(tx.amount, toCurrency(tx.currency))}</div>
                   <div className="text-xs text-slate-500 mt-0.5">{tx.paymentMode.replace(/_/g, ' ')}</div>
                   <div className="text-xs text-slate-400 mt-0.5">{new Date(tx.createdAt).toLocaleDateString()}</div>
                 </td>
@@ -707,14 +726,17 @@ export function FinanceBoard() {
                     </div>
                   ) : (
                     <div className="text-sm text-slate-900 flex items-center gap-1.5 group/charge">
-                      Total: <span className="font-medium">{item.totalAmount}</span>
+                      Total: <span className="font-medium">{formatStaffMoney(item.totalAmount, toCurrency(item.currency), item.fxRateToPkr)}</span>
                       <button onClick={() => { setEditingChargeId(item.id); setEditServiceCost(String(item.charges?.serviceCost ?? '')); setEditDelivery(String(item.charges?.deliveryCharges ?? '')); setEditPrinting(String(item.charges?.printingCharges ?? '')); setEditAttested(String(item.charges?.attestedCharges ?? '')); setEditNonAttested(String(item.charges?.nonAttestedCharges ?? '')); setEditAdditionalCharges(String(item.charges?.additionalCharges ?? '')); setEditAdditional(String(item.charges?.additionalServiceCost ?? '')); setEditDiscount(String(item.charges?.discountPrice ?? '')); }} className="opacity-0 group-hover/charge:opacity-100 text-slate-400 hover:text-primary-600 transition-all p-0.5" title="Edit Charge">
                         <Pencil className="h-3 w-3" />
                       </button>
                     </div>
                   )}
-                  <div className="text-sm text-emerald-600">Paid: {item.amountPaid}</div>
-                  {item.remaining > 0 && <div className="text-sm text-rose-600 font-medium mt-1">Due: {item.remaining}</div>}
+                  <div className="text-sm text-emerald-600">Paid: {formatStaffMoney(item.amountPaid, toCurrency(item.currency), item.fxRateToPkr)}</div>
+                  {item.remaining > 0 && <div className="text-sm text-rose-600 font-medium mt-1">Due: {formatStaffMoney(item.remaining, toCurrency(item.currency), item.fxRateToPkr)}</div>}
+                  {/* Clerk payout stays PKR unconditionally — clerk payouts are
+                      domestic regardless of the consumer's billing currency —
+                      so this deliberately does NOT go through formatStaffMoney. */}
                   {item.clerkPayout > 0 && <div className="text-sm text-violet-600 mt-1">Clerk: {item.clerkPayout}</div>}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">

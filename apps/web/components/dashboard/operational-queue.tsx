@@ -6,6 +6,7 @@ import { ArrowRight } from 'lucide-react';
 import { PanelCard } from '@/components/ui/panel-card';
 import { StatusPill } from '@/components/ui/status-pill';
 import { apiClient } from '@/lib/api-client';
+import { formatStaffMoney, toCurrency } from '@wusuq/shared';
 
 type Tab = {
   key: string;
@@ -58,6 +59,11 @@ type Row = {
   consumer: { id: string; name: string };
   service: { id: string; name: string; category: string; type: string };
   assignments?: Array<{ representative?: { id: string; name: string } | null }>;
+  // Billing currency + the FX rate stamped at intake (non-PKR tickets only) —
+  // GET /tickets already returns these. Feed both into formatStaffMoney so a
+  // USD ticket renders its PKR equivalent instead of a bare unlabeled number.
+  currency?: string | null;
+  fxRateToPkr?: number | string | null;
 };
 
 function statusVariant(s: string) {
@@ -189,7 +195,7 @@ export function OperationalQueue() {
                     <td className="px-3 py-2.5 text-sm text-slate-700">{rep?.name ?? <span className="text-slate-400">Unassigned</span>}</td>
                     <td className="px-3 py-2.5 text-sm text-slate-600 tabular-nums">{ageLabel(r.createdAt)}</td>
                     <td className="px-3 py-2.5 text-right text-sm tabular-nums text-slate-700">
-                      {Number(r.totalAmount || 0).toLocaleString()}
+                      {formatStaffMoney(r.totalAmount, toCurrency(r.currency), r.fxRateToPkr)}
                     </td>
                     <td className="px-3 py-2.5">
                       <StatusPill label={r.status} variant={statusVariant(r.status)} />
