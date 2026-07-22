@@ -46,6 +46,7 @@ import { NotificationDispatcher } from '../notifications/notification-dispatcher
 import { WalletService } from '../wallet/wallet.service';
 import { SettingsService } from '../settings/settings.service';
 import { PromosService } from '../promos/promos.service';
+import { CurrencyService } from '../currency/currency.service';
 
 const INTAKE_FLOWS = new Set([
   'judicial_case_files',
@@ -192,6 +193,7 @@ export class TicketsService {
     private readonly walletService: WalletService,
     private readonly settingsService?: SettingsService,
     private readonly promosService?: PromosService,
+    private readonly currencyService?: CurrencyService,
   ) {}
 
   async findAll(
@@ -741,6 +743,16 @@ export class TicketsService {
         ? 0
         : ((await this.settingsService?.getTaxRate?.()) ?? 0);
 
+    // Stamp the FX rate in force NOW so this ticket's staff-side PKR figure
+    // never moves when the rate is later updated (same rule as taxRate).
+    // NULL when the ticket is PKR, or when no rate has been configured — the
+    // UI then shows "rate not set" rather than a wrong number. Intake is NOT
+    // blocked: USD pricing is an all-inclusive flat list, not FX-derived.
+    const fxRateToPkr =
+      currency === 'PKR'
+        ? null
+        : ((await this.currencyService?.getRateToPkr(currency)) ?? null);
+
     // USD orders cannot use promo codes (owner spec). Fail loud rather than
     // silently ignoring a code the consumer thinks applied.
     if (currency === 'USD' && dto.promoCode) {
@@ -813,6 +825,7 @@ export class TicketsService {
             serviceCity: inferredServiceCity,
             caseType: inferredCaseType,
             currency,
+            fxRateToPkr,
             serviceCost: pricing.matched ? pricing.serviceCost : 0,
             deliveryCharges: assembled ? assembled.charges.deliveryCharges : 0,
             promoCodeId,
@@ -1890,6 +1903,14 @@ export class TicketsService {
     // is locked once active, so this equals their current currency).
     const currency = (original.currency as 'PKR' | 'USD') ?? 'PKR';
 
+    // A regenerated ticket is a new sale (owner decision 2026-06-12) — stamp
+    // the FX rate in force NOW, matching the re-pricing rule above. NULL for
+    // PKR or when no rate is configured (never blocks regenerate).
+    const fxRateToPkr =
+      currency === 'PKR'
+        ? null
+        : ((await this.currencyService?.getRateToPkr(currency)) ?? null);
+
     // Owner decision 2026-06-12: a regenerated ticket is a NEW sale at the
     // CURRENT price list — re-resolve through the same shared input builder
     // intake uses (quote = charge), reset the phase-2 clerk charge columns,
@@ -1976,6 +1997,7 @@ export class TicketsService {
           caseType: original.caseType,
           intakeFlow: original.intakeFlow,
           currency,
+          fxRateToPkr,
           formPayload: (original.formPayload ?? undefined) as
             | Prisma.InputJsonValue
             | undefined,

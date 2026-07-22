@@ -6,10 +6,28 @@ export class CurrencyService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * Convert an amount from one currency to another using the latest exchange rate.
-   * Falls back to 1.0 (no conversion) if no rate is found.
+   * Latest `from → PKR` rate, or null when none has been configured.
+   * Callers must handle null explicitly — see convertToPkr in @wusuq/shared.
    */
-  async convert(amount: number, from: string, to: string): Promise<number> {
+  async getRateToPkr(from: string): Promise<number | null> {
+    if (from === 'PKR') return null;
+    const rate = await this.prisma.exchangeRate.findFirst({
+      where: { fromCurrency: from, toCurrency: 'PKR' },
+      orderBy: { effectiveAt: 'desc' },
+    });
+    return rate ? Number(rate.rate) : null;
+  }
+
+  /**
+   * Convert an amount between currencies. Returns null when no rate exists —
+   * it previously returned the amount UNCONVERTED, which is how a $35 ticket
+   * rendered as "Rs 35". Never restore that fallback.
+   */
+  async convert(
+    amount: number,
+    from: string,
+    to: string,
+  ): Promise<number | null> {
     if (from === to) return amount;
 
     const rate = await this.prisma.exchangeRate.findFirst({
@@ -17,7 +35,7 @@ export class CurrencyService {
       orderBy: { effectiveAt: 'desc' },
     });
 
-    if (!rate) return amount;
+    if (!rate) return null;
     return amount * Number(rate.rate);
   }
 

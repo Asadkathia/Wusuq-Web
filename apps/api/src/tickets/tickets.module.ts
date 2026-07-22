@@ -7,6 +7,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
 import { WalletModule } from '../wallet/wallet.module';
 import { SettingsModule } from '../settings/settings.module';
 import { PromosModule } from '../promos/promos.module';
+import { CurrencyModule } from '../currency/currency.module';
 import { TicketsController } from './tickets.controller';
 import { TicketsService } from './tickets.service';
 
@@ -20,6 +21,7 @@ import { TicketsService } from './tickets.service';
     WalletModule,
     SettingsModule,
     PromosModule,
+    CurrencyModule,
   ],
   controllers: [TicketsController],
   providers: [TicketsService],
