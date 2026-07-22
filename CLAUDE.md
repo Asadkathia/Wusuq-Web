@@ -515,3 +515,7 @@ All 7 workstreams from the 13-recording + PDF "Wusuq Edits 5-10-26 (2)" batch ar
 - **Reviews caught 4 defects in the plan's own code**, all fixed: (1) fabricated payload keys (`service_city` exists nowhere; the wizard writes `select_court_city`) that silently dropped the city from every real invoice line; (2) the judge blank on 100% of High/Supreme-tier invoices (judges live in `payload.bench`, not `judge_name`); (3) `formatMoney` in all 7 money cells wrapped `PKR 10,500` onto two lines — found only by rendering the PDF and looking at it; (4) a concurrent double-generate returning a raw 500 instead of a clean 409, plus a toothless test that passed even with `nextval` moved outside the transaction.
 - **Verified**: 156 web + 546 api tests, 0 lint, 0 typecheck, build green. Rendering the owner's real 4-ticket sample reproduces subtotal **54,950** exactly.
 - **Still open**: `variant="full" tone="white"` silently ignores `tone` and no white full-lockup asset exists (the invoice header uses `wusuq-mark-white.png` directly, so this isn't blocking); the owner should eyeball the generated PDF against the two real samples.
+
+### 2026-07-21 18:22 · branch main · sess 2b29cfab
+
+### 2026-07-22 20:57 · branch main · sess 27ae0402

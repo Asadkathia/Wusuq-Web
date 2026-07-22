@@ -17,3 +17,7 @@ graphify-out/
 
 .superpowers/
 .playwright-mcp/
+
+# Local review recordings (large media, not source)
+*.mov
+*.mp4
