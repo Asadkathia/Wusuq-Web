@@ -811,6 +811,44 @@ export function formatMoney(
   return currency === 'USD' ? `$${n}` : `PKR ${n}`;
 }
 
+/**
+ * Convert an amount into PKR using a stamped FX rate. Returns null when no rate
+ * is available — callers MUST render a marker rather than an unconverted number.
+ * Never falls back to a rate of 1: that fallback is exactly how a $35 ticket
+ * came to display as "Rs 35".
+ */
+export function convertToPkr(
+  amount: number | string | null | undefined,
+  rate: number | string | null | undefined,
+): number | null {
+  if (rate === null || rate === undefined || rate === '') return null;
+  const r = Number(rate);
+  if (!Number.isFinite(r) || r <= 0) return null;
+  const a = Number(amount ?? 0) || 0;
+  return round2(a * r);
+}
+
+/**
+ * Staff-facing money. PKR tickets pass straight through, so every staff surface
+ * can call this unconditionally. A non-PKR ticket renders its PKR equivalent
+ * from the rate stamped on the ticket; when that rate is absent it renders the
+ * original amount plus an explicit marker, never a converted-looking number.
+ *
+ * Consumer-facing surfaces use formatMoney(amount, currency) instead — a
+ * consumer must see the currency they were quoted.
+ */
+export function formatStaffMoney(
+  amount: number | string | null | undefined,
+  currency: Currency,
+  fxRateToPkr?: number | string | null,
+): string {
+  const a = Number(amount ?? 0) || 0;
+  if (currency === 'PKR') return formatMoney(a, 'PKR');
+  const pkr = convertToPkr(a, fxRateToPkr);
+  if (pkr === null) return `${formatMoney(a, currency)} (rate not set)`;
+  return formatMoney(pkr, 'PKR');
+}
+
 export type PromoType = 'PERCENT' | 'FIXED';
 
 export interface TicketChargeComponents {
