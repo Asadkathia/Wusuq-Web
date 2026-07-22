@@ -4,7 +4,11 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma, TicketStatus } from '@prisma/client';
-import { computeTicketTotal, isBaseCovered } from '@wusuq/shared';
+import {
+  computeClerkEarnings,
+  computeTicketTotal,
+  isBaseCovered,
+} from '@wusuq/shared';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { FinanceQueryDto } from './dto/finance-query.dto';
@@ -13,6 +17,58 @@ import { UpdateChargeDto } from './dto/update-charge.dto';
 
 function toNumber(value: Prisma.Decimal | number | string | null | undefined) {
   return Number(value ?? 0);
+}
+
+// The clerk's cut of the PDF surcharge only applies when the ticket actually
+// purchased a PDF; that signal lives in the intake formPayload, not a column.
+function wantPdfFromFormPayload(
+  formPayload: Prisma.JsonValue | null | undefined,
+) {
+  return (
+    ((formPayload ?? {}) as Record<string, unknown>)
+      .want_pdf_before_dispatch === 'Yes'
+  );
+}
+
+// Single call site for the finance payout figure: coerces Prisma's Decimal
+// columns to numbers and delegates to the shared, capped definition — never
+// hand-roll this sum (that drift is exactly what Task 6 closes).
+function clerkPayoutFor(ticket: {
+  clerkCost: Prisma.Decimal | number | string | null;
+  attestedCharges: Prisma.Decimal | number | string | null;
+  nonAttestedCharges: Prisma.Decimal | number | string | null;
+  printingCharges: Prisma.Decimal | number | string | null;
+  deliveryCharges: Prisma.Decimal | number | string | null;
+  clerkAttestedCharges: Prisma.Decimal | number | string | null;
+  clerkNonAttestedCharges: Prisma.Decimal | number | string | null;
+  clerkPrintingCharges: Prisma.Decimal | number | string | null;
+  clerkDeliveryCharges: Prisma.Decimal | number | string | null;
+  formPayload: Prisma.JsonValue | null | undefined;
+}) {
+  return computeClerkEarnings({
+    clerkCost: toNumber(ticket.clerkCost),
+    attestedCharges: toNumber(ticket.attestedCharges),
+    nonAttestedCharges: toNumber(ticket.nonAttestedCharges),
+    printingCharges: toNumber(ticket.printingCharges),
+    deliveryCharges: toNumber(ticket.deliveryCharges),
+    clerkAttestedCharges:
+      ticket.clerkAttestedCharges == null
+        ? null
+        : toNumber(ticket.clerkAttestedCharges),
+    clerkNonAttestedCharges:
+      ticket.clerkNonAttestedCharges == null
+        ? null
+        : toNumber(ticket.clerkNonAttestedCharges),
+    clerkPrintingCharges:
+      ticket.clerkPrintingCharges == null
+        ? null
+        : toNumber(ticket.clerkPrintingCharges),
+    clerkDeliveryCharges:
+      ticket.clerkDeliveryCharges == null
+        ? null
+        : toNumber(ticket.clerkDeliveryCharges),
+    wantPdf: wantPdfFromFormPayload(ticket.formPayload),
+  });
 }
 
 @Injectable()
@@ -96,13 +152,7 @@ export class FinanceService {
           totalAmount,
           amountPaid,
           remaining: totalAmount - amountPaid,
-          clerkPayout:
-            toNumber(ticket.clerkCost) +
-            toNumber(ticket.deliveryCharges) +
-            toNumber(ticket.printingCharges) +
-            toNumber(ticket.additionalCharges) +
-            toNumber(ticket.attestedCharges) +
-            toNumber(ticket.nonAttestedCharges),
+          clerkPayout: clerkPayoutFor(ticket),
         };
       }),
       page: query.page,
@@ -336,13 +386,7 @@ export class FinanceService {
         promoDiscount: toNumber(updated.promoDiscount),
       },
       remaining: toNumber(updated.totalAmount) - amountPaid,
-      clerkPayout:
-        toNumber(updated.clerkCost) +
-        toNumber(updated.deliveryCharges) +
-        toNumber(updated.printingCharges) +
-        toNumber(updated.additionalCharges) +
-        toNumber(updated.attestedCharges) +
-        toNumber(updated.nonAttestedCharges),
+      clerkPayout: clerkPayoutFor(updated),
     };
   }
 }
