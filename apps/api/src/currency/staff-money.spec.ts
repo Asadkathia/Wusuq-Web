@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { convertToPkr, formatStaffMoney } from '@wusuq/shared';
 
 describe('convertToPkr', () => {
@@ -20,6 +21,29 @@ describe('convertToPkr', () => {
 
   it('treats a missing amount as 0, not null', () => {
     expect(convertToPkr(null, 285)).toBe(0);
+  });
+
+  // A guard narrowed to `rate == null` would still pass every test above while
+  // letting a 0/negative/garbage rate produce a confidently wrong figure. These
+  // pin the full absence check.
+  it.each([
+    ['empty string', ''],
+    ['zero', 0],
+    ['negative', -285],
+    ['non-numeric', 'abc'],
+    ['NaN', Number.NaN],
+    ['Infinity', Number.POSITIVE_INFINITY],
+  ])('returns null for a %s rate', (_label, rate) => {
+    expect(convertToPkr(35, rate as never)).toBeNull();
+  });
+
+  it('coerces a real Prisma Decimal, not just a plain string', () => {
+    // Prisma returns Decimal objects from the DB, never numbers. A refactor
+    // that branched on `typeof rate === 'string'` would break every real call
+    // site while the plain-string test above kept passing.
+    expect(
+      convertToPkr(new Prisma.Decimal('35'), new Prisma.Decimal('285')),
+    ).toBe(9975);
   });
 });
 
