@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { TicketStatus } from '@wusuq/shared';
-import { chargeCapabilitiesFor, computeClerkEarnings, computeTicketTotal, computeWusuqMargin } from '@wusuq/shared';
+import { chargeCapabilitiesFor, computeClerkEarningsBreakdown, computeTicketTotal, computeWusuqMargin } from '@wusuq/shared';
 import { TICKET_STATUSES } from '@wusuq/shared';
 import { apiClient } from '@/lib/api-client';
 import { relativeTime } from '@/lib/relative-time';
@@ -71,6 +71,13 @@ type TicketRow = {
   attestedCharges?: number | string | null;
   nonAttestedCharges?: number | string | null;
   additionalCharges?: number | string | null;
+  // Clerk-payout snapshot columns (Task 1): what the CLERK submitted, frozen
+  // even after the admin's finalize edits overwrite the flat charge columns
+  // above. null = no clerk submission recorded.
+  clerkAttestedCharges?: number | string | null;
+  clerkNonAttestedCharges?: number | string | null;
+  clerkPrintingCharges?: number | string | null;
+  clerkDeliveryCharges?: number | string | null;
   intakeFlow?: string | null;
   createdBy?: string | null;
   clerkCost?: number | string | null;
@@ -116,6 +123,24 @@ type ClerkCostsForm = {
 };
 
 const CONSUMER_ROLES = ['consumer', 'lawyer', 'company'] as const;
+
+// Explicit literal map from a phase-2 charge field to its frozen
+// clerk-submitted snapshot column (Task 1). Deliberately NOT derived by
+// string manipulation (e.g. `clerk${field[0].toUpperCase()}${field.slice(1)}`)
+// — that construction also fails typecheck under this repo's
+// `noUncheckedIndexedAccess` (`field[0]` types as `string | undefined`), and a
+// silently-wrong derived key would make the clerk-submitted comparison line
+// read `undefined` and render 0, which is exactly the class of bug this
+// mapping exists to prevent.
+const CLERK_CHARGE_SNAPSHOT_KEYS = {
+  attestedCharges: 'clerkAttestedCharges',
+  nonAttestedCharges: 'clerkNonAttestedCharges',
+  printingCharges: 'clerkPrintingCharges',
+  deliveryCharges: 'clerkDeliveryCharges',
+} as const satisfies Record<
+  'attestedCharges' | 'nonAttestedCharges' | 'printingCharges' | 'deliveryCharges',
+  'clerkAttestedCharges' | 'clerkNonAttestedCharges' | 'clerkPrintingCharges' | 'clerkDeliveryCharges'
+>;
 
 // Compact money label, e.g. "Rs 3,500".
 const rs = (n: number) => `Rs ${Math.round(n).toLocaleString()}`;
@@ -311,10 +336,12 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
   const [finalizeDetail, setFinalizeDetail] = useState<any>(null);
   const [finalizing, setFinalizing] = useState(false);
 
-  /** Internal-only: total payout to the clerk given the current (computed)
+  /** Internal-only: itemized payout to the clerk given the current (computed)
    *  phase-2 charges. Delegates to the shared single-source formula (adds the
-   *  PDF clerk cut when the ticket purchased a PDF). */
-  const computeFinalizeClerkEarnings = (
+   *  PDF clerk cut when the ticket purchased a PDF). Each phase-2 line is
+   *  capped at what the CLERK submitted (the four clerk*Charges snapshot
+   *  columns) — an admin markup is Wusuq margin, never clerk pay. */
+  const computeFinalizeClerkEarningsBreakdown = (
     t: TicketRow,
     charges: {
       attestedCharges: number;
@@ -323,8 +350,8 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
       deliveryCharges: number;
     },
     wantPdf: boolean,
-  ): number =>
-    computeClerkEarnings({
+  ) =>
+    computeClerkEarningsBreakdown({
       clerkCost: t.clerkCost,
       defaultClerkCost: t.defaultClerkCost,
       attestedCharges: charges.attestedCharges,
@@ -332,6 +359,10 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
       printingCharges: charges.printingCharges,
       deliveryCharges: charges.deliveryCharges,
       wantPdf,
+      clerkAttestedCharges: t.clerkAttestedCharges,
+      clerkNonAttestedCharges: t.clerkNonAttestedCharges,
+      clerkPrintingCharges: t.clerkPrintingCharges,
+      clerkDeliveryCharges: t.clerkDeliveryCharges,
     });
 
   const openFinalizeModal = async (ticket: TicketRow) => {
@@ -2395,13 +2426,18 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
             const wantPdf =
               (((finalizeDetail?.formPayload ?? finalizeTicket.payload) ?? {}) as Record<string, unknown>)
                 .want_pdf_before_dispatch === 'Yes';
-            // What the clerk originally SUBMITTED (persisted; doesn't change as the
-            // admin edits the inputs) — shown beside each field so the admin can
-            // compare submitted vs final.
+            // Reads the CLERK SET, not the working columns — the working
+            // columns are overwritten by finalize, which made this line wrong
+            // on any second open of the dialog.
             const clerkSubmitted = (
-              field: 'attestedCharges' | 'nonAttestedCharges' | 'printingCharges' | 'deliveryCharges' | 'additionalCharges',
-            ): number =>
-              Number(((finalizeDetail?.[field] ?? (finalizeTicket as Record<string, unknown>)[field]) as unknown) ?? 0);
+              field: 'attestedCharges' | 'nonAttestedCharges' | 'printingCharges' | 'deliveryCharges',
+            ): number => {
+              const clerkKey = CLERK_CHARGE_SNAPSHOT_KEYS[field];
+              const raw =
+                (finalizeDetail?.[clerkKey] ?? (finalizeTicket as Record<string, unknown>)[clerkKey]) ??
+                (finalizeDetail?.[field] ?? (finalizeTicket as Record<string, unknown>)[field]);
+              return Number(raw ?? 0);
+            };
             return (
               <div className="space-y-4">
                 <div className="flex items-center gap-2 rounded-lg bg-emerald-50 px-4 py-2.5 text-sm text-emerald-800 ring-1 ring-inset ring-emerald-100">
@@ -2503,7 +2539,6 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
                       value={finalizeForm.additionalCharges}
                       onChange={(e) => setFinalizeForm((f) => ({ ...f, additionalCharges: e.target.value }))} />
                     <p className="mt-1 text-xs text-slate-400">Separate line; not taxed.</p>
-                    <p className="mt-0.5 text-xs text-slate-400">Clerk submitted: PKR {clerkSubmitted('additionalCharges').toLocaleString()}</p>
                   </FormField>
                 </div>
                 {/* Base + phase-2 total, and the internal earnings/margin summary — share one
@@ -2540,7 +2575,7 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
                     taxRate: Number(finalizeTicket.taxRate || 0),
                   });
                   const repName = finalizeTicket.assignedRepresentative?.name;
-                  const earnings = computeFinalizeClerkEarnings(
+                  const b = computeFinalizeClerkEarningsBreakdown(
                     finalizeTicket,
                     {
                       attestedCharges: attestedComputed,
@@ -2550,6 +2585,7 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
                     },
                     wantPdf,
                   );
+                  const earnings = b.total;
                   const wusuqEarnings = computeWusuqMargin(finalizeTotal, earnings);
                   return (
                     <>
@@ -2570,6 +2606,19 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
                         </div>
                         <p className="mt-0.5 text-xs text-amber-700">
                           Clerk cost{repName ? ` · ${repName}` : ''} + phase-2 charges (internal only)
+                        </p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          {[
+                            ['Clerk cost', b.base],
+                            ['Attested', b.attested],
+                            ['Non-attested', b.nonAttested],
+                            ['Printing', b.printing],
+                            ['Delivery', b.delivery],
+                            ['PDF', b.pdfFee],
+                          ]
+                            .filter(([, v]) => Number(v) > 0)
+                            .map(([label, v]) => `${label} ${Number(v).toLocaleString()}`)
+                            .join('  +  ')}
                         </p>
                       </div>
                       {/* Wusuq earnings (margin) — internal only, never shown to consumers */}
