@@ -549,7 +549,13 @@ git commit -m "feat: aggregate multi-user totals in PKR and count rate-less tick
 
 > ### ⚠️ HARD CONSTRAINT — read before writing any code
 >
-> **Task 8 already ships a client-side FX conversion on this exact path.** `pay/page.tsx`
+> **Scope narrowed 2026-07-23 (owner clarification):** everything below applies to the
+> **JazzCash / EasyPaisa rails ONLY**. A bank transfer is sent in USD from the consumer's own
+> foreign bank and auto-converted by the receiving Pakistani bank, so that path performs **no
+> conversion at all** — what the consumer types is what is credited. Read the reworked Task 8
+> first; it makes the conversion method-conditional.
+>
+> **Task 8 ships a client-side FX conversion on this exact path.** `pay/page.tsx`
 > divides the PKR amount the consumer enters by `ticket.fxRateToPkr` before POSTing to
 > `/wallet/topup`, because `verifyTopup` (`wallet.service.ts:170-174`) does
 > `walletBalance: { increment: locked.amount }` with **zero FX awareness**, and `walletBalance`
@@ -632,63 +638,129 @@ git commit -m "fix(api): derive wallet/payment currency server-side instead of t
 
 ## Phase 5 — Consumer
 
-### Task 8: Pay page and top-up labels
+### Task 8 (REWORKED 2026-07-23): Method-conditional payment currency
+
+> **This task was rewritten after an owner clarification.** The original version converted the
+> pay-page amount to PKR unconditionally. That is wrong for bank transfers: an overseas consumer
+> wires **USD** from their own foreign bank and the receiving Pakistani bank auto-converts on
+> arrival, so the consumer never types a PKR figure and we must not ask them to. But some overseas
+> Pakistanis pay via JazzCash/EasyPaisa, which ARE domestic PKR rails. The currency therefore
+> follows the **payment rail**, not the ticket.
+>
+> An earlier commit (`65bff26`, refined by `2ab9222`) already shipped the unconditional version plus
+> `apps/web/lib/pay-amount.ts`. This task narrows that to the PKR rails; it does NOT revert it.
 
 **Files:**
-- Modify: `apps/web/app/(consumer)/consumer/tickets/[id]/pay/page.tsx:356` (the `Amount (PKR)` label + prefill)
-- Modify: `apps/web/components/consumer-wallet-board.tsx:309` (the `Amount (PKR)` label)
-- Test: `apps/web/components/consumer-money.test.ts` (create)
+- Modify: `apps/web/app/(consumer)/consumer/tickets/[id]/pay/page.tsx`
+- Modify: `apps/web/lib/pay-amount.ts` (narrow to the PKR rails)
+- Modify: `apps/web/lib/pay-amount.test.ts` (retarget the existing tests)
+- Modify: `apps/web/components/consumer-wallet-board.tsx` (verify only — see Step 3)
+- Test: `apps/web/components/consumer-money.test.ts` (already exists)
 
 **Interfaces:**
-- Consumes: `convertToPkr`, `formatMoney`.
+- Consumes: `convertToPkr` (Task 2), `formatMoney`, `Ticket.fxRateToPkr` (Task 1).
+- Produces: `isPkrRail(paymentMode): boolean` in `apps/web/lib/pay-amount.ts` — true for
+  `JAZZ_CASH` and `EASY_PAISA`, false for `BANK_TRANSFER`. Task 7 consumes this to decide whether
+  the server must convert.
 
-- [ ] **Step 1: Make the pay page currency-aware**
+- [ ] **Step 1: Add the rail predicate and narrow the conversion helpers**
 
-The destination account is a Pakistani bank, so a USD ticket's payable figure is **PKR**. For a USD ticket:
-- label the field `Amount (PKR)` and prefill the converted PKR amount (`convertToPkr(dueNow, ticket.fxRateToPkr)`)
-- render the USD original alongside, e.g. `Billed $35.00 · payable PKR 9,975 at the rate stamped when you ordered`
-- when `fxRateToPkr` is null, do NOT prefill a number — show `FX rate not set — please contact support` and leave the field empty rather than inviting payment of an unconverted figure
-
-For a PKR ticket the page behaves exactly as today.
-
-- [ ] **Step 2: Make the top-up label currency-aware**
-
-`consumer-wallet-board.tsx:309` already destructures the consumer's `currency` at line 76 — use it: `Amount (${currency})`.
-
-- [ ] **Step 3: Add the guard test**
-
-Create `apps/web/components/consumer-money.test.ts`:
+In `apps/web/lib/pay-amount.ts`:
 
 ```ts
-import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+/**
+ * Domestic PKR rails. A consumer using these already holds PKR, so the amount
+ * they enter is PKR and must be converted to the wallet's native currency.
+ * BANK_TRANSFER is NOT a PKR rail: the consumer wires USD from their own
+ * foreign bank and the receiving Pakistani bank auto-converts on arrival, so
+ * what they type is what is credited and no conversion applies.
+ */
+export function isPkrRail(paymentMode: string | null | undefined): boolean {
+  return paymentMode === 'JAZZ_CASH' || paymentMode === 'EASY_PAISA';
+}
+```
 
-const here = dirname(fileURLToPath(import.meta.url));
+`payableInPkr` and `submitAmountFromPkr` keep their current behaviour but are now only called when
+`isPkrRail(paymentMode)` is true. Update their doc comments to say so explicitly.
 
-it('consumer wallet top-up label is currency-aware, not hardcoded PKR', () => {
-  const src = readFileSync(join(here, 'consumer-wallet-board.tsx'), 'utf8');
-  expect(src).not.toMatch(/label="Amount \(PKR\)"/);
-  expect(src).toMatch(/Amount \(\$\{currency\}\)|Amount \(\{currency\}\)/);
-});
+- [ ] **Step 2: Make the pay page follow the rail**
 
-it('consumer surfaces never use the staff formatter', () => {
-  for (const f of ['consumer-wallet-board.tsx', 'consumer-ticket-board.tsx']) {
-    expect(readFileSync(join(here, f), 'utf8')).not.toMatch(/formatStaffMoney/);
-  }
+The page already has a payment-method picker. Drive the amount field from it:
+
+- **`BANK_TRANSFER` on a USD ticket:** label `Amount (USD)`, prefill the raw USD due, **no
+  conversion on submit**. Beneath it render an explicitly hedged indicative line:
+  `≈ PKR 9,975 will reach the account — your bank sets the final rate`. Use `payableInPkr` for that
+  figure and render nothing when the rate is null (it is informational; a missing rate must not
+  block a bank transfer, because no conversion is involved).
+- **`JAZZ_CASH` / `EASY_PAISA` on a USD ticket:** label `Amount (PKR)`, prefill the converted PKR,
+  convert back on submit via `submitAmountFromPkr`, and show `credits $35.00 to your wallet`. When
+  `fxRateToPkr` is null, keep the existing triple guard — no prefill, input disabled, submit
+  disabled, `FX rate not set — please contact support`.
+- **Any PKR ticket:** behaves exactly as it does today, on every rail.
+
+Switching method must recompute the field — do not leave a stale PKR figure in a USD-labelled field.
+
+- [ ] **Step 3: Confirm the top-up dialog needs no further change**
+
+A generic top-up has no ticket and therefore no stamped rate, so it stays
+`Amount (<user currency>)` — USD-only for USD users. Inventing a rate at top-up time is explicitly
+rejected. `consumer-wallet-board.tsx` already does this after the earlier commit; verify and change
+nothing.
+
+- [ ] **Step 4: Retarget the tests**
+
+`apps/web/lib/pay-amount.test.ts` currently asserts the unconditional behaviour. Add:
+
+```ts
+import { isPkrRail } from './pay-amount';
+
+describe('isPkrRail', () => {
+  it('treats JazzCash and EasyPaisa as PKR rails', () => {
+    expect(isPkrRail('JAZZ_CASH')).toBe(true);
+    expect(isPkrRail('EASY_PAISA')).toBe(true);
+  });
+
+  it('does NOT treat a bank transfer as a PKR rail', () => {
+    // The consumer wires USD from a foreign bank; the receiving Pakistani bank
+    // converts. Treating this as a PKR rail would ask them to send a number
+    // they are not sending, and would double-count on submit.
+    expect(isPkrRail('BANK_TRANSFER')).toBe(false);
+  });
+
+  it('defaults to not-a-PKR-rail for unknown or missing modes', () => {
+    expect(isPkrRail(null)).toBe(false);
+    expect(isPkrRail(undefined)).toBe(false);
+    expect(isPkrRail('SOMETHING_NEW')).toBe(false);
+  });
 });
 ```
 
-- [ ] **Step 4: Run tests and typecheck**
+Keep the existing round-trip tests — they still govern the JazzCash/EasyPaisa path.
+
+Add a source-level guard to `apps/web/components/consumer-money.test.ts`:
+
+```ts
+it('pay page gates its FX conversion on the payment rail', () => {
+  const src = readFileSync(
+    join(here, '../app/(consumer)/consumer/tickets/[id]/pay/page.tsx'),
+    'utf8',
+  );
+  expect(src).toMatch(/isPkrRail\(/);
+});
+```
+
+Mutation-test it: remove the `isPkrRail(` call from the page, confirm the test fails, restore.
+
+- [ ] **Step 5: Run tests and typecheck**
 
 Run: `pnpm --filter @wusuq/web test && pnpm --filter @wusuq/web typecheck`
 Expected: PASS, exit 0.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add "apps/web/app/(consumer)/consumer/tickets/[id]/pay/page.tsx" apps/web/components/consumer-wallet-board.tsx apps/web/components/consumer-money.test.ts
-git commit -m "feat(web): currency-aware consumer pay page and top-up labels"
+git add "apps/web/app/(consumer)/consumer/tickets/[id]/pay/page.tsx" apps/web/lib/pay-amount.ts apps/web/lib/pay-amount.test.ts apps/web/components/consumer-money.test.ts
+git commit -m "fix(web): make consumer payment currency follow the payment rail"
 ```
 
 ---

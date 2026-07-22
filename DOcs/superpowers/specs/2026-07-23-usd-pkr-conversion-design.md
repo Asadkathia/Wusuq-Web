@@ -142,9 +142,31 @@ left accepted-and-ignored, so the contract is honest.
 
 ### Consumer
 
-- **Pay page:** amount field shows the converted PKR payable with `$35.00` displayed alongside; the
-  hardcoded `Amount (PKR)` label becomes currency-aware.
-- **Wallet top-up dialog:** same label fix (`consumer-wallet-board.tsx:309`).
+**The consumer's payment currency follows the payment RAIL, not the ticket** (owner clarification
+2026-07-23). Wiring USD into a Pakistani bank auto-converts on arrival — the receiving bank sets the
+rate, and the admin's statement shows PKR. But some overseas Pakistanis pay via JazzCash/EasyPaisa,
+which are domestic PKR rails. So:
+
+| Method | Consumer holds | Field | Shown alongside |
+|---|---|---|---|
+| **Bank transfer** (foreign bank) | USD | `Amount (USD)`, prefill the USD due | *"≈ PKR 9,975 will reach the account — your bank sets the final rate"* |
+| **JazzCash / EasyPaisa** | PKR | `Amount (PKR)`, prefill the converted PKR | *"credits $35.00 to your wallet"* |
+
+The wallet is always credited in the user's **native** currency (USD). Therefore:
+
+- **Bank transfer — NO conversion.** What the consumer types is what is credited. The PKR line is
+  purely indicative and must be hedged, because the *bank's* rate decides it, not ours. Our stamped
+  rate will routinely differ by 2–4%; the verification card shows the stamped rate so an admin reads
+  that gap as normal rather than as a discrepancy.
+- **JazzCash / EasyPaisa — conversion is real and required.** The consumer holds PKR, the wallet is
+  credited USD, using the ticket's stamped `fxRateToPkr`. **The server owns this conversion** (see
+  the write-path section) — `verifyTopup` increments `walletBalance` with no FX awareness, so
+  submitting a PKR figure verbatim would credit 9,975 USD-units for a $35 ticket and leave ~$9,940
+  of phantom credit that FIFO auto-settlement would silently spend.
+
+- **Wallet top-up dialog:** stays `Amount (<user currency>)`. A generic top-up has no ticket and
+  therefore no stamped rate, so it is **USD-only for USD users** — inventing a rate at top-up time is
+  rejected. Per-ticket payment covers the PKR rails.
 - **Notification templates:** use `formatMoney` with the transaction's real currency.
 - Everything else consumer-facing stays USD.
 
