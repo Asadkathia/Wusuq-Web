@@ -3,6 +3,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { apiClient } from '@/lib/api-client';
+import { formatStaffMoney, toCurrency } from '@wusuq/shared';
 import { Check, ChevronDown, ChevronRight, RefreshCw, X } from 'lucide-react';
 import { SectionHeader } from '@/components/ui/section-header';
 import { DataTableShell } from '@/components/ui/data-table-shell';
@@ -33,6 +34,11 @@ type TicketRow = {
   remaining: number;
   status: string;
   clerkPayout: number;
+  // Billing currency + the FX rate stamped at intake (non-PKR tickets only) —
+  // feed both into formatStaffMoney so a USD ticket's consumer-money fields
+  // render their PKR equivalent to staff.
+  currency?: string | null;
+  fxRateToPkr?: number | string | null;
 };
 
 type Filters = {
@@ -287,13 +293,14 @@ export function TicketChargesBoard() {
                     <div className="text-xs text-slate-400">{item.service?.category ?? ''}</div>
                   </td>
                   <td className="px-4 py-3 text-right text-sm font-bold text-slate-900">
-                    PKR {(item.totalAmount ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    {formatStaffMoney(item.totalAmount, toCurrency(item.currency), item.fxRateToPkr)}
                   </td>
                   <td className="px-4 py-3 text-right text-sm text-emerald-700 font-semibold">
-                    {(item.amountPaid ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    {/* Previously rendered with NO currency label at all. */}
+                    {formatStaffMoney(item.amountPaid, toCurrency(item.currency), item.fxRateToPkr)}
                   </td>
                   <td className="px-4 py-3 text-right text-sm text-rose-700 font-semibold">
-                    {(item.remaining ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    {formatStaffMoney(item.remaining, toCurrency(item.currency), item.fxRateToPkr)}
                   </td>
                   <td className="px-4 py-3 text-right">
                     <StatusPill label={(item.status ?? '—').replace(/_/g, ' ')} variant={statusVariant(item.status ?? '')} />
@@ -357,32 +364,44 @@ export function TicketChargesBoard() {
                               .map(([label, value]) => (
                                 <div key={label} className="flex items-center justify-between rounded-lg bg-white border border-slate-100 px-3 py-2">
                                   <span className="text-xs text-slate-500">{label}</span>
-                                  <span className="text-sm font-semibold text-slate-800">PKR {value.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                  <span className="text-sm font-semibold text-slate-800">
+                                    {formatStaffMoney(value, toCurrency(item.currency), item.fxRateToPkr)}
+                                  </span>
                                 </div>
                               ))}
                             {item.charges.discountPrice > 0 && (
                               <div className="flex items-center justify-between rounded-lg bg-emerald-50 border border-emerald-100 px-3 py-2">
                                 <span className="text-xs text-emerald-600">Discount</span>
-                                <span className="text-sm font-semibold text-emerald-700">− PKR {item.charges.discountPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                <span className="text-sm font-semibold text-emerald-700">
+                                  − {formatStaffMoney(item.charges.discountPrice, toCurrency(item.currency), item.fxRateToPkr)}
+                                </span>
                               </div>
                             )}
                             {item.charges.promoDiscount > 0 && (
                               <div className="flex items-center justify-between rounded-lg bg-emerald-50 border border-emerald-100 px-3 py-2">
                                 <span className="text-xs text-emerald-600">Promo</span>
-                                <span className="text-sm font-semibold text-emerald-700">− PKR {item.charges.promoDiscount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                <span className="text-sm font-semibold text-emerald-700">
+                                  − {formatStaffMoney(item.charges.promoDiscount, toCurrency(item.currency), item.fxRateToPkr)}
+                                </span>
                               </div>
                             )}
                             {item.charges.taxAmount > 0 && (
                               <div className="flex items-center justify-between rounded-lg bg-amber-50 border border-amber-100 px-3 py-2">
                                 <span className="text-xs text-amber-700">Tax ({Math.round((item.charges.taxRate ?? 0) * 100)}%)</span>
-                                <span className="text-sm font-semibold text-amber-800">PKR {item.charges.taxAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                <span className="text-sm font-semibold text-amber-800">
+                                  {formatStaffMoney(item.charges.taxAmount, toCurrency(item.currency), item.fxRateToPkr)}
+                                </span>
                               </div>
                             )}
                           </div>
                           <div className="flex items-center gap-6 pt-1 border-t border-slate-100">
-                            <div className="text-xs text-slate-500">Total: <span className="font-bold text-slate-900 text-sm">PKR {(item.totalAmount ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></div>
-                            <div className="text-xs text-slate-500">Paid: <span className="font-bold text-emerald-700 text-sm">{(item.amountPaid ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></div>
-                            <div className="text-xs text-slate-500">Remaining: <span className="font-bold text-rose-700 text-sm">{(item.remaining ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></div>
+                            <div className="text-xs text-slate-500">Total: <span className="font-bold text-slate-900 text-sm">{formatStaffMoney(item.totalAmount, toCurrency(item.currency), item.fxRateToPkr)}</span></div>
+                            <div className="text-xs text-slate-500">Paid: <span className="font-bold text-emerald-700 text-sm">{formatStaffMoney(item.amountPaid, toCurrency(item.currency), item.fxRateToPkr)}</span></div>
+                            <div className="text-xs text-slate-500">Remaining: <span className="font-bold text-rose-700 text-sm">{formatStaffMoney(item.remaining, toCurrency(item.currency), item.fxRateToPkr)}</span></div>
+                            {/* Clerk Payout stays unconverted (no currency label, as
+                                before) — clerk pay-outs are domestic PKR regardless of
+                                the consumer's billing currency. Do not run this through
+                                formatStaffMoney in a later sweep. */}
                             <div className="text-xs text-slate-500">Clerk Payout: <span className="font-bold text-violet-700 text-sm">{(item.clerkPayout ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></div>
                             <button
                               onClick={() => openEdit(item)}

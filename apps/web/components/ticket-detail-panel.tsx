@@ -10,6 +10,8 @@ import {
   courtTierFromCourtType,
   computeClerkEarningsBreakdown,
   computeWusuqMargin,
+  formatStaffMoney,
+  toCurrency,
 } from '@wusuq/shared';
 import { PanelCard } from '@/components/ui/panel-card';
 import { StatusPill } from '@/components/ui/status-pill';
@@ -252,7 +254,11 @@ export function TicketDetailPanel({ ticketId, onClose, isClerkView = false, onCh
                         </h3>
                         <div className="space-y-2 text-sm">
                           {/* Clerk sees only their own clerk cost — never the
-                              consumer's totals or the blended earnings line. */}
+                              consumer's totals or the blended earnings line.
+                              Stays literal PKR, unconverted: clerk pay-outs are
+                              domestic regardless of the consumer's billing
+                              currency — do not run this through
+                              formatStaffMoney in a later sweep. */}
                           <div className="flex justify-between">
                             <span className="text-slate-500">Clerk Cost</span>
                             <span className="font-medium text-slate-800">
@@ -360,9 +366,16 @@ export function TicketDetailPanel({ ticketId, onClose, isClerkView = false, onCh
                           {chargeRows.filter(([, val]) => val !== null && val !== undefined && Number(val) !== 0).map(([label, val]) => (
                             <div key={label as string} className="flex justify-between border-b border-slate-50 pb-1.5">
                               <span className="text-slate-500">{label}</span>
-                              <span className="font-medium text-slate-800">PKR {Number(val || 0).toLocaleString()}</span>
+                              <span className="font-medium text-slate-800">
+                                {formatStaffMoney(Number(val || 0), toCurrency(ticket.currency), ticket.fxRateToPkr)}
+                              </span>
                             </div>
                           ))}
+                          {/* Clerk earnings + the Wusuq-margin line below stay literal
+                              PKR, unconverted — clerk pay-outs (and the margin derived
+                              from them) are domestic regardless of the consumer's
+                              billing currency. Do not run these through
+                              formatStaffMoney in a later sweep. */}
                           {clerkEarnings > 0 && (
                             <div className="border-b border-dashed border-amber-200 pb-1.5">
                               <div className="flex justify-between text-amber-800">
@@ -389,13 +402,24 @@ export function TicketDetailPanel({ ticketId, onClose, isClerkView = false, onCh
                             <span className="font-semibold">PKR {wusuqEarnings.toLocaleString()}</span>
                           </div>
                           <div className="flex justify-between pt-1 font-semibold text-slate-900">
-                            <span>Total</span><span>PKR {customerTotal.toLocaleString()}</span>
+                            <span>Total</span>
+                            <span>{formatStaffMoney(customerTotal, toCurrency(ticket.currency), ticket.fxRateToPkr)}</span>
                           </div>
                           <div className="flex justify-between text-emerald-700">
-                            <span>Amount Paid</span><span className="font-medium">PKR {Number(ticket.amountPaid || 0).toLocaleString()}</span>
+                            <span>Amount Paid</span>
+                            <span className="font-medium">
+                              {formatStaffMoney(ticket.amountPaid, toCurrency(ticket.currency), ticket.fxRateToPkr)}
+                            </span>
                           </div>
                           <div className="flex justify-between text-rose-700">
-                            <span>Remaining</span><span className="font-medium">PKR {Math.max(0, customerTotal - Number(ticket.amountPaid || 0)).toLocaleString()}</span>
+                            <span>Remaining</span>
+                            <span className="font-medium">
+                              {formatStaffMoney(
+                                Math.max(0, customerTotal - Number(ticket.amountPaid || 0)),
+                                toCurrency(ticket.currency),
+                                ticket.fxRateToPkr,
+                              )}
+                            </span>
                           </div>
                           {ticket.remainderFinalizedAt ? (
                             <div className="pt-1 text-xs text-slate-500">

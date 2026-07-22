@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { TicketStatus } from '@wusuq/shared';
-import { chargeCapabilitiesFor, computeClerkEarningsBreakdown, computeTicketTotal, computeWusuqMargin } from '@wusuq/shared';
+import { chargeCapabilitiesFor, computeClerkEarningsBreakdown, computeTicketTotal, computeWusuqMargin, formatStaffMoney, toCurrency } from '@wusuq/shared';
 import { TICKET_STATUSES } from '@wusuq/shared';
 import { apiClient } from '@/lib/api-client';
 import { relativeTime } from '@/lib/relative-time';
@@ -58,6 +58,11 @@ type TicketRow = {
   serviceCost?: number | string | null;
   totalAmount?: number | string | null;
   amountPaid?: number | string | null;
+  // Billing currency + the FX rate stamped at intake (non-PKR tickets only).
+  // Feed both into formatStaffMoney so a USD ticket renders its PKR
+  // equivalent to staff instead of a bare "$"/"Rs" figure.
+  currency?: string | null;
+  fxRateToPkr?: number | string | null;
   // Money inputs to computeTicketTotal — the API already selects these (findAll),
   // so the finalize-preview total is computed the same way the server persists it
   // (tax on the service base; discount/promo applied) rather than hand-rolled.
@@ -141,9 +146,6 @@ const CLERK_CHARGE_SNAPSHOT_KEYS = {
   'attestedCharges' | 'nonAttestedCharges' | 'printingCharges' | 'deliveryCharges',
   'clerkAttestedCharges' | 'clerkNonAttestedCharges' | 'clerkPrintingCharges' | 'clerkDeliveryCharges'
 >;
-
-// Compact money label, e.g. "Rs 3,500".
-const rs = (n: number) => `Rs ${Math.round(n).toLocaleString()}`;
 
 // Admin "Edit cost" — a direct charge override (PATCH /finance/:id/charge, no
 // pricing re-resolve). Distinct from "Edit ticket" (which re-prices from case
@@ -1438,7 +1440,11 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
                         {/* Consumer money is never shown to clerks (audit 1.1). */}
                         {!isClerk && (
                           <span className="text-slate-500">
-                            {total <= 0 ? 'Free' : due > 0 ? `${rs(total)} · ${rs(due)} due` : 'Paid in full'}
+                            {total <= 0
+                              ? 'Free'
+                              : due > 0
+                                ? `${formatStaffMoney(total, toCurrency(ticket.currency), ticket.fxRateToPkr)} · ${formatStaffMoney(due, toCurrency(ticket.currency), ticket.fxRateToPkr)} due`
+                                : 'Paid in full'}
                           </span>
                         )}
                         {age && (
@@ -1729,7 +1735,9 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
           <SectionHeader title={`Assign Ticket ${assignTicket.batchNo}`} description="Select a representative to forward this ticket to." />
           <div className="mt-4 flex items-center justify-between rounded-lg bg-slate-50 px-4 py-2.5 ring-1 ring-inset ring-border-soft">
             <span className="text-sm font-medium text-slate-700">Ticket amount</span>
-            <span className="text-sm font-semibold text-slate-900">{rs(Number(assignTicket.totalAmount ?? 0))}</span>
+            <span className="text-sm font-semibold text-slate-900">
+              {formatStaffMoney(assignTicket.totalAmount, toCurrency(assignTicket.currency), assignTicket.fxRateToPkr)}
+            </span>
           </div>
           <div className="mt-6 grid gap-6 md:grid-cols-2">
             <label className="block">
@@ -1936,11 +1944,13 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
                 </div>
                 <div className="flex items-center justify-between rounded-lg bg-slate-50 px-4 py-3 text-sm">
                   <span className="text-slate-600">New total {Number(costEditTicket.taxRate ?? 0) > 0 ? '(incl. tax)' : ''}</span>
-                  <span className="font-semibold text-slate-900">{rs(preview.totalAmount)}</span>
+                  <span className="font-semibold text-slate-900">
+                    {formatStaffMoney(preview.totalAmount, toCurrency(costEditTicket.currency), costEditTicket.fxRateToPkr)}
+                  </span>
                 </div>
                 {Number(costEditTicket.amountPaid ?? 0) > 0 && (
                   <p className="text-xs text-amber-700">
-                    Already paid {rs(Number(costEditTicket.amountPaid))} — the new total can&apos;t be set below that.
+                    Already paid {formatStaffMoney(costEditTicket.amountPaid, toCurrency(costEditTicket.currency), costEditTicket.fxRateToPkr)} — the new total can&apos;t be set below that.
                   </p>
                 )}
               </div>
@@ -2010,6 +2020,12 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
                       <FormField label="Printing charges" hint="Computed automatically">
                         <div className="flex h-11 items-center rounded-xl border border-border-soft bg-surface-muted px-4 text-sm">
                           <span className="flex-1 font-semibold tabular-nums text-slate-900">
+                            {/* Clerk phase-2 charge previews (here through the finalize
+                                dialog below) stay literal PKR, unconverted — clerk
+                                printing/attestation/delivery pay-rates are domestic by
+                                design (per the money model, USD tickets are NO_CHARGES
+                                and never carry these). Do not "fix" this to
+                                formatStaffMoney in a later sweep. */}
                             PKR {((Number(clerkCosts.noOfPages) || 0) * (Number(clerkCosts.costPerPage) || 0)).toLocaleString()}
                           </span>
                           <span className="text-xs text-slate-500">
@@ -2591,12 +2607,16 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
                     <>
                       <div className="rounded-lg bg-slate-50 px-4 py-3 text-sm text-slate-700">
                         <span className="font-medium">Base (service cost):</span>{' '}
-                        PKR {baseAmount.toLocaleString()}
+                        {formatStaffMoney(baseAmount, toCurrency(finalizeTicket.currency), finalizeTicket.fxRateToPkr)}
                         {' + '}
                         <span className="font-medium">Phase-2 total:</span>{' '}
-                        PKR {phase2Total.toLocaleString()}
+                        {formatStaffMoney(phase2Total, toCurrency(finalizeTicket.currency), finalizeTicket.fxRateToPkr)}
                       </div>
-                      {/* Clerk earnings summary — internal only, never shown to consumers */}
+                      {/* Clerk earnings summary — internal only, never shown to consumers.
+                          Stays literal PKR (unconverted): clerk pay-outs are domestic
+                          regardless of the consumer's billing currency, same as the
+                          "Wusuq earnings" margin line below — do not run these through
+                          formatStaffMoney in a later sweep. */}
                       <div className="rounded-lg border border-amber-100 bg-amber-50 px-4 py-3 text-sm">
                         <div className="flex items-center justify-between">
                           <span className="font-medium text-amber-800">
