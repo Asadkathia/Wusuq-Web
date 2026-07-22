@@ -53,3 +53,66 @@ describe('computeClerkEarnings', () => {
     ).toBe(800);
   });
 });
+
+import { computeClerkEarningsBreakdown } from '@wusuq/shared';
+
+describe('computeClerkEarningsBreakdown — admin markup is capped out', () => {
+  it('pays the clerk their submitted rate when the admin marks UP', () => {
+    // The client's exact demonstrated case: clerk 50 pages @ 5 = 250,
+    // admin re-rates to 10/page = 500. Clerk keeps 250.
+    const b = computeClerkEarningsBreakdown({
+      clerkCost: 400,
+      nonAttestedCharges: 500,
+      clerkNonAttestedCharges: 250,
+      deliveryCharges: 200,
+      clerkDeliveryCharges: 200,
+    });
+    expect(b.nonAttested).toBe(250);
+    expect(b.total).toBe(850);
+  });
+
+  it('applies an admin correction DOWNWARD', () => {
+    const b = computeClerkEarningsBreakdown({
+      clerkCost: 400,
+      nonAttestedCharges: 250,
+      clerkNonAttestedCharges: 500,
+    });
+    expect(b.nonAttested).toBe(250);
+    expect(b.total).toBe(650);
+  });
+
+  it('falls back to the final column when no clerk value was recorded', () => {
+    const b = computeClerkEarningsBreakdown({
+      clerkCost: 400,
+      nonAttestedCharges: 500,
+      clerkNonAttestedCharges: null,
+    });
+    expect(b.nonAttested).toBe(500);
+    expect(b.total).toBe(900);
+  });
+
+  it('caps every line independently', () => {
+    const b = computeClerkEarningsBreakdown({
+      clerkCost: 100,
+      attestedCharges: 900, clerkAttestedCharges: 300,
+      nonAttestedCharges: 900, clerkNonAttestedCharges: 400,
+      printingCharges: 900, clerkPrintingCharges: 500,
+      deliveryCharges: 900, clerkDeliveryCharges: 600,
+    });
+    expect(b).toMatchObject({ attested: 300, nonAttested: 400, printing: 500, delivery: 600 });
+    expect(b.total).toBe(1900);
+  });
+
+  it('breakdown fields sum to total and match the wrapper', () => {
+    const input = {
+      clerkCost: 700,
+      attestedCharges: 100, clerkAttestedCharges: 100,
+      wantPdf: true,
+    };
+    const b = computeClerkEarningsBreakdown(input);
+    expect(b.base + b.attested + b.nonAttested + b.printing + b.delivery + b.pdfFee)
+      .toBe(b.total);
+    expect(b.pdfFee).toBe(100);
+    expect(computeClerkEarnings(input)).toBe(b.total);
+  });
+});

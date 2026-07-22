@@ -895,6 +895,68 @@ export interface ClerkEarningsInput {
   /** PDF purchased → the clerk earns PDF_CLERK_FEE. Either signal works. */
   pdfSurcharge?: number | string | null;
   wantPdf?: boolean | null;
+  /**
+   * What the CLERK submitted for each phase-2 line. The admin's finalize edits
+   * overwrite the flat columns above, so payout is capped at these. Absent
+   * (null/undefined) means no clerk submission was recorded — fall back to the
+   * final column.
+   */
+  clerkAttestedCharges?: number | string | null;
+  clerkNonAttestedCharges?: number | string | null;
+  clerkPrintingCharges?: number | string | null;
+  clerkDeliveryCharges?: number | string | null;
+}
+
+export interface ClerkEarningsBreakdown {
+  base: number;
+  attested: number;
+  nonAttested: number;
+  printing: number;
+  delivery: number;
+  pdfFee: number;
+  total: number;
+}
+
+/**
+ * Internal-only clerk payout, itemized. Each phase-2 line is capped at what the
+ * clerk submitted: an admin MARKUP is Wusuq margin and never reaches the clerk,
+ * while an admin CORRECTION downward (fixing a clerk typo) does reduce pay.
+ * A null clerk value means no submission was recorded → use the final column.
+ * The SINGLE source for clerk earnings — never hand-roll this sum.
+ */
+export function computeClerkEarningsBreakdown(
+  t: ClerkEarningsInput,
+): ClerkEarningsBreakdown {
+  const num = (v: number | string | null | undefined): number => Number(v ?? 0) || 0;
+  const line = (
+    submitted: number | string | null | undefined,
+    final: number | string | null | undefined,
+  ): number => {
+    const f = num(final);
+    if (submitted === null || submitted === undefined || submitted === '') return f;
+    return Math.min(num(submitted), f);
+  };
+
+  const base = t.clerkCost != null && t.clerkCost !== ''
+    ? num(t.clerkCost)
+    : num(t.defaultClerkCost);
+  const pdfPurchased = num(t.pdfSurcharge) > 0 || t.wantPdf === true;
+
+  const attested = line(t.clerkAttestedCharges, t.attestedCharges);
+  const nonAttested = line(t.clerkNonAttestedCharges, t.nonAttestedCharges);
+  const printing = line(t.clerkPrintingCharges, t.printingCharges);
+  const delivery = line(t.clerkDeliveryCharges, t.deliveryCharges);
+  const pdfFee = pdfPurchased ? PDF_CLERK_FEE : 0;
+
+  return {
+    base: round2(base),
+    attested: round2(attested),
+    nonAttested: round2(nonAttested),
+    printing: round2(printing),
+    delivery: round2(delivery),
+    pdfFee: round2(pdfFee),
+    total: round2(base + attested + nonAttested + printing + delivery + pdfFee),
+  };
 }
 
 /**
@@ -906,17 +968,7 @@ export interface ClerkEarningsInput {
  * consumers.
  */
 export function computeClerkEarnings(t: ClerkEarningsInput): number {
-  const num = (v: number | string | null | undefined): number => Number(v ?? 0) || 0;
-  const base = t.clerkCost != null && t.clerkCost !== '' ? num(t.clerkCost) : num(t.defaultClerkCost);
-  const pdfPurchased = num(t.pdfSurcharge) > 0 || t.wantPdf === true;
-  return round2(
-    base +
-      num(t.attestedCharges) +
-      num(t.nonAttestedCharges) +
-      num(t.printingCharges) +
-      num(t.deliveryCharges) +
-      (pdfPurchased ? PDF_CLERK_FEE : 0),
-  );
+  return computeClerkEarningsBreakdown(t).total;
 }
 
 /**
