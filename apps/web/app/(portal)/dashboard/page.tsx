@@ -63,8 +63,25 @@ type ConsumerSummary = {
   } | null;
 };
 
+type ClerkEarningsBreakdown = {
+  base: number;
+  attested: number;
+  nonAttested: number;
+  printing: number;
+  delivery: number;
+  pdfFee: number;
+  total: number;
+};
+
 type ClerkSummary = {
-  earnings: { realized: number; pending: number; thisMonth: number };
+  earnings: {
+    realized: number;
+    pending: number;
+    thisMonth: number;
+    // Optional so an older API response (or a stale cached bundle) can't
+    // crash the page — the itemization render below guards on its presence.
+    breakdown?: ClerkEarningsBreakdown;
+  };
   counts: {
     assigned: number;
     inProgress: number;
@@ -409,7 +426,24 @@ export default function DashboardPage() {
     return (
       <div className="mt-8 space-y-6">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <StatCard title="Earned (realized)" value={rs(s.earnings.realized)} icon={<DollarSign className="opacity-50" />} />
+          <div>
+            <StatCard title="Earned (realized)" value={rs(s.earnings.realized)} icon={<DollarSign className="opacity-50" />} />
+            {s.earnings.breakdown && (
+              <p className="mt-1.5 px-1 text-xs text-slate-500">
+                {[
+                  ['Clerk cost', s.earnings.breakdown.base],
+                  ['Attested', s.earnings.breakdown.attested],
+                  ['Non-attested', s.earnings.breakdown.nonAttested],
+                  ['Printing', s.earnings.breakdown.printing],
+                  ['Delivery', s.earnings.breakdown.delivery],
+                  ['PDF', s.earnings.breakdown.pdfFee],
+                ]
+                  .filter(([, v]) => Number(v) > 0)
+                  .map(([label, v]) => `${label} ${Number(v).toLocaleString()}`)
+                  .join('  +  ')}
+              </p>
+            )}
+          </div>
           <StatCard title="Pending earnings" value={rs(s.earnings.pending)} icon={<WalletCards className="opacity-50" />} />
           <StatCard title="This month" value={rs(s.earnings.thisMonth)} icon={<CheckCircle2 className="opacity-50" />} />
           <StatCard title="To accept" value={s.pendingAcceptance} icon={<Ticket className="opacity-50" />} />

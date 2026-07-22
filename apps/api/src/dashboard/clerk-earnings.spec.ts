@@ -114,7 +114,13 @@ describe('computeClerkEarningsBreakdown — admin markup is capped out', () => {
     expect(b.total).toBe(1900);
   });
 
-  it('breakdown fields sum to total and match the wrapper', () => {
+  it('breakdown fields sum to total and match the wrapper (whole-rupee inputs only)', () => {
+    // This exact sum-of-parts identity only holds for whole-rupee inputs like
+    // these. The implementation round2's each returned field individually
+    // while `total` is computed from the unrounded locals (more accurate,
+    // not a bug) — so for fractional inputs the sum of the rounded parts can
+    // differ from `total` by up to a few cents. Use toBeCloseTo (or fractional
+    // fixtures) if this test is ever extended beyond integers.
     const input = {
       clerkCost: 700,
       attestedCharges: 100,

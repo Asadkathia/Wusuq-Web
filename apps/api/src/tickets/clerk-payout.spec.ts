@@ -119,8 +119,13 @@ describe('clerk payout write boundary', () => {
     expect(data.clerkDeliveryCharges).toBe(200);
   });
 
-  it('an admin markup after submit does not raise clerk pay', () => {
-    // Simulates post-finalize state: final columns marked up, clerk set intact.
+  it('computeClerkEarningsBreakdown caps a marked-up final column at the clerk-submitted figure (unit-level; the end-to-end guard that finalize never WRITES the clerk* columns is finalize-pages.spec.ts)', () => {
+    // This is a pure computeClerkEarningsBreakdown call with hand-written
+    // inputs — it never touches TicketsService/finalizeRemainderCore, so it
+    // would still pass even if a future change made finalize write to the
+    // clerk* columns. It only proves the cap formula caps correctly given
+    // these inputs. Simulates post-finalize state: final columns marked up,
+    // clerk set intact.
     const b = computeClerkEarningsBreakdown({
       clerkCost: 400,
       nonAttestedCharges: 500, // admin's finalized value

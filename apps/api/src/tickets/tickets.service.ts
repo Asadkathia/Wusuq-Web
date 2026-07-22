@@ -2404,6 +2404,21 @@ export class TicketsService {
           // Clerk payout basis: snapshot what the CLERK submitted. The admin's
           // finalize edits overwrite the flat columns above but must never
           // touch these — a markup is Wusuq margin, not clerk pay.
+          //
+          // KNOWN LIMITATION (narrow, order-dependent): attestedCharges /
+          // nonAttestedCharges / printingCharges / deliveryCharges above each
+          // fall back to `Number(ticket.<field>)` (or a computePageCharges
+          // pages×rate) when the dto omits that field — NOT to a value the
+          // clerk necessarily typed. If an admin raises a charge via
+          // `PATCH /finance/:id/charge` BEFORE this submit, and the clerk's
+          // submit omits that same field, the admin's already-marked-up
+          // persisted value is what gets snapshotted into the clerk* column
+          // here and becomes the payout cap — i.e. the clerk would be paid
+          // the markup for that one line. This snapshot only guards against
+          // markups applied AFTER clerk submit (the finalize path, which is
+          // what this branch was built to close). Not re-architecting the
+          // fallback chain to close this narrower gap — flagged for a future
+          // pass if it proves to matter in practice.
           clerkAttestedCharges: attestedCharges,
           clerkNonAttestedCharges: nonAttestedCharges,
           clerkPrintingCharges: printingCharges,

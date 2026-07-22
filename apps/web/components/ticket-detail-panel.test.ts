@@ -17,10 +17,6 @@ const currentDir = dirname(fileURLToPath(import.meta.url));
 const source = readFileSync(join(currentDir, 'ticket-detail-panel.tsx'), 'utf8');
 
 describe('ticket-detail-panel (clerk-earnings itemization)', () => {
-  it('imports computeClerkEarningsBreakdown from @wusuq/shared', () => {
-    expect(source).toMatch(/computeClerkEarningsBreakdown/);
-  });
-
   it('actually calls the breakdown (not just imports the symbol)', () => {
     // A bare identifier check is satisfied by the import line alone; require
     // an invocation with the ticket + wantPdf shape it needs.

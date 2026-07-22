@@ -29,11 +29,15 @@ describe('consumer-ticket-board (Wusuq-earnings absence guard)', () => {
 
   it('consumer detail never renders clerk earnings or the clerk set', () => {
     // Clerk earnings (computeClerkEarnings/computeClerkEarningsBreakdown) and
-    // the clerk's submitted phase-2 charges (clerkNonAttestedCharges et al.)
-    // are internal-only (Task 8) — a consumer-facing view must not import
-    // either. `toMatch` against a regex (not `toContain`) so this also
-    // catches a differently-spelled call site, not just an exact substring.
+    // the clerk's submitted phase-2 charges (all four clerk* snapshot
+    // columns: clerkAttestedCharges, clerkNonAttestedCharges,
+    // clerkPrintingCharges, clerkDeliveryCharges) are internal-only (Task 8)
+    // — a consumer-facing view must not import any of them. One regex covers
+    // all four so a leak of any single column (not just
+    // clerkNonAttestedCharges) fails this test. `toMatch` against a regex
+    // (not `toContain`) so this also catches a differently-spelled call
+    // site, not just an exact substring.
     expect(source).not.toMatch(/computeClerkEarnings/);
-    expect(source).not.toMatch(/clerkNonAttestedCharges/);
+    expect(source).not.toMatch(/clerk(Attested|NonAttested|Printing|Delivery)Charges/);
   });
 });

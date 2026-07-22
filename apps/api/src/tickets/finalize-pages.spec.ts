@@ -94,6 +94,29 @@ function buildHarness(ticketOverrides: Record<string, unknown> = {}) {
 
 const actor = { actorUserId: 'admin-1', actorEmail: 'a@x.com' };
 
+// clerk-payout invariant (the reason this whole branch exists): the four
+// clerk-submitted snapshot columns are written ONLY by submitClerkCosts and
+// must never be touched by finalizeRemainderCore — an admin markup after
+// submit must not raise clerk pay. This is the REAL guard for that
+// invariant (clerk-payout.spec.ts's identically-worded test is a pure
+// computeClerkEarningsBreakdown call with hand-written inputs and never
+// touches TicketsService, so it can't catch a regression here).
+const CLERK_SNAPSHOT_KEYS = [
+  'clerkAttestedCharges',
+  'clerkNonAttestedCharges',
+  'clerkPrintingCharges',
+  'clerkDeliveryCharges',
+] as const;
+
+function expectFinalizeNeverWritesClerkSnapshot(updateMany: jest.Mock) {
+  const data = (
+    updateMany.mock.calls[0][0] as { data: Record<string, unknown> }
+  ).data;
+  for (const key of CLERK_SNAPSHOT_KEYS) {
+    expect(data).not.toHaveProperty(key);
+  }
+}
+
 describe('finalizeRemainder — editable page counts (B11)', () => {
   it('recomputes attestedCharges from pages × rate and persists the page count', async () => {
     const { service, updateMany } = buildHarness();
@@ -116,6 +139,7 @@ describe('finalizeRemainder — editable page counts (B11)', () => {
         }),
       }),
     );
+    expectFinalizeNeverWritesClerkSnapshot(updateMany);
   });
 
   it('recomputes printingCharges + nonAttestedCharges from pages × rate', async () => {
@@ -144,6 +168,7 @@ describe('finalizeRemainder — editable page counts (B11)', () => {
         }),
       }),
     );
+    expectFinalizeNeverWritesClerkSnapshot(updateMany);
   });
 
   it('no page fields → the persisted lump/persisted value is used unchanged', async () => {
@@ -164,6 +189,7 @@ describe('finalizeRemainder — editable page counts (B11)', () => {
         }),
       }),
     );
+    expectFinalizeNeverWritesClerkSnapshot(updateMany);
   });
 
   it('an explicit lump charge still wins over pages × rate', async () => {
@@ -182,5 +208,33 @@ describe('finalizeRemainder — editable page counts (B11)', () => {
         }),
       }),
     );
+    expectFinalizeNeverWritesClerkSnapshot(updateMany);
+  });
+
+  it('an admin markup after submit does not raise clerk pay (finalize never touches the clerk snapshot)', async () => {
+    // This is the end-to-end version of the invariant: finalize the same
+    // ticket that submitClerkCosts already stamped with a clerk snapshot,
+    // with the admin marking the attested charge UP from what the clerk
+    // submitted. The clerk* columns must be absent from finalize's own
+    // update — the cap lives in computeClerkEarningsBreakdown, applied by
+    // callers that read the persisted clerk* columns, not by finalize
+    // itself re-deriving or overwriting them.
+    const { service, updateMany } = buildHarness({
+      attestedCharges: 250, // clerk's original submission
+      clerkAttestedCharges: 250,
+    });
+
+    await service.finalizeRemainder(
+      'tkt-1',
+      { attestedCharges: 500 }, // admin marks it up
+      actor,
+    );
+
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ attestedCharges: 500 }),
+      }),
+    );
+    expectFinalizeNeverWritesClerkSnapshot(updateMany);
   });
 });
