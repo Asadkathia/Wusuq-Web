@@ -117,13 +117,17 @@ payouts are domestic regardless of the consumer's currency.
 
 ### Aggregation
 
-Portal dashboard revenue, finance KPIs and `/wallet/me`'s `due` currently sum raw `totalAmount` across
-tickets of mixed currency and stamp one label on the result. Each switches to summing the PKR
-equivalent per ticket. Tickets with a missing rate are excluded from the sum and reported as a count,
-so a total is never silently understated.
+Portal dashboard revenue, finance KPIs and the **admin all-wallets table** currently sum raw
+`totalAmount` across tickets and users of mixed currency and stamp one label on the result. Each
+switches to summing the PKR equivalent per ticket. Tickets with a missing rate are excluded from the
+sum and reported as a count, so a total is never silently understated.
 
-Because currency locks once an account is active, per-user views are single-currency; only the global
-staff aggregates genuinely mix.
+**`/wallet/me` is explicitly NOT converted.** Currency locks once an account is active (an inactive
+account has zero tickets and zero balance by definition), so a single user's tickets are always
+one currency and `outstandingDuesForUser` is already currency-safe. It is consumer-facing, so its
+`due` must stay in the user's own currency — converting it to PKR would show an overseas consumer a
+figure in a currency they were never quoted. Only aggregates that span *multiple users* genuinely
+mix.
 
 ### Write path
 
@@ -167,7 +171,7 @@ the consumer.
 
 1. **Conversion core** — schema + `convertToPkr` / `formatStaffMoney` + the `convert()` fallback fix.
 2. **Staff display** — the seven surfaces.
-3. **Aggregation** — dashboard, finance KPIs, wallet due.
+3. **Aggregation** — dashboard KPIs, finance KPIs, admin all-wallets table.
 4. **Write path** — server-derived currency + DTO cleanup + notification templates.
 5. **Consumer** — pay page and top-up labels.
 
