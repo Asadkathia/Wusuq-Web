@@ -8,7 +8,7 @@ import {
   chargeCapabilitiesFor,
   FLOW_LABELS,
   courtTierFromCourtType,
-  computeClerkEarnings,
+  computeClerkEarningsBreakdown,
   computeWusuqMargin,
 } from '@wusuq/shared';
 import { PanelCard } from '@/components/ui/panel-card';
@@ -132,7 +132,7 @@ export function TicketDetailPanel({ ticketId, onClose, isClerkView = false, onCh
   const customerTotal = ticket ? Number(ticket.totalAmount || 0) : 0;
 
   // PDF purchased at intake → the clerk earns their PDF_CLERK_FEE cut (handled
-  // by the shared computeClerkEarnings).
+  // by the shared computeClerkEarningsBreakdown).
   const wantPdf =
     ((ticket?.formPayload ?? {}) as Record<string, unknown>).want_pdf_before_dispatch === 'Yes';
 
@@ -352,7 +352,8 @@ export function TicketDetailPanel({ ticketId, onClose, isClerkView = false, onCh
                         // clerk-earnings line below (Bug #5).
                         ['Discount', ticket.discountPrice ? `-${Number(ticket.discountPrice).toLocaleString()}` : null],
                       ];
-                      const clerkEarnings = computeClerkEarnings({ ...ticket, wantPdf });
+                      const clerkBreakdown = computeClerkEarningsBreakdown({ ...ticket, wantPdf });
+                      const clerkEarnings = clerkBreakdown.total;
                       const wusuqEarnings = computeWusuqMargin(customerTotal, clerkEarnings);
                       return (
                         <div className="space-y-2 text-sm">
@@ -363,9 +364,24 @@ export function TicketDetailPanel({ ticketId, onClose, isClerkView = false, onCh
                             </div>
                           ))}
                           {clerkEarnings > 0 && (
-                            <div className="flex justify-between border-b border-dashed border-amber-200 pb-1.5 text-amber-800">
-                              <span className="font-medium">{repName ? `${repName}'s earnings` : 'Clerk earnings'}</span>
-                              <span className="font-semibold">PKR {clerkEarnings.toLocaleString()}</span>
+                            <div className="border-b border-dashed border-amber-200 pb-1.5">
+                              <div className="flex justify-between text-amber-800">
+                                <span className="font-medium">{repName ? `${repName}'s earnings` : 'Clerk earnings'}</span>
+                                <span className="font-semibold">PKR {clerkEarnings.toLocaleString()}</span>
+                              </div>
+                              <p className="mt-1 text-xs text-slate-500">
+                                {[
+                                  ['Clerk cost', clerkBreakdown.base],
+                                  ['Attested', clerkBreakdown.attested],
+                                  ['Non-attested', clerkBreakdown.nonAttested],
+                                  ['Printing', clerkBreakdown.printing],
+                                  ['Delivery', clerkBreakdown.delivery],
+                                  ['PDF', clerkBreakdown.pdfFee],
+                                ]
+                                  .filter(([, v]) => Number(v) > 0)
+                                  .map(([label, v]) => `${label} ${Number(v).toLocaleString()}`)
+                                  .join('  +  ')}
+                              </p>
                             </div>
                           )}
                           <div className="flex justify-between border-b border-dashed border-emerald-200 pb-1.5 text-emerald-800">

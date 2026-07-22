@@ -26,4 +26,14 @@ describe('consumer-ticket-board (Wusuq-earnings absence guard)', () => {
   it('does not import or call computeWusuqMargin', () => {
     expect(source).not.toContain('computeWusuqMargin');
   });
+
+  it('consumer detail never renders clerk earnings or the clerk set', () => {
+    // Clerk earnings (computeClerkEarnings/computeClerkEarningsBreakdown) and
+    // the clerk's submitted phase-2 charges (clerkNonAttestedCharges et al.)
+    // are internal-only (Task 8) — a consumer-facing view must not import
+    // either. `toMatch` against a regex (not `toContain`) so this also
+    // catches a differently-spelled call site, not just an exact substring.
+    expect(source).not.toMatch(/computeClerkEarnings/);
+    expect(source).not.toMatch(/clerkNonAttestedCharges/);
+  });
 });
