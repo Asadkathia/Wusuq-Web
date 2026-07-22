@@ -567,11 +567,20 @@ git commit -m "feat: aggregate multi-user totals in PKR and count rate-less tick
 > divided by the rate TWICE.** This repo has already shipped exactly this class of seam defect
 > (Plan A Tasks 4+5 were each correct alone and produced a live open redirect at the boundary).
 >
-> **Do this:** move the conversion to the server in THIS task. Accept the PKR figure the consumer
-> actually wired, convert with `ticket.fxRateToPkr` server-side, remove the client-side division
-> from `pay/page.tsx`, and persist **both** figures plus the rate on `WalletTransaction`
-> (`amount` in native currency, plus the submitted PKR amount and the rate used). Currency and
-> amount-units must not be derived on opposite sides of the trust boundary.
+> **Do this:** move the conversion to the server in THIS task, **preserving the rail gating**.
+> Concretely:
+> - Accept the amount the consumer actually entered plus the `paymentMode`.
+> - **Only when `isPkrRail(paymentMode)`** (JazzCash / EasyPaisa) convert with the ticket's
+>   `ticket.fxRateToPkr` server-side. On `BANK_TRANSFER`, credit the entered amount as-is — the
+>   consumer wired USD and their bank already converted.
+> - Then, and only then, remove the **rail-gated** client-side division from `pay/page.tsx`.
+>   **Do NOT delete the `isPkrRail` gating itself** — the rail distinction must survive the move,
+>   it just relocates to the server. Deleting it would convert bank transfers that must not be
+>   converted.
+> - Persist **both** figures plus the rate on `WalletTransaction` (`amount` in native currency,
+>   plus the submitted PKR amount and the rate used).
+>
+> Currency and amount-units must not be derived on opposite sides of the trust boundary.
 >
 > Persisting both also fixes a real reconciliation gap: today the wired PKR figure is destroyed,
 > so the admin verification card shows `35 USD` while the bank receipt says `PKR 9,975`.
