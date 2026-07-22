@@ -187,7 +187,15 @@ export class DashboardService {
     let realized = 0;
     let pending = 0;
     let thisMonth = 0;
-    const breakdown = { base: 0, attested: 0, nonAttested: 0, printing: 0, delivery: 0, pdfFee: 0, total: 0 };
+    const breakdown = {
+      base: 0,
+      attested: 0,
+      nonAttested: 0,
+      printing: 0,
+      delivery: 0,
+      pdfFee: 0,
+      total: 0,
+    };
     const counts: Record<string, number> = {};
 
     for (const t of tickets) {
@@ -202,10 +210,16 @@ export class DashboardService {
         nonAttestedCharges: toNum(t.nonAttestedCharges),
         printingCharges: toNum(t.printingCharges),
         deliveryCharges: toNum(t.deliveryCharges),
-        clerkAttestedCharges: t.clerkAttestedCharges == null ? null : toNum(t.clerkAttestedCharges),
-        clerkNonAttestedCharges: t.clerkNonAttestedCharges == null ? null : toNum(t.clerkNonAttestedCharges),
-        clerkPrintingCharges: t.clerkPrintingCharges == null ? null : toNum(t.clerkPrintingCharges),
-        clerkDeliveryCharges: t.clerkDeliveryCharges == null ? null : toNum(t.clerkDeliveryCharges),
+        clerkAttestedCharges:
+          t.clerkAttestedCharges == null ? null : toNum(t.clerkAttestedCharges),
+        clerkNonAttestedCharges:
+          t.clerkNonAttestedCharges == null
+            ? null
+            : toNum(t.clerkNonAttestedCharges),
+        clerkPrintingCharges:
+          t.clerkPrintingCharges == null ? null : toNum(t.clerkPrintingCharges),
+        clerkDeliveryCharges:
+          t.clerkDeliveryCharges == null ? null : toNum(t.clerkDeliveryCharges),
         wantPdf,
       });
       const earn = b.total;

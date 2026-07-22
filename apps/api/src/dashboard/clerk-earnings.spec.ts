@@ -1,4 +1,8 @@
-import { computeClerkEarnings, computeClerkEarningsBreakdown, PDF_CLERK_FEE } from '@wusuq/shared';
+import {
+  computeClerkEarnings,
+  computeClerkEarningsBreakdown,
+  PDF_CLERK_FEE,
+} from '@wusuq/shared';
 
 describe('computeClerkEarnings', () => {
   it('sums base + phase-2 charges', () => {
@@ -92,24 +96,35 @@ describe('computeClerkEarningsBreakdown — admin markup is capped out', () => {
   it('caps every line independently', () => {
     const b = computeClerkEarningsBreakdown({
       clerkCost: 100,
-      attestedCharges: 900, clerkAttestedCharges: 300,
-      nonAttestedCharges: 900, clerkNonAttestedCharges: 400,
-      printingCharges: 900, clerkPrintingCharges: 500,
-      deliveryCharges: 900, clerkDeliveryCharges: 600,
+      attestedCharges: 900,
+      clerkAttestedCharges: 300,
+      nonAttestedCharges: 900,
+      clerkNonAttestedCharges: 400,
+      printingCharges: 900,
+      clerkPrintingCharges: 500,
+      deliveryCharges: 900,
+      clerkDeliveryCharges: 600,
     });
-    expect(b).toMatchObject({ attested: 300, nonAttested: 400, printing: 500, delivery: 600 });
+    expect(b).toMatchObject({
+      attested: 300,
+      nonAttested: 400,
+      printing: 500,
+      delivery: 600,
+    });
     expect(b.total).toBe(1900);
   });
 
   it('breakdown fields sum to total and match the wrapper', () => {
     const input = {
       clerkCost: 700,
-      attestedCharges: 100, clerkAttestedCharges: 100,
+      attestedCharges: 100,
+      clerkAttestedCharges: 100,
       wantPdf: true,
     };
     const b = computeClerkEarningsBreakdown(input);
-    expect(b.base + b.attested + b.nonAttested + b.printing + b.delivery + b.pdfFee)
-      .toBe(b.total);
+    expect(
+      b.base + b.attested + b.nonAttested + b.printing + b.delivery + b.pdfFee,
+    ).toBe(b.total);
     expect(b.pdfFee).toBe(100);
     expect(computeClerkEarnings(input)).toBe(b.total);
   });
