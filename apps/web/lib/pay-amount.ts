@@ -3,27 +3,51 @@ import { convertToPkr, round2, type Currency } from '@wusuq/shared';
 /**
  * Pure FX-conversion helpers for the consumer pay page.
  *
- * The pay page's destination account is always a Pakistani bank, so the
- * amount field is always denominated in PKR — but a ticket's own billing
- * currency (and the consumer's wallet ledger) may be USD. These two
- * functions are the inverse of each other:
+ * The payment currency follows the PAYMENT RAIL, not the ticket:
+ *
+ * - JazzCash / EasyPaisa are domestic PKR rails. An overseas Pakistani using
+ *   one already holds PKR, so the figure they type IS PKR and must be
+ *   converted to the wallet's native currency (USD) before it is credited.
+ * - Bank transfer is NOT a PKR rail: an overseas consumer wires USD from
+ *   their own foreign bank and the receiving Pakistani bank auto-converts
+ *   on arrival at whatever rate it sets that day. The consumer never types
+ *   a PKR figure on this rail, and what they type is exactly what is
+ *   credited — no conversion applies, ever.
+ *
+ * `isPkrRail` identifies the former group. `payableInPkr` and
+ * `submitAmountFromPkr` are the inverse of each other and MUST only be
+ * invoked when `isPkrRail(paymentMode)` is true:
  *
  *   payableInPkr        : ticket-currency amount  -> PKR (for prefill/display)
  *   submitAmountFromPkr  : PKR entered on the form -> ticket-currency amount
  *                          (for the /wallet/topup credit)
  *
- * Both return `null` when a USD ticket has no `fxRateToPkr` stamped — callers
- * MUST treat null as "cannot proceed" (no prefill, no submit), never fall
- * back to the raw un-converted figure. See `convertToPkr` in `@wusuq/shared`
- * for why a fallback rate of 1 is never acceptable.
+ * Both return `null` when a USD ticket on a PKR rail has no `fxRateToPkr`
+ * stamped — callers MUST treat null as "cannot proceed" (no prefill, no
+ * submit), never fall back to the raw un-converted figure. See
+ * `convertToPkr` in `@wusuq/shared` for why a fallback rate of 1 is never
+ * acceptable.
  */
 
 /**
+ * Domestic PKR rails. A consumer using these already holds PKR, so the
+ * amount they enter is PKR and must be converted to the wallet's native
+ * currency. BANK_TRANSFER is NOT a PKR rail: the consumer wires USD from
+ * their own foreign bank and the receiving Pakistani bank auto-converts on
+ * arrival, so what they type is what is credited and no conversion applies.
+ */
+export function isPkrRail(paymentMode: string | null | undefined): boolean {
+  return paymentMode === 'JAZZ_CASH' || paymentMode === 'EASY_PAISA';
+}
+
+/**
  * Amount payable in PKR for a ticket currently due `dueNow` in its own
- * billing currency. PKR tickets pass through unconverted. USD tickets
- * convert via the FX rate stamped at intake; returns null when no rate is
- * available so the caller can show a "not set" message instead of a bogus
- * number.
+ * billing currency. Only meaningful — and only meant to be called — on a
+ * PKR rail (`isPkrRail(paymentMode)` true); a bank transfer needs no
+ * conversion at all. PKR tickets pass through unconverted. USD tickets on a
+ * PKR rail convert via the FX rate stamped at intake; returns null when no
+ * rate is available so the caller can show a "not set" message instead of a
+ * bogus number.
  */
 export function payableInPkr(
   dueNow: number,
@@ -38,10 +62,13 @@ export function payableInPkr(
  * Converts a PKR amount entered on the pay form back into the ticket's
  * native billing currency, ready to submit to `/wallet/topup` (which
  * credits `walletBalance` — denominated in the user's native currency —
- * with zero FX awareness of its own). PKR tickets pass through unconverted.
- * Returns null when no valid rate is available for a USD ticket; callers
- * MUST reject the submission rather than send the raw PKR figure (that
- * would credit e.g. "9975" as if it were $9,975).
+ * with zero FX awareness of its own). Only meant to be called on a PKR rail
+ * (`isPkrRail(paymentMode)` true) — a bank-transfer amount is never routed
+ * through this function; it is submitted as entered. PKR tickets pass
+ * through unconverted. Returns null when no valid rate is available for a
+ * USD ticket on a PKR rail; callers MUST reject the submission rather than
+ * send the raw PKR figure (that would credit e.g. "9975" as if it were
+ * $9,975).
  */
 export function submitAmountFromPkr(
   pkrEntered: number,

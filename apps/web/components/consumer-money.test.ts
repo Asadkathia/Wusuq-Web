@@ -15,3 +15,11 @@ it('consumer surfaces never use the staff formatter', () => {
     expect(readFileSync(join(here, f), 'utf8')).not.toMatch(/formatStaffMoney/);
   }
 });
+
+it('pay page gates its FX conversion on the payment rail', () => {
+  const src = readFileSync(
+    join(here, '../app/(consumer)/consumer/tickets/[id]/pay/page.tsx'),
+    'utf8',
+  );
+  expect(src).toMatch(/isPkrRail\(/);
+});

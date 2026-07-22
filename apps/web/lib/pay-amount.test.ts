@@ -1,6 +1,26 @@
-import { payableInPkr, submitAmountFromPkr } from './pay-amount';
+import { isPkrRail, payableInPkr, submitAmountFromPkr } from './pay-amount';
 
-describe('payableInPkr', () => {
+describe('isPkrRail', () => {
+  it('treats JazzCash and EasyPaisa as PKR rails', () => {
+    expect(isPkrRail('JAZZ_CASH')).toBe(true);
+    expect(isPkrRail('EASY_PAISA')).toBe(true);
+  });
+
+  it('does NOT treat a bank transfer as a PKR rail', () => {
+    // The consumer wires USD from a foreign bank; the receiving Pakistani
+    // bank converts. Treating this as a PKR rail would ask them to send a
+    // number they are not sending, and would double-count on submit.
+    expect(isPkrRail('BANK_TRANSFER')).toBe(false);
+  });
+
+  it('defaults to not-a-PKR-rail for unknown or missing modes', () => {
+    expect(isPkrRail(null)).toBe(false);
+    expect(isPkrRail(undefined)).toBe(false);
+    expect(isPkrRail('SOMETHING_NEW')).toBe(false);
+  });
+});
+
+describe('payableInPkr (called only on a PKR rail)', () => {
   it('converts a USD ticket due amount to PKR using the stamped rate', () => {
     expect(payableInPkr(35, 'USD', 285)).toBe(9975);
   });
