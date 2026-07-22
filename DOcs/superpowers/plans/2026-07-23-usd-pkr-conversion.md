@@ -541,10 +541,35 @@ git commit -m "feat: aggregate multi-user totals in PKR and count rate-less tick
 - Modify: `apps/api/src/finance/finance.service.ts:223` (derive from the ticket, not a `'PKR'` default)
 - Modify: `apps/api/src/finance/dto/reconcile-payment.dto.ts` (remove `currency`)
 - Modify: `apps/web/components/finance-board.tsx:194`, `apps/web/components/users-board.tsx:141`, `apps/web/components/wallet-board.tsx:64` (stop sending it)
+- Modify: `apps/web/app/(consumer)/consumer/tickets/[id]/pay/page.tsx` (move its client-side conversion to the server — see the constraint below)
 - Test: `apps/api/src/wallet/derived-currency.spec.ts` (create)
 
 **Interfaces:**
 - Produces: `WalletTransaction.currency` is always the target user's currency; `Payment`/reconcile currency is always the ticket's.
+
+> ### ⚠️ HARD CONSTRAINT — read before writing any code
+>
+> **Task 8 already ships a client-side FX conversion on this exact path.** `pay/page.tsx`
+> divides the PKR amount the consumer enters by `ticket.fxRateToPkr` before POSTing to
+> `/wallet/topup`, because `verifyTopup` (`wallet.service.ts:170-174`) does
+> `walletBalance: { increment: locked.amount }` with **zero FX awareness**, and `walletBalance`
+> is denominated in the user's native currency. Without that division, paying a $35 USD ticket
+> would credit **9,975 USD-units** and leave ~$9,940 of phantom credit that FIFO auto-settlement
+> would silently spend.
+>
+> **If you add server-side conversion without removing the client-side one, the amount is
+> divided by the rate TWICE.** This repo has already shipped exactly this class of seam defect
+> (Plan A Tasks 4+5 were each correct alone and produced a live open redirect at the boundary).
+>
+> **Do this:** move the conversion to the server in THIS task. Accept the PKR figure the consumer
+> actually wired, convert with `ticket.fxRateToPkr` server-side, remove the client-side division
+> from `pay/page.tsx`, and persist **both** figures plus the rate on `WalletTransaction`
+> (`amount` in native currency, plus the submitted PKR amount and the rate used). Currency and
+> amount-units must not be derived on opposite sides of the trust boundary.
+>
+> Persisting both also fixes a real reconciliation gap: today the wired PKR figure is destroyed,
+> so the admin verification card shows `35 USD` while the bank receipt says `PKR 9,975`.
+> That needs an additive migration for the two new `WalletTransaction` columns.
 
 - [ ] **Step 1: Write the failing test**
 
