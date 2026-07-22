@@ -1,12 +1,62 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { subDays, startOfDay, endOfDay, format } from 'date-fns';
 import {
   recommendationsForCase,
   isFlowKey,
   computeClerkEarningsBreakdown,
+  convertToPkr,
+  round2,
   type FlowKey,
 } from '@wusuq/shared';
+
+// Multi-user KPI aggregates span tickets of mixed currency. PKR tickets
+// contribute their amount directly; non-PKR tickets convert via the stamped
+// `fxRateToPkr` and are EXCLUDED (and counted) when that rate is missing —
+// a silently understated total is worse than a visibly incomplete one. Same
+// reduce contract as `apps/api/src/dashboard/aggregate-currency.spec.ts` and
+// `finance.service.ts`'s `summary` reduce.
+function sumMixedCurrencyToPkr(
+  rows: Array<{
+    totalAmount: Prisma.Decimal | number | string | null;
+    amountPaid: Prisma.Decimal | number | string | null;
+    currency: string | null;
+    fxRateToPkr: Prisma.Decimal | number | string | null;
+  }>,
+): { totalAmountPkr: number; amountPaidPkr: number; unconvertedCount: number } {
+  let totalAmountPkr = 0;
+  let amountPaidPkr = 0;
+  let unconvertedCount = 0;
+
+  for (const r of rows) {
+    if ((r.currency ?? 'PKR') === 'PKR') {
+      totalAmountPkr += Number(r.totalAmount ?? 0);
+      amountPaidPkr += Number(r.amountPaid ?? 0);
+      continue;
+    }
+    const pkrTotal = convertToPkr(
+      r.totalAmount as number | string | null,
+      r.fxRateToPkr as number | string | null,
+    );
+    const pkrPaid = convertToPkr(
+      r.amountPaid as number | string | null,
+      r.fxRateToPkr as number | string | null,
+    );
+    if (pkrTotal === null || pkrPaid === null) {
+      unconvertedCount += 1;
+      continue;
+    }
+    totalAmountPkr += pkrTotal;
+    amountPaidPkr += pkrPaid;
+  }
+
+  return {
+    totalAmountPkr: round2(totalAmountPkr),
+    amountPaidPkr: round2(amountPaidPkr),
+    unconvertedCount,
+  };
+}
 
 @Injectable()
 export class DashboardService {
@@ -293,6 +343,39 @@ export class DashboardService {
     return data;
   }
 
+  /**
+   * Multi-currency revenue KPI aggregate: sums PKR equivalents across every
+   * ticket, not raw mixed amounts (a $35 ticket must not contribute 35 to a
+   * PKR total). Extracted from `computeSummary` so it has direct test
+   * coverage — see `aggregate-currency.spec.ts`.
+   */
+  private async getRevenueKpis(): Promise<{
+    totalRevenue: number;
+    outstandingBalance: number;
+    unconvertedCount: number;
+  }> {
+    const revenueRows = await this.prisma.ticket.findMany({
+      select: {
+        totalAmount: true,
+        amountPaid: true,
+        currency: true,
+        fxRateToPkr: true,
+      },
+    });
+    const {
+      totalAmountPkr,
+      amountPaidPkr: totalRevenue,
+      unconvertedCount,
+    } = sumMixedCurrencyToPkr(revenueRows);
+    const totalOutstanding = totalAmountPkr - totalRevenue;
+
+    return {
+      totalRevenue,
+      outstandingBalance: totalOutstanding > 0 ? totalOutstanding : 0,
+      unconvertedCount,
+    };
+  }
+
   private async computeSummary(range: string) {
     const daysStr = range.replace('d', '');
     const days = parseInt(daysStr, 10);
@@ -312,18 +395,15 @@ export class DashboardService {
       where: { status: 'COMPLETED' },
     });
 
-    const revenueResult = await this.prisma.ticket.aggregate({
-      _sum: { amountPaid: true, totalAmount: true },
-    });
-    const totalRevenue = Number(revenueResult._sum.amountPaid || 0);
-    const totalOutstanding =
-      Number(revenueResult._sum.totalAmount || 0) - totalRevenue;
+    const { totalRevenue, outstandingBalance, unconvertedCount } =
+      await this.getRevenueKpis();
 
     const kpis = {
       totalTickets,
       completedTickets,
       totalRevenue,
-      outstandingBalance: totalOutstanding > 0 ? totalOutstanding : 0,
+      outstandingBalance,
+      unconvertedCount,
     };
 
     // Period-over-period deltas (current window vs same-length prior window)

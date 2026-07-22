@@ -7,7 +7,9 @@ import { Prisma, TicketStatus } from '@prisma/client';
 import {
   computeClerkEarnings,
   computeTicketTotal,
+  convertToPkr,
   isBaseCovered,
+  round2,
 } from '@wusuq/shared';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -71,6 +73,54 @@ function clerkPayoutFor(ticket: {
   });
 }
 
+// The finance summary spans tickets of mixed currency. PKR tickets
+// contribute their amount directly; non-PKR tickets convert via the
+// stamped `fxRateToPkr` and are EXCLUDED (and counted) when that rate is
+// missing — a silently understated total is worse than a visibly
+// incomplete one. Same reduce contract as
+// `apps/api/src/dashboard/aggregate-currency.spec.ts` and
+// `dashboard.service.ts`'s KPI aggregate.
+function sumMixedCurrencyToPkr(
+  items: Array<{
+    totalAmount: Prisma.Decimal | number | string | null;
+    amountPaid: Prisma.Decimal | number | string | null;
+    currency: string | null;
+    fxRateToPkr: Prisma.Decimal | number | string | null;
+  }>,
+): { totalAmountPkr: number; paidAmountPkr: number; unconvertedCount: number } {
+  let totalAmountPkr = 0;
+  let paidAmountPkr = 0;
+  let unconvertedCount = 0;
+
+  for (const item of items) {
+    if ((item.currency ?? 'PKR') === 'PKR') {
+      totalAmountPkr += toNumber(item.totalAmount);
+      paidAmountPkr += toNumber(item.amountPaid);
+      continue;
+    }
+    const pkrTotal = convertToPkr(
+      item.totalAmount as number | string | null,
+      item.fxRateToPkr as number | string | null,
+    );
+    const pkrPaid = convertToPkr(
+      item.amountPaid as number | string | null,
+      item.fxRateToPkr as number | string | null,
+    );
+    if (pkrTotal === null || pkrPaid === null) {
+      unconvertedCount += 1;
+      continue;
+    }
+    totalAmountPkr += pkrTotal;
+    paidAmountPkr += pkrPaid;
+  }
+
+  return {
+    totalAmountPkr: round2(totalAmountPkr),
+    paidAmountPkr: round2(paidAmountPkr),
+    unconvertedCount,
+  };
+}
+
 @Injectable()
 export class FinanceService {
   constructor(
@@ -115,14 +165,7 @@ export class FinanceService {
       this.prisma.ticket.count({ where }),
     ]);
 
-    const summary = items.reduce(
-      (acc, ticket) => {
-        acc.totalAmount += toNumber(ticket.totalAmount);
-        acc.paidAmount += toNumber(ticket.amountPaid);
-        return acc;
-      },
-      { totalAmount: 0, paidAmount: 0 },
-    );
+    const summary = sumMixedCurrencyToPkr(items);
 
     return {
       items: items.map((ticket) => {
@@ -165,9 +208,10 @@ export class FinanceService {
       limit: query.limit,
       total,
       summary: {
-        totalAmount: summary.totalAmount,
-        paidAmount: summary.paidAmount,
-        remainingAmount: summary.totalAmount - summary.paidAmount,
+        totalAmount: summary.totalAmountPkr,
+        paidAmount: summary.paidAmountPkr,
+        remainingAmount: summary.totalAmountPkr - summary.paidAmountPkr,
+        unconvertedCount: summary.unconvertedCount,
       },
     };
   }

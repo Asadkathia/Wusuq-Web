@@ -47,8 +47,28 @@ type FinanceItem = {
   fxRateToPkr?: number | string | null;
 };
 
+// Finance KPI summary — PKR-converted totals across tickets of mixed
+// currency (Task 6), computed server-side by `FinanceService.findAll`'s
+// `summary` reduce. Never re-derive this by summing `items` client-side —
+// that was exactly the bug (raw mixed-currency amounts summed as if all
+// PKR).
+type FinanceSummary = {
+  totalAmount: number;
+  paidAmount: number;
+  remainingAmount: number;
+  unconvertedCount: number;
+};
+
+const EMPTY_SUMMARY: FinanceSummary = {
+  totalAmount: 0,
+  paidAmount: 0,
+  remainingAmount: 0,
+  unconvertedCount: 0,
+};
+
 export function FinanceBoard() {
   const [items, setItems] = useState<FinanceItem[]>([]);
+  const [summary, setSummary] = useState<FinanceSummary>(EMPTY_SUMMARY);
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const [amounts, setAmounts] = useState<Record<string, string>>({});
@@ -100,6 +120,7 @@ export function FinanceBoard() {
     try {
       const result = await apiClient.get<any>('/finance?limit=200');
       setItems(result.items ?? []);
+      setSummary(result.summary ?? EMPTY_SUMMARY);
     } catch (error: any) {
       if (error.message.includes('401')) {
         setMessage('Session expired. Please sign in again.');
@@ -159,11 +180,19 @@ export function FinanceBoard() {
     loadBankSettings();
   }, [load, loadPendingTxns, loadBankSettings]);
 
-  const stats = useMemo(() => {
-    const totalOut = items.reduce((acc, item) => acc + item.remaining, 0);
-    const totalCol = items.reduce((acc, item) => acc + item.amountPaid, 0);
-    return { outstanding: totalOut, collected: totalCol };
-  }, [items]);
+  // Backend-computed, PKR-converted across mixed currency — see
+  // `FinanceSummary` above. Do not sum `items` client-side here.
+  const stats = useMemo(
+    () => ({
+      outstanding: summary.remainingAmount,
+      collected: summary.paidAmount,
+    }),
+    [summary],
+  );
+  const unconvertedNote =
+    summary.unconvertedCount > 0
+      ? `${summary.unconvertedCount} ticket(s) excluded — FX rate not set`
+      : null;
 
   const filteredItems = useMemo(() => {
     if (!search) return items;
@@ -400,8 +429,8 @@ export function FinanceBoard() {
 
       {/* KPI Row */}
       <div className="grid gap-4 md:grid-cols-2">
-        <StatCard title="Outstanding Balance" value={`PKR ${stats.outstanding.toLocaleString()}`} icon={<Banknote className="h-6 w-6 text-slate-400" />} />
-        <StatCard title="Total Collected" value={`PKR ${stats.collected.toLocaleString()}`} icon={<HandCoins className="h-6 w-6 text-slate-400" />} />
+        <StatCard title="Outstanding Balance" value={`PKR ${stats.outstanding.toLocaleString()}`} icon={<Banknote className="h-6 w-6 text-slate-400" />} hint={unconvertedNote ?? undefined} />
+        <StatCard title="Total Collected" value={`PKR ${stats.collected.toLocaleString()}`} icon={<HandCoins className="h-6 w-6 text-slate-400" />} hint={unconvertedNote ?? undefined} />
       </div>
 
       {/* ── Payment Approval Queue ─────────────────────────────────────── */}

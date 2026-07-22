@@ -12,6 +12,7 @@ import { PanelCard } from '@/components/ui/panel-card';
 import { DataTableShell } from '@/components/ui/data-table-shell';
 import { StatusPill } from '@/components/ui/status-pill';
 import { CheckCircle2, XCircle, Plus, Wallet, RefreshCw, FileText, ExternalLink, History, X, Upload } from 'lucide-react';
+import { formatStaffMoney, toCurrency } from '@wusuq/shared';
 const CONSUMER_ROLES = ['consumer', 'lawyer', 'company'] as const;
 
 type WalletUser = {
@@ -19,6 +20,13 @@ type WalletUser = {
   userId: string;
   consumerName: string;
   accountBalance: number;
+  // The admin all-wallets table spans users of different currencies. There
+  // is no per-wallet FX rate (unlike Ticket.fxRateToPkr, stamped once per
+  // ticket at intake) — a prepaid credit balance accrues across many
+  // top-ups over time, so no single rate applies. Rendered via
+  // formatStaffMoney: PKR passes through, non-PKR shows an explicit "rate
+  // not set" marker rather than silently implying every balance is PKR.
+  currency?: string | null;
   totalTransactions: number;
   createdAt: string;
 };
@@ -439,7 +447,9 @@ export function WalletBoard() {
                         <div className="text-xs text-slate-500 mt-0.5">{user.userId}</div>
                       </td>
                       <td className="px-6 py-4 text-right">
-                        <div className="font-bold text-slate-900 text-sm">{user.accountBalance.toLocaleString()}</div>
+                        <div className="font-bold text-slate-900 text-sm">
+                          {formatStaffMoney(user.accountBalance, toCurrency(user.currency))}
+                        </div>
                       </td>
                       <td className="px-6 py-4 text-right">
                         <div className="text-sm text-slate-600 font-medium">{user.totalTransactions}</div>

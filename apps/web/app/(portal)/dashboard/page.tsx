@@ -189,6 +189,17 @@ export default function DashboardPage() {
     const hearings: HearingItem[] = todaysHearings;
     const paralegals: Paralegal[] = topParalegals;
 
+    // KPI revenue/outstanding aggregates are converted PKR equivalents summed
+    // across tickets of mixed currency (Task 6) — never a single ticket's
+    // currency, so these are labelled "PKR" plainly rather than a
+    // ticket-specific formatMoney. A rate-less non-PKR ticket is excluded
+    // from the sum and surfaced here rather than silently understating it.
+    const unconvertedCount: number = kpis.unconvertedCount ?? 0;
+    const unconvertedNote =
+      unconvertedCount > 0
+        ? `${unconvertedCount} ticket(s) excluded — FX rate not set`
+        : null;
+
     const actions: PendingAction[] = Array.isArray(pendingActions)
       ? pendingActions
       : pendingActions
@@ -236,19 +247,24 @@ export default function DashboardPage() {
           />
           <KpiCard
             title="Total Revenue"
-            value={`Rs. ${Number(kpis.totalRevenue).toLocaleString()}`}
+            value={`PKR ${Number(kpis.totalRevenue).toLocaleString()}`}
             icon={<DollarSign className="h-4 w-4" />}
             delta={kpisDelta.totalRevenue ?? null}
             href="/reports"
             spark={kpiSparks.totalRevenue}
+            hint={unconvertedNote ?? undefined}
           />
           <KpiCard
             title="Outstanding"
-            value={`Rs. ${Number(kpis.outstandingBalance).toLocaleString()}`}
+            value={`PKR ${Number(kpis.outstandingBalance).toLocaleString()}`}
             icon={<WalletCards className="h-4 w-4" />}
             delta={kpisDelta.outstandingBalance ?? null}
             href="/finance"
-            hint="Aged > 30d in Action Center"
+            hint={
+              unconvertedNote
+                ? `${unconvertedNote} · Aged > 30d in Action Center`
+                : 'Aged > 30d in Action Center'
+            }
           />
         </div>
 

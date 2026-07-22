@@ -56,6 +56,15 @@ export class WalletService {
         userId: user.id,
         consumerName: user.name,
         accountBalance: Number(user.walletBalance),
+        // `accountBalance` is stored in this user's OWN currency (currency
+        // locks once an account is active). There is no per-wallet FX rate
+        // (unlike Ticket.fxRateToPkr, stamped once at intake) — a prepaid
+        // credit balance accrues across many top-ups over time, so no single
+        // rate applies. Surfacing `currency` lets the admin table render
+        // truthfully via formatStaffMoney (PKR passes through; non-PKR shows
+        // an explicit "rate not set" marker) instead of silently implying
+        // every balance is PKR.
+        currency: user.currency,
         totalTransactions: user._count.walletTransactions,
         createdAt: user.createdAt,
       })),
