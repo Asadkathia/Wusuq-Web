@@ -96,6 +96,16 @@ async function captureSubmitData(
   return call.data;
 }
 
+function redactForConsumer(ticket: Record<string, unknown>) {
+  const service = makeService({});
+  return (service as any).redactTicketForConsumer(ticket);
+}
+
+function redactForRepresentative(ticket: Record<string, unknown>) {
+  const service = makeService({});
+  return (service as any).redactTicketForRepresentative(ticket);
+}
+
 describe('clerk payout write boundary', () => {
   it('submitClerkCosts persists the clerk set alongside the working columns', async () => {
     const updateMany = jest.fn().mockResolvedValue({ count: 1 });
@@ -119,5 +129,34 @@ describe('clerk payout write boundary', () => {
       clerkDeliveryCharges: 200,
     });
     expect(b.total).toBe(850);
+  });
+});
+
+describe('clerk-set redaction', () => {
+  const CLERK_KEYS = [
+    'clerkAttestedCharges',
+    'clerkNonAttestedCharges',
+    'clerkPrintingCharges',
+    'clerkDeliveryCharges',
+  ] as const;
+
+  it('strips the clerk set for consumers', () => {
+    const out = redactForConsumer({
+      status: 'COMPLETED',
+      clerkAttestedCharges: 100,
+      clerkNonAttestedCharges: 250,
+      clerkPrintingCharges: 0,
+      clerkDeliveryCharges: 200,
+    });
+    for (const k of CLERK_KEYS) expect(out).not.toHaveProperty(k);
+  });
+
+  it('KEEPS the clerk set for representatives — a clerk sees their own figures', () => {
+    const out = redactForRepresentative({
+      clerkNonAttestedCharges: 250,
+      clerkDeliveryCharges: 200,
+    });
+    expect(out.clerkNonAttestedCharges).toBe(250);
+    expect(out.clerkDeliveryCharges).toBe(200);
   });
 });

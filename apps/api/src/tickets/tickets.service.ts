@@ -578,6 +578,13 @@ export class TicketsService {
     delete safe.attestedCostPerPage;
     delete safe.nonAttestedPages;
     delete safe.nonAttestedCostPerPage;
+    // Clerk payout basis — internal, same class as clerkCost. NOTE: the
+    // representative path deliberately KEEPS these (a clerk must see their
+    // own submitted figures); only the consumer view strips them.
+    delete safe.clerkAttestedCharges;
+    delete safe.clerkNonAttestedCharges;
+    delete safe.clerkPrintingCharges;
+    delete safe.clerkDeliveryCharges;
     // DELIVERED included: auto-deliver (digital flows) and the admin's
     // delivery confirmation are terminal — the consumer must keep access to
     // the deliverables they paid for after COMPLETED.
