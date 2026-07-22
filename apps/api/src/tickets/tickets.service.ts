@@ -2394,6 +2394,13 @@ export class TicketsService {
           nonAttestedPages: dto.nonAttestedPages ?? ticket.nonAttestedPages,
           nonAttestedCostPerPage:
             dto.nonAttestedCostPerPage ?? ticket.nonAttestedCostPerPage,
+          // Clerk payout basis: snapshot what the CLERK submitted. The admin's
+          // finalize edits overwrite the flat columns above but must never
+          // touch these — a markup is Wusuq margin, not clerk pay.
+          clerkAttestedCharges: attestedCharges,
+          clerkNonAttestedCharges: nonAttestedCharges,
+          clerkPrintingCharges: printingCharges,
+          clerkDeliveryCharges: deliveryCharges,
           // C12: capture the TCS receipt/tracking# in the same submit — does
           // NOT flip deliveryStatus (that's still dispatchDelivery's job).
           dispatchProofUrl: dto.dispatchProofUrl ?? ticket.dispatchProofUrl,
