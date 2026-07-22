@@ -136,6 +136,12 @@ export class FinanceService {
           service: ticket.service,
           serviceCity: ticket.serviceCity,
           caseType: ticket.caseType,
+          // Finance is a staff-only surface (no consumer/rep caller class
+          // reaches this endpoint), so currency + fxRateToPkr need no
+          // redaction gate here — the board uses them to render a USD
+          // ticket's PKR equivalent via formatStaffMoney.
+          currency: ticket.currency,
+          fxRateToPkr: ticket.fxRateToPkr,
           charges: {
             serviceCost: toNumber(ticket.serviceCost),
             deliveryCharges: toNumber(ticket.deliveryCharges),

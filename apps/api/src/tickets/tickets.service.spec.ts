@@ -2345,6 +2345,8 @@ describe('findAll — clerk cost is gated out of the consumer list', () => {
       serviceCost: 1,
       totalAmount: 1,
       amountPaid: 0,
+      currency: 'USD',
+      fxRateToPkr: 280.5,
       createdBy: 'CONSUMER',
       remainderFinalizedAt: null,
       scheduledDate: null,
@@ -2394,6 +2396,26 @@ describe('findAll — clerk cost is gated out of the consumer list', () => {
     const row = res.items[0] as Record<string, unknown>;
     expect(row.clerkCost).toBe(500);
     expect(row.defaultClerkCost).toBe(400);
+  });
+
+  it('returns fxRateToPkr for a staff caller (USD ticket board rendering)', async () => {
+    const { service } = harness();
+    const res = await service.findAll(query);
+    const row = res.items[0] as Record<string, unknown>;
+    expect(row.currency).toBe('USD');
+    expect(row.fxRateToPkr).toBe(280.5);
+  });
+
+  it('omits fxRateToPkr for a representative caller (no money fields either)', async () => {
+    const { service } = harness();
+    const res = await service.findAll(query, {
+      forConsumer: true,
+      forRepresentative: true,
+    });
+    const row = res.items[0] as Record<string, unknown>;
+    expect('fxRateToPkr' in row).toBe(false);
+    // Same gate as the other money fields on this branch.
+    expect('totalAmount' in row).toBe(false);
   });
 
   it('returns updatedAt and statusSince (latest history timestamp)', async () => {

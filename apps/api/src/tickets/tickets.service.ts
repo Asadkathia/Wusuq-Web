@@ -335,7 +335,11 @@ export class TicketsService {
         status: ticket.status,
         clerkApprovalStatus: ticket.clerkApprovalStatus,
         clerkReceiptUrl: ticket.clerkReceiptUrl,
-        // Consumer money fields — hidden from representatives.
+        // Consumer money fields — hidden from representatives. fxRateToPkr
+        // lives here too: it's a conversion rate, not an amount, but it's
+        // only meaningful alongside the money fields above (staff boards use
+        // it to render a USD ticket's PKR equivalent via formatStaffMoney) —
+        // a rep who receives none of those fields has no use for a bare rate.
         ...(isRep
           ? {}
           : {
@@ -347,6 +351,7 @@ export class TicketsService {
               attestedCharges: ticket.attestedCharges,
               nonAttestedCharges: ticket.nonAttestedCharges,
               additionalCharges: ticket.additionalCharges,
+              fxRateToPkr: ticket.fxRateToPkr,
             }),
         currency: ticket.currency,
         createdBy: ticket.createdBy,
