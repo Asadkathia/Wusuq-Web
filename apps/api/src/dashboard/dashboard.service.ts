@@ -376,6 +376,46 @@ export class DashboardService {
     };
   }
 
+  /**
+   * "Outstanding > 30 days (PKR)" pending action: sums PKR equivalents of the
+   * remaining balance across tickets older than 30 days that aren't yet
+   * DELIVERED. Extracted from computeSummary for direct test coverage —
+   * mirrors getRevenueKpis's currency-aware reduce via the same
+   * sumMixedCurrencyToPkr helper, but floors each ticket's remainder at 0
+   * BEFORE summing/converting (a ticket where amountPaid exceeds totalAmount
+   * must contribute 0, never a negative offset that understates other
+   * tickets' outstanding balances) — matching how outstanding is computed
+   * elsewhere (e.g. WalletService's due = Σ max(0, total − paid)).
+   */
+  private async getAgedOutstandingKpi(
+    thirtyDaysAgo: Date,
+  ): Promise<{ amount: number; unconvertedCount: number }> {
+    const rows = await this.prisma.ticket.findMany({
+      where: {
+        status: { notIn: ['DELIVERED'] },
+        createdAt: { lt: thirtyDaysAgo },
+      },
+      select: {
+        totalAmount: true,
+        amountPaid: true,
+        currency: true,
+        fxRateToPkr: true,
+      },
+    });
+    const remainders = rows.map((r) => ({
+      totalAmount: Math.max(
+        0,
+        Number(r.totalAmount ?? 0) - Number(r.amountPaid ?? 0),
+      ),
+      amountPaid: 0,
+      currency: r.currency,
+      fxRateToPkr: r.fxRateToPkr,
+    }));
+    const { totalAmountPkr, unconvertedCount } =
+      sumMixedCurrencyToPkr(remainders);
+    return { amount: totalAmountPkr, unconvertedCount };
+  }
+
   private async computeSummary(range: string) {
     const daysStr = range.replace('d', '');
     const days = parseInt(daysStr, 10);
@@ -578,7 +618,7 @@ export class DashboardService {
       oldestWaitingApproval,
       clerkSubmittedCount,
       stuckInProgressCount,
-      agedOutstandingAgg,
+      agedOutstandingKpi,
     ] = await Promise.all([
       this.prisma.walletTransaction.count({
         where: { status: 'PENDING_VERIFICATION' },
@@ -609,21 +649,13 @@ export class DashboardService {
           updatedAt: { lt: sevenDaysAgo },
         },
       }),
-      this.prisma.ticket.aggregate({
-        where: {
-          status: { notIn: ['DELIVERED'] },
-          createdAt: { lt: thirtyDaysAgo },
-        },
-        _sum: { totalAmount: true, amountPaid: true },
-      }),
+      this.getAgedOutstandingKpi(thirtyDaysAgo),
     ]);
 
     const ageHours = (d: Date | null | undefined): number | null =>
       d ? Math.round((Date.now() - new Date(d).getTime()) / 36e5) : null;
 
-    const agedOutstandingAmount =
-      Number(agedOutstandingAgg._sum.totalAmount || 0) -
-      Number(agedOutstandingAgg._sum.amountPaid || 0);
+    const agedOutstandingAmount = agedOutstandingKpi.amount;
 
     const pendingActions = [
       {

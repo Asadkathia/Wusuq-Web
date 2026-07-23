@@ -132,6 +132,72 @@ describe('DashboardService — revenue KPI aggregate sums PKR equivalents', () =
   });
 });
 
+/**
+ * The "Outstanding > 30 days (PKR)" pending action used to be computed from
+ * a raw Prisma `_sum` aggregate — no currency awareness, so a $35 USD ticket
+ * contributed 35 to a total explicitly labelled PKR. This exercises the
+ * fixed `getAgedOutstandingKpi`, which reuses `sumMixedCurrencyToPkr` over a
+ * per-ticket, currency-aware, floored-at-0 remainder.
+ */
+describe('DashboardService — aged-outstanding KPI sums PKR equivalents', () => {
+  function mkPrisma(rows: unknown[]) {
+    const ticketFindMany = jest.fn(async () => rows);
+    const prisma = {
+      ticket: {
+        findMany: ticketFindMany,
+      },
+    } as unknown as PrismaService;
+    return { prisma, ticketFindMany };
+  }
+
+  it('sums PKR-equivalent remainders across mixed-currency tickets and excludes/counts rate-less ones', async () => {
+    const { prisma } = mkPrisma([
+      // PKR ticket, 300 outstanding
+      { totalAmount: 500, amountPaid: 200, currency: 'PKR', fxRateToPkr: null },
+      // USD ticket, 35 outstanding @ 285 -> 9,975 PKR
+      { totalAmount: 35, amountPaid: 0, currency: 'USD', fxRateToPkr: 285 },
+      // USD ticket, no fx rate stamped -> excluded, counted
+      { totalAmount: 20, amountPaid: 0, currency: 'USD', fxRateToPkr: null },
+    ]);
+    const service = new DashboardService(prisma);
+
+    const result = await (
+      service as unknown as {
+        getAgedOutstandingKpi: (
+          d: Date,
+        ) => Promise<{ amount: number; unconvertedCount: number }>;
+      }
+    ).getAgedOutstandingKpi(new Date());
+
+    // Raw (buggy) sum would be (500-200) + (35-0) + (20-0) = 335.
+    // Correct: 300 + (35 x 285) = 10,275.
+    expect(result.amount).toBe(10275);
+    expect(result.unconvertedCount).toBe(1);
+  });
+
+  it('floors a per-ticket remainder at 0 instead of letting an overpaid ticket go negative', async () => {
+    const { prisma } = mkPrisma([
+      // Overpaid PKR ticket: remainder would be -100, must contribute 0.
+      { totalAmount: 400, amountPaid: 500, currency: 'PKR', fxRateToPkr: null },
+      // Normal PKR ticket, 250 outstanding.
+      { totalAmount: 250, amountPaid: 0, currency: 'PKR', fxRateToPkr: null },
+    ]);
+    const service = new DashboardService(prisma);
+
+    const result = await (
+      service as unknown as {
+        getAgedOutstandingKpi: (
+          d: Date,
+        ) => Promise<{ amount: number; unconvertedCount: number }>;
+      }
+    ).getAgedOutstandingKpi(new Date());
+
+    // If the overpaid ticket's -100 were allowed through, this would be 150.
+    expect(result.amount).toBe(250);
+    expect(result.unconvertedCount).toBe(0);
+  });
+});
+
 describe('FinanceService.findAll — summary sums PKR equivalents', () => {
   function mkPrisma(items: unknown[]) {
     const prisma = {
