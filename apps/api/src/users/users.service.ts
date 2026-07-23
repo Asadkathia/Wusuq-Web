@@ -1,14 +1,14 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { hash } from 'bcryptjs';
-import type { User } from '@prisma/client';
+import type { User, Prisma } from '@prisma/client';
 import { USER_ROLES, deriveCurrency } from '@wusuq/shared';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { NotificationDispatcher } from '../notifications/notification-dispatcher.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { formatPakistaniPhone } from '../common/utils/phone.util';
-import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { CreateRepresentativeDto } from './dto/create-representative.dto';
 import { CreateUserDto } from './dto/create-user.dto';
+import { ListUsersDto } from './dto/list-users.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import {
   mapPrismaRoleToShared,
@@ -23,18 +23,32 @@ export class UsersService {
     private readonly dispatcher: NotificationDispatcher,
   ) {}
 
-  async findAll(query: PaginationQueryDto) {
+  async findAll(query: ListUsersDto) {
     const skip = (query.page - 1) * query.limit;
 
-    const where = query.search
-      ? {
-          OR: [
-            { name: { contains: query.search, mode: 'insensitive' as const } },
-            { email: { contains: query.search, mode: 'insensitive' as const } },
-            { phone: { contains: query.search, mode: 'insensitive' as const } },
-          ],
-        }
-      : {};
+    // I1: exact-role filter, applied server-side so a caller filtering by
+    // role (e.g. the admin "Manage Users" screen) gets a full page of
+    // matching rows instead of a page of mixed roles with the mismatches
+    // hidden client-side. `role` is the shared UserRole (hyphenated); map to
+    // the Prisma enum spelling before it hits the where clause.
+    const where: Prisma.UserWhereInput = {
+      ...(query.role ? { role: mapSharedRoleToPrisma(query.role) } : {}),
+      ...(query.search
+        ? {
+            OR: [
+              {
+                name: { contains: query.search, mode: 'insensitive' as const },
+              },
+              {
+                email: { contains: query.search, mode: 'insensitive' as const },
+              },
+              {
+                phone: { contains: query.search, mode: 'insensitive' as const },
+              },
+            ],
+          }
+        : {}),
+    };
 
     const [items, total] = await this.prisma.$transaction([
       this.prisma.user.findMany({

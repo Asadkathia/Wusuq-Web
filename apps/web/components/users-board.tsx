@@ -25,6 +25,16 @@ type UserData = {
   email: string | null;
   phone: string | null;
   cnic: string | null;
+  // H2: these were missing from the type entirely, which is how `openEdit`
+  // got away with hard-resetting them to '' — TS never complained that it
+  // was ignoring real fields on `u`. The API always returns them (see
+  // `serializeUser` in users.service.ts), so they're always present (though
+  // possibly null) on any user fetched via GET /users.
+  address: string | null;
+  province: string | null;
+  district: string | null;
+  city: string | null;
+  postalCode: string | null;
   role: string;
   verified: boolean;
   isActive: boolean;
@@ -58,32 +68,45 @@ export function UsersBoard() {
   const [topupAmount, setTopupAmount] = useState('');
   const [topupMode, setTopupMode] = useState<'JAZZ_CASH' | 'EASY_PAISA' | 'BANK_TRANSFER'>('BANK_TRANSFER');
 
+  // I1: role filtering is server-side now — `roleFilter` drives the query
+  // param instead of hiding rows client-side. Fetching all roles then hiding
+  // the ones the admin didn't pick meant a 200-row page that happened to be
+  // mostly representatives could hide real consumers entirely (they were
+  // never in the fetched page to begin with once the true consumer count
+  // exceeded what's left after the cap). "All Roles" still fetches
+  // unfiltered.
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const result = await apiClient.get<any>('/users?limit=200');
+      const roleParam = roleFilter !== 'all' ? `&role=${encodeURIComponent(roleFilter)}` : '';
+      const result = await apiClient.get<any>(`/users?limit=200${roleParam}`);
       setUsers(result.items ?? result ?? []);
     } catch (error: any) {
       setMessage(error.message || 'Failed to load users');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [roleFilter]);
 
   useEffect(() => { load(); }, [load]);
 
+  // Free-text search stays a client-side filter over the already role-scoped
+  // page (unchanged from before — only the role dimension moved server-side).
   const q = search.toLowerCase();
   const filtered = users.filter((u) =>
-    (roleFilter === 'all' || u.role === roleFilter) &&
-    ((u.name ?? '').toLowerCase().includes(q) ||
-     (u.email ?? '').toLowerCase().includes(q) ||
-     (u.role ?? '').toLowerCase().includes(q))
+    (u.name ?? '').toLowerCase().includes(q) ||
+    (u.email ?? '').toLowerCase().includes(q) ||
+    (u.role ?? '').toLowerCase().includes(q)
   );
 
   const openCreate = () => { setForm(emptyForm); setShowCreate(true); setEditUser(null); };
   const openEdit = (u: UserData) => {
+    // H2: populate from the user's SAVED values, not ''. The PATCH always
+    // sends whatever is in `form`, so hard-resetting these to '' here
+    // silently blanked an existing user's address/province/district/city
+    // the moment an admin opened "Edit User" and clicked Save.
     setForm({ name: u.name ?? '', email: u.email ?? '', phone: u.phone || '', cnic: u.cnic || '',
-      password: '', role: u.role, address: '', province: '', district: '', city: '' });
+      password: '', role: u.role, address: u.address ?? '', province: u.province ?? '', district: u.district ?? '', city: u.city ?? '' });
     setEditUser(u);
     setShowCreate(true);
   };
@@ -289,7 +312,7 @@ export function UsersBoard() {
                 <option value="consumer">Consumer</option>
                 <option value="lawyer">Lawyer</option>
                 <option value="representative">Representative</option>
-                <option value="manager_admin">Manager Admin</option>
+                <option value="manager-admin">Manager Admin</option>
               </select>
             </div>
           }
