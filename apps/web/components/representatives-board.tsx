@@ -9,6 +9,8 @@ import { SectionHeader } from '@/components/ui/section-header';
 import { DataTableShell } from '@/components/ui/data-table-shell';
 import { FilterBar } from '@/components/ui/filter-bar';
 import { StatusPill } from '@/components/ui/status-pill';
+import { CountryPicker } from '@/components/ui/country-picker';
+import { COUNTRIES, DEFAULT_COUNTRY_CODE, findCountry } from '@/lib/countries';
 import { RefreshCw, UserPlus, Phone, MapPin, Briefcase, Pencil, X, MonitorPlay } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
@@ -19,14 +21,19 @@ import { RefreshCw, UserPlus, Phone, MapPin, Briefcase, Pencil, X, MonitorPlay }
 // ---------------------------------------------------------------------------
 type ServiceEntry = { id: number; name: string };
 
+// Display-only list (matched to a rep's stored `serviceFocus` by NAME, not by
+// this `id` — see `serviceIdFromName`/`handleServiceChange`), so the `id`
+// values just need to be stable+unique within this array. Names must match
+// the backend `Service.name` strings seeded in services.service.ts exactly.
 const SERVICES: ServiceEntry[] = [
   { id: 1, name: 'Lower Court Paralegal Service' },
   { id: 2, name: 'Special Court Paralegal Service' },
   { id: 3, name: 'High Court Paralegal Service' },
   { id: 4, name: 'Federal Shariat Court Paralegal Service' },
-  { id: 5, name: 'Supreme Court Paralegal Service' },
-  { id: 6, name: 'Registry/Deed Paralegal Service' },
-  { id: 7, name: 'FIR' },
+  { id: 5, name: 'Federal Constitutional Court Paralegal Service' },
+  { id: 6, name: 'Supreme Court Paralegal Service' },
+  { id: 7, name: 'Registry/Deed Paralegal Service' },
+  { id: 8, name: 'FIR' },
 ];
 
 // Shape of `/geo/cities/:id/courts` — mirrors CityCourt/CityCourtGroup in
@@ -34,6 +41,36 @@ const SERVICES: ServiceEntry[] = [
 // type module for an unrelated admin screen).
 type CityCourt = { id: string; name: string; isPrincipalSeat: boolean };
 type CityCourtGroup = { type: string; courts: CityCourt[] };
+
+// H4: phone dial-code helpers — mirror the compose step in
+// app/(auth)/consumer/signup/page.tsx so a rep's phone lands in the same
+// shape the backend expects (`formatPakistaniPhone` in the API normalizes a
+// PK-shaped E.164 string; anything else is stored as-is).
+const COUNTRIES_BY_DIAL_DESC = [...COUNTRIES].sort((a, b) => b.dial.length - a.dial.length);
+
+/** Split a stored E.164-ish phone (e.g. "+923001234567") into a country code
+ * + local digits for edit-mode pre-fill. Falls back to PK/raw-digits when no
+ * dial prefix matches (e.g. empty, or a legacy non-normalized value). */
+function decomposePhone(raw: string | null): { countryCode: string; local: string } {
+  const trimmed = (raw ?? '').trim();
+  if (!trimmed) return { countryCode: DEFAULT_COUNTRY_CODE, local: '' };
+  const digits = trimmed.replace(/^\+/, '');
+  const match = COUNTRIES_BY_DIAL_DESC.find((c) => digits.startsWith(c.dial));
+  if (match) return { countryCode: match.code, local: digits.slice(match.dial.length) };
+  return { countryCode: DEFAULT_COUNTRY_CODE, local: digits };
+}
+
+/** Compose `+<dial><local>` from the picker's country + the typed local
+ * digits, stripping separators/leading `+`/leading zeros (same rule as
+ * signup) so a dial code typed twice doesn't get doubled. Returns '' for a
+ * blank local number since phone is optional for representatives. */
+function composePhone(local: string, countryCode: string): string {
+  const trimmed = local.trim();
+  if (!trimmed) return '';
+  const digits = trimmed.replace(/[\s\-()]/g, '').replace(/^\+/, '').replace(/^0+/, '');
+  const dial = findCountry(countryCode).dial;
+  return digits.startsWith(dial) ? `+${digits}` : `+${dial}${digits}`;
+}
 
 const PAYOUT_METHOD_LABELS: Record<PaymentMode, string> = {
   BANK_TRANSFER: 'Bank Transfer',
@@ -126,6 +163,11 @@ export function RepresentativesBoard() {
   // Supreme) exactly like the intake wizard's `/geo/cities/:id/courts` fetch.
   const [courtGroups, setCourtGroups] = useState<CityCourtGroup[]>([]);
   const [courtsLoaded, setCourtsLoaded] = useState(false);
+
+  // H4: phone dial-code picker (mirrors the consumer signup form). `form.phone`
+  // holds only the LOCAL digits; the dial prefix is tracked separately and
+  // composed at submit (see `composePhone`), same split as signup/page.tsx.
+  const [phoneCountryCode, setPhoneCountryCode] = useState<string>(DEFAULT_COUNTRY_CODE);
 
   // Effects only FETCH on a truthy id (no synchronous setState in the body —
   // see the react-hooks/set-state-in-effect convention). Clearing happens in
@@ -221,6 +263,7 @@ export function RepresentativesBoard() {
   const openCreate = () => {
     setEditRep(null);
     setForm(emptyForm);
+    setPhoneCountryCode(DEFAULT_COUNTRY_CODE);
     setProvinceId(''); setDistrictId(''); setDistricts([]); setCities([]);
     setCityId(''); setCourtGroups([]); setCourtsLoaded(false);
     setFormError('');
@@ -229,11 +272,13 @@ export function RepresentativesBoard() {
 
   const openEdit = (rep: RepData) => {
     const sid = serviceIdFromName(rep.serviceFocus);
+    const { countryCode: repCountryCode, local: repPhoneLocal } = decomposePhone(rep.phone);
     setEditRep(rep);
+    setPhoneCountryCode(repCountryCode);
     setForm({
       name: rep.name,
       email: rep.email,
-      phone: rep.phone ?? '',
+      phone: repPhoneLocal,
       password: '',
       address: rep.address ?? '',
       serviceFocus: rep.serviceFocus ?? '',
@@ -303,10 +348,11 @@ export function RepresentativesBoard() {
 
     setSaving(true);
     try {
+      const composedPhone = composePhone(form.phone, phoneCountryCode);
       if (editRep) {
         const payload: Record<string, string> = {
           name: form.name,
-          phone: form.phone,
+          phone: composedPhone,
           address: form.address,
           serviceFocus: form.serviceFocus,
           court: form.court,
@@ -328,7 +374,7 @@ export function RepresentativesBoard() {
         await apiClient.post('/users/representatives', {
           name: form.name,
           email: form.email,
-          phone: form.phone || undefined,
+          phone: composedPhone || undefined,
           password: form.password,
           address: form.address || undefined,
           serviceFocus: form.serviceFocus || undefined,
@@ -669,7 +715,28 @@ export function RepresentativesBoard() {
               {/* ── Account fields ── */}
               {textField('Full Name', 'name', { required: true })}
               {textField('Email', 'email', { required: !editRep, type: 'email' })}
-              {textField('Phone', 'phone')}
+
+              {/* ── Phone (H4: shared CountryPicker + dial-code composition, mirrors signup) ── */}
+              <label className="block">
+                <span className="text-sm font-medium text-slate-700">Phone</span>
+                <div className="mt-1 flex items-stretch gap-2">
+                  <div className="w-36 flex-shrink-0">
+                    <CountryPicker
+                      value={phoneCountryCode}
+                      onChange={setPhoneCountryCode}
+                      ariaLabel="Phone country"
+                    />
+                  </div>
+                  <input
+                    type="tel"
+                    className="block w-full rounded-lg border-0 py-2 px-3 text-slate-900 ring-1 ring-inset ring-border-soft focus:ring-2 focus:ring-primary-600 sm:text-sm"
+                    value={form.phone}
+                    onChange={(e) => setField('phone', e.target.value)}
+                    placeholder={phoneCountryCode === 'PK' ? '03001234567' : 'Phone number'}
+                  />
+                </div>
+              </label>
+
               {textField(
                 editRep ? 'New Password (leave blank to keep)' : 'Password',
                 'password',
