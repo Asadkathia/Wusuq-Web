@@ -10,6 +10,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { FILE_STORAGE_PROVIDER } from '../file-storage/file-storage.module';
 import type { FileStorageProvider } from '../file-storage/file-storage-provider';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import { NotificationDispatcher } from '../notifications/notification-dispatcher.service';
 import { sniffAllowedType } from './lib/magic-bytes';
 import { ensureExtension, sanitizeFilename } from './lib/sanitize-filename';
 import { PersonalFileDto, toPersonalFileDto } from './dto/personal-file.dto';
@@ -32,6 +33,7 @@ export class PersonalFilesService {
     @Inject(FILE_STORAGE_PROVIDER)
     private readonly storage: FileStorageProvider,
     private readonly auditLogs: AuditLogsService,
+    private readonly notificationDispatcher: NotificationDispatcher,
   ) {}
 
   // ─── Upload ────────────────────────────────────────────────────────────────
@@ -289,13 +291,43 @@ export class PersonalFilesService {
       where: { userId, deletedAt: null, serviceId: { not: null } },
       _count: { _all: true },
     });
-    return groups.map((g) => ({
-      serviceId: g.serviceId as string,
-      cityId: g.cityId ?? null,
-      courtName: g.courtName ?? null,
-      courtType: g.courtType ?? null,
-      count: g._count._all,
-    }));
+
+    // D1: surface a representative case title per cohort for the group
+    // header. caseMeta is JSON so it can't be part of the groupBy `by` list
+    // — read it back in a second pass instead. Cohort files normally share
+    // one case; if they don't (rare), the most recently uploaded title wins.
+    const rows = await this.prisma.personalFile.findMany({
+      where: { userId, deletedAt: null, serviceId: { not: null } },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        serviceId: true,
+        cityId: true,
+        courtName: true,
+        courtType: true,
+        caseMeta: true,
+      },
+    });
+    const titleByKey = new Map<string, string>();
+    for (const r of rows) {
+      const key = `${r.serviceId}|${r.cityId}|${r.courtName}|${r.courtType}`;
+      if (titleByKey.has(key)) continue;
+      const meta = r.caseMeta as Record<string, unknown> | null;
+      const title =
+        typeof meta?.caseTitle === 'string' ? meta.caseTitle : undefined;
+      if (title) titleByKey.set(key, title);
+    }
+
+    return groups.map((g) => {
+      const key = `${g.serviceId}|${g.cityId}|${g.courtName}|${g.courtType}`;
+      return {
+        serviceId: g.serviceId as string,
+        cityId: g.cityId ?? null,
+        courtName: g.courtName ?? null,
+        courtType: g.courtType ?? null,
+        count: g._count._all,
+        caseTitle: titleByKey.get(key) ?? null,
+      };
+    });
   }
 
   async uploadCaseFile(
@@ -349,7 +381,66 @@ export class PersonalFilesService {
         ...(Object.keys(caseMeta).length > 0 ? { caseMeta } : {}),
       },
     });
+
+    // D3: let admins know a consumer uploaded a case file. Best-effort —
+    // never fail the upload because a notification couldn't be dispatched
+    // (mirrors the `.catch(() => undefined)` pattern used by every other
+    // dispatcher call site, e.g. TicketsService.createIntakeTicket).
+    await this.notificationDispatcher
+      .caseFileUploaded(updated.id)
+      .catch(() => undefined);
+
     return toPersonalFileDto(updated);
+  }
+
+  // ─── Bulk soft delete ──────────────────────────────────────────────────────
+
+  /**
+   * Soft-deletes every id the caller owns (same ownership + non-deleted
+   * filter as `softDelete`). Ids that aren't owned, don't exist, or are
+   * already deleted are silently skipped rather than failing the whole
+   * request — the caller never learns whether a foreign id exists (D2).
+   */
+  async bulkSoftDelete(
+    userId: string,
+    actorEmail: string | null,
+    fileIds: string[],
+  ): Promise<{ deletedCount: number; skippedIds: string[] }> {
+    const uniqueIds = Array.from(new Set(fileIds));
+    const owned = await this.prisma.personalFile.findMany({
+      where: { id: { in: uniqueIds }, userId, deletedAt: null },
+      select: { id: true, displayName: true, sizeBytes: true },
+    });
+    const ownedIds = new Set(owned.map((f) => f.id));
+    const skippedIds = uniqueIds.filter((id) => !ownedIds.has(id));
+
+    if (owned.length > 0) {
+      await this.prisma.personalFile.updateMany({
+        where: {
+          id: { in: owned.map((f) => f.id) },
+          userId,
+          deletedAt: null,
+        },
+        data: { deletedAt: new Date() },
+      });
+
+      for (const file of owned) {
+        await this.auditLogs.create({
+          action: 'PERSONAL_FILE_SOFT_DELETE',
+          entity: 'PERSONAL_FILE',
+          entityId: file.id,
+          actorUserId: userId,
+          actorEmail: actorEmail ?? undefined,
+          metadata: {
+            displayName: file.displayName,
+            sizeBytes: file.sizeBytes,
+            bulk: true,
+          },
+        });
+      }
+    }
+
+    return { deletedCount: owned.length, skippedIds };
   }
 
   // ─── Internal ──────────────────────────────────────────────────────────────

@@ -147,6 +147,13 @@ export const notificationTemplates = {
     title: `Context drift — ${caseRef}`,
     body: `A completed ticket reported values that differ from case ${caseRef}.`,
   }),
+  caseFileUploadedForAdmin: (
+    consumerName: string,
+    displayName: string,
+  ): Copy => ({
+    title: `Case file uploaded — ${consumerName}`,
+    body: `${consumerName} uploaded a case file (${displayName}) to their Case Files.`,
+  }),
   authPasswordChanged: (): Copy => ({
     title: `Password changed`,
     body: `Your account password was changed. If this wasn't you, contact support.`,

@@ -10,7 +10,8 @@ import { advanceOnEnter } from '@/lib/form-utils';
 import { SectionHeader } from '@/components/ui/section-header';
 import { DataTableShell } from '@/components/ui/data-table-shell';
 import { FilterBar } from '@/components/ui/filter-bar';
-import { FileText, Download, FolderGit2, RefreshCw, FileImage, File, UploadCloud, X } from 'lucide-react';
+import { FileText, Download, Eye, FolderGit2, RefreshCw, FileImage, File, UploadCloud, X } from 'lucide-react';
+import { DocumentPreview } from '@/components/document-preview';
 
 type DocumentItem = {
   id: string;
@@ -39,6 +40,7 @@ export function DocumentsBoard() {
   const [uploadLoading, setUploadLoading] = useState(false);
   const [isConsumer, setIsConsumer] = useState(false);
   const [userId, setUserId] = useState('');
+  const [previewDoc, setPreviewDoc] = useState<{ url: string; name: string } | null>(null);
 
   useEffect(() => {
     try {
@@ -187,15 +189,32 @@ export function DocumentsBoard() {
                   {new Date(item.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
-                  <a 
-                    href={item.fileUrl || '#'} 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center justify-center h-8 w-8 rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-slate-900 transition-colors"
-                    title="Download/View File"
-                  >
-                    <Download className="h-4 w-4" />
-                  </a>
+                  <div className="inline-flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setPreviewDoc({
+                          url: `/tickets/${item.ticket.id}/documents/${item.id}/download`,
+                          name: item.name || 'Document',
+                        })
+                      }
+                      className="inline-flex items-center justify-center h-8 w-8 rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-slate-900 transition-colors"
+                      title="View"
+                      aria-label="View"
+                    >
+                      <Eye className="h-4 w-4" />
+                    </button>
+                    <a
+                      href={item.fileUrl || '#'}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center justify-center h-8 w-8 rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-slate-900 transition-colors"
+                      title="Download"
+                      aria-label="Download"
+                    >
+                      <Download className="h-4 w-4" />
+                    </a>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -269,6 +288,14 @@ export function DocumentsBoard() {
             </form>
           </div>
         </div>
+      )}
+
+      {previewDoc && (
+        <DocumentPreview
+          url={previewDoc.url}
+          name={previewDoc.name}
+          onClose={() => setPreviewDoc(null)}
+        />
       )}
     </div>
   );

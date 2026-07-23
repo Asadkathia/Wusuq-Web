@@ -5,9 +5,15 @@ import { PersonalFilesGc } from './personal-files.gc';
 import { PrismaModule } from '../prisma/prisma.module';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { FileStorageModule } from '../file-storage/file-storage.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
-  imports: [PrismaModule, AuditLogsModule, FileStorageModule],
+  imports: [
+    PrismaModule,
+    AuditLogsModule,
+    FileStorageModule,
+    NotificationsModule,
+  ],
   controllers: [PersonalFilesController],
   providers: [PersonalFilesService, PersonalFilesGc],
 })

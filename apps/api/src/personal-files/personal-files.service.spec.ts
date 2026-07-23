@@ -9,6 +9,7 @@ import { PersonalFilesService } from './personal-files.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { FILE_STORAGE_PROVIDER } from '../file-storage/file-storage.module';
+import { NotificationDispatcher } from '../notifications/notification-dispatcher.service';
 
 type AnyMock = jest.Mock<any>;
 
@@ -80,6 +81,10 @@ describe('PersonalFilesService', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: AuditLogsService, useValue: audit },
         { provide: FILE_STORAGE_PROVIDER, useValue: storage },
+        {
+          provide: NotificationDispatcher,
+          useValue: { caseFileUploaded: jest.fn(async () => undefined) },
+        },
       ],
     }).compile();
     service = m.get(PersonalFilesService);

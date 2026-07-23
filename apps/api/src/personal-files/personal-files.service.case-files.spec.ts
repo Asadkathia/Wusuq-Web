@@ -65,8 +65,15 @@ function makeService(rows: Row[]): PersonalFilesService {
       }),
     },
   } as any;
-  // Real constructor signature: (prisma, storage, auditLogs).
-  return new PersonalFilesService(prisma, {} as any, {} as any);
+  // Real constructor signature: (prisma, storage, auditLogs, notificationDispatcher).
+  return new PersonalFilesService(
+    prisma,
+    {} as any,
+    {} as any,
+    {
+      caseFileUploaded: jest.fn(async () => undefined),
+    } as any,
+  );
 }
 
 describe('PersonalFilesService — case-files', () => {

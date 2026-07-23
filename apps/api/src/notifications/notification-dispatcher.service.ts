@@ -562,4 +562,25 @@ export class NotificationDispatcher {
     });
     await this.emailUser(targetUserId, copy.title, copy.body);
   }
+
+  // ─── personal files (case-files) ───
+  // D3 (client review batch 3): admins should hear about a consumer's own
+  // case-file upload (previously silent — no notification was dispatched).
+  async caseFileUploaded(fileId: string): Promise<void> {
+    const file = await this.prisma.personalFile.findUnique({
+      where: { id: fileId },
+      include: { user: { select: { name: true } } },
+    });
+    if (!file) return;
+    const consumerName = file.user.name ?? 'A consumer';
+    const copy = T.caseFileUploadedForAdmin(consumerName, file.displayName);
+    for (const id of await this.adminIds()) {
+      await this.notifications.create({
+        userId: id,
+        ...copy,
+        type: NOTIFICATION_TYPES.CASE_FILE_UPLOADED,
+        metadata: { fileId: file.id },
+      });
+    }
+  }
 }

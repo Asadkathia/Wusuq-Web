@@ -85,13 +85,18 @@ function makeService() {
     create: jest.fn(async () => undefined),
   };
 
+  const notificationDispatcher = {
+    caseFileUploaded: jest.fn(async () => undefined),
+  };
+
   const service = new PersonalFilesService(
     prisma as never,
     storage as never,
     auditLogs as never,
+    notificationDispatcher as never,
   );
 
-  return { service, updateSpy, updatedFile };
+  return { service, updateSpy, updatedFile, notificationDispatcher };
 }
 
 describe('PersonalFilesService.uploadCaseFile — caseMeta persistence', () => {

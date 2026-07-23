@@ -21,6 +21,7 @@ import { PersonalFilesService } from './personal-files.service';
 import { ListPersonalFilesDto } from './dto/list-personal-files.dto';
 import { UploadCaseFileDto } from './dto/upload-case-file.dto';
 import { ListCaseFilesDto } from './dto/list-case-files.dto';
+import { BulkDeletePersonalFilesDto } from './dto/bulk-delete-personal-files.dto';
 
 function assertConsumer(user: JwtUser): void {
   if (user.role !== 'consumer') {
@@ -83,6 +84,19 @@ export class PersonalFilesController {
       id,
     );
     res.redirect(302, url);
+  }
+
+  // Declared BEFORE `@Delete(':id')` — NestJS/Express matches DELETE routes
+  // in registration order, so a literal 'bulk' segment must come first or a
+  // request to DELETE /personal-files/bulk would be swallowed by `:id`.
+  @Delete('bulk')
+  @HttpCode(200)
+  bulkDelete(
+    @CurrentUser() user: JwtUser,
+    @Body() dto: BulkDeletePersonalFilesDto,
+  ) {
+    assertConsumer(user);
+    return this.service.bulkSoftDelete(user.sub, user.email ?? null, dto.ids);
   }
 
   @Delete(':id')

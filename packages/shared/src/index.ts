@@ -528,6 +528,7 @@ export const NOTIFICATION_TYPES = {
   CASE_CREATED: 'case.created',
   CASE_STATUS_CHANGED: 'case.status_changed',
   CASE_DRIFT_DETECTED: 'case.drift_detected',
+  CASE_FILE_UPLOADED: 'case_file.uploaded',
   AUTH_PASSWORD_CHANGED: 'auth.password_changed',
   AUTH_IMPERSONATION_STARTED: 'auth.impersonation_started',
 } as const;
