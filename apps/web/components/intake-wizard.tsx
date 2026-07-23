@@ -2152,6 +2152,11 @@ export function IntakeWizard({
     ? 'Choose the service you need and provide the details step by step.'
     : 'Complete the multi-step form to file a new paralegal request.';
   const savedLabel = formatRelativeTime(lastSavedAt) || infoMsg;
+  // K1: SPLIT (physical-document) flows only bill the phase-1 base at
+  // intake — photocopy/delivery/attestation are added later by the clerk.
+  // CheckoutPanel uses this to relabel "Total" → "Base amount" and show a
+  // disclosure note. ONE_TIME (digital) and USD flows are always false here.
+  const isSplitFlow = paymentModelFor(draft.flow, currency) === 'SPLIT';
 
   // `w-full` on the root below is load-bearing: the wizard is mounted inside a
   // `flex flex-col` page wrapper, and `mx-auto` (auto horizontal margins) on a
@@ -2791,6 +2796,7 @@ export function IntakeWizard({
         <CheckoutPanel
           summary={checkoutSummary}
           hasFlow={Boolean(draft.flow)}
+          isSplit={isSplitFlow}
           promoSlot={currency === 'USD' ? undefined : (
             <div className="space-y-2">
               <p className="text-xs font-semibold text-slate-700">Promo code</p>

@@ -27,6 +27,14 @@ type CheckoutPanelProps = {
   /** When true and total is null, show a "no rule matched" notice instead of the generic placeholder note. */
   hasFlow?: boolean;
   /**
+   * True for SPLIT (physical-document) flows, where only the phase-1 base is
+   * billed at intake — photocopy/delivery/attestation are added later by the
+   * clerk and billed in a second payment. When true, the footer label reads
+   * "Base amount" (not "Total") and a disclosure note is shown. ONE_TIME
+   * (digital) and USD flows pass `false`/omit — label stays "Total", no note.
+   */
+  isSplit?: boolean;
+  /**
    * Optional slot rendered between the line-items list and the subtotal/total
    * footer. Used by IntakeWizard to embed the promo-code input inside the
    * sticky checkout sidebar without coupling state to this component.
@@ -39,7 +47,7 @@ function formatAmount(amount: number | null, currency: string): string {
   return formatMoney(amount, currency === 'USD' ? 'USD' : 'PKR');
 }
 
-export function CheckoutPanel({ summary, hasFlow, promoSlot }: CheckoutPanelProps) {
+export function CheckoutPanel({ summary, hasFlow, isSplit, promoSlot }: CheckoutPanelProps) {
   const { items, subtotal, fees, total, currency } = summary;
 
   return (
@@ -98,12 +106,17 @@ export function CheckoutPanel({ summary, hasFlow, promoSlot }: CheckoutPanelProp
             <span className="tabular-nums">{formatAmount(fees, currency)}</span>
           </div>
           <div className={`flex items-center justify-between border-t border-border-soft pt-2 text-base font-semibold ${total !== null ? 'text-emerald-600' : 'text-slate-900'}`}>
-            <span>Total</span>
+            <span>{isSplit ? 'Base amount' : 'Total'}</span>
             <span className="tabular-nums">{formatAmount(total, currency)}</span>
           </div>
           {total === null && hasFlow ? (
             <p className="pt-1 text-[11px] text-amber-500">
               No pricing rule matched for this combination.
+            </p>
+          ) : null}
+          {isSplit && total !== null ? (
+            <p className="pt-1 text-[11px] text-slate-500">
+              These are our basic charges. Photocopy, delivery, and attestation fees will be added accordingly and billed after your case work is completed.
             </p>
           ) : null}
         </footer>
