@@ -1113,6 +1113,40 @@ export class TicketsService {
     return { deleted: true };
   }
 
+  // Per-row delete from the Drafts page (E1). Scoped to the caller's own
+  // draft — a consumer must not delete another's draft. 404s (not a 403)
+  // when the draft is missing OR belongs to someone else, so an id can't be
+  // used to probe for another consumer's drafts (same convention as the
+  // consumer-class foreign-ticket/case redaction elsewhere in this file).
+  async deleteIntakeDraftById(
+    id: string,
+    {
+      consumerId,
+      actorUserId,
+      actorEmail,
+    }: { consumerId: string; actorUserId?: string; actorEmail?: string },
+  ): Promise<{ deleted: boolean }> {
+    const existing = await this.prisma.ticketIntakeDraft.findUnique({
+      where: { id },
+      select: { id: true, consumerId: true, flow: true },
+    });
+    if (!existing || existing.consumerId !== consumerId) {
+      throw new NotFoundException('Draft not found');
+    }
+    await this.prisma.ticketIntakeDraft.delete({
+      where: { id: existing.id },
+    });
+    await this.auditLogsService.create({
+      action: 'TICKET_DRAFT_DELETED',
+      entity: 'TICKET_DRAFT',
+      entityId: existing.id,
+      actorUserId,
+      actorEmail,
+      metadata: { flow: existing.flow, trigger: 'manual_delete' },
+    });
+    return { deleted: true };
+  }
+
   async updateStatus(
     id: string,
     status: TicketStatus,

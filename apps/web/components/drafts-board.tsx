@@ -3,7 +3,7 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowRight, ArrowUpRight, FileEdit, MapPin, RefreshCw } from 'lucide-react';
+import { ArrowRight, ArrowUpRight, FileEdit, MapPin, RefreshCw, Trash2 } from 'lucide-react';
 import { FLOW_LABELS, flowKeyToSlug, type FlowKey } from '@wusuq/shared';
 import { apiClient } from '@/lib/api-client';
 import { Button } from '@/components/ui/button';
@@ -126,22 +126,52 @@ export function DraftsBoard() {
       ) : (
         <div className="grid gap-3 sm:grid-cols-2">
           {rows.map((draft) => (
-            <DraftCard key={draft.id} draft={draft} />
+            <DraftCard
+              key={draft.id}
+              draft={draft}
+              onDeleted={(id) => setDrafts((prev) => prev.filter((d) => d.id !== id))}
+            />
           ))}
         </div>
       )}
-      {/* TODO: add per-row delete once DELETE /tickets/intake-drafts/:id ships */}
     </div>
   );
 }
 
-function DraftCard({ draft }: { draft: DraftRow }) {
+function DraftCard({
+  draft,
+  onDeleted,
+}: {
+  draft: DraftRow;
+  onDeleted: (id: string) => void;
+}) {
   const href = draftHref(draft.flow);
   const label = flowLabel(draft.flow);
   const city =
     typeof draft.payload?.city === 'string' && draft.payload.city.trim().length > 0
       ? draft.payload.city
       : null;
+  const toast = useToast();
+  const [deleting, setDeleting] = useState(false);
+
+  const handleDelete = useCallback(
+    async (e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (deleting) return;
+      if (!window.confirm('Delete this draft? This cannot be undone.')) return;
+      setDeleting(true);
+      try {
+        await apiClient.delete(`/tickets/intake-drafts/${draft.id}`);
+        onDeleted(draft.id);
+      } catch (err: any) {
+        toast.error('Unable to delete draft', err?.message);
+      } finally {
+        setDeleting(false);
+      }
+    },
+    [deleting, draft.id, onDeleted, toast],
+  );
 
   const inner = (
     <div className="group h-full text-left rounded-2xl bg-surface p-5 ring-1 ring-border-soft shadow-elev-1 transition-[transform,box-shadow] duration-200 ease-silk hover:-translate-y-0.5 hover:shadow-elev-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40">
@@ -157,7 +187,18 @@ function DraftCard({ draft }: { draft: DraftRow }) {
             </p>
           </div>
         </div>
-        <ArrowUpRight className="h-4 w-4 shrink-0 text-slate-300 transition-[transform,color] duration-200 group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-slate-500" />
+        <div className="flex items-center gap-1 shrink-0">
+          <button
+            type="button"
+            aria-label="Delete draft"
+            onClick={handleDelete}
+            disabled={deleting}
+            className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-300 transition-colors hover:bg-rose-50 hover:text-rose-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/40 disabled:opacity-50"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+          <ArrowUpRight className="h-4 w-4 text-slate-300 transition-[transform,color] duration-200 group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-slate-500" />
+        </div>
       </div>
 
       <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-slate-500">

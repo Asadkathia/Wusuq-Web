@@ -322,6 +322,11 @@ export class TicketsController {
     return this.ticketsService.getIntakeDraft(id);
   }
 
+  // NOTE: this literal route MUST be registered before the parameterized
+  // `DELETE intake-drafts/:id` below — Express matches routes in
+  // registration order, so if `:id` came first, a DELETE to
+  // `intake-drafts/active` would match it with id='active' and never reach
+  // this handler.
   @RequirePermissions('tickets.create')
   @Delete('intake-drafts/active')
   deleteActiveDraft(
@@ -337,6 +342,25 @@ export class TicketsController {
     return this.ticketsService.deleteActiveDraft({
       consumerId: actor.sub,
       flow,
+      actorUserId: actor.sub,
+      actorEmail: actor.email,
+    });
+  }
+
+  // Per-row delete from the Drafts page. Scoped to the caller's own draft
+  // (IDOR guard) — 404, not 403, so a foreign draft id can't be probed
+  // (mirrors the consumer-class 404-on-foreign-resource convention).
+  @RequirePermissions('tickets.create')
+  @Delete('intake-drafts/:id')
+  deleteDraftById(
+    @Param('id') id: string,
+    @CurrentUser() actor: JwtUser | undefined,
+  ) {
+    if (!actor?.sub) {
+      throw new BadRequestException('Authenticated user required');
+    }
+    return this.ticketsService.deleteIntakeDraftById(id, {
+      consumerId: actor.sub,
       actorUserId: actor.sub,
       actorEmail: actor.email,
     });

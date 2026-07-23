@@ -81,24 +81,28 @@ export class DashboardService {
       this.prisma.ticket.count({
         where: {
           consumerId: userId,
+          archivedAt: null,
         },
       }),
       this.prisma.ticket.count({
         where: {
           consumerId: userId,
           status: 'UNPAID',
+          archivedAt: null,
         },
       }),
       this.prisma.ticket.count({
         where: {
           consumerId: userId,
           status: { in: ['ASSIGNED', 'IN_PROGRESS'] },
+          archivedAt: null,
         },
       }),
       this.prisma.ticket.count({
         where: {
           consumerId: userId,
           status: 'COMPLETED',
+          archivedAt: null,
         },
       }),
       this.prisma.user.findUnique({
@@ -109,6 +113,7 @@ export class DashboardService {
         where: {
           consumerId: userId,
           status: { notIn: ['DELIVERED'] },
+          archivedAt: null,
         },
         _sum: {
           totalAmount: true,
@@ -122,7 +127,7 @@ export class DashboardService {
         },
       }),
       this.prisma.ticket.findMany({
-        where: { consumerId: userId },
+        where: { consumerId: userId, archivedAt: null },
         orderBy: { createdAt: 'desc' },
         take: 5,
         select: {
@@ -138,6 +143,7 @@ export class DashboardService {
         where: {
           scheduledDate: { gte: now },
           consumerId: userId,
+          archivedAt: null,
         },
         orderBy: { scheduledDate: 'asc' },
         select: {
