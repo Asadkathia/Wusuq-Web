@@ -9,6 +9,7 @@ import { UserRole } from '@prisma/client';
 import { deriveCurrency } from '@wusuq/shared';
 import { compare, hash } from 'bcryptjs';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import { formatPakistaniPhone } from '../common/utils/phone.util';
 import { NotificationDispatcher } from '../notifications/notification-dispatcher.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { mapPrismaRoleToShared } from '../users/user-role.mapper';
@@ -92,6 +93,14 @@ export class AuthService {
         verified: user.verified,
         currency: user.currency,
         country: user.country,
+        // city/consumerKind feed straight into localStorage.wusuq_user on the
+        // frontend (login + the auto-login-after-signup flow), which is what
+        // ProfileCompletionBanner reads. Without these here, consumerKind set
+        // at signup (2026-06-29, mandatory) never reaches the banner and it
+        // stays permanently "missing" until the DB value is actually
+        // reflected client-side (H5 root cause).
+        city: user.city,
+        consumerKind: user.consumerKind,
       },
     };
   }
@@ -161,15 +170,24 @@ export class AuthService {
     }
 
     const passwordHash = await hash(dto.password, 10);
+    // Currency is derived from the RAW phone first (deriveCurrency is the
+    // single source and already normalises internally), then the phone is
+    // normalised for storage. A genuinely non-PK number is left unmangled —
+    // formatPakistaniPhone returns null for anything that isn't a Pakistani
+    // local/E.164 shape, so `?? dto.phone` preserves international numbers
+    // (H3; admin-created users already get this via formatPakistaniPhone in
+    // users.service.ts — signup was the one path that stored the raw string).
+    const currency = deriveCurrency({ phone: dto.phone, country: dto.country });
+    const normalizedPhone = formatPakistaniPhone(dto.phone) ?? dto.phone;
     const user = await this.prisma.user.create({
       data: {
         name: dto.name,
         email: dto.email,
         passwordHash,
-        phone: dto.phone,
+        phone: normalizedPhone,
         consumerKind: dto.consumerKind,
         country: dto.country ?? null,
-        currency: deriveCurrency({ phone: dto.phone, country: dto.country }),
+        currency,
         role: 'consumer',
       },
     });
@@ -220,6 +238,8 @@ export class AuthService {
         email: user.email,
         role: payload.role,
         verified: user.verified,
+        city: user.city,
+        consumerKind: user.consumerKind,
       },
     };
   }
@@ -235,30 +255,39 @@ export class AuthService {
       district?: string;
       postalCode?: string;
       country?: string;
+      phone?: string;
+      cnic?: string;
+      dateOfBirth?: string;
     },
   ) {
-    // Currency locks once the account is active. Re-derive (and update country)
-    // only when the user has zero non-archived tickets AND zero wallet balance,
-    // so an in-flight account can never end up with a mixed PKR/USD ledger.
+    // Currency locks once the account is active. Re-derive (and update
+    // country) only when the user has zero non-archived tickets AND zero
+    // wallet balance, so an in-flight account can never end up with a mixed
+    // PKR/USD ledger. Phone dial code is the primary currency signal
+    // (deriveCurrency), so an unlocked account editing its phone (not just
+    // its country) must re-derive the same way — otherwise a consumer who
+    // fixes their number before ever transacting would be stuck on whatever
+    // currency the (possibly wrong) signup phone implied.
     const [existing, ticketCount] = await Promise.all([
       this.prisma.user.findUniqueOrThrow({
         where: { id: userId },
-        select: { walletBalance: true, phone: true },
+        select: { walletBalance: true, phone: true, country: true },
       }),
       this.prisma.ticket.count({
         where: { consumerId: userId, archivedAt: null },
       }),
     ]);
     const locked = ticketCount > 0 || Number(existing.walletBalance) !== 0;
-    const currencyUpdate = !dto.country
+    const touchesRegion = dto.country !== undefined || dto.phone !== undefined;
+    const currencyUpdate = !touchesRegion
       ? {}
       : locked
-        ? { country: dto.country } // contact info only; billing currency stays
+        ? { ...(dto.country ? { country: dto.country } : {}) } // contact info only; billing currency stays
         : {
-            country: dto.country,
+            ...(dto.country ? { country: dto.country } : {}),
             currency: deriveCurrency({
-              phone: existing.phone,
-              country: dto.country,
+              phone: dto.phone ?? existing.phone,
+              country: dto.country ?? existing.country,
             }),
           };
 
@@ -272,6 +301,9 @@ export class AuthService {
         ...(dto.province ? { province: dto.province } : {}),
         ...(dto.district ? { district: dto.district } : {}),
         ...(dto.postalCode ? { postalCode: dto.postalCode } : {}),
+        ...(dto.phone ? { phone: dto.phone } : {}),
+        ...(dto.cnic ? { cnic: dto.cnic } : {}),
+        ...(dto.dateOfBirth ? { dateOfBirth: new Date(dto.dateOfBirth) } : {}),
         ...currencyUpdate,
       },
     });
@@ -283,6 +315,14 @@ export class AuthService {
       city: user.city,
       consumerKind: user.consumerKind,
       currency: user.currency,
+      phone: user.phone,
+      cnic: user.cnic,
+      dateOfBirth: user.dateOfBirth,
+      address: user.address,
+      province: user.province,
+      district: user.district,
+      postalCode: user.postalCode,
+      country: user.country,
     };
   }
 

@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, startTransition } from 'react';
 import Link from 'next/link';
 import { UserCircle2, X } from 'lucide-react';
 
@@ -9,27 +9,32 @@ export function ProfileCompletionBanner() {
   const [missing, setMissing] = useState<Missing | null>(null);
   const [dismissed, setDismissed] = useState(false);
 
+  // Reads `wusuq_user` from localStorage fresh on every mount (H5). This is
+  // only as current as the last login/save that wrote it — login() now
+  // returns consumerKind/city (auth.service.ts) so a real login/re-login
+  // picks up a value set at signup, and consumer-profile-board.tsx refreshes
+  // this same key after a successful save — so navigating back to the
+  // dashboard after either re-evaluates the banner without a re-login.
   useEffect(() => {
-    function read() {
-      try {
-        const raw = localStorage.getItem('wusuq_user');
-        if (!raw) return;
-        const u = JSON.parse(raw) as {
-          name?: string | null;
-          city?: string | null;
-          consumerKind?: string | null;
-        };
-        const m: Missing = {
-          name: !u.name,
-          city: !u.city,
-          consumerKind: !u.consumerKind,
-        };
+    try {
+      const raw = localStorage.getItem('wusuq_user');
+      if (!raw) return;
+      const u = JSON.parse(raw) as {
+        name?: string | null;
+        city?: string | null;
+        consumerKind?: string | null;
+      };
+      const m: Missing = {
+        name: !u.name,
+        city: !u.city,
+        consumerKind: !u.consumerKind,
+      };
+      startTransition(() => {
         if (m.name || m.city || m.consumerKind) setMissing(m);
-      } catch {
-        // localStorage unavailable
-      }
+      });
+    } catch {
+      // localStorage unavailable
     }
-    queueMicrotask(read);
   }, []);
 
   if (!missing) return null;
