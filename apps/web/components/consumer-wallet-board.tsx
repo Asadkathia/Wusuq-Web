@@ -279,11 +279,11 @@ function TopupDialog({
         receiptUrl = upload.url;
       }
       // Consumer top-up: backend derives target user from JWT — do NOT
-      // send a userId here.
+      // send a userId here. Currency is also derived server-side from the
+      // user (never trusted from the client), so it's deliberately omitted.
       await apiClient.post('/wallet/topup', {
         amount: amountNum,
         paymentMode,
-        currency,
         receiptUrl,
       });
       toast.success('Top-up submitted', 'Your request is pending verification.');
