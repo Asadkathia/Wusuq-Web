@@ -256,10 +256,19 @@ export default function ConsumerDashboardPage() {
       {/* Summary strip */}
       <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <SummaryCard
-          label="Wallet balance"
+          // Matches the wallet page's own hero wording (consumer-wallet-board.tsx):
+          // `walletBalance` here is already the NET figure (prepaid credit minus
+          // outstanding dues, per /wallet/me), so a negative balance IS the amount
+          // owed — label it as such instead of showing two unrelated-looking
+          // numbers ("Wallet balance" + "Outstanding") side by side.
+          label={walletBalance < 0 ? 'Amount owed' : 'Wallet balance'}
           value={formatMoney(walletBalance, walletCurrency)}
           icon={<Wallet className="h-4 w-4" />}
-          hint={summary ? `Outstanding: ${formatMoney(summary.myOutstanding, walletCurrency)}` : undefined}
+          hint={
+            summary && summary.myOutstanding > 0
+              ? `Includes ${formatMoney(summary.myOutstanding, walletCurrency)} in ticket dues`
+              : undefined
+          }
           tone="brand"
           loading={loading}
         />

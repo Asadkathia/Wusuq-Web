@@ -366,8 +366,18 @@ export default function DashboardPage() {
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <StatCard title="My Tickets" value={summary.myTickets.total} icon={<Ticket className="opacity-50" />} />
           <StatCard title="Completed" value={summary.myTickets.completed} icon={<CheckCircle2 className="opacity-50" />} />
-          <StatCard title="Outstanding (PKR)" value={summary.myOutstanding.toLocaleString()} icon={<DollarSign className="opacity-50" />} />
-          <StatCard title="Wallet Balance (PKR)" value={summary.myWalletBalance.toLocaleString()} icon={<WalletCards className="opacity-50" />} />
+          {/* Unlike the admin KPI cards above (Total Revenue / Outstanding),
+              which genuinely sum tickets across mixed currencies converted to
+              PKR, these two figures are a single consumer's OWN
+              myOutstanding/myWalletBalance (same shape as the dedicated
+              /consumer/dashboard page) — not a converted aggregate, and
+              ConsumerSummary carries no currency field to confirm it's PKR
+              (this render path is also unreachable in practice, see the
+              ticket-amount comment below). A hardcoded "(PKR)" here would
+              misrepresent a possibly-USD consumer's own balance, so the
+              label stays currency-agnostic instead of asserting one. */}
+          <StatCard title="Outstanding" value={summary.myOutstanding.toLocaleString()} icon={<DollarSign className="opacity-50" />} />
+          <StatCard title="Wallet Balance" value={summary.myWalletBalance.toLocaleString()} icon={<WalletCards className="opacity-50" />} />
         </div>
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
