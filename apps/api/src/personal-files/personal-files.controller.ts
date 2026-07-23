@@ -145,6 +145,7 @@ export class PersonalFilesController {
         caseNo: dto.caseNo,
         caseYear: dto.caseYear,
         caseTitle: dto.caseTitle,
+        judgeName: dto.judgeName,
         courtLevel: dto.courtLevel,
         caseType: dto.caseType,
       },

@@ -54,3 +54,11 @@ describe('CohortGroup — bulk delete (D2)', () => {
     expect(source).toMatch(/JSON\.stringify\(\{ ids: Array\.from\(selected\) \}\)/);
   });
 });
+
+describe('cohort-group (D1 — judge name in the group header)', () => {
+  const src = readFileSync(join(currentDir, 'cohort-group.tsx'), 'utf8');
+  it('accepts a judgeName prop and renders it in the header', () => {
+    expect(src).toMatch(/judgeName\?: string \| null/);
+    expect(src).toMatch(/Judge: \{judgeName\}/);
+  });
+})

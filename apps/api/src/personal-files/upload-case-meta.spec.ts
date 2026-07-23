@@ -117,6 +117,7 @@ describe('PersonalFilesService.uploadCaseFile — caseMeta persistence', () => {
       caseNo: '1234/2024',
       caseYear: '2024',
       caseTitle: 'Ahmed vs State',
+      judgeName: 'Justice Ali', // D1: presiding judge captured at upload
       courtLevel: 'High Court',
       caseType: 'Civil Revision',
     });
@@ -130,6 +131,7 @@ describe('PersonalFilesService.uploadCaseFile — caseMeta persistence', () => {
       caseNo: '1234/2024',
       caseYear: '2024',
       caseTitle: 'Ahmed vs State',
+      judgeName: 'Justice Ali',
       courtLevel: 'High Court',
       caseType: 'Civil Revision',
     });

@@ -29,6 +29,8 @@ type Props = {
   /** D1: representative case title for this cohort, from the newest
    *  upload's caseMeta. Null when no upload carried a case title. */
   caseTitle?: string | null;
+  /** D1: presiding judge for this cohort, from caseMeta.judgeName. */
+  judgeName?: string | null;
   files: CaseFile[];
   onDeleted: (fileId: string) => void;
 };
@@ -39,7 +41,7 @@ function formatBytes(n: number): string {
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export function CohortGroup({ service, city, court, caseTitle, files, onDeleted }: Props) {
+export function CohortGroup({ service, city, court, caseTitle, judgeName, files, onDeleted }: Props) {
   const [open, setOpen] = useState(files.length > 1);
   const [previewFile, setPreviewFile] = useState<CaseFile | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -111,9 +113,11 @@ export function CohortGroup({ service, city, court, caseTitle, files, onDeleted 
             <p className="text-sm font-semibold text-slate-900">
               {service} · {city} · {court}
             </p>
-            {/* D1: case title from caseMeta.caseTitle. Judge name is not part
-                of the case-files model yet — see upload-drawer.tsx TODO. */}
+            {/* D1: case title + presiding judge from caseMeta. */}
             {caseTitle ? <p className="text-xs text-slate-500">{caseTitle}</p> : null}
+            {judgeName ? (
+              <p className="text-xs text-slate-400">Judge: {judgeName}</p>
+            ) : null}
           </div>
         </div>
         <span className="rounded-full bg-brand-50 px-2 py-0.5 text-xs font-semibold text-brand-700">

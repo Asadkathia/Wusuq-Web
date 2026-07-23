@@ -18,3 +18,18 @@ describe('CaseFilesBoard — passes caseTitle through to CohortGroup (D1)', () =
     expect(source).toMatch(/<CohortGroup[\s\S]{0,300}caseTitle=\{cohort\.caseTitle\}/);
   });
 });
+
+describe('case-files-board (D1 — judge name passed to the cohort header)', () => {
+  it('passes cohort.judgeName into CohortGroup alongside caseTitle', () => {
+    expect(source).toMatch(/judgeName=\{cohort\.judgeName\}/);
+  });
+
+  it('the upload drawer captures a judge name and appends it to the form', () => {
+    const drawer = readFileSync(
+      join(currentDir, 'case-files-board/upload-drawer.tsx'),
+      'utf8',
+    );
+    expect(drawer).toMatch(/setCaseMetaField\('judgeName'/);
+    expect(drawer).toMatch(/form\.append\('judgeName'/);
+  });
+})

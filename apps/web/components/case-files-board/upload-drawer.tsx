@@ -16,6 +16,7 @@ type CaseMeta = {
   caseNo: string;
   caseYear: string;
   caseTitle: string;
+  judgeName: string;
   courtLevel: string;
   caseType: string;
 };
@@ -26,6 +27,7 @@ export function UploadDrawer({ open, onClose, onUploaded }: Props) {
     caseNo: '',
     caseYear: '',
     caseTitle: '',
+    judgeName: '',
     courtLevel: '',
     caseType: '',
   });
@@ -44,7 +46,7 @@ export function UploadDrawer({ open, onClose, onUploaded }: Props) {
 
   const reset = () => {
     setCohort({});
-    setCaseMeta({ caseNo: '', caseYear: '', caseTitle: '', courtLevel: '', caseType: '' });
+    setCaseMeta({ caseNo: '', caseYear: '', caseTitle: '', judgeName: '', courtLevel: '', caseType: '' });
     setFiles([]);
     setCaptions([]);
     setError('');
@@ -92,6 +94,7 @@ export function UploadDrawer({ open, onClose, onUploaded }: Props) {
         if (caseMeta.caseNo.trim()) form.append('caseNo', caseMeta.caseNo.trim());
         if (caseMeta.caseYear.trim()) form.append('caseYear', caseMeta.caseYear.trim());
         if (caseMeta.caseTitle.trim()) form.append('caseTitle', caseMeta.caseTitle.trim());
+        if (caseMeta.judgeName.trim()) form.append('judgeName', caseMeta.judgeName.trim());
         if (caseMeta.courtLevel.trim()) form.append('courtLevel', caseMeta.courtLevel.trim());
         if (caseMeta.caseType.trim()) form.append('caseType', caseMeta.caseType.trim());
         await apiClient.post('/personal-files/case-files', form);
@@ -186,6 +189,22 @@ export function UploadDrawer({ open, onClose, onUploaded }: Props) {
                 value={caseMeta.caseTitle}
                 onChange={(e) => setCaseMetaField('caseTitle', e.target.value)}
                 placeholder="e.g. Ahmed vs State"
+                className="w-full rounded-lg border border-border-soft bg-surface px-3 py-2 text-sm placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-400"
+              />
+            </div>
+            <div>
+              <label
+                htmlFor="upload-judge-name"
+                className="mb-1 block text-xs font-medium text-slate-600"
+              >
+                Judge name
+              </label>
+              <input
+                id="upload-judge-name"
+                type="text"
+                value={caseMeta.judgeName}
+                onChange={(e) => setCaseMetaField('judgeName', e.target.value)}
+                placeholder="e.g. Justice Ali"
                 className="w-full rounded-lg border border-border-soft bg-surface px-3 py-2 text-sm placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-400"
               />
             </div>

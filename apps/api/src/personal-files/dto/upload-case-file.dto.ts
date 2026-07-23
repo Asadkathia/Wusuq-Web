@@ -67,6 +67,11 @@ export class UploadCaseFileDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(200)
+  judgeName?: string;
+
+  @IsOptional()
+  @IsString()
   @MaxLength(80)
   courtLevel?: string;
 

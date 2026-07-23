@@ -221,6 +221,26 @@ export function RepresentativesBoard() {
     () => courtGroups.flatMap((g) => g.courts.map((c) => ({ id: c.id, name: c.name, type: g.type }))),
     [courtGroups],
   );
+
+  // J1: constrain the Service list to court levels the selected city actually
+  // seats (client: "Attock has only Lower + Special courts, why are High/
+  // Shariat/Supreme selectable?"). Each service maps to a court tier via its
+  // name; a null tier = non-judicial (Registry/Deed, FIR) which is never
+  // court-seated, so it's always available. Before a city is chosen or while
+  // courts are loading we show ALL services (empty seats would otherwise blank
+  // the list). The currently-selected service is always kept visible so an
+  // edit whose city no longer seats that tier doesn't silently drop the value.
+  const visibleServices = useMemo(() => {
+    if (!cityId || !courtsLoaded) return SERVICES;
+    const seated = new Set(
+      courtGroups.map((g) => courtTierFromCourtType(g.type)).filter(Boolean),
+    );
+    return SERVICES.filter((s) => {
+      if (String(s.id) === form.serviceId) return true; // never hide the current pick
+      const tier = courtTierFromCourtType(s.name);
+      return tier === null || seated.has(tier); // non-judicial always; else must be seated
+    });
+  }, [cityId, courtsLoaded, courtGroups, form.serviceId]);
   // The <select>'s value is derived, not stored — it reconciles automatically
   // once courtOptions loads (edit pre-fill) or when the user picks a court.
   const selectedCourtId = useMemo(
@@ -676,7 +696,7 @@ export function RepresentativesBoard() {
                   onChange={(e) => handleServiceChange(e.target.value)}
                 >
                   <option value="">— Select Service —</option>
-                  {SERVICES.map((s) => (
+                  {visibleServices.map((s) => (
                     <option key={s.id} value={s.id}>{s.name}</option>
                   ))}
                 </select>

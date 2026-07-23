@@ -13,14 +13,16 @@ export type PersonalFileDto = {
   /** From `caseMeta.caseTitle` (D1: case-files group header). Null when the
    *  upload didn't carry intake-style case metadata. */
   caseTitle: string | null;
+  /** From `caseMeta.judgeName` (D1: case-files group header). */
+  judgeName: string | null;
 };
 
-/** Best-effort read of `caseTitle` off the JSON `caseMeta` column — the
+/** Best-effort read of a string key off the JSON `caseMeta` column — the
  * column is untyped Json, so this never throws on an unexpected shape. */
-function readCaseTitle(caseMeta: unknown): string | null {
+function readCaseMetaString(caseMeta: unknown, key: string): string | null {
   if (caseMeta && typeof caseMeta === 'object') {
-    const title = (caseMeta as Record<string, unknown>).caseTitle;
-    if (typeof title === 'string' && title.trim()) return title;
+    const v = (caseMeta as Record<string, unknown>)[key];
+    if (typeof v === 'string' && v.trim()) return v;
   }
   return null;
 }
@@ -51,6 +53,7 @@ export function toPersonalFileDto(row: {
     courtName: row.courtName ?? null,
     courtType: row.courtType ?? null,
     attachedTicketId: row.attachedTicketId ?? null,
-    caseTitle: readCaseTitle(row.caseMeta),
+    caseTitle: readCaseMetaString(row.caseMeta, 'caseTitle'),
+    judgeName: readCaseMetaString(row.caseMeta, 'judgeName'),
   };
 }

@@ -308,13 +308,16 @@ export class PersonalFilesService {
       },
     });
     const titleByKey = new Map<string, string>();
+    const judgeByKey = new Map<string, string>();
     for (const r of rows) {
       const key = `${r.serviceId}|${r.cityId}|${r.courtName}|${r.courtType}`;
-      if (titleByKey.has(key)) continue;
       const meta = r.caseMeta as Record<string, unknown> | null;
-      const title =
-        typeof meta?.caseTitle === 'string' ? meta.caseTitle : undefined;
-      if (title) titleByKey.set(key, title);
+      if (!titleByKey.has(key) && typeof meta?.caseTitle === 'string') {
+        titleByKey.set(key, meta.caseTitle);
+      }
+      if (!judgeByKey.has(key) && typeof meta?.judgeName === 'string') {
+        judgeByKey.set(key, meta.judgeName);
+      }
     }
 
     return groups.map((g) => {
@@ -326,6 +329,7 @@ export class PersonalFilesService {
         courtType: g.courtType ?? null,
         count: g._count._all,
         caseTitle: titleByKey.get(key) ?? null,
+        judgeName: judgeByKey.get(key) ?? null,
       };
     });
   }
@@ -345,6 +349,7 @@ export class PersonalFilesService {
       caseNo?: string;
       caseYear?: string;
       caseTitle?: string;
+      judgeName?: string;
       courtLevel?: string;
       caseType?: string;
     },
@@ -363,6 +368,7 @@ export class PersonalFilesService {
     if (cohort.caseNo) caseMeta.caseNo = cohort.caseNo;
     if (cohort.caseYear) caseMeta.caseYear = cohort.caseYear;
     if (cohort.caseTitle) caseMeta.caseTitle = cohort.caseTitle;
+    if (cohort.judgeName) caseMeta.judgeName = cohort.judgeName;
     if (cohort.courtLevel) caseMeta.courtLevel = cohort.courtLevel;
     if (cohort.caseType) caseMeta.caseType = cohort.caseType;
 

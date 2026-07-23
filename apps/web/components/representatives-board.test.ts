@@ -57,3 +57,25 @@ describe('representatives-board (H4 — phone uses the shared CountryPicker)', (
     expect(source).not.toMatch(/phone:\s*form\.phone\b/);
   });
 });
+
+describe('representatives-board (J1 — service list constrained to seated court levels)', () => {
+  const src = readFileSync(
+    join(currentDir, 'representatives-board.tsx'),
+    'utf8',
+  );
+
+  it('renders the Service dropdown from the filtered visibleServices, not the raw SERVICES', () => {
+    // The dropdown must map visibleServices (the city-filtered set), not the
+    // static SERVICES — else picking a city that only seats Lower+Special would
+    // still offer High/Shariat/Supreme (the exact client complaint).
+    expect(src).toMatch(/visibleServices\.map\(/);
+    expect(src).not.toMatch(/\{SERVICES\.map\(/);
+  });
+
+  it('derives the seated tiers from the live court groups via courtTierFromCourtType', () => {
+    expect(src).toMatch(/const visibleServices = useMemo\(/);
+    expect(src).toMatch(/courtTierFromCourtType\(g\.type\)/);
+    // non-judicial services (null tier) stay available; seated tiers gate the rest
+    expect(src).toMatch(/tier === null \|\| seated\.has\(tier\)/);
+  });
+})

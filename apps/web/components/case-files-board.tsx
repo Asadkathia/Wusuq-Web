@@ -28,6 +28,8 @@ type Cohort = {
   /** D1: representative case title for this cohort (from the newest
    *  upload's caseMeta.caseTitle), null when none was captured. */
   caseTitle?: string | null;
+  /** D1: presiding judge for this cohort (caseMeta.judgeName). */
+  judgeName?: string | null;
 };
 
 type ServiceInfo = { id: string; name: string };
@@ -127,6 +129,7 @@ export function CaseFilesBoard() {
               city={cityName(cohort.cityId)}
               court={cohort.courtName ?? '—'}
               caseTitle={cohort.caseTitle}
+              judgeName={cohort.judgeName}
               files={cohortFiles}
               onDeleted={() => refresh()}
             />
