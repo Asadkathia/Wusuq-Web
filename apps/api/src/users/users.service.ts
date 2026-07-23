@@ -217,6 +217,14 @@ export class UsersService {
         payoutAccountNumber: dto.payoutAccountNumber,
         payoutJazzCash: dto.payoutJazzCash,
         payoutEasyPaisa: dto.payoutEasyPaisa,
+        // Address / geo + CNIC — undefined fields are ignored by Prisma, so an
+        // admin editing only some of these never clears the rest (batch-3 H2).
+        address: dto.address,
+        province: dto.province,
+        district: dto.district,
+        city: dto.city,
+        postalCode: dto.postalCode,
+        cnic: dto.cnic,
         ...currencyUpdate,
       },
     });
@@ -342,6 +350,10 @@ export class UsersService {
       payoutJazzCash: user.payoutJazzCash,
       payoutEasyPaisa: user.payoutEasyPaisa,
       role: mapPrismaRoleToShared(user.role),
+      // Consumer user-type (Civilian/Lawyer/Company) — needed so the profile
+      // User-Type editor pre-fills the consumer's real type instead of a blank
+      // that invites an accidental overwrite (batch-3 H5/H1).
+      consumerKind: user.consumerKind,
       verified: user.verified,
       isActive: user.isActive,
       walletBalance: user.walletBalance,
