@@ -1,4 +1,10 @@
-import { convertToPkr, round2, type Currency } from '@wusuq/shared';
+import { convertToPkr, isPkrRail, round2, type Currency } from '@wusuq/shared';
+
+// Re-exported for existing call sites (`@/lib/pay-amount`'s isPkrRail) — the
+// single source of truth now lives in `@wusuq/shared` so the server (which
+// performs the actual conversion, task 7) and the client (which only decides
+// what to LABEL/PREFILL) can never drift apart on the rail predicate.
+export { isPkrRail };
 
 /**
  * Pure FX-conversion helpers for the consumer pay page.
@@ -14,31 +20,26 @@ import { convertToPkr, round2, type Currency } from '@wusuq/shared';
  *   a PKR figure on this rail, and what they type is exactly what is
  *   credited — no conversion applies, ever.
  *
- * `isPkrRail` identifies the former group. `payableInPkr` and
- * `submitAmountFromPkr` are the inverse of each other and MUST only be
- * invoked when `isPkrRail(paymentMode)` is true:
+ * `isPkrRail` (re-exported above from `@wusuq/shared`) identifies the former
+ * group. `payableInPkr` and `submitAmountFromPkr` are the inverse of each
+ * other and MUST only be invoked when `isPkrRail(paymentMode)` is true:
  *
  *   payableInPkr        : ticket-currency amount  -> PKR (for prefill/display)
  *   submitAmountFromPkr  : PKR entered on the form -> ticket-currency amount
- *                          (for the /wallet/topup credit)
  *
  * Both return `null` when a USD ticket on a PKR rail has no `fxRateToPkr`
  * stamped — callers MUST treat null as "cannot proceed" (no prefill, no
  * submit), never fall back to the raw un-converted figure. See
  * `convertToPkr` in `@wusuq/shared` for why a fallback rate of 1 is never
  * acceptable.
+ *
+ * Task 7: the actual `/wallet/topup` credit is now converted SERVER-SIDE
+ * (`WalletService`'s `resolveTopupAmount`, mirroring this exact division) —
+ * the pay page no longer calls `submitAmountFromPkr` before submitting; it
+ * posts the raw entered figure and lets the server convert. This function is
+ * kept (a) as the tested reference implementation the server-side math must
+ * match and (b) for any future client-side display use.
  */
-
-/**
- * Domestic PKR rails. A consumer using these already holds PKR, so the
- * amount they enter is PKR and must be converted to the wallet's native
- * currency. BANK_TRANSFER is NOT a PKR rail: the consumer wires USD from
- * their own foreign bank and the receiving Pakistani bank auto-converts on
- * arrival, so what they type is what is credited and no conversion applies.
- */
-export function isPkrRail(paymentMode: string | null | undefined): boolean {
-  return paymentMode === 'JAZZ_CASH' || paymentMode === 'EASY_PAISA';
-}
 
 /**
  * Amount payable in PKR for a ticket currently due `dueNow` in its own

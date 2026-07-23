@@ -26,8 +26,13 @@ export class TopupWalletDto {
   @IsIn(PAYMENT_MODES)
   paymentMode!: (typeof PAYMENT_MODES)[number];
 
-  @IsString()
-  currency!: string;
+  // No `currency` field (task 7): the server ALWAYS derives it from the
+  // target user (`WalletService.topup`), never from the client — a
+  // client-supplied currency was silently trusted and persisted as-is,
+  // which is exactly how a staff top-up for a USD user could be mislabelled
+  // PKR. `main.ts`'s whitelist ValidationPipe (no forbidNonWhitelisted)
+  // strips a stray client `currency` rather than 400ing, so this removal is
+  // safe for any caller that still sends one.
 
   // The receipt is uploaded via POST /wallet/receipt, which returns an
   // app-relative path `/wallet/receipt/<file>`. Validate that exact shape (not

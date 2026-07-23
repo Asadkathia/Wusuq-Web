@@ -40,6 +40,10 @@ type PendingTopup = {
   status: string;
   createdAt: string;
   receiptUrl?: string | null;
+  // Task 7: set only when the server converted a PKR-rail payment against a
+  // non-PKR ticket — lets this reconcile against the PKR bank/wallet receipt.
+  pkrAmountEntered?: number | string | null;
+  fxRateToPkr?: number | string | null;
 };
 
 type ConsumerTransaction = {
@@ -69,7 +73,6 @@ export function WalletBoard() {
     userId: '',
     amount: '',
     paymentMode: 'JAZZ_CASH',
-    currency: 'PKR',
     receiptUrl: '',
   });
 
@@ -122,11 +125,13 @@ export function WalletBoard() {
     }
 
     try {
+      // No `currency` field — the server derives it from the target user,
+      // never the client (task 7); a currency picker here could only ever
+      // mislabel a top-up, never actually change it.
       await apiClient.post('/wallet/topup', {
         userId: topup.userId,
         amount,
         paymentMode: topup.paymentMode,
-        currency: topup.currency,
         receiptUrl: topup.receiptUrl || undefined,
       });
       setMessage('Topup created (pending verification)');
@@ -361,6 +366,16 @@ export function WalletBoard() {
                       </td>
                       <td className="px-6 py-4">
                         <div className="text-sm font-bold text-slate-900">{tx.amount.toLocaleString()} {tx.currency}</div>
+                        {tx.pkrAmountEntered != null && (
+                          // Task 7: the PKR figure actually wired on a
+                          // PKR-rail payment against a non-PKR ticket, plus
+                          // the rate applied — reconciles against the PKR
+                          // bank/wallet receipt.
+                          <div className="text-xs text-slate-500 mt-0.5">
+                            PKR {Number(tx.pkrAmountEntered).toLocaleString()} submitted
+                            {tx.fxRateToPkr != null ? ` @ ${Number(tx.fxRateToPkr).toLocaleString()}` : ''}
+                          </div>
+                        )}
                         <div className="text-xs text-slate-500 mt-0.5">{tx.paymentMode.replace('_', ' ')}</div>
                       </td>
                       <td className="px-6 py-4">
@@ -490,31 +505,21 @@ export function WalletBoard() {
                 />
               </label>
 
-              <div className="grid grid-cols-2 gap-4">
-                <label className="block">
-                  <span className="text-sm font-medium text-slate-700">Amount</span>
-                  <input
-                    required
-                    type="number"
-                    min="1"
-                    className="mt-1 block w-full rounded-xl border-0 py-2.5 px-3 text-slate-900 ring-1 ring-inset ring-border-soft placeholder:text-slate-400 focus:ring-2 focus:ring-primary-600 sm:text-sm sm:leading-6"
-                    placeholder="0.00"
-                    value={topup.amount}
-                    onChange={(e) => setTopup((c) => ({ ...c, amount: e.target.value }))}
-                  />
-                </label>
-                <label className="block">
-                <span className="text-sm font-medium text-slate-700">Currency</span>
-                <select
-                  className="mt-1 block w-full rounded-xl border-0 py-2.5 pl-3 pr-10 text-slate-900 ring-1 ring-inset ring-border-soft focus:ring-2 focus:ring-primary-600 sm:text-sm sm:leading-6"
-                  value={topup.currency}
-                  onChange={(e) => setTopup((c) => ({ ...c, currency: e.target.value }))}
-                >
-                  <option value="PKR">PKR</option>
-                  <option value="USD">USD</option>
-                </select>
-                </label>
-              </div>
+              <label className="block">
+                <span className="text-sm font-medium text-slate-700">Amount</span>
+                <input
+                  required
+                  type="number"
+                  min="1"
+                  className="mt-1 block w-full rounded-xl border-0 py-2.5 px-3 text-slate-900 ring-1 ring-inset ring-border-soft placeholder:text-slate-400 focus:ring-2 focus:ring-primary-600 sm:text-sm sm:leading-6"
+                  placeholder="0.00"
+                  value={topup.amount}
+                  onChange={(e) => setTopup((c) => ({ ...c, amount: e.target.value }))}
+                />
+                {/* No currency picker: the server always stamps the target
+                    user's OWN currency (task 7) — a picker here could only
+                    ever mislabel the top-up, never actually change it. */}
+              </label>
 
               <label className="block">
                 <span className="text-sm font-medium text-slate-700">Payment Mode</span>

@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { NOTIFICATION_TYPES, isFullyPaid } from '@wusuq/shared';
+import { NOTIFICATION_TYPES, isFullyPaid, toCurrency } from '@wusuq/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from './notifications.service';
 import { notificationTemplates as T } from './notification-templates';
@@ -331,13 +331,14 @@ export class NotificationDispatcher {
     const tx = await this.loadTxn(transactionId);
     if (!tx) return;
     const amount = Number(tx.amount);
+    const currency = toCurrency(tx.currency);
     await this.notifications.create({
       userId: tx.userId,
-      ...T.walletTopupCreatedForConsumer(amount),
+      ...T.walletTopupCreatedForConsumer(amount, currency),
       type: NOTIFICATION_TYPES.WALLET_TOPUP_CREATED,
       metadata: { transactionId: tx.id },
     });
-    const financeCopy = T.walletTopupCreatedForFinance(amount);
+    const financeCopy = T.walletTopupCreatedForFinance(amount, currency);
     for (const id of await this.financeIds()) {
       if (id === tx.userId) continue;
       await this.notifications.create({
@@ -355,7 +356,11 @@ export class NotificationDispatcher {
   ): Promise<void> {
     const tx = await this.loadTxn(transactionId);
     if (!tx) return;
-    const copy = T.walletTopupDecidedForConsumer(Number(tx.amount), decision);
+    const copy = T.walletTopupDecidedForConsumer(
+      Number(tx.amount),
+      toCurrency(tx.currency),
+      decision,
+    );
     await this.notifications.create({
       userId: tx.userId,
       ...copy,
@@ -400,14 +405,19 @@ export class NotificationDispatcher {
     if (!tx) return;
     const batchNo = tx.ticket?.batchNo ?? transactionId;
     const amount = Number(tx.amount);
-    const consumerCopy = T.paymentSubmittedForConsumer(batchNo, amount);
+    const currency = toCurrency(tx.currency);
+    const consumerCopy = T.paymentSubmittedForConsumer(
+      batchNo,
+      amount,
+      currency,
+    );
     await this.notifications.create({
       userId: tx.userId,
       ...consumerCopy,
       type: NOTIFICATION_TYPES.PAYMENT_SUBMITTED,
       metadata: { transactionId: tx.id, ticketId: tx.ticketId ?? undefined },
     });
-    const financeCopy = T.paymentSubmittedForFinance(batchNo, amount);
+    const financeCopy = T.paymentSubmittedForFinance(batchNo, amount, currency);
     const ids = new Set([
       ...(await this.adminIds()),
       ...(await this.financeIds()),
@@ -459,6 +469,7 @@ export class NotificationDispatcher {
         consumerId: true,
         totalAmount: true,
         amountPaid: true,
+        currency: true,
       },
     });
     if (!t) return;
@@ -467,7 +478,11 @@ export class NotificationDispatcher {
     const remainder = Math.max(0, Number(t.totalAmount) - Number(t.amountPaid));
     // Nothing owed — don't send a zero-value remainder notification.
     if (remainder <= 0) return;
-    const copy = T.paymentRemainderDueForConsumer(t.batchNo, remainder);
+    const copy = T.paymentRemainderDueForConsumer(
+      t.batchNo,
+      remainder,
+      toCurrency(t.currency),
+    );
     await this.notifications.create({
       userId: t.consumerId,
       ...copy,

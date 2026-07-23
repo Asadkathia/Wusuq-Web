@@ -124,7 +124,6 @@ describe('WalletController scope guards', () => {
         userId: 'someone-else',
         amount: 100,
         paymentMode: 'BANK_TRANSFER',
-        currency: 'PKR',
       },
       consumerUser,
     );
@@ -142,7 +141,6 @@ describe('WalletController scope guards', () => {
         userId: 'consumer-1',
         amount: 250,
         paymentMode: 'BANK_TRANSFER',
-        currency: 'PKR',
       },
       adminUser,
     );

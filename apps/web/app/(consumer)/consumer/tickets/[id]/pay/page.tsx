@@ -8,7 +8,7 @@ import { paymentModelFor, formatMoney } from '@wusuq/shared';
 import { apiClient, ApiError } from '@/lib/api-client';
 import { paymentSettingsClient, PaymentSettings } from '@/lib/payment-settings-client';
 import { PaymentMethodDetails, availableMethods, type PayMethod } from '@/components/payment-method-details';
-import { isPkrRail, payableInPkr, submitAmountFromPkr } from '@/lib/pay-amount';
+import { isPkrRail, payableInPkr } from '@/lib/pay-amount';
 import { advanceOnEnter } from '@/lib/form-utils';
 import { PanelCard } from '@/components/ui/panel-card';
 import { Button } from '@/components/ui/button';
@@ -176,26 +176,17 @@ export default function PayTicketPage() {
       return;
     }
 
-    // Conversion follows the RAIL, not just the ticket currency. On a
-    // domestic PKR rail (JazzCash/EasyPaisa) a USD ticket's entered figure
-    // IS PKR and must be converted back to USD before crediting the wallet
-    // ledger — submitting it raw would wildly over-credit a USD wallet (e.g.
-    // crediting "9975" as if it were $9,975). On BANK_TRANSFER the consumer
-    // wires USD directly and the receiving bank converts on arrival, so
-    // whatever they typed is exactly what gets submitted — no conversion, no
-    // rate dependency, never blocked by a missing rate. A PKR ticket's
-    // entered amount already IS its billing-currency amount on every rail.
-    let amount: number;
-    if (currencyOf(ticket) === 'USD' && isPkrRail(method)) {
-      const converted = submitAmountFromPkr(enteredAmount, currencyOf(ticket), ticket?.fxRateToPkr);
-      if (converted === null) {
-        setSubmitError('FX rate not set — please contact support.');
-        return;
-      }
-      amount = converted;
-    } else {
-      amount = enteredAmount;
-    }
+    // Task 7: the FX conversion moved SERVER-SIDE (WalletService.topup /
+    // resolveTopupAmount). This page submits exactly what the consumer typed
+    // — on a domestic PKR rail (JazzCash/EasyPaisa) that figure IS PKR; on
+    // BANK_TRANSFER it's already the ticket's native currency. The rail
+    // distinction still lives here (isPkrRail drives the label/hint/guard
+    // below) but the arithmetic itself must not also happen on this side of
+    // the trust boundary — doing it on both sides would divide by the rate
+    // TWICE. The submit button is already disabled while `fxRateMissing`
+    // (computed below), so a missing rate never reaches this point; the
+    // server rejects it regardless (defense in depth).
+    const amount = enteredAmount;
 
     startTransition(() => {
       setSubmitError(null);
@@ -214,11 +205,13 @@ export default function PayTicketPage() {
 
       // Step 2: Submit as a wallet topup tagged to this ticket.
       // The backend /wallet/topup endpoint sets the user from JWT; ticketId is
-      // forwarded so Task 1.5 can tag it as TICKET_PAYMENT once the DTO is wired.
+      // forwarded so it's tagged TICKET_PAYMENT and (task 7) so the server can
+      // look up the ticket's currency + fxRateToPkr to convert `amount` when
+      // `paymentMode` is a PKR rail. No `currency` field here — the server
+      // derives it from the target user, never the client (task 7).
       await apiClient.post('/wallet/topup', {
         amount,
         paymentMode: method ?? 'BANK_TRANSFER',
-        currency: currencyOf(ticket),
         receiptUrl,
         ticketId,
       });

@@ -134,13 +134,14 @@ export function UsersBoard() {
     if (!topupUser || !topupAmount) return;
     setSaving(true);
     try {
+      // No `currency` field — the server derives it from the target user,
+      // never the client (task 7).
       await apiClient.post('/wallet/topup', {
         userId: topupUser.id,
         amount: Number(topupAmount),
         paymentMode: topupMode,
-        currency: 'PKR',
       });
-      setMessage(`Topup of ${topupAmount} PKR created for ${labelFor(topupUser)}.`);
+      setMessage(`Topup of ${topupAmount} created for ${labelFor(topupUser)}.`);
       setTopupUser(null);
       setTopupAmount('');
     } catch (error: any) {

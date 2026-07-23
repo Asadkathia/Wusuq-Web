@@ -829,6 +829,24 @@ export function convertToPkr(
 }
 
 /**
+ * Domestic PKR payment rails. A consumer using JazzCash or EasyPaisa already
+ * holds PKR, so the amount they enter IS a PKR figure and must be converted
+ * to the wallet's native currency before it is credited. BANK_TRANSFER is
+ * NOT a PKR rail: an overseas consumer wires their own currency from a
+ * foreign bank and the receiving Pakistani bank auto-converts on arrival, so
+ * what they type is exactly what is credited — no conversion applies, ever.
+ *
+ * Single source of truth for this predicate on BOTH sides of the trust
+ * boundary (the consumer pay page's display/label logic AND the server's
+ * actual FX-conversion decision in WalletService) — a client and server
+ * copy that could drift is exactly the class of seam defect that produced a
+ * live open-redirect elsewhere in this codebase (see staff-routes.ts).
+ */
+export function isPkrRail(paymentMode: string | null | undefined): boolean {
+  return paymentMode === 'JAZZ_CASH' || paymentMode === 'EASY_PAISA';
+}
+
+/**
  * Staff-facing money. PKR tickets pass straight through, so every staff surface
  * can call this unconditionally. A non-PKR ticket renders its PKR equivalent
  * from the rate stamped on the ticket; when that rate is absent it renders the

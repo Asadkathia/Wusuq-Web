@@ -4,11 +4,17 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import type { PaymentMode, Prisma, TicketStatus } from '@prisma/client';
+import { isPkrRail, round2 } from '@wusuq/shared';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { NotificationDispatcher } from '../notifications/notification-dispatcher.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { TopupWalletDto } from './dto/topup-wallet.dto';
+
+type TopupTicketRef = {
+  currency: string;
+  fxRateToPkr: Prisma.Decimal | number | string | null;
+} | null;
 
 @Injectable()
 export class WalletService {
@@ -82,14 +88,41 @@ export class WalletService {
     if (!dto.userId) {
       throw new BadRequestException('userId is required');
     }
-    await this.ensureUserExistsAndActive(dto.userId);
+    const user = await this.ensureUserExistsAndActive(dto.userId);
+
+    // When this top-up is a payment toward a specific ticket, look up its
+    // currency + stamped FX rate — the only inputs `resolveTopupAmount`
+    // needs to decide whether (and how) to convert.
+    let ticket: TopupTicketRef = null;
+    if (dto.ticketId) {
+      ticket = await this.prisma.ticket.findUnique({
+        where: { id: dto.ticketId },
+        select: { currency: true, fxRateToPkr: true },
+      });
+      if (!ticket) {
+        throw new NotFoundException('Ticket not found');
+      }
+    }
+
+    const { amount, pkrAmountEntered, fxRateToPkr } = this.resolveTopupAmount(
+      dto.amount,
+      dto.paymentMode,
+      ticket,
+    );
 
     const transaction = await this.prisma.walletTransaction.create({
       data: {
         userId: dto.userId,
-        amount: dto.amount,
+        amount,
         paymentMode: dto.paymentMode,
-        currency: dto.currency,
+        // Server-derived from the TARGET user, never the client (task 7):
+        // the dto no longer even carries a `currency` field, but the actual
+        // fix is deriving it here rather than trusting any client value —
+        // a staff-initiated top-up for a USD user must never be persisted
+        // as PKR just because a form's currency picker defaulted to PKR.
+        currency: user.currency,
+        pkrAmountEntered,
+        fxRateToPkr,
         status: 'PENDING_VERIFICATION',
         receiptUrl: dto.receiptUrl,
         ticketId: dto.ticketId ?? null,
@@ -657,10 +690,12 @@ export class WalletService {
     }
   }
 
-  private async ensureUserExistsAndActive(userId: string) {
+  private async ensureUserExistsAndActive(
+    userId: string,
+  ): Promise<{ currency: string }> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, isActive: true },
+      select: { id: true, isActive: true, currency: true },
     });
 
     if (!user) {
@@ -669,5 +704,54 @@ export class WalletService {
     if (!user.isActive) {
       throw new BadRequestException('User is not active');
     }
+    return { currency: user.currency };
+  }
+
+  /**
+   * Resolve the native-currency amount to credit for a top-up, applying the
+   * server-side FX conversion ONLY on a PKR rail (JazzCash/EasyPaisa) against
+   * a ticket billed in a non-PKR currency — the exact rail gating that used
+   * to live entirely client-side (`apps/web/lib/pay-amount.ts`). Every other
+   * case — no ticket attached, a PKR ticket, or BANK_TRANSFER on any ticket —
+   * is credited exactly as entered: no conversion, no rate dependency.
+   *
+   * Never falls back to a rate of 1 (see `convertToPkr` in `@wusuq/shared`):
+   * a null/invalid `fxRateToPkr` on a PKR-rail payment against a non-PKR
+   * ticket is REJECTED outright rather than credited unconverted, which
+   * would silently turn e.g. a wired "9975" into 9,975 USD-units instead of
+   * the $35 it actually represents.
+   */
+  private resolveTopupAmount(
+    enteredAmount: number,
+    paymentMode: PaymentMode,
+    ticket: TopupTicketRef,
+  ): {
+    amount: number;
+    pkrAmountEntered: number | null;
+    fxRateToPkr: number | null;
+  } {
+    const needsConversion =
+      ticket !== null && ticket.currency !== 'PKR' && isPkrRail(paymentMode);
+
+    if (!needsConversion) {
+      return {
+        amount: enteredAmount,
+        pkrAmountEntered: null,
+        fxRateToPkr: null,
+      };
+    }
+
+    const rate = Number(ticket.fxRateToPkr);
+    if (!Number.isFinite(rate) || rate <= 0) {
+      throw new BadRequestException(
+        'FX rate not set for this ticket — cannot convert a PKR payment.',
+      );
+    }
+
+    return {
+      amount: round2(enteredAmount / rate),
+      pkrAmountEntered: enteredAmount,
+      fxRateToPkr: rate,
+    };
   }
 }

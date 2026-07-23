@@ -226,10 +226,11 @@ export function FinanceBoard() {
         }
       }
 
+      // No `currency` field — the server derives it from the ticket, never
+      // the client (task 7).
       await apiClient.post(`/finance/${ticketId}/reconcile`, {
         amount,
         paymentMode: 'BANK_TRANSFER',
-        currency: 'PKR',
         ...(receiptUrl ? { receiptUrl } : {}),
       });
       setMessage('Payment reconciled');
@@ -476,11 +477,22 @@ export function FinanceBoard() {
                   />
                 </td>
                 <td className="px-6 py-4">
-                  {/* WalletTransaction has no fxRateToPkr column (unlike Ticket),
-                      so a non-PKR pending transaction can't be converted to its
-                      PKR equivalent here — formatStaffMoney correctly renders
-                      "(rate not set)" rather than a wrong number in that case. */}
+                  {/* A non-PKR transaction with no stamped rate can't be
+                      converted to its PKR equivalent here — formatStaffMoney
+                      correctly renders "(rate not set)" rather than a wrong
+                      number in that case. */}
                   <div className="text-sm font-bold text-slate-900">{formatStaffMoney(tx.amount, toCurrency(tx.currency))}</div>
+                  {tx.pkrAmountEntered != null && (
+                    // Task 7: the PKR figure the consumer actually wired on a
+                    // PKR-rail payment (JazzCash/EasyPaisa) against a non-PKR
+                    // ticket, plus the rate applied — so this reconciles
+                    // against the bank/wallet receipt, which is denominated
+                    // in PKR even though the credited `amount` above is not.
+                    <div className="text-xs text-slate-500 mt-0.5">
+                      PKR {Number(tx.pkrAmountEntered).toLocaleString()} submitted
+                      {tx.fxRateToPkr != null ? ` @ ${Number(tx.fxRateToPkr).toLocaleString()}` : ''}
+                    </div>
+                  )}
                   <div className="text-xs text-slate-500 mt-0.5">{tx.paymentMode.replace(/_/g, ' ')}</div>
                   <div className="text-xs text-slate-400 mt-0.5">{new Date(tx.createdAt).toLocaleDateString()}</div>
                 </td>

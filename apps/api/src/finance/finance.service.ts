@@ -270,7 +270,11 @@ export class FinanceService {
             ticketId,
             amount: dto.amount,
             paymentMode: dto.paymentMode,
-            currency: dto.currency ?? 'PKR',
+            // Task 7: the TICKET's own currency, never a client-supplied
+            // value (the DTO no longer even has one) or a bare 'PKR'
+            // default — a USD ticket's reconciled payment must not be
+            // mislabelled PKR.
+            currency: ticket.currency,
             status: 'VERIFIED',
             // Audit 1.11: this row pays a ticket — without the explicit type
             // it defaulted to TOPUP and the dashboard counted the money twice

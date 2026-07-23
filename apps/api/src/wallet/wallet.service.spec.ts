@@ -49,7 +49,6 @@ describe('WalletService.topup', () => {
         userId: 'missing',
         amount: 100,
         paymentMode: 'BANK_TRANSFER',
-        currency: 'PKR',
       }),
     ).rejects.toBeInstanceOf(NotFoundException);
     expect(prisma.walletTransaction.create).not.toHaveBeenCalled();
@@ -67,7 +66,6 @@ describe('WalletService.topup', () => {
         userId: 'u-1',
         amount: 100,
         paymentMode: 'BANK_TRANSFER',
-        currency: 'PKR',
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
   });
@@ -78,7 +76,6 @@ describe('WalletService.topup', () => {
       service.topup({
         amount: 100,
         paymentMode: 'BANK_TRANSFER',
-        currency: 'PKR',
       } as never),
     ).rejects.toBeInstanceOf(BadRequestException);
   });

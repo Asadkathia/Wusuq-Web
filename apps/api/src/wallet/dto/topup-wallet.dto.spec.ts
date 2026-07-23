@@ -13,7 +13,6 @@ describe('TopupWalletDto', () => {
       userId: 'user-1',
       amount: -5,
       paymentMode: 'BANK_TRANSFER',
-      currency: 'PKR',
     });
 
     const errors = validateSync(dto);
@@ -25,7 +24,6 @@ describe('TopupWalletDto', () => {
       userId: 'user-1',
       amount: '10.5',
       paymentMode: 'BANK_TRANSFER',
-      currency: 'PKR',
     });
 
     const errors = validateSync(dto);

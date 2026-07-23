@@ -28,11 +28,60 @@ describe('FinanceService', () => {
       service.reconcilePayment('ticket-1', {
         amount: 20,
         paymentMode: 'BANK_TRANSFER',
-        currency: 'PKR',
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
 
     expect(auditLogsService.create).not.toHaveBeenCalled();
+  });
+
+  it('stamps the TICKET currency on reconcile, never a bare PKR default (task 7)', async () => {
+    let capturedCreateData: Record<string, unknown> | null = null;
+    const tx = {
+      $queryRaw: jest.fn().mockResolvedValue([{ id: 'ticket-usd' }]),
+      ticket: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'ticket-usd',
+          consumerId: 'user-1',
+          totalAmount: 100,
+          amountPaid: 0,
+          serviceCost: 100,
+          status: 'UNPAID',
+          currency: 'USD',
+        }),
+        update: jest
+          .fn()
+          .mockImplementation((args: any) =>
+            Promise.resolve({ ...args.data, id: 'ticket-usd' }),
+          ),
+      },
+      walletTransaction: {
+        create: jest.fn().mockImplementation((args: any) => {
+          capturedCreateData = args.data as Record<string, unknown>;
+          return Promise.resolve({ id: 'txn-1', ...args.data });
+        }),
+      },
+    };
+    const prisma = {
+      $transaction: jest.fn(async (cb: (t: typeof tx) => Promise<unknown>) =>
+        cb(tx),
+      ),
+    };
+    const auditLogsService = { create: jest.fn().mockResolvedValue(undefined) };
+    const service = new FinanceService(
+      prisma as never,
+      auditLogsService as never,
+    );
+
+    // Deliberately no `currency` in the dto (the field no longer exists) —
+    // the server must derive it from the ticket, not default to 'PKR'.
+    await service.reconcilePayment('ticket-usd', {
+      amount: 20,
+      paymentMode: 'BANK_TRANSFER',
+    });
+
+    expect((capturedCreateData as Record<string, unknown>).currency).toBe(
+      'USD',
+    );
   });
 
   it('returns currency + fxRateToPkr on list items (USD ticket board rendering)', async () => {

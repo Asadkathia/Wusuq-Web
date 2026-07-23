@@ -11,9 +11,9 @@ export class ReconcilePaymentDto {
   @IsIn(PAYMENT_MODES)
   paymentMode!: (typeof PAYMENT_MODES)[number];
 
-  @IsOptional()
-  @IsString()
-  currency?: string;
+  // No `currency` field (task 7): the server derives it from the ticket
+  // being reconciled, never from the client. `main.ts`'s whitelist
+  // ValidationPipe strips a stray client value rather than 400ing.
 
   @IsOptional()
   @IsString()

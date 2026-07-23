@@ -515,6 +515,17 @@ model WalletTransaction {
   amount      Decimal
   paymentMode PaymentMode
   currency    String      @default("PKR")
+  /// The raw PKR figure the consumer/admin actually entered, persisted ONLY
+  /// when the server applied a PKR-rail conversion (a non-PKR ticket paid
+  /// via JazzCash/EasyPaisa — see WalletService.resolveTopupAmount). NULL
+  /// for every other case: no ticket, a PKR ticket, or BANK_TRANSFER (never
+  /// converted). Lets an admin reconcile `amount` (native currency) against
+  /// a PKR bank/wallet receipt instead of that figure being destroyed.
+  pkrAmountEntered Decimal?
+  /// The Ticket.fxRateToPkr rate used for that conversion, snapshotted
+  /// alongside pkrAmountEntered (same null-together contract) so a later
+  /// rate change never rewrites this transaction's history.
+  fxRateToPkr Decimal? @db.Decimal(18, 6)
   status      WalletTransactionStatus @default(PENDING_VERIFICATION)
   type        WalletTransactionType @default(TOPUP)
   receiptUrl  String?

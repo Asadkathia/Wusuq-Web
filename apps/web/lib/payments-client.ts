@@ -23,6 +23,13 @@ export interface PendingWalletTransaction {
   receiptUrl?: string | null;
   createdAt: string;
   note?: string | null;
+  // Task 7 reconciliation fields — set only when the server actually
+  // converted a PKR-rail payment (a non-PKR ticket paid via JazzCash/
+  // EasyPaisa). Lets the admin verification card show the wired PKR figure
+  // and rate alongside the credited native `amount`, instead of destroying
+  // it (the exact gap that used to show "$35" next to a "PKR 9,975" receipt).
+  pkrAmountEntered?: number | string | null;
+  fxRateToPkr?: number | string | null;
 }
 
 export interface WalletAdjustResponse {

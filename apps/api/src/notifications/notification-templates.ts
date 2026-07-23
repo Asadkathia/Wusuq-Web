@@ -1,3 +1,5 @@
+import { formatMoney, type Currency } from '@wusuq/shared';
+
 type Copy = { title: string; body: string };
 
 export const notificationTemplates = {
@@ -75,35 +77,47 @@ export const notificationTemplates = {
     title: `Payment received — ${batchNo}`,
     body: `Payment for ticket ${batchNo} has been confirmed.`,
   }),
-  walletTopupCreatedForConsumer: (amount: number): Copy => ({
+  walletTopupCreatedForConsumer: (
+    amount: number,
+    currency: Currency,
+  ): Copy => ({
     title: `Top-up submitted`,
-    body: `Your wallet top-up of PKR ${amount} is awaiting verification.`,
+    body: `Your wallet top-up of ${formatMoney(amount, currency)} is awaiting verification.`,
   }),
-  walletTopupCreatedForFinance: (amount: number): Copy => ({
+  walletTopupCreatedForFinance: (amount: number, currency: Currency): Copy => ({
     title: `Top-up awaiting verification`,
-    body: `A wallet top-up of PKR ${amount} needs review.`,
+    body: `A wallet top-up of ${formatMoney(amount, currency)} needs review.`,
   }),
   walletTopupDecidedForConsumer: (
     amount: number,
+    currency: Currency,
     decision: 'VERIFIED' | 'REJECTED',
   ): Copy => ({
     title: decision === 'VERIFIED' ? `Top-up approved` : `Top-up rejected`,
     body:
       decision === 'VERIFIED'
-        ? `Your wallet top-up of PKR ${amount} has been credited.`
-        : `Your wallet top-up of PKR ${amount} was rejected.`,
+        ? `Your wallet top-up of ${formatMoney(amount, currency)} has been credited.`
+        : `Your wallet top-up of ${formatMoney(amount, currency)} was rejected.`,
   }),
   walletReceiptUploadedForFinance: (): Copy => ({
     title: `Wallet receipt uploaded`,
     body: `A consumer uploaded a wallet payment receipt for review.`,
   }),
-  paymentSubmittedForConsumer: (batchNo: string, amount: number): Copy => ({
+  paymentSubmittedForConsumer: (
+    batchNo: string,
+    amount: number,
+    currency: Currency,
+  ): Copy => ({
     title: `Payment submitted — ${batchNo}`,
-    body: `Your payment of PKR ${amount} for ticket ${batchNo} is awaiting verification.`,
+    body: `Your payment of ${formatMoney(amount, currency)} for ticket ${batchNo} is awaiting verification.`,
   }),
-  paymentSubmittedForFinance: (batchNo: string, amount: number): Copy => ({
+  paymentSubmittedForFinance: (
+    batchNo: string,
+    amount: number,
+    currency: Currency,
+  ): Copy => ({
     title: `Ticket payment pending — ${batchNo}`,
-    body: `A payment of PKR ${amount} for ticket ${batchNo} needs review.`,
+    body: `A payment of ${formatMoney(amount, currency)} for ticket ${batchNo} needs review.`,
   }),
   paymentApprovedForConsumer: (batchNo: string): Copy => ({
     title: `Payment approved — ${batchNo}`,
@@ -113,9 +127,13 @@ export const notificationTemplates = {
     title: `Payment rejected — ${batchNo}`,
     body: `Your payment for ticket ${batchNo} was rejected. Please resubmit with a valid receipt.`,
   }),
-  paymentRemainderDueForConsumer: (batchNo: string, amount: number): Copy => ({
+  paymentRemainderDueForConsumer: (
+    batchNo: string,
+    amount: number,
+    currency: Currency,
+  ): Copy => ({
     title: `Final payment due — ${batchNo}`,
-    body: `The remaining balance of PKR ${amount} is due for ticket ${batchNo}. Please complete your payment to proceed.`,
+    body: `The remaining balance of ${formatMoney(amount, currency)} is due for ticket ${batchNo}. Please complete your payment to proceed.`,
   }),
   caseCreatedForConsumer: (caseRef: string): Copy => ({
     title: `Case opened — ${caseRef}`,

@@ -11,7 +11,7 @@ async function errs(obj: Record<string, unknown>) {
 }
 
 describe('TopupWalletDto (B5)', () => {
-  const okBase = { amount: 5000, paymentMode: 'JAZZ_CASH', currency: 'PKR' };
+  const okBase = { amount: 5000, paymentMode: 'JAZZ_CASH' };
   it('accepts an app-relative /wallet/receipt/<file> receiptUrl', async () => {
     expect(
       await errs({ ...okBase, receiptUrl: '/wallet/receipt/1783-abc.jpg' }),
