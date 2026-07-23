@@ -53,9 +53,12 @@ export function ExchangeRateBoard() {
       return;
     }
     try {
+      // Keys MUST match UpsertRateDto (fromCurrency/toCurrency) — the server
+      // whitelist strips `from`/`to`, which 400s "fromCurrency must be a
+      // string" and the rate never saves.
       await apiClient.post('/currency/rates', {
-        from: form.fromCurrency.toUpperCase().trim(),
-        to: form.toCurrency.toUpperCase().trim(),
+        fromCurrency: form.fromCurrency.toUpperCase().trim(),
+        toCurrency: form.toCurrency.toUpperCase().trim(),
         rate,
         effectiveAt: new Date(form.effectiveAt).toISOString(),
       });

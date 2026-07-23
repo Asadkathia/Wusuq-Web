@@ -15,6 +15,21 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Coerce a server error `message` into a single string. NestJS/class-validator
+ * returns `message` as a string[] on validation errors; ApiError.message is
+ * typed string and callers render it directly (e.g. `message.toLowerCase()`),
+ * so a raw array white-screens the page. Anything non-stringy falls back to a
+ * generic message.
+ */
+export function coerceErrorMessage(raw: unknown): string {
+  if (Array.isArray(raw)) {
+    const joined = raw.filter((m) => typeof m === 'string').join('; ');
+    return joined || 'An error occurred';
+  }
+  return typeof raw === 'string' && raw ? raw : 'An error occurred';
+}
+
 interface RequestOptions extends RequestInit {
   requireAuth?: boolean;
 }
@@ -122,8 +137,12 @@ export const apiClient = {
       } catch {
         errorData = { message: response.statusText };
       }
-      
-      throw new ApiError(response.status, errorData.message || 'An error occurred', errorData);
+
+      throw new ApiError(
+        response.status,
+        coerceErrorMessage((errorData as { message?: unknown })?.message),
+        errorData,
+      );
     }
 
     // Handle 204 No Content
