@@ -552,7 +552,14 @@ export function TicketDetailPanel({ ticketId, onClose, isClerkView = false, onCh
                       <ul className="space-y-2">
                         {docs.map((doc: any) => (
                           <li key={doc.id} className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2">
-                            <span className="text-sm text-slate-700 truncate">{doc.name}</span>
+                            <span className="flex items-center gap-2 min-w-0 truncate">
+                              <span className="text-sm text-slate-700 truncate">{doc.name}</span>
+                              {ticket?.dispatchProofUrl && doc.fileUrl === ticket.dispatchProofUrl && (
+                                <span className="flex-shrink-0 rounded-full bg-indigo-100 px-2 py-0.5 text-[11px] font-medium text-indigo-700">
+                                  TCS document
+                                </span>
+                              )}
+                            </span>
                             <div className="flex items-center gap-3 ml-2 flex-shrink-0">
                               <label className="flex items-center gap-1 text-xs text-slate-600">
                                 <input

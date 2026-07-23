@@ -348,6 +348,9 @@ function TicketCard({ ticket, onOpen }: { ticket: TicketRow; onOpen: () => void 
   const remaining = Math.max(0, total - paid);
   const isConsumerCreated = ticket.createdBy === 'CONSUMER';
   const isDelivered = ticket.status === 'DELIVERED';
+  // M1: a past hearing on a finished ticket isn't "next" — hide the stale chip
+  // once the ticket is COMPLETED/DELIVERED (scheduledDate is never cleared).
+  const isHearingDone = ticket.status === 'COMPLETED' || ticket.status === 'DELIVERED';
   const isFullyPaid = paid >= total && total > 0;
   const rgHref = isConsumerCreated ? regenerateHref(ticket, 'consumer') : null;
   // Plan B: "Download invoice" only renders once this ticket is actually on
@@ -377,6 +380,7 @@ function TicketCard({ ticket, onOpen }: { ticket: TicketRow; onOpen: () => void 
   const caseNo = payloadVal(p, ['case_petition_no', 'case_no', 'fir_no', 'doc_no']);
   const caseYear = payloadVal(p, ['case_year', 'year']);
   const caseTitle = payloadVal(p, ['case_title', 'title']);
+  const setType = payloadVal(p, ['set_type']);
   const courtName = payloadVal(p, ['select_court', 'select_court_type']);
   const flowLabel =
     ticket.intakeFlow && isFlowKey(ticket.intakeFlow) ? FLOW_LABELS[ticket.intakeFlow] : null;
@@ -454,6 +458,9 @@ function TicketCard({ ticket, onOpen }: { ticket: TicketRow; onOpen: () => void 
         {ticket.caseType ? (
           <span className="inline-flex items-center gap-1"><FileText className="h-3 w-3" />{ticket.caseType}</span>
         ) : null}
+        {setType ? (
+          <span className="inline-flex items-center gap-1"><FileText className="h-3 w-3" />{setType}</span>
+        ) : null}
         {flowLabel ? (
           <span className="inline-flex items-center gap-1">
             <Scale className="h-3 w-3" />{flowLabel}{categoryLabel ? ` · ${categoryLabel}` : ''}
@@ -506,12 +513,12 @@ function TicketCard({ ticket, onOpen }: { ticket: TicketRow; onOpen: () => void 
       ) : null}
 
       {/* Dates */}
-      {createdStr || hearingStr ? (
+      {createdStr || (hearingStr && !isHearingDone) ? (
         <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-400">
           {createdStr ? (
             <span className="inline-flex items-center gap-1"><CalendarDays className="h-3 w-3" />Created {createdStr}</span>
           ) : null}
-          {hearingStr ? (
+          {hearingStr && !isHearingDone ? (
             <span className="inline-flex items-center gap-1"><Clock className="h-3 w-3" />Hearing {hearingStr}</span>
           ) : null}
         </div>

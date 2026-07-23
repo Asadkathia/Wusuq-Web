@@ -2678,7 +2678,14 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
                     <ul className="space-y-1.5">
                       {finalizeDetail.documents.map((doc: any) => (
                         <li key={doc.id} className="flex items-center justify-between gap-2">
-                          <span className="truncate text-slate-700">{doc.name}</span>
+                          <span className="flex items-center gap-2 min-w-0 truncate">
+                            <span className="truncate text-slate-700">{doc.name}</span>
+                            {finalizeTicket?.dispatchProofUrl && doc.fileUrl === finalizeTicket.dispatchProofUrl && (
+                              <span className="flex-shrink-0 rounded-full bg-indigo-100 px-2 py-0.5 text-[11px] font-medium text-indigo-700">
+                                TCS document
+                              </span>
+                            )}
+                          </span>
                           <button
                             type="button"
                             onClick={() => viewTicketDocument(finalizeTicket.id, doc.id, doc.name)}

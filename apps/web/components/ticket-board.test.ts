@@ -66,3 +66,15 @@ it('renders the itemized clerk-earnings breakdown beneath the total', () => {
 it('skips zero lines in the itemized breakdown', () => {
   expect(src).toMatch(/\.filter\(\(\[, v\]\) => Number\(v\) > 0\)/);
 });
+
+describe('Review & Complete dialog (N1 — TCS/dispatch-proof document label)', () => {
+  it('flags the dispatch-proof document by comparing fileUrl to finalizeTicket.dispatchProofUrl', () => {
+    expect(src).toMatch(
+      /finalizeTicket\?\.dispatchProofUrl && doc\.fileUrl === finalizeTicket\.dispatchProofUrl/,
+    );
+  });
+
+  it('renders a "TCS document" label beside the flagged document', () => {
+    expect(src).toMatch(/TCS document/);
+  });
+});

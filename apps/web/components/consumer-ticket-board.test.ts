@@ -41,3 +41,34 @@ describe('consumer-ticket-board (Wusuq-earnings absence guard)', () => {
     expect(source).not.toMatch(/clerk(Attested|NonAttested|Printing|Delivery)Charges/);
   });
 });
+
+describe('TicketCard (M1 — stale "Next hearing" on finished tickets)', () => {
+  it('derives an isHearingDone flag gated on COMPLETED/DELIVERED', () => {
+    expect(source).toMatch(
+      /isHearingDone = ticket\.status === 'COMPLETED' \|\| ticket\.status === 'DELIVERED'/,
+    );
+  });
+
+  it('gates the rendered hearing chip on isHearingDone, not just hearingStr', () => {
+    // A bare `hearingStr ?` conditional (no isHearingDone) would render the
+    // stale chip forever on finished tickets — this must fail if that
+    // regression is reintroduced.
+    expect(source).toMatch(/hearingStr && !isHearingDone \?/);
+  });
+
+  it('the surrounding date-row conditional also accounts for isHearingDone', () => {
+    // Otherwise a finished ticket with no createdStr but a done hearing would
+    // still render an (now-empty) date row wrapper.
+    expect(source).toMatch(/createdStr \|\| \(hearingStr && !isHearingDone\)/);
+  });
+});
+
+describe('TicketCard (M3-card — set-type chip)', () => {
+  it('reads set_type from the payload via the existing payloadVal helper', () => {
+    expect(source).toMatch(/const setType = payloadVal\(p, \['set_type'\]\);/);
+  });
+
+  it('renders the set-type chip only when present', () => {
+    expect(source).toMatch(/\{setType \? \(/);
+  });
+});

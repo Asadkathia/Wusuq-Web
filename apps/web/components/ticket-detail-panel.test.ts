@@ -41,3 +41,15 @@ describe('ticket-detail-panel (clerk-earnings itemization)', () => {
     expect(source).toMatch(/\.join\('  \+  '\)/);
   });
 });
+
+describe('ticket-detail-panel (N1 — TCS/dispatch-proof document label)', () => {
+  it('flags the dispatch-proof document by comparing fileUrl to ticket.dispatchProofUrl', () => {
+    expect(source).toMatch(
+      /ticket\?\.dispatchProofUrl && doc\.fileUrl === ticket\.dispatchProofUrl/,
+    );
+  });
+
+  it('renders a "TCS document" label beside the flagged document', () => {
+    expect(source).toMatch(/TCS document/);
+  });
+});
