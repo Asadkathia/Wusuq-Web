@@ -73,10 +73,16 @@ export class CurrencyService {
    * Falls back to latest rate if no rate exists before `asOf`. Returns original amount if no rate found.
    */
   /**
-   * Convert a USD amount to PKR using the rate effective on or before `asOf` date.
-   * Used for overseas base costs stored in USD — multiply by USD→PKR rate.
+   * Convert a USD amount to PKR using the rate effective on or before `asOf`
+   * date, falling back to the latest rate if none precedes `asOf`. Returns
+   * **null** when no rate exists at all — callers MUST handle null and never
+   * treat the raw amount as converted (the same no-fallback rule as convert()/
+   * getRateToPkr(); returning the unconverted amount is how "Rs 35" happened).
    */
-  async convertUsdToPkrAtDate(usdAmount: number, asOf: Date): Promise<number> {
+  async convertUsdToPkrAtDate(
+    usdAmount: number,
+    asOf: Date,
+  ): Promise<number | null> {
     const rate = await this.prisma.exchangeRate.findFirst({
       where: {
         fromCurrency: 'USD',
@@ -88,14 +94,21 @@ export class CurrencyService {
 
     if (!rate) {
       const latest = await this.getLatestRate('USD', 'PKR');
-      if (!latest) return usdAmount;
+      if (!latest) return null;
       return Math.round(usdAmount * Number(latest.rate) * 100) / 100;
     }
 
     return Math.round(usdAmount * Number(rate.rate) * 100) / 100;
   }
 
-  async convertPkrToUsdAtDate(pkrAmount: number, asOf: Date): Promise<number> {
+  /**
+   * Convert a PKR amount to USD, same rate-resolution + null-on-no-rate contract
+   * as {@link convertUsdToPkrAtDate}. Never returns the raw amount unconverted.
+   */
+  async convertPkrToUsdAtDate(
+    pkrAmount: number,
+    asOf: Date,
+  ): Promise<number | null> {
     const rate = await this.prisma.exchangeRate.findFirst({
       where: {
         fromCurrency: 'PKR',
@@ -108,7 +121,7 @@ export class CurrencyService {
     if (!rate) {
       // fall back to latest rate
       const latest = await this.getLatestRate('PKR', 'USD');
-      if (!latest) return pkrAmount;
+      if (!latest) return null;
       return Math.round((pkrAmount / Number(latest.rate)) * 100) / 100;
     }
 
