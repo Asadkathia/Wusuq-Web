@@ -297,6 +297,13 @@ model Ticket {
   // spec 2026-05-04-cases-workflow-redesign-design.md). Optional: only
   // ticket types that involve a court appearance populate these.
   scheduledDate   DateTime?
+  /// The hearing date this ticket held BEFORE the clerk last moved it
+  /// (batch-4 D). `recordNextHearing` overwrites `scheduledDate`, which used
+  /// to destroy the prior date outright — the client's "the previous date got
+  /// erased". Rolled forward on every update so the detail view can show
+  /// Previous alongside Next. NULL until a clerk reschedules at least once;
+  /// the intake-time `payload.case_date` remains the fallback.
+  previousHearingDate DateTime?
   hearingType     String?
   outcome         String?
   nextDate        DateTime?

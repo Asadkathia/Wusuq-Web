@@ -357,6 +357,9 @@ export class TicketsService {
         createdBy: ticket.createdBy,
         remainderFinalizedAt: ticket.remainderFinalizedAt,
         scheduledDate: ticket.scheduledDate,
+        // Batch-4 D: the hearing this ticket held before the clerk last moved
+        // it, so the case card can show Previous alongside Next.
+        previousHearingDate: ticket.previousHearingDate,
         nextDate: ticket.nextDate,
         hearingType: ticket.hearingType,
         case: ticket.case ?? null,
@@ -373,6 +376,18 @@ export class TicketsService {
           : {
               clerkCost: ticket.clerkCost,
               defaultClerkCost: ticket.defaultClerkCost,
+              // The four clerk-submitted phase-2 snapshots. computeClerkEarnings
+              // caps each line at min(clerkSubmitted, adminFinal); when they are
+              // ABSENT it falls back to the final column ("no clerk submission
+              // recorded"), so omitting them here silently defeated the cap on
+              // every list-driven surface — the admin Review & Complete dialog
+              // showed the clerk's earnings tracking the admin's markup
+              // (500 → 550 → 600). Same class as fxRateToPkr above: the shared
+              // formula was right, the data never arrived.
+              clerkAttestedCharges: ticket.clerkAttestedCharges,
+              clerkNonAttestedCharges: ticket.clerkNonAttestedCharges,
+              clerkPrintingCharges: ticket.clerkPrintingCharges,
+              clerkDeliveryCharges: ticket.clerkDeliveryCharges,
               dispatchProofUrl: ticket.dispatchProofUrl,
               assignmentStatus: ticket.assignments[0]?.status ?? null,
             }),
@@ -3445,10 +3460,28 @@ export class TicketsService {
     // could overwrite another ticket's hearing data (staff are exempt). Mirrors
     // every sibling clerk mutation (submitClerkReceipt/dispatchDelivery/etc.).
     await this.ensureClerkActionAllowed(ticketId, actor);
+    // Batch-4 D: rolling the OUTGOING scheduledDate into previousHearingDate
+    // before overwriting it. Without this the prior hearing was destroyed on
+    // every reschedule ("the previous date got erased") and the detail view
+    // could only ever fall back to the intake-time payload.case_date. Only
+    // roll when the date actually moves, so a same-date re-submit (or an
+    // update that just sets hearingType) can't overwrite a real previous with
+    // the current one.
+    const existing = await this.prisma.ticket.findUnique({
+      where: { id: ticketId },
+      select: { scheduledDate: true },
+    });
+    const nextScheduled = new Date(dto.scheduledDate);
+    const movedAwayFrom =
+      existing?.scheduledDate &&
+      existing.scheduledDate.getTime() !== nextScheduled.getTime()
+        ? existing.scheduledDate
+        : undefined;
     const updated = await this.prisma.ticket.update({
       where: { id: ticketId },
       data: {
-        scheduledDate: new Date(dto.scheduledDate),
+        scheduledDate: nextScheduled,
+        ...(movedAwayFrom ? { previousHearingDate: movedAwayFrom } : {}),
         ...(dto.hearingType ? { hearingType: dto.hearingType } : {}),
       },
     });

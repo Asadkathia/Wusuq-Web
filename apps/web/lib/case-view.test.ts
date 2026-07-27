@@ -290,4 +290,40 @@ describe('buildCaseView', () => {
     const v2 = buildCaseView(lower, 'lower', { scheduledDate: '   ' });
     expect(v2.hearings!.next).toBe('2026-07-10');
   });
+  // ── Batch-4 D: previousHearingDate is authoritative for hearings.previous ──
+  // The clerk overwrites scheduledDate on every reschedule; the outgoing date
+  // is now rolled into Ticket.previousHearingDate so the case card can still
+  // show it. Client: "the previous date got erased."
+
+  it('hearings.previous prefers opts.previousHearingDate over payload.case_date', () => {
+    const v = buildCaseView(lower, 'lower', {
+      scheduledDate: '2026-07-30',
+      previousHearingDate: '2026-07-18',
+    });
+    expect(v.hearings).toEqual({ previous: '2026-07-18', next: '2026-07-30' });
+  });
+
+  it('hearings.previous falls back to payload.case_date when no clerk date exists', () => {
+    const v = buildCaseView(lower, 'lower', { scheduledDate: '2026-07-30' });
+    expect(v.hearings!.previous).toBe('2026-06-23');
+  });
+
+  it('hearings.previous falls back for null/blank previousHearingDate', () => {
+    expect(
+      buildCaseView(lower, 'lower', { previousHearingDate: null }).hearings!.previous,
+    ).toBe('2026-06-23');
+    expect(
+      buildCaseView(lower, 'lower', { previousHearingDate: '   ' }).hearings!.previous,
+    ).toBe('2026-06-23');
+  });
+
+  it('surfaces a rescheduled hearing pair even when the payload carries neither date', () => {
+    // A ticket whose intake never captured case_date/future_date still shows
+    // both hearings once the clerk has rescheduled at least once.
+    const v = buildCaseView({ case_status: 'Pending Case' }, 'lower', {
+      scheduledDate: '2026-07-31',
+      previousHearingDate: '2026-07-18',
+    });
+    expect(v.hearings).toEqual({ previous: '2026-07-18', next: '2026-07-31' });
+  });
 });

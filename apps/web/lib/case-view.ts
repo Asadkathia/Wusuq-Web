@@ -101,8 +101,15 @@ function benchOf(p: P): CaseView['bench'] {
   return { designation, judges: names, type };
 }
 
-function hearingsOf(p: P, opts?: { scheduledDate?: string | null }): CaseView['hearings'] {
-  const previous = val(p, 'case_date');
+function hearingsOf(
+  p: P,
+  opts?: { scheduledDate?: string | null; previousHearingDate?: string | null },
+): CaseView['hearings'] {
+  // Batch-4 D: a clerk-recorded previousHearingDate (the date this ticket held
+  // before the clerk last rescheduled) outranks the intake-time payload value,
+  // mirroring how scheduledDate outranks payload.future_date for `next`.
+  // Without it, rescheduling erased the previous hearing from the case card.
+  const previous = (opts?.previousHearingDate ?? '').trim() || val(p, 'case_date');
   const next = (opts?.scheduledDate ?? '').trim() || val(p, 'future_date');
   if (!previous && !next) return null;
   return { previous, next };
@@ -117,7 +124,7 @@ export function isCaseViewEmpty(view: CaseView): boolean {
 export function buildCaseView(
   payload: P,
   tier: CourtTier | null,
-  opts?: { scheduledDate?: string | null },
+  opts?: { scheduledDate?: string | null; previousHearingDate?: string | null },
 ): CaseView {
   const resolvedTier = tier ?? courtTierFromCourtType(payload?.select_court_type);
   const summary: Array<{ label: string; value: string }> = [];
