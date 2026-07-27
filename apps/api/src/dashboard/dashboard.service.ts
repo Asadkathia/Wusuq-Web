@@ -361,6 +361,7 @@ export class DashboardService {
     unconvertedCount: number;
   }> {
     const revenueRows = await this.prisma.ticket.findMany({
+      where: { archivedAt: null },
       select: {
         totalAmount: true,
         amountPaid: true,
@@ -400,6 +401,7 @@ export class DashboardService {
       where: {
         status: { notIn: ['DELIVERED'] },
         createdAt: { lt: thirtyDaysAgo },
+        archivedAt: null,
       },
       select: {
         totalAmount: true,
@@ -436,9 +438,11 @@ export class DashboardService {
     const prevStart = startOfDay(subDays(new Date(), days * 2 - 1));
     const prevEnd = startDate;
 
-    const totalTickets = await this.prisma.ticket.count();
+    const totalTickets = await this.prisma.ticket.count({
+      where: { archivedAt: null },
+    });
     const completedTickets = await this.prisma.ticket.count({
-      where: { status: 'COMPLETED' },
+      where: { status: 'COMPLETED', archivedAt: null },
     });
 
     const { totalRevenue, outstandingBalance, unconvertedCount } =
@@ -461,17 +465,27 @@ export class DashboardService {
       currRevenueAgg,
       prevRevenueAgg,
     ] = await Promise.all([
-      this.prisma.ticket.count({ where: { createdAt: { gte: startDate } } }),
       this.prisma.ticket.count({
-        where: { createdAt: { gte: prevStart, lt: prevEnd } },
+        where: { createdAt: { gte: startDate }, archivedAt: null },
       }),
       this.prisma.ticket.count({
-        where: { status: 'COMPLETED', updatedAt: { gte: startDate } },
+        where: {
+          createdAt: { gte: prevStart, lt: prevEnd },
+          archivedAt: null,
+        },
+      }),
+      this.prisma.ticket.count({
+        where: {
+          status: 'COMPLETED',
+          updatedAt: { gte: startDate },
+          archivedAt: null,
+        },
       }),
       this.prisma.ticket.count({
         where: {
           status: 'COMPLETED',
           updatedAt: { gte: prevStart, lt: prevEnd },
+          archivedAt: null,
         },
       }),
       // Audit 1.11: revenue = money applied to tickets, which is exactly the
@@ -514,6 +528,7 @@ export class DashboardService {
 
     const statusGroups = await this.prisma.ticket.groupBy({
       by: ['status'],
+      where: { archivedAt: null },
       _count: { _all: true },
     });
     const ticketsByStatus = statusGroups.map((g) => ({
@@ -523,7 +538,7 @@ export class DashboardService {
 
     // Fetch tickets in range for trend and mix
     const recentTickets = await this.prisma.ticket.findMany({
-      where: { createdAt: { gte: startDate } },
+      where: { createdAt: { gte: startDate }, archivedAt: null },
       select: {
         createdAt: true,
         serviceCity: true,
@@ -550,7 +565,11 @@ export class DashboardService {
 
     // Per-day completed tickets for KPI sparkline
     const completedInRange = await this.prisma.ticket.findMany({
-      where: { status: 'COMPLETED', updatedAt: { gte: startDate } },
+      where: {
+        status: 'COMPLETED',
+        updatedAt: { gte: startDate },
+        archivedAt: null,
+      },
       select: { updatedAt: true },
     });
     const completedTrendMap = new Map<string, number>();
@@ -634,25 +653,30 @@ export class DashboardService {
         orderBy: { createdAt: 'asc' },
         select: { createdAt: true },
       }),
-      this.prisma.ticket.count({ where: { status: 'UNPAID' } }),
+      this.prisma.ticket.count({
+        where: { status: 'UNPAID', archivedAt: null },
+      }),
       this.prisma.ticket.findFirst({
-        where: { status: 'UNPAID' },
+        where: { status: 'UNPAID', archivedAt: null },
         orderBy: { createdAt: 'asc' },
         select: { createdAt: true },
       }),
-      this.prisma.ticket.count({ where: { status: 'WAITING_APPROVAL' } }),
+      this.prisma.ticket.count({
+        where: { status: 'WAITING_APPROVAL', archivedAt: null },
+      }),
       this.prisma.ticket.findFirst({
-        where: { status: 'WAITING_APPROVAL' },
+        where: { status: 'WAITING_APPROVAL', archivedAt: null },
         orderBy: { updatedAt: 'asc' },
         select: { updatedAt: true },
       }),
       this.prisma.ticket.count({
-        where: { clerkApprovalStatus: 'SUBMITTED' },
+        where: { clerkApprovalStatus: 'SUBMITTED', archivedAt: null },
       }),
       this.prisma.ticket.count({
         where: {
           status: 'IN_PROGRESS',
           updatedAt: { lt: sevenDaysAgo },
+          archivedAt: null,
         },
       }),
       this.getAgedOutstandingKpi(thirtyDaysAgo),
@@ -779,6 +803,7 @@ export class DashboardService {
       where: {
         scheduledDate: { gte: todayStart, lte: todayEnd },
         caseId: { not: null },
+        archivedAt: null,
       },
       orderBy: { scheduledDate: 'asc' },
       take: 8,
