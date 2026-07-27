@@ -72,3 +72,20 @@ describe('TicketCard (M3-card — set-type chip)', () => {
     expect(source).toMatch(/\{setType \? \(/);
   });
 });
+
+describe('consumer-ticket-board (batch-4 C — future-tickets strip source)', () => {
+  it('gates and labels the strip on scheduledDate, not payload.future_date alone', () => {
+    // The clerk-recorded scheduledDate is authoritative. Reading future_date
+    // alone showed a stale date and hid the strip when intake left it blank.
+    expect(source).toMatch(
+      /const nextHearing =\s*String\(t\.scheduledDate \?\? ''\)\.trim\(\) \|\| \(payload\.future_date \?\? ''\)/,
+    );
+    expect(source).toMatch(/nextHearing !== ''/);
+    expect(source).toMatch(/nextHearingDate=\{nextHearing\}/);
+  });
+
+  it('no longer gates the strip on the raw future_date', () => {
+    expect(source).not.toMatch(/futureDate !== ''/);
+    expect(source).not.toMatch(/nextHearingDate=\{futureDate\}/);
+  });
+});

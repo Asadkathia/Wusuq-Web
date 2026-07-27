@@ -9,7 +9,9 @@ type Props = {
   ticketId: string;
   /** Source ticket's intake flow (judicial_case_files or _case_information). */
   flow: 'judicial_case_files' | 'judicial_case_information';
-  /** ISO-format next-hearing date from the source ticket's payload.future_date. */
+  /** ISO-format next hearing. Sourced from the ticket's clerk-recorded
+   *  `scheduledDate` (authoritative), falling back to the intake-time
+   *  `payload.future_date` only when no clerk date exists yet. */
   nextHearingDate: string;
   /** Workflow status of the source ticket. Drives subtext copy: completed
    *  tickets prompt "Order Future Tickets" (reorder for the next hearing);

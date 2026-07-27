@@ -309,15 +309,19 @@ function TicketList({
     <div className="grid gap-3 sm:grid-cols-2">
       {tickets.map((t) => {
         const payload = (t as { payload?: Record<string, string> | null }).payload ?? {};
-        const futureDate = payload.future_date ?? '';
-        // QA P6: the next-hearing CTA used to render only for COMPLETED
-        // tickets ("Order Future Tickets"). Consumers also want a hint on
-        // in-flight pending tickets so they can queue the next hearing's
-        // service without waiting for the current ticket to close. Same
-        // strip; the copy adapts to the workflow state inside the strip.
+        // Batch-4 C: the clerk-recorded `scheduledDate` is the AUTHORITATIVE
+        // next hearing; `payload.future_date` is only what the consumer typed
+        // at intake. Gating/labelling on future_date alone showed a STALE date
+        // (27 Jul while the clerk had moved the hearing to the 30th) and hid
+        // the strip entirely whenever that intake field was left blank — even
+        // though the ticket had a real next hearing. This is the same rule
+        // buildCaseView already applies on the detail view (WS-B/B3); the card
+        // strip was the one surface still on the dead payload key.
+        const nextHearing =
+          String(t.scheduledDate ?? '').trim() || (payload.future_date ?? '');
         const isPendingFlow =
           payload.case_status === 'Pending Case' &&
-          futureDate !== '' &&
+          nextHearing !== '' &&
           (t.intakeFlow === 'judicial_case_files' || t.intakeFlow === 'judicial_case_information');
         const showStrip = isPendingFlow;
         return (
@@ -327,7 +331,7 @@ function TicketList({
               <FutureTicketsStrip
                 ticketId={t.id}
                 flow={t.intakeFlow as 'judicial_case_files' | 'judicial_case_information'}
-                nextHearingDate={futureDate}
+                nextHearingDate={nextHearing}
                 ticketStatus={t.status}
               />
             )}
@@ -831,7 +835,7 @@ export function ConsumerTicketDetail({
         const view = buildCaseView(
           p as Record<string, string | undefined>,
           courtTierFromCourtType((p.select_court_type as string | undefined) ?? undefined),
-          { scheduledDate: ticket.scheduledDate },
+          { scheduledDate: ticket.scheduledDate, previousHearingDate: ticket.previousHearingDate },
         );
         if (isCaseViewEmpty(view)) return null;
         return (
