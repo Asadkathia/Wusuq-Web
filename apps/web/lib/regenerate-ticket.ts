@@ -35,3 +35,41 @@ export function buildRegeneratePayload(
   }
   return out;
 }
+
+/** Normalise an ISO timestamp (or yyyy-MM-dd) to the yyyy-MM-dd form the
+ *  wizard's date inputs expect; '' when unparseable. */
+function toDateInput(value: string | null | undefined): string {
+  const v = (value ?? '').trim();
+  if (!v) return '';
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * Overlay a ticket's AUTHORITATIVE hearing dates onto a copied payload.
+ *
+ * Batch-5 D: `Ticket.scheduledDate` (clerk-recorded next hearing) and
+ * `Ticket.previousHearingDate` outrank the intake-time `future_date` /
+ * `case_date` payload keys — the same precedence buildCaseView and the
+ * future-tickets strip already use. Copying formPayload alone left the
+ * regenerated ticket's "Next hearing date" blank whenever the clerk had
+ * recorded the hearing on the ticket instead of the consumer typing it at
+ * intake, which is the normal case and what the client demonstrated.
+ *
+ * Only overwrites when an authoritative value actually exists, so a ticket
+ * that was never rescheduled keeps whatever the payload carried.
+ */
+export function applyAuthoritativeHearingDates(
+  payload: Record<string, string>,
+  scheduledDate?: string | null,
+  previousHearingDate?: string | null,
+): Record<string, string> {
+  const next = toDateInput(scheduledDate);
+  const prev = toDateInput(previousHearingDate);
+  return {
+    ...payload,
+    ...(next ? { future_date: next } : {}),
+    ...(prev ? { case_date: prev } : {}),
+  };
+}

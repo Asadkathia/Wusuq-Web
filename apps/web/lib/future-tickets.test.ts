@@ -46,7 +46,12 @@ describe('buildFutureTicketsPayload', () => {
     expect(out.judge_designation).toBe('Sessions Judge');
   });
 
-  it('rolls the next hearing date forward into previous case date and clears the new next hearing', () => {
+  // Batch-5 D — DELIBERATE SEMANTIC CHANGE. This used to roll the source's
+  // future_date into case_date and clear future_date, on the assumption the
+  // hearing had already passed. But "Order Future Tickets" fires on an UPCOMING
+  // hearing ("Next hearing 12 Aug"), so the new ticket is FOR that hearing.
+  // Client: "the 12th, the upcoming one, should come here."
+  it('carries the hearing dates across: source next -> future_date, source previous -> case_date', () => {
     const out = buildFutureTicketsPayload({
       sourceTicketId: SOURCE_ID,
       sourcePayload: {
@@ -56,8 +61,41 @@ describe('buildFutureTicketsPayload', () => {
         case_status: 'Pending Case',
       },
     });
-    expect(out.case_date).toBe('2026-05-13');
-    expect(out.future_date).toBe('');
+    expect(out.future_date).toBe('2026-05-13');
+    expect(out.case_date).toBe('2026-04-10');
+  });
+
+  it("prefers the ticket's authoritative columns over the intake payload keys", () => {
+    // The clerk rescheduled on the ticket; the intake payload is stale. Reading
+    // only the payload keys is what left the date blank/stale for the client.
+    const out = buildFutureTicketsPayload({
+      sourceTicketId: SOURCE_ID,
+      sourcePayload: { case_date: '2026-04-10', future_date: '2026-05-13' },
+      sourceNextHearing: '2026-08-12T00:00:00.000Z',
+      sourcePreviousHearing: '2026-07-30T00:00:00.000Z',
+    });
+    expect(out.future_date).toBe('2026-08-12');
+    expect(out.case_date).toBe('2026-07-30');
+  });
+
+  it('fills the next hearing even when intake left future_date blank', () => {
+    const out = buildFutureTicketsPayload({
+      sourceTicketId: SOURCE_ID,
+      sourcePayload: { future_date: '' },
+      sourceNextHearing: '2026-08-12T00:00:00.000Z',
+    });
+    expect(out.future_date).toBe('2026-08-12');
+  });
+
+  it('falls back to the payload keys when the ticket carries no authoritative dates', () => {
+    const out = buildFutureTicketsPayload({
+      sourceTicketId: SOURCE_ID,
+      sourcePayload: { case_date: '2026-04-10', future_date: '2026-05-13' },
+      sourceNextHearing: null,
+      sourcePreviousHearing: null,
+    });
+    expect(out.future_date).toBe('2026-05-13');
+    expect(out.case_date).toBe('2026-04-10');
   });
 
   it('forces case_status back to Pending Case (a follow-up at next hearing is by definition still pending)', () => {

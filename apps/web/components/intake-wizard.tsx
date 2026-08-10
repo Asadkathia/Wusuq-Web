@@ -5,7 +5,7 @@ import { useMemo, useEffect, useState, useCallback, useRef, startTransition } fr
 import { useRouter, useSearchParams } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { buildFutureTicketsPayload } from '@/lib/future-tickets';
-import { buildRegeneratePayload } from '@/lib/regenerate-ticket';
+import { buildRegeneratePayload, applyAuthoritativeHearingDates } from '@/lib/regenerate-ticket';
 import { PanelCard } from '@/components/ui/panel-card';
 import { ChevronRight, CheckCircle2, FolderOpen, Pencil, Sparkles, X } from 'lucide-react';
 import type { IntakeFlow, IntakeStep, CourtTier } from '@/lib/intake-flows';
@@ -986,10 +986,23 @@ export function IntakeWizard({
         batchNo?: string;
         formPayload?: Record<string, string>;
         intakeFlow?: string;
+        scheduledDate?: string | null;
+        previousHearingDate?: string | null;
       }>(`/tickets/${encodeURIComponent(regenerateFromTicketId)}`)
       .then((source) => {
         if (!source?.formPayload) return;
-        const nextPayload = normalizeDraftPayload(buildRegeneratePayload(source.formPayload));
+        const nextPayload = normalizeDraftPayload(
+          // Batch-5 D: a regenerated ticket is the same case again, so carry the
+          // clerk-recorded hearing dates across. Copying formPayload alone left
+          // "Next hearing date" blank whenever the clerk had recorded the date on
+          // the ticket rather than the consumer typing it at intake — which is
+          // the normal case, and what the client demonstrated.
+          applyAuthoritativeHearingDates(
+            buildRegeneratePayload(source.formPayload),
+            source.scheduledDate,
+            source.previousHearingDate,
+          ),
+        );
         startTransition(() => {
           setDraft((current) => ({
             ...current,
@@ -1141,12 +1154,18 @@ export function IntakeWizard({
         batchNo?: string;
         formPayload?: Record<string, string>;
         intakeFlow?: string;
+        scheduledDate?: string | null;
+        previousHearingDate?: string | null;
       }>(`/tickets/${encodeURIComponent(futureFromTicketId)}`)
       .then((source) => {
         if (!source?.formPayload) return;
         const nextPayload = buildFutureTicketsPayload({
           sourceTicketId: source.id,
           sourcePayload: source.formPayload,
+          // Batch-5 D: the clerk-recorded dates are authoritative; the intake
+          // payload keys are only a fallback.
+          sourceNextHearing: source.scheduledDate,
+          sourcePreviousHearing: source.previousHearingDate,
         });
         // draft.step is 1-indexed (activeStep = displaySteps[draft.step - 1]).
         // For judicial flows, displaySteps.length === selectedFlow.steps.length

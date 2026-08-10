@@ -6,11 +6,19 @@
  * Rules:
  *   - Keep city, court, and case-identifier fields so the consumer
  *     doesn't re-enter known facts.
- *   - Roll dates forward: the source's `future_date` (the upcoming
- *     hearing at the time the original ticket was submitted, now in
- *     the past relative to today) becomes the new `case_date`
- *     (Previous case date). New `future_date` is empty — the consumer
- *     fills in the next-next hearing.
+ *   - Carry the hearing dates from the SOURCE TICKET's authoritative
+ *     columns (`scheduledDate` / `previousHearingDate`), falling back to
+ *     the intake-time payload keys. Batch-5 D: reading only
+ *     `payload.future_date` left the date blank whenever the clerk had
+ *     recorded the hearing on the ticket instead (the normal case), which
+ *     is what the client hit.
+ *   - The new ticket is FOR the upcoming hearing — clicking "Order Future
+ *     Tickets" on a "Next hearing 12 Aug" strip means "I need documents
+ *     for the 12th". So the source's NEXT hearing becomes the new
+ *     `future_date` (client: "the 12th, the upcoming one, should come
+ *     here"), and the source's PREVIOUS hearing becomes `case_date`.
+ *     This replaced an earlier roll-forward that assumed the hearing had
+ *     already passed and cleared `future_date`.
  *   - Reset `case_status` to "Pending Case" — a follow-up at the next
  *     hearing is by definition still pending.
  *   - Clear delivery preferences and document selections; the consumer
@@ -49,7 +57,24 @@ const CLEARED_KEYS = [
 export type FutureTicketsPrefillArgs = {
   sourceTicketId: string;
   sourcePayload: Record<string, string | undefined>;
+  /** Source ticket's clerk-recorded next hearing (`Ticket.scheduledDate`) —
+   *  authoritative over `payload.future_date`. */
+  sourceNextHearing?: string | null;
+  /** Source ticket's `Ticket.previousHearingDate` — authoritative over
+   *  `payload.case_date`. */
+  sourcePreviousHearing?: string | null;
 };
+
+/** Normalise an ISO timestamp (or yyyy-MM-dd) to the yyyy-MM-dd form the
+ *  wizard's date inputs expect. Returns '' for anything unparseable so the
+ *  caller's `||` fallback fires. */
+function toDateInput(value: string | null | undefined): string {
+  const v = (value ?? '').trim();
+  if (!v) return '';
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toISOString().slice(0, 10);
+}
 
 export function buildFutureTicketsPayload(
   args: FutureTicketsPrefillArgs,
@@ -64,10 +89,15 @@ export function buildFutureTicketsPayload(
     }
   }
 
-  // 2. Roll dates forward.
-  const sourceFuture = args.sourcePayload.future_date ?? '';
-  out.case_date = sourceFuture;
-  out.future_date = '';
+  // 2. Hearing dates, from the ticket's authoritative columns first.
+  //    `toDateInput` keeps the wizard's yyyy-MM-dd <input type="date"> happy
+  //    when the source is a full ISO timestamp.
+  const nextHearing =
+    toDateInput(args.sourceNextHearing) || (args.sourcePayload.future_date ?? '');
+  const prevHearing =
+    toDateInput(args.sourcePreviousHearing) || (args.sourcePayload.case_date ?? '');
+  out.case_date = prevHearing;
+  out.future_date = nextHearing;
 
   // 3. Reset case status.
   out.case_status = 'Pending Case';
