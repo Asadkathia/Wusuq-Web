@@ -2,7 +2,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { startTransition, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ArrowRight,
@@ -342,8 +342,16 @@ function TicketList({
   );
 }
 
+// Batch-5 E1: "Pay later" used to only fire a toast and leave the consumer
+// staring at the same screen — client: "when hit pay later this page should
+// move to pending tickets or dashboard". The /pay page already navigated; the
+// card + detail-drawer buttons did not. Send them to their unpaid list, which
+// is exactly where the deferred amount now shows.
+const PAY_LATER_DESTINATION = '/consumer/my-tickets?filter=unpaid';
+
 function TicketCard({ ticket, onOpen }: { ticket: TicketRow; onOpen: () => void }) {
   const toast = useToast();
+  const router = useRouter();
   const [invoiceBusy, setInvoiceBusy] = useState(false);
   const total = Number(ticket.totalAmount ?? 0);
   const paid = Number(ticket.amountPaid ?? 0);
@@ -597,6 +605,7 @@ function TicketCard({ ticket, onOpen }: { ticket: TicketRow; onOpen: () => void 
                   `${money(remaining, currency)} added to your wallet as due`,
                   'Pay anytime from My Wallet — your ticket is released for processing once paid.',
                 );
+                router.push(PAY_LATER_DESTINATION);
               }}
             >
               Pay later
@@ -688,6 +697,7 @@ export function ConsumerTicketDetail({
   ticketId: string;
   showHeader?: boolean;
 }) {
+  const router = useRouter();
   const [ticket, setTicket] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [previewDoc, setPreviewDoc] = useState<{ url: string; name: string } | null>(null);
@@ -1024,12 +1034,13 @@ export function ConsumerTicketDetail({
             <Button
               variant="secondary"
               size="sm"
-              onClick={() =>
+              onClick={() => {
                 toast.info(
                   `${money(remaining, currency)} added to your wallet as due`,
                   'Pay anytime from My Wallet — your ticket is released for processing once paid.',
-                )
-              }
+                );
+                router.push(PAY_LATER_DESTINATION);
+              }}
             >
               Pay later
             </Button>
@@ -1044,12 +1055,13 @@ export function ConsumerTicketDetail({
           <Button
             variant="secondary"
             size="sm"
-            onClick={() =>
+            onClick={() => {
               toast.info(
                 `${money(remaining, currency)} added to your wallet as due`,
                 'Pay anytime from My Wallet — your ticket is released for processing once paid.',
-              )
-            }
+              );
+              router.push(PAY_LATER_DESTINATION);
+            }}
           >
             Pay later
           </Button>

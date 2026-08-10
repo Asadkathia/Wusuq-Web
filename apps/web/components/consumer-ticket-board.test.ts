@@ -89,3 +89,16 @@ describe('consumer-ticket-board (batch-4 C — future-tickets strip source)', ()
     expect(source).not.toMatch(/nextHearingDate=\{futureDate\}/);
   });
 });
+
+describe('consumer-ticket-board (batch-5 E1 — Pay later navigates away)', () => {
+  it('sends the consumer to their unpaid list after deferring payment', () => {
+    // Client: "when hit pay later this page should move to pending tickets or
+    // dashboard". The /pay page already navigated; the card + detail-drawer
+    // buttons only fired a toast and left the user where they were.
+    expect(source).toMatch(
+      /const PAY_LATER_DESTINATION = '\/consumer\/my-tickets\?filter=unpaid'/,
+    );
+    // All three Pay later buttons (card + two detail-drawer sites) navigate.
+    expect(source.match(/router\.push\(PAY_LATER_DESTINATION\)/g)).toHaveLength(3);
+  });
+});
