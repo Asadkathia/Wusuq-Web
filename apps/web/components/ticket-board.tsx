@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { TicketStatus } from '@wusuq/shared';
-import { chargeCapabilitiesFor, computeClerkEarningsBreakdown, computeTicketTotal, computeWusuqMargin, formatStaffMoney, toCurrency } from '@wusuq/shared';
+import { chargeCapabilitiesFor, computeClerkEarningsBreakdown, computeTicketTotal, computeWusuqMarginPkr, formatStaffMoney, toCurrency } from '@wusuq/shared';
 import { TICKET_STATUSES } from '@wusuq/shared';
 import { apiClient } from '@/lib/api-client';
 import { relativeTime } from '@/lib/relative-time';
@@ -2602,7 +2602,15 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
                     wantPdf,
                   );
                   const earnings = b.total;
-                  const wusuqEarnings = computeWusuqMargin(finalizeTotal, earnings);
+                  // Batch-5 A: margin subtracts PKR clerk pay from the ticket
+                  // total, which may be USD — convert the total to PKR first or
+                  // every USD ticket renders a negative margin.
+                  const wusuqEarnings = computeWusuqMarginPkr(
+                    finalizeTotal,
+                    toCurrency(finalizeTicket.currency),
+                    finalizeTicket.fxRateToPkr,
+                    earnings,
+                  );
                   return (
                     <>
                       <div className="rounded-lg bg-slate-50 px-4 py-3 text-sm text-slate-700">
@@ -2645,7 +2653,7 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
                       <div className="rounded-lg border border-indigo-100 bg-indigo-50 px-4 py-3 text-sm">
                         <div className="flex items-center justify-between">
                           <span className="font-medium text-indigo-800">Wusuq earnings</span>
-                          <span className="font-semibold text-indigo-900">PKR {wusuqEarnings.toLocaleString()}</span>
+                          <span className="font-semibold text-indigo-900">{wusuqEarnings === null ? 'PKR — (rate not set)' : `PKR ${wusuqEarnings.toLocaleString()}`}</span>
                         </div>
                         <p className="mt-0.5 text-xs text-indigo-700">Total minus clerk earnings (internal only)</p>
                       </div>

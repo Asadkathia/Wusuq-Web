@@ -9,7 +9,7 @@ import {
   FLOW_LABELS,
   courtTierFromCourtType,
   computeClerkEarningsBreakdown,
-  computeWusuqMargin,
+  computeWusuqMarginPkr,
   formatStaffMoney,
   toCurrency,
 } from '@wusuq/shared';
@@ -360,7 +360,16 @@ export function TicketDetailPanel({ ticketId, onClose, isClerkView = false, onCh
                       ];
                       const clerkBreakdown = computeClerkEarningsBreakdown({ ...ticket, wantPdf });
                       const clerkEarnings = clerkBreakdown.total;
-                      const wusuqEarnings = computeWusuqMargin(customerTotal, clerkEarnings);
+                      // Batch-5 A: the margin is a subtraction ACROSS currencies —
+                      // customerTotal is in the ticket's currency, clerkEarnings is
+                      // always PKR. Subtracting raw made every USD ticket negative
+                      // (a $50 ticket showed PKR -2,325 instead of PKR 11,875).
+                      const wusuqEarnings = computeWusuqMarginPkr(
+                        customerTotal,
+                        toCurrency(ticket.currency),
+                        ticket.fxRateToPkr,
+                        clerkEarnings,
+                      );
                       return (
                         <div className="space-y-2 text-sm">
                           {chargeRows.filter(([, val]) => val !== null && val !== undefined && Number(val) !== 0).map(([label, val]) => (
@@ -371,11 +380,13 @@ export function TicketDetailPanel({ ticketId, onClose, isClerkView = false, onCh
                               </span>
                             </div>
                           ))}
-                          {/* Clerk earnings + the Wusuq-margin line below stay literal
-                              PKR, unconverted — clerk pay-outs (and the margin derived
-                              from them) are domestic regardless of the consumer's
-                              billing currency. Do not run these through
-                              formatStaffMoney in a later sweep. */}
+                          {/* Clerk earnings stay literal PKR, unconverted — clerk pay-outs
+                              are domestic regardless of the consumer's billing currency.
+                              Do not run this through formatStaffMoney in a later sweep.
+                              The Wusuq-margin line below is ALSO PKR, but it is derived
+                              by subtracting PKR clerk pay from the ticket total, which
+                              may be USD — so it goes through computeWusuqMarginPkr,
+                              which converts the total FIRST (batch-5 A). */}
                           {clerkEarnings > 0 && (
                             <div className="border-b border-dashed border-amber-200 pb-1.5">
                               <div className="flex justify-between text-amber-800">
@@ -399,7 +410,11 @@ export function TicketDetailPanel({ ticketId, onClose, isClerkView = false, onCh
                           )}
                           <div className="flex justify-between border-b border-dashed border-emerald-200 pb-1.5 text-emerald-800">
                             <span className="font-medium">Wusuq earnings</span>
-                            <span className="font-semibold">PKR {wusuqEarnings.toLocaleString()}</span>
+                            <span className="font-semibold">
+                              {wusuqEarnings === null
+                                ? 'PKR — (rate not set)'
+                                : `PKR ${wusuqEarnings.toLocaleString()}`}
+                            </span>
                           </div>
                           <div className="flex justify-between pt-1 font-semibold text-slate-900">
                             <span>Total</span>

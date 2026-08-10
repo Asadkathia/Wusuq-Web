@@ -1032,12 +1032,42 @@ export function computeClerkEarnings(t: ClerkEarningsInput): number {
  * Wusuq's internal margin on a ticket: the total the consumer was charged
  * minus the total paid out to the clerk ({@link computeClerkEarnings}).
  * Staff/admin-only — never surfaced to consumers.
+ *
+ * SAME-CURRENCY ONLY. Both operands must already be in the same currency —
+ * use {@link computeWusuqMarginPkr} for anything that can be a USD ticket.
  */
 export function computeWusuqMargin(
   totalAmount: number,
   clerkEarnings: number,
 ): number {
   return round2(totalAmount - clerkEarnings);
+}
+
+/**
+ * Wusuq's margin expressed in PKR, for a ticket billed in any currency.
+ *
+ * The margin is a subtraction ACROSS currencies: the consumer total is in the
+ * ticket's own currency, while clerk pay is ALWAYS PKR (payouts are domestic
+ * regardless of what the consumer was billed). Subtracting them raw produced a
+ * negative margin on every USD ticket — a $50 ticket with PKR 2,375 of clerk
+ * pay rendered "PKR -2,325" instead of the correct PKR 11,875 (50 x 285 rate,
+ * minus 2,375). Convert the total to PKR FIRST, then subtract.
+ *
+ * Returns **null** when a non-PKR ticket has no usable stamped rate, so callers
+ * render the same "(rate not set)" marker `formatStaffMoney` uses rather than a
+ * confidently wrong number. Never falls back to an unconverted total.
+ */
+export function computeWusuqMarginPkr(
+  totalAmount: number | string | null | undefined,
+  currency: Currency,
+  fxRateToPkr: number | string | null | undefined,
+  clerkEarningsPkr: number,
+): number | null {
+  const total = Number(totalAmount ?? 0) || 0;
+  if (currency === 'PKR') return round2(total - clerkEarningsPkr);
+  const totalPkr = convertToPkr(total, fxRateToPkr);
+  if (totalPkr === null) return null;
+  return round2(totalPkr - clerkEarningsPkr);
 }
 
 /** Resolver input shape produced by {@link buildPricingResolveInput}. */
