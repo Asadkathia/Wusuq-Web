@@ -1690,6 +1690,28 @@ export class TicketsService {
         where: { id: { in: dto.ticketIds }, archivedAt: null },
         data: { archivedAt: new Date() },
       });
+      // Batch-5 B: archiving a ticket must take its notifications with it.
+      // The bell kept showing "Service completed / Final payment due" for a
+      // ticket the user had deleted. Notification has no ticket FK — the link
+      // is metadata.ticketId (written by every dispatcher method) — so this is
+      // a targeted delete rather than a cascade. Notifications are derived
+      // messages, not records of money, so removing them loses nothing:
+      // the AuditLog + TicketStatusHistory trail is untouched.
+      // try/catch, not .catch(): a synchronous throw here (as when a partial
+      // mock lacks the model) would bypass a promise handler and take the
+      // whole archive down with it. Cleaning up notifications is best-effort —
+      // it must never block the ticket from being archived.
+      try {
+        await this.prisma.notification.deleteMany({
+          where: {
+            OR: dto.ticketIds.map((id) => ({
+              metadata: { path: ['ticketId'], equals: id },
+            })),
+          },
+        });
+      } catch {
+        // swallowed by design — see above
+      }
     }
 
     if (dto.action === 'restore') {

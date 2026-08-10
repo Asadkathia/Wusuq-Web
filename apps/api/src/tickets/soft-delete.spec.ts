@@ -22,6 +22,10 @@ describe('ticket soft delete (audit 4.2)', () => {
     const deleteMany = jest.fn();
     const prisma = {
       ticket: { updateMany, deleteMany },
+      // Archiving also clears the tickets' notifications (batch-5 B) — model it
+      // here so this spec exercises the real code path rather than passing on a
+      // swallowed error.
+      notification: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
     };
     const service = new TicketsService(
       prisma as never,

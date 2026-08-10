@@ -747,6 +747,9 @@ export class DashboardService {
         id: true,
         createdAt: true,
         tickets: {
+          // Batch-5 B: an archived ticket must not keep driving a case's
+          // recommendation — it's deleted as far as the user is concerned.
+          where: { archivedAt: null },
           select: {
             status: true,
             intakeFlow: true,
@@ -834,6 +837,12 @@ export class DashboardService {
         ticket: {
           status: 'COMPLETED',
           updatedAt: { gte: startDate },
+          // Batch-5 B: reach the ticket through the relation filter, so an
+          // archived ticket stops counting toward a clerk's completed tally.
+          // Client: "ticket 0 hy to clerks ki tickets kesy ho sakti hy" — with
+          // every ticket deleted, Top Paralegals still showed Abbas Ali 1 /
+          // Bilal 1.
+          archivedAt: null,
         },
       },
       _count: { _all: true },
