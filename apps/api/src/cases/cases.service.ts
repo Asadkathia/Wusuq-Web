@@ -115,8 +115,13 @@ export class CasesService {
         orderBy: { createdAt: 'desc' },
         include: {
           consumer: { select: { id: true, name: true } },
-          _count: { select: { tickets: true } },
+          // Batch-5 B: an archived ticket is deleted as far as the user is
+          // concerned, so it must neither be counted nor drive a case's
+          // recommended next steps. Both the count and the relation load need
+          // the filter — the count is its own query and ignores the sibling's.
+          _count: { select: { tickets: { where: { archivedAt: null } } } },
           tickets: {
+            where: { archivedAt: null },
             select: {
               status: true,
               intakeFlow: true,
@@ -743,7 +748,9 @@ export class CasesService {
     await this.findOne(caseId, caller);
 
     const tickets = await this.prisma.ticket.findMany({
-      where: { caseId },
+      // Batch-5 B: same rule as the list query above — an archived ticket must
+      // not keep satisfying (or blocking) a recommendation.
+      where: { caseId, archivedAt: null },
       select: {
         intakeFlow: true,
         status: true,
