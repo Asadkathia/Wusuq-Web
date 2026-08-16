@@ -26,6 +26,7 @@
  *   - Stamp `parent_ticket_id` for staff-side backlinking. Pure JSON
  *     metadata, no schema change.
  */
+import { toDateInput } from './hearing-date';
 
 const COPIED_KEYS = [
   'city',
@@ -64,17 +65,6 @@ export type FutureTicketsPrefillArgs = {
    *  `payload.case_date`. */
   sourcePreviousHearing?: string | null;
 };
-
-/** Normalise an ISO timestamp (or yyyy-MM-dd) to the yyyy-MM-dd form the
- *  wizard's date inputs expect. Returns '' for anything unparseable so the
- *  caller's `||` fallback fires. */
-function toDateInput(value: string | null | undefined): string {
-  const v = (value ?? '').trim();
-  if (!v) return '';
-  const d = new Date(v);
-  if (Number.isNaN(d.getTime())) return '';
-  return d.toISOString().slice(0, 10);
-}
 
 export function buildFutureTicketsPayload(
   args: FutureTicketsPrefillArgs,

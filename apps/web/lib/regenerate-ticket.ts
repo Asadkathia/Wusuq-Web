@@ -14,6 +14,7 @@
  * regenerate path stamps its own `regeneratedFromTicketId` on the created
  * ticket via the intake POST body instead.
  */
+import { toDateInput } from './hearing-date';
 
 /** Keys that are internal lineage stamps, not form data. */
 const INTERNAL_KEYS: ReadonlySet<string> = new Set(['parent_ticket_id']);
@@ -34,16 +35,6 @@ export function buildRegeneratePayload(
     }
   }
   return out;
-}
-
-/** Normalise an ISO timestamp (or yyyy-MM-dd) to the yyyy-MM-dd form the
- *  wizard's date inputs expect; '' when unparseable. */
-function toDateInput(value: string | null | undefined): string {
-  const v = (value ?? '').trim();
-  if (!v) return '';
-  const d = new Date(v);
-  if (Number.isNaN(d.getTime())) return '';
-  return d.toISOString().slice(0, 10);
 }
 
 /**
