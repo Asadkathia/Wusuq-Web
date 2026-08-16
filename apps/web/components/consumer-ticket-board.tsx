@@ -345,9 +345,19 @@ function TicketList({
 // Batch-5 E1: "Pay later" used to only fire a toast and leave the consumer
 // staring at the same screen — client: "when hit pay later this page should
 // move to pending tickets or dashboard". The /pay page already navigated; the
-// card + detail-drawer buttons did not. Send them to their unpaid list, which
-// is exactly where the deferred amount now shows.
-const PAY_LATER_DESTINATION = '/consumer/my-tickets?filter=unpaid';
+// card + detail-drawer buttons did not.
+//
+// MUST be a route these buttons are never already on. They render inside
+// ConsumerTicketBoard on /consumer/my-tickets, and a same-route router.push
+// re-renders WITHOUT remounting — `tab` is seeded from the query once via
+// useState, so a `?filter=…` push would leave the tab unchanged and the detail
+// drawer open, i.e. exactly the do-nothing the client reported. /consumer/
+// my-tickets?filter=unpaid also filters on status === 'UNPAID', which a
+// "Final payment due" ticket (WAITING_APPROVAL / COMPLETED) never is — it
+// would land them on a list that structurally cannot contain their ticket.
+// The dashboard is one of the two destinations the client named and is where
+// the existing /pay page already sends them, so all four paths now agree.
+const PAY_LATER_DESTINATION = '/consumer/dashboard';
 
 function TicketCard({ ticket, onOpen }: { ticket: TicketRow; onOpen: () => void }) {
   const toast = useToast();

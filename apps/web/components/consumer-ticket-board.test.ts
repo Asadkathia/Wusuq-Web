@@ -91,14 +91,21 @@ describe('consumer-ticket-board (batch-4 C — future-tickets strip source)', ()
 });
 
 describe('consumer-ticket-board (batch-5 E1 — Pay later navigates away)', () => {
-  it('sends the consumer to their unpaid list after deferring payment', () => {
+  it('sends the consumer to the dashboard after deferring payment', () => {
     // Client: "when hit pay later this page should move to pending tickets or
     // dashboard". The /pay page already navigated; the card + detail-drawer
     // buttons only fired a toast and left the user where they were.
-    expect(source).toMatch(
-      /const PAY_LATER_DESTINATION = '\/consumer\/my-tickets\?filter=unpaid'/,
-    );
+    expect(source).toMatch(/const PAY_LATER_DESTINATION = '\/consumer\/dashboard'/);
     // All three Pay later buttons (card + two detail-drawer sites) navigate.
     expect(source.match(/router\.push\(PAY_LATER_DESTINATION\)/g)).toHaveLength(3);
+  });
+
+  it('never points Pay later back at the board that renders it', () => {
+    // These buttons live inside ConsumerTicketBoard, which IS /consumer/
+    // my-tickets. A same-route push re-renders without remounting, so `tab`
+    // (seeded from the query once via useState) would not change and the
+    // detail drawer would stay open — the exact do-nothing being fixed.
+    // Regression guard: this was the first attempt at the fix.
+    expect(source).not.toMatch(/PAY_LATER_DESTINATION = '\/consumer\/my-tickets/);
   });
 });
