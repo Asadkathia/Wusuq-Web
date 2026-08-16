@@ -2436,7 +2436,21 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
             <DialogDescription>Verify the clerk&rsquo;s submission, finalize any phase-2 charges, and complete the ticket. Digital services are delivered automatically once fully paid.</DialogDescription>
           </DialogHeader>
           {finalizeTicket && (() => {
-            const caps = chargeCapabilitiesFor(finalizeTicket.intakeFlow);
+            // Currency is REQUIRED here: this is a charge-COMPUTING site, and
+            // USD orders are an all-inclusive flat price with no phase-2
+            // remainder (chargeCapabilitiesFor → NO_CHARGES). Omitting it let a
+            // USD Case-Files ticket fold PKR-magnitude printing/attested/
+            // delivery amounts into a USD serviceCost ($50 + 3000 = 3050), so
+            // the dialog disagreed with what finalizeRemainderCore actually
+            // persists (the server DOES pass currency). Batch-5 A then
+            // multiplied that corrupted total by fxRateToPkr, rendering a
+            // ~PKR 869,250 "Wusuq earnings" on a $50 ticket. The `.delivery`
+            // WORKFLOW checks above stay flow-based on purpose — a USD physical
+            // ticket is still dispatched; only the money is flat.
+            const caps = chargeCapabilitiesFor(
+              finalizeTicket.intakeFlow,
+              toCurrency(finalizeTicket.currency),
+            );
             const hasAnyCap = caps.attestation || caps.printing || caps.delivery || caps.pdf;
             // PDF purchased → the clerk earns their PDF cut (shared formula).
             const wantPdf =
