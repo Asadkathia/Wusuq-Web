@@ -2293,11 +2293,21 @@ describe('generateNextHearing (Task 1.3)', () => {
     expect(data?.consumerId).toBe('consumer-1');
   });
 
-  it('seeds scheduledDate as case_date in the new payload', async () => {
+  // Batch-5 D — DELIBERATE SEMANTIC CHANGE (this test used to assert
+  // `case_date === '2026-09-15'`). The parent's scheduledDate is its UPCOMING
+  // hearing, and the new ticket is FOR that hearing, so it belongs in
+  // `future_date`, not `case_date`. Writing it to `case_date` claimed the
+  // upcoming hearing had already happened — the behaviour the client reported
+  // as wrong ("the 12th, the upcoming one, should come here"). Matches the
+  // consumer-side buildFutureTicketsPayload, which this method is the twin of.
+  it('seeds scheduledDate as future_date in the new payload', async () => {
     const { service, created } = buildService(baseParent);
     await service.generateNextHearing('tkt-parent', { actorUserId: 'admin-1' });
     const payload = created[0]?.data.formPayload as Record<string, unknown>;
-    expect(payload?.case_date).toBe('2026-09-15');
+    expect(payload?.future_date).toBe('2026-09-15');
+    // This parent was never rescheduled (no previousHearingDate) and case_date
+    // is not a copied key, so there is nothing truthful to seed it with.
+    expect(payload?.case_date).toBeUndefined();
     expect(payload?.case_status).toBe('Pending Case');
     expect(payload?.parent_ticket_id).toBe('tkt-parent');
   });

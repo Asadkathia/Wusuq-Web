@@ -1694,13 +1694,25 @@ export class TicketsService {
       // The bell kept showing "Service completed / Final payment due" for a
       // ticket the user had deleted. Notification has no ticket FK — the link
       // is metadata.ticketId (written by every dispatcher method) — so this is
-      // a targeted delete rather than a cascade. Notifications are derived
-      // messages, not records of money, so removing them loses nothing:
-      // the AuditLog + TicketStatusHistory trail is untouched.
+      // a targeted delete rather than a cascade.
+      //
+      // Notifications are derived MESSAGES, not the money records themselves:
+      // the Payment / WalletTransaction / AuditLog / TicketStatusHistory rows
+      // are all untouched. Note this DOES sweep up payment-related bells
+      // (notification-dispatcher stamps metadata.ticketId on PAYMENT_SUBMITTED
+      // too) — that's intended, since a ticket the user deleted should not keep
+      // announcing its payments, and the ledger still holds the transaction.
+      //
+      // Deliberately IRREVERSIBLE: the 'restore' branch below does not bring
+      // notifications back. Restoring a ticket returns it to the lists and
+      // money flows; its past bell history stays gone. Accepted — bells are
+      // ephemeral UI, and re-synthesising them would fabricate timestamps.
+      //
       // try/catch, not .catch(): a synchronous throw here (as when a partial
       // mock lacks the model) would bypass a promise handler and take the
       // whole archive down with it. Cleaning up notifications is best-effort —
-      // it must never block the ticket from being archived.
+      // it must never block the ticket from being archived — but it is LOGGED,
+      // so a silently-failing cleanup can't masquerade as a working one.
       try {
         await this.prisma.notification.deleteMany({
           where: {
@@ -1709,8 +1721,12 @@ export class TicketsService {
             })),
           },
         });
-      } catch {
-        // swallowed by design — see above
+      } catch (err) {
+        this.logger.warn(
+          `Archived ${dto.ticketIds.length} ticket(s) but failed to clear their notifications: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
       }
     }
 
@@ -3546,7 +3562,23 @@ export class TicketsService {
       if (srcPayload[k] !== undefined) payload[k] = srcPayload[k];
     }
     payload.case_status = 'Pending Case';
-    payload.case_date = parent.scheduledDate.toISOString().slice(0, 10);
+    // Batch-5 D: this is the SERVER twin of the consumer's "Order Future
+    // Tickets" (buildFutureTicketsPayload) and must produce the same payload
+    // shape from the same input. The new ticket is FOR the parent's upcoming
+    // hearing — client: "the 12th, the upcoming one, should come here" — so
+    // the parent's NEXT hearing becomes future_date, not case_date. This used
+    // to write `case_date = parent.scheduledDate` and never set future_date,
+    // which is precisely the behaviour the client reported as wrong; leaving
+    // it would have fixed the consumer path and left the admin one broken.
+    payload.future_date = parent.scheduledDate.toISOString().slice(0, 10);
+    // The hearing the parent moved AWAY from, when we have it. `case_date` is
+    // deliberately NOT in FUTURE_COPIED_KEYS, so on a parent that was never
+    // rescheduled this key is simply absent and the consumer fills it in —
+    // better than the old code's confidently-wrong "previous = the upcoming
+    // hearing".
+    if (parent.previousHearingDate) {
+      payload.case_date = parent.previousHearingDate.toISOString().slice(0, 10);
+    }
     payload.parent_ticket_id = parent.id;
 
     const cloned = await this.prisma.ticket.create({
