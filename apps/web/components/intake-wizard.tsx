@@ -183,6 +183,13 @@ const GEO_HANDLED_KEYS = new Set([
   'city', 'city_id',
 ]);
 
+// Batch-6 D1: fields the wizard renders at a hoisted position of its own,
+// ABOVE the dedicated geo blocks. Skipped by the flat-field loop so they don't
+// render twice. Deliberately NOT folded into GEO_HANDLED_KEYS — that set also
+// drives the "which step is incomplete" landing scan, and a hoisted field is
+// still an ordinary required field for that purpose.
+const HOISTED_FIELD_KEYS = new Set(['fir_mode']);
+
 // Case date fields are rendered by CaseDateBlock on the Case Details step for
 // flows that include case_status. They are skipped by the default field loop.
 // `case_status` itself is also handled there so it renders ABOVE the date block.
@@ -452,10 +459,17 @@ export function IntakeWizard({
     // Self-intake reads /users/me (consumers can't hit the staff-only
     // /users/:id); staff-on-behalf reads the target consumer's /users/:id.
     const profileUrl = cid === currentUser?.id ? '/users/me' : `/users/${cid}`;
-    apiClient.get<{ address?: string }>(profileUrl)
+    // Batch-6 C: seed the delivery CITY from the consumer's profile too, not
+    // just the street address. The city used to be pinned to the court's city,
+    // which is how an Islamabad-court ticket ended up delivering a Lahore
+    // address to Islamabad. Both parts are seed-only — the fields are editable
+    // and an existing value is never overwritten.
+    apiClient.get<{ address?: string; city?: string }>(profileUrl)
       .then((r) => {
         deliveryAddressSeededForRef.current = cid;
-        if (!r.address?.trim()) return;
+        const address = r.address?.trim();
+        const city = r.city?.trim();
+        if (!address && !city) return;
         startTransition(() => {
           setDraft((c) => {
             const existing = parseDeliveryAddress(c.payload.delivery_address);
@@ -464,7 +478,11 @@ export function IntakeWizard({
               ...c,
               payload: {
                 ...c.payload,
-                delivery_address: JSON.stringify({ ...existing, house: r.address!.trim() }),
+                delivery_address: JSON.stringify({
+                  ...existing,
+                  ...(address ? { house: address } : {}),
+                  ...(city && !existing.city?.trim() ? { city } : {}),
+                }),
               },
             };
           });
@@ -489,20 +507,19 @@ export function IntakeWizard({
   // still see a value. No effect-based mirroring — derive on use.
   const withDerivedYear = useCallback(
     (p: Record<string, string | undefined>): Record<string, string | undefined> => {
-      let next = p;
-      // Re-stamp the TCS delivery_address city from the (pinned) case city at
-      // every save/submit, so a city change AFTER the address step can't leave a
-      // stale denormalized city in the JSON → dispatch to the wrong city. The
-      // city is read-only in the renderer, so this never overrides user intent.
-      if (next.delivery_address && next.city) {
-        const addr = parseDeliveryAddress(next.delivery_address);
-        if ((addr.city ?? '') !== next.city) {
-          next = {
-            ...next,
-            delivery_address: JSON.stringify({ ...addr, city: next.city }),
-          };
-        }
-      }
+      const next = p;
+      // Batch-6 C: the TCS delivery city is NO LONGER re-stamped from
+      // payload.city (the CASE/court city). That re-stamp existed to stop a
+      // stale denormalized city causing a misdelivery — but it caused one
+      // instead: the court's city has no relationship to where the customer
+      // lives. The client's repro was an Islamabad High Court ticket whose
+      // delivery address read "213 R-1 Johar Town Lahore" — a Lahore street,
+      // addressed to Islamabad.
+      //
+      // The delivery city is now the consumer's own, seeded from their profile
+      // and EDITABLE (people ship to an office, a relative, another city). Do
+      // not reintroduce a court-city stamp here. Owner sign-off 2026-08-18;
+      // this deliberately reverses the earlier "pin to the case city" rule.
       if (next.case_status !== 'Decided Case') return next;
       if (next.year) return next;
       const m = /^(\d{4})/.exec(next.decided_date ?? '');
@@ -605,7 +622,16 @@ export function IntakeWizard({
   // city_type chip and station picker on that step, but province/district inputs are
   // hidden because the user already picked them in step 1.
   const stepHasFirGeo = Boolean(activeStep?.fields.some((field) => ['province', 'district_id', 'station_id', 'city_type'].includes(field.key)));
-  const stepHasRegistryGeo = Boolean(activeStep?.fields.some((field) => ['office_name', 'city_type'].includes(field.key)));
+  // Batch-6 D3: gate on `office_name` ONLY. This used to also match
+  // `city_type`, which the Copy-of-FIR step ALSO declared — so the
+  // "Registry / deed location — Office: Sub Registrar" block rendered inside
+  // the FIR intake, where it is meaningless. Client: "we will finish this
+  // Registry Deed from here." `office_name` is unique to the registry flow.
+  const stepHasRegistryGeo = Boolean(activeStep?.fields.some((field) => field.key === 'office_name'));
+  // Batch-6 D1: the FIR/criminal-record branching question, pulled out of the
+  // flat-field loop so it can render ABOVE the FIR geo block (see the render
+  // site). Also listed in HOISTED_FIELD_KEYS so the loop skips it.
+  const firModeField = activeStep?.fields.find((field) => field.key === 'fir_mode') ?? null;
   // Render smart CaseDateBlock only when the step exposes the full date triad
   // (case_status + case_date + future_date). Case Information / Case Filing /
   // Power of Attorney use different date shapes and keep their flat renderer.
@@ -2262,6 +2288,10 @@ export function IntakeWizard({
                 <LocationBlock
                   geo={geo}
                   geoIds={geoIds}
+                  // Batch-6 D4: the FIR / criminal-record flows key their police
+                  // station off the DISTRICT, so the city picker is redundant.
+                  // Registry / Deed still requires `city`, so it keeps it.
+                  showCity={draft.flow === 'non_judicial_registry_deed'}
                   onProvinceChange={handleProvinceChange}
                   onDistrictChange={handleDistrictChange}
                   onCityChange={handleCityChange}
@@ -2461,13 +2491,36 @@ export function IntakeWizard({
             </>
           )}
 
+          {/* Batch-6 D1: the branching question renders FIRST, above the geo
+              blocks. It was declared first in the flow definition but the
+              wizard draws its dedicated blocks before the flat-field loop, so
+              "What are you looking for?" landed at the BOTTOM of a long step —
+              after the consumer had already been made to answer questions that
+              only apply to one branch. Client: "as soon as we select the city,
+              we can ask for FIR or Criminal Record; according to that we can
+              open the next form." Excluded from the flat loop below via
+              HOISTED_FIELD_KEYS so it isn't rendered twice. */}
+          {stepHasFirGeo && firModeField && (
+            <div className="md:col-span-2">
+              {renderField(
+                firModeField,
+                draft.payload.fir_mode ?? '',
+                draft.payload,
+                setPayloadField,
+                undefined,
+                handleFieldBlur,
+                touched['fir_mode'] ? (errors['fir_mode'] ?? '') : '',
+              )}
+            </div>
+          )}
+
           {stepHasFirGeo && (
             <FirBlock
               geo={geo}
               geoIds={geoIds}
+              firMode={draft.payload.fir_mode ?? ''}
               stationId={draft.payload.station_id ?? ''}
               policeStation={draft.payload.police_station ?? ''}
-              cityType={draft.payload.city_type ?? ''}
               inputClass={inputClass}
               selectClass={selectClass}
               onStationIdChange={(id, name) => {
@@ -2478,7 +2531,6 @@ export function IntakeWizard({
                 setPayloadField('police_station', value);
                 setPayloadField('station_id', value);
               }}
-              onCityTypeChange={(value) => setPayloadField('city_type', value)}
             />
           )}
 
@@ -2549,7 +2601,7 @@ export function IntakeWizard({
             // present). For flows like Case Information and Case Search
             // that expose case_date / decided_date without the full triad,
             // render them via the default loop. 5-19-26 CI#1 / CS#4.
-            .filter((f) => !GEO_HANDLED_KEYS.has(f.key) && !(stepHasCaseDate && DATE_HANDLED_KEYS.has(f.key)))
+            .filter((f) => !GEO_HANDLED_KEYS.has(f.key) && !HOISTED_FIELD_KEYS.has(f.key) && !(stepHasCaseDate && DATE_HANDLED_KEYS.has(f.key)))
             .map((rawField) => {
               // A decided case has, by definition, been attested by the court — so the
               // "Non Attested" set type is invalid. Filter it out of the options when

@@ -138,7 +138,11 @@ const REQUIRED_FIELDS_BY_FLOW: Record<string, string[]> = {
     'year',
     'offence',
     'case_title',
-    'city_type',
+    // Batch-6 D4: `city_type` (City / Sadar / Unknown) dropped. Once the
+    // consumer picks an actual police station from the district's list, the
+    // City/Sadar distinction it existed to disambiguate is already settled —
+    // client: "delete city and Sadar as well, because everything is on top
+    // of it."
     'delivery_mode',
   ],
   non_judicial_registry_deed: [
@@ -153,8 +157,19 @@ const REQUIRED_FIELDS_BY_FLOW: Record<string, string[]> = {
   non_judicial_criminal_record_search: [
     'province',
     'district_id',
-    'city',
-    'station_id',
+    // Batch-6 D2: `station_id` and `city` are NO LONGER required.
+    //
+    // A criminal-record search is exactly the request from someone who does
+    // NOT have case details — client: "he just wants to check his criminal
+    // record from Punjab, he doesn't know anything about the FIR, or the
+    // police station, or the court." Requiring a thana made the one flow built
+    // for that customer impossible for them to complete. Province + district is
+    // enough to route the search; the clerk resolves the rest.
+    //
+    // The wizard reroutes `fir_mode = search_by_cnic` submissions from the
+    // Copy-of-FIR flow to THIS flow, so these are the rules that branch is
+    // validated against — dropping them on the FE alone would have failed on
+    // submit with no field-level error (the QA B6/B7 failure shape).
     'subject_cnic',
     'subject_full_name',
     'purpose',

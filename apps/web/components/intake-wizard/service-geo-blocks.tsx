@@ -301,6 +301,9 @@ export function CityBlock({
 type LocationBlockProps = {
   geo: GeoState;
   geoIds: GeoIds;
+  /** Batch-6 D4: false for FIR / criminal-record, where the police station is
+   *  district-keyed and the city picker is dead weight. Defaults true. */
+  showCity?: boolean;
   onProvinceChange: (provinceId: string, name: string) => void;
   onDistrictChange: (districtId: string, name: string) => void;
   onCityChange: (cityId: string, name: string) => void;
@@ -309,6 +312,7 @@ type LocationBlockProps = {
 export function LocationBlock({
   geo,
   geoIds,
+  showCity = true,
   onProvinceChange,
   onDistrictChange,
   onCityChange,
@@ -349,18 +353,26 @@ export function LocationBlock({
         />
       </div>
 
-      <div>
-        <FieldLabel required>City</FieldLabel>
-        <SelectionTileGrid
-          options={cityOptions}
-          value={geoIds.cityId}
-          onChange={(v) => onCityChange(v, findName(geo.cities, v))}
-          ariaLabel="City"
-          disabled={!geoIds.districtId}
-          emptyPlaceholder="Select a district above to see cities."
-          matchPredicate={matchesCitySearch}
-        />
-      </div>
+      {/* Batch-6 D4: hidden for the FIR / criminal-record flows. Police
+          stations are keyed to the DISTRICT, so once a district is chosen the
+          city adds nothing and is a second long tile grid to scroll past —
+          client: "delete city … because everything is on top of it." Registry
+          / Deed still needs it (`city` is in its REQUIRED_FIELDS_BY_FLOW), so
+          this is opt-out, not removal. */}
+      {showCity ? (
+        <div>
+          <FieldLabel required>City</FieldLabel>
+          <SelectionTileGrid
+            options={cityOptions}
+            value={geoIds.cityId}
+            onChange={(v) => onCityChange(v, findName(geo.cities, v))}
+            ariaLabel="City"
+            disabled={!geoIds.districtId}
+            emptyPlaceholder="Select a district above to see cities."
+            matchPredicate={matchesCitySearch}
+          />
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -492,30 +504,42 @@ export const JudicialCourtBlock = JudicialServiceBlock;
 type FirBlockProps = {
   geo: GeoState;
   geoIds: GeoIds;
+  /** `fir_mode` — 'have_fir_number' | 'search_by_cnic'. Drives whether a
+   *  police station is asked for at all (batch-6 D2). */
+  firMode: string;
   stationId: string;
   policeStation: string;
-  cityType: string;
   inputClass: string;
   selectClass?: string;
   onStationIdChange: (id: string, name: string) => void;
   onPoliceStationChange: (value: string) => void;
-  onCityTypeChange: (value: string) => void;
 };
 
 export function FirBlock({
   geo,
   geoIds,
+  firMode,
   stationId,
   policeStation,
-  cityType,
   inputClass,
   onStationIdChange,
   onPoliceStationChange,
-  onCityTypeChange,
 }: FirBlockProps) {
   const stationOptions = toTileOptions(geo.policeStations);
   const findName = (items: { id: string; name: string }[], id: string) =>
     items.find((x) => x.id === id)?.name ?? '';
+
+  // Batch-6 D2: a criminal-record search by CNIC is precisely the request from
+  // someone who has NO case details — client: "he doesn't know anything about
+  // the FIR, or the police station, or the court; he just wants to check his
+  // criminal record from Punjab." Asking for a thana made the one flow built
+  // for that customer impossible to complete, so the whole block is skipped for
+  // that branch. Province + district (already chosen in Step 1) routes it.
+  //
+  // The matching `showWhen` on `station_id` in intake-flows.ts keeps the
+  // VALIDATOR in step; hiding here alone would fail on submit with no
+  // field-level error.
+  if (firMode === 'search_by_cnic') return null;
 
   return (
     <div className="md:col-span-2 rounded-2xl border border-border-soft bg-surface-muted/50 p-5 space-y-5">
@@ -554,10 +578,14 @@ export function FirBlock({
         </label>
       )}
 
-      <fieldset>
-        <FieldLabel required>City type</FieldLabel>
-        <ChipGroup options={['City', 'Sadar', 'Unknown']} value={cityType} onChange={onCityTypeChange} />
-      </fieldset>
+      {/* Batch-6 D4: the "City type" (City / Sadar / Unknown) chip group is
+          gone. The police station selected above already resolves that
+          distinction, so it was asking the consumer to disambiguate something
+          they had just disambiguated. Client: "delete city and Sadar as well,
+          because everything is on top of it." Also dropped from
+          REQUIRED_FIELDS_BY_FLOW.non_judicial_copy_of_fir — the FE and the
+          validator have to move together. The Registry/Deed flow keeps its own
+          copy (see RegistryDeedBlock), where it is still meaningful. */}
     </div>
   );
 }

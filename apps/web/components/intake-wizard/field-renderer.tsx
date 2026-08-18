@@ -575,20 +575,33 @@ export function renderField(
     // TODO: integrate a map pin / geocoder for the "Main Area" field in a
     // follow-up iteration — out of scope for this pass.
     const addr = parseDeliveryAddress(value);
-    // Delivery city is pinned to the case city (payload.city) and always
-    // persisted with the address — TCS delivers to the case city. (The owner's
-    // "needs a city" ask was for the Uber flow, which has its own editable
-    // delivery_city field.) Pinning avoids both a misdelivery from a cleared
-    // city and a resumed-draft dead-end from an unsaved one.
-    const cityValue = payload.city ?? '';
+    // Batch-6 C: the delivery city is the CONSUMER's city, not the case/court
+    // city, and it is EDITABLE.
+    //
+    // It used to be pinned read-only to `payload.city` (the court's city) and
+    // re-stamped at every save. That was meant to prevent a misdelivery from a
+    // stale value, but it guaranteed one: the client's Islamabad High Court
+    // ticket rendered "Delivering to: Islamabad" over a delivery address of
+    // "213 R-1 Johar Town Lahore". A court's location says nothing about where
+    // the customer wants their documents.
+    //
+    // Seeded from the consumer's profile city by the wizard's prefill effect;
+    // falls back to the case city only when we know nothing better, so the
+    // field is never blank for an existing draft. Don't re-pin this.
+    const cityValue = addr.city ?? payload.city ?? '';
     const update = (
-      patch: Partial<{ house: string; block: string; mainArea: string }>,
+      patch: Partial<{
+        house: string;
+        block: string;
+        mainArea: string;
+        city: string;
+      }>,
     ) => {
       const next = {
         house: addr.house,
         block: addr.block,
         mainArea: addr.mainArea,
-        ...(cityValue ? { city: cityValue } : {}),
+        city: cityValue,
         ...patch,
       };
       onChange(field.key, JSON.stringify(next));
@@ -598,11 +611,19 @@ export function renderField(
         <div className="text-sm font-semibold text-slate-800">Delivery address</div>
         <div>
           <label className="block text-xs font-medium text-slate-600 mb-1">
-            Delivering to
+            Delivering to (city)
           </label>
-          <div className="rounded-lg border border-border-soft bg-surface-muted px-3 py-2 text-sm text-slate-700">
-            {cityValue || '—'}
-          </div>
+          <input
+            className={inputClass}
+            type="text"
+            value={cityValue}
+            onChange={(e) => update({ city: e.target.value })}
+            onBlur={() => onBlur?.(field.key)}
+            placeholder="e.g. Lahore"
+          />
+          <p className="mt-1 text-xs text-slate-500">
+            Where your documents should be delivered — not the court&apos;s city.
+          </p>
         </div>
         <div>
           <label className="block text-xs font-medium text-slate-600 mb-1">

@@ -118,13 +118,23 @@ export function parseDeliveryAddress(value: unknown): StructuredAddress {
 
 /**
  * Determine whether a structured-address payload value satisfies the
- * "required" contract — i.e. all three text inputs are non-empty.
+ * "required" contract — i.e. every part of the delivery address is non-empty.
+ *
+ * Batch-6 C: `city` is now validated too. It used to be excluded because the
+ * renderer pinned it read-only to the case/court city, so it could never be
+ * blank — and could never be right either, which is the bug that change fixed.
+ * Now that the consumer types it (seeded from their profile), a blank city is a
+ * genuinely incomplete address and must block submission: TCS cannot deliver
+ * without one.
  */
 export function isStructuredAddressComplete(value: unknown): boolean {
   const addr = parseDeliveryAddress(value);
-  // City is pinned to the case city by the renderer (not user-entered), so only
-  // the free-text address parts are validated here.
-  return Boolean(addr.house.trim() && addr.block.trim() && addr.mainArea.trim());
+  return Boolean(
+    addr.house.trim() &&
+      addr.block.trim() &&
+      addr.mainArea.trim() &&
+      addr.city?.trim(),
+  );
 }
 
 /**
@@ -1411,14 +1421,24 @@ const copyOfFirSteps: IntakeStep[] = [
       // province/district/police station handled by dedicated wizard geo block
       { key: 'province', label: 'Province', type: 'text', required: true },
       { key: 'district_id', label: 'District', type: 'text', required: true },
-      { key: 'station_id', label: 'Police Station', type: 'select', required: true, options: [] },
       {
-        key: 'city_type',
-        label: 'City Type',
-        type: 'radio',
+        key: 'station_id',
+        label: 'Police Station',
+        type: 'select',
         required: true,
-        options: ['City', 'Sadar', 'Unknown'],
+        options: [],
+        // Batch-6 D2: only the FIR branch needs a police station. Someone
+        // running a criminal-record search by CNIC does not have one — that is
+        // the whole point of the search. The wizard hides the picker for that
+        // mode too (FirBlock); this showWhen is what keeps the VALIDATOR in
+        // lock-step, since the flat-field validator skips fields whose showWhen
+        // is unsatisfied. Both halves are required or submit fails with no
+        // field-level error.
+        showWhen: { field: 'fir_mode', value: 'have_fir_number' },
       },
+      // Batch-6 D4: `city_type` (City / Sadar / Unknown) removed — the police
+      // station picked above already resolves that distinction. Also removed
+      // from REQUIRED_FIELDS_BY_FLOW.non_judicial_copy_of_fir.
     ],
   },
   {
@@ -1617,14 +1637,12 @@ const criminalRecordSearchSteps: IntakeStep[] = [
       // Re-uses the same Police-Station geo block as `non_judicial_copy_of_fir`.
       { key: 'province', label: 'Province', type: 'text', required: true },
       { key: 'district_id', label: 'District', type: 'text', required: true },
-      { key: 'station_id', label: 'Police Station', type: 'select', required: true, options: [] },
-      {
-        key: 'city_type',
-        label: 'City Type',
-        type: 'radio',
-        required: true,
-        options: ['City', 'Sadar', 'Unknown'],
-      },
+      // Batch-6 D2: police station is OPTIONAL here, and `city_type` is gone.
+      // This flow exists for the customer who has no case details at all —
+      // "he just wants to check his criminal record from Punjab". Province +
+      // district routes it; the clerk resolves the station. Mirrors the
+      // relaxed REQUIRED_FIELDS_BY_FLOW.non_judicial_criminal_record_search.
+      { key: 'station_id', label: 'Police Station', type: 'select', required: false, options: [] },
     ],
   },
   {
