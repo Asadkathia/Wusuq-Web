@@ -612,3 +612,60 @@ Reviewed 3 more client files (2 screen recordings + a WhatsApp chat-log scroll) 
 **Open / needs input:** C (invoice not reachable from a completed ticket — product decision: per-ticket receipt vs clearer empty state); D1 (consumer-side regenerate error — error text illegible in the recording, needs a reproduction); E2 (delivery-address issue — the B9 prefill logic reads correct on inspection, so this needs a live repro or a clarifying question to the client rather than a guessed fix); F (forgot-password — recommend a reset-link flow, never emailing plaintext passwords).
 
 Verified: 683 API + 267 web tests, 0 lint errors, 0 typecheck errors. No migration in this batch. All fixes mutation-proven — including the review-driven ones (one pre-existing spec asserted the old `generateNextHearing` semantics and failed honestly; updated with the reasoning written into it).
+
+### 2026-08-18 · branch fix/batch6-dashboard-delivery-fir · client review batch 6 (A, B, C, D1–D4)
+
+Reviewed 6 videos + 2 voice notes + a chat-log scroll (11 → 18 Aug). Findings:
+`DOcs/superpowers/specs/2026-08-18-client-review-batch6-findings.md`. **E (mobile focus-zoom) and F
+(overseas clients on PK numbers) deliberately left out** — see Open below.
+
+- **A — "Active tickets" meant two different things on two screens the consumer compares.** The
+  dashboard KPI was summed on the FE as `pending + inProgress` = UNPAID + ASSIGNED + IN_PROGRESS,
+  silently dropping **PAID** and **WAITING_APPROVAL**; the My Tickets "Active" tab means
+  `NOT (COMPLETED | DELIVERED)`. The client's own account (1 UNPAID + 2 PAID + 1 COMPLETED) read
+  "Active 1" on the dashboard and "Active 3" on My Tickets. **`getConsumerSummary` now derives
+  `myTickets.active` server-side with the tab's exact predicate and the FE renders it directly —
+  never re-sum the component counts to get it.**
+- **B — the "Next hearing" widget named a SERVICE, which is not an identifier** (four "Lower Court
+  Paralegal Service" tickets on one account). It now returns `ticketId` + `batchNo` and the whole
+  block links to that ticket. The rendered **time was dropped**: we capture a hearing *date* only,
+  so `toLocaleTimeString` on the stored midnight printed a meaningless "05:00". Was already flagged
+  open in batch 4 and got re-reported — re-reported items should stop being deferred.
+- **C — ⚠️ TCS delivery city now comes from the CONSUMER, not the court. This reverses a documented
+  decision** (owner sign-off 2026-08-18). The old rule — *"delivery city is pinned to the case city
+  (read-only) and re-stamped at every save/submit so it can't go stale → misdelivery"* — was
+  introduced to prevent misdelivery and instead guaranteed it: an Islamabad High Court ticket
+  rendered `Delivering to: Islamabad` above a delivery address of `213 R-1 Johar Town Lahore`. A
+  court's location says nothing about where the customer lives. The city is now **seeded from the
+  consumer's profile `city`, editable, not re-stamped, and VALIDATED** (`isStructuredAddressComplete`
+  now requires it — it previously could never be blank, and never be right either). **Do not
+  reintroduce a court-city stamp.** Note the profile prefill was never broken — that was my batch-5
+  E2 guess, and it was wrong; the street address had always populated correctly.
+- **D — the FIR / criminal-record intake was unusable by the exact customer it exists for.**
+  **D1** the "I have an FIR number / Search criminal records by CNIC" question renders **first**; it
+  was declared first in the flow but the wizard draws its dedicated geo blocks **before** the
+  flat-field loop, so it landed at the bottom (hoisted via `HOISTED_FIELD_KEYS`, kept out of
+  `GEO_HANDLED_KEYS` because that set also drives the incomplete-step landing scan).
+  **D2** police station is required **only** on the FIR branch — gated in the renderer *and* by a
+  `showWhen` on `station_id`, because the flat-field validator skips unsatisfied-`showWhen` fields;
+  FE-only hiding fails on submit with no field-level error (the QA B6/B7 shape). `station_id` + `city`
+  dropped from `REQUIRED_FIELDS_BY_FLOW.non_judicial_criminal_record_search` — the wizard reroutes
+  `search_by_cnic` submissions to that flow, so those are the rules that branch is validated against.
+  **D3** the Registry/Deed block no longer leaks into the FIR intake: `stepHasRegistryGeo` matched on
+  `city_type`, which the FIR step **also** declared — it now keys on `office_name`, unique to that
+  flow. **D4** dropped the `city_type` chip (the station already resolves City vs Sadar) and the
+  step-1 city picker for these flows (stations are district-keyed); Registry/Deed keeps both.
+
+**Open / not done:** **D5** complainant + accused fields — client owes the field list. **E** mobile
+focus-zoom + Enter-to-advance — hypothesis is the wizard's `BASE_CLASS` sets only `sm:text-sm` with
+no base 16px (iOS zooms below 16px) and there's no `viewport` export, but that is source-only and
+needs a device repro. **F** — **overseas clients on Pakistani numbers are billed the domestic rate**
+(*"500 national / 2000 international / 1500 per order loss"*): `deriveCurrency` is phone-first by
+design, and currency **locks once an account is active**, so mispriced accounts can't self-correct.
+Needs a product decision: country-over-dial-code at signup / an audited staff currency override that
+works on active accounts / per-ticket currency. The override is worth doing regardless — it's the
+only option that repairs existing accounts.
+
+Verified: 686 API + 279 web tests, 0 lint errors, 0 typecheck errors. No migration. All new guards
+mutation-proven; one pre-existing spec (`archived-tickets.spec.ts`, which pins the ticket-count query
+count) failed honestly on the new `active` query and was updated.
