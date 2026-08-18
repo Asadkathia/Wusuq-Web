@@ -672,6 +672,30 @@ the D3 bug. Also: the hoisted question rendered with **no visible label** (Radio
 so the consumer never saw the question and was silently committed to the FIR branch, exactly the
 assumption D1 exists to remove. **`fir_mode` deliberately has no `defaultValue`.**
 
+**A SECOND review pass found four MORE readers of the deleted city** — same lesson, twice over.
+(1) `canAutosaveDraft` gated on `geoIds.cityId`, so autosave/draft-row/"Saved" pill/resumed-draft
+banner were all **silently dead** for the FIR flows; now gated on district. (2) `payload.city` stayed
+`''`, and it is read outside the wizard — the **invoice line** resolves its location from
+`select_court_city ?? city ?? select_city` and rendered nothing; the district name is now stamped
+there. ⚠️ **Known limitation:** for the ~28 districts with no same-named `GeoCity` (Hunza, Swat) that
+name won't match a rep's city, so `assign()` 409s unless the admin overrides the city restriction.
+(3) the delivery-city fix only covered consumers **with** a profile city — the renderer displays
+`addr.city ?? payload.city` while `isStructuredAddressComplete` reads only the stored JSON, so a
+consumer who skipped onboarding saw a filled-looking box and still failed validation; the fallback is
+now **persisted**, not just displayed. (4) `provinceId` was never hydrated on regenerate/edit/resume
+(the payload carries the province **name** only) — harmless while a city existed, but after D4 it
+dead-ended those paths on "Please select a province"; now resolved by name, then districts load.
+
+**Verified live (2026-08-18/19, local stack against the production Neon DB).** Browser: batch-6 A
+(dashboard 3 vs the client's 1), C (Islamabad court + **Lahore** delivery city, editable, and blank
+city correctly blocks), D (his v4 Punjab/no-details scenario completes; both branches gate the police
+station correctly); batch-5 D (Order Future Tickets **and** Regenerate both prefill next hearing
+13/08/2026 from `scheduledDate`, where the payload key was empty), E1 (Pay later navigates).
+Data: batch-5 A (real USD ticket −2,325 → **PKR 11,875**), B (Top Paralegals 7 → 5).
+⚠️ **The batch-5 notification cleanup is FORWARD-ONLY** — the 6 already-archived tickets predate it,
+so **25 stale notifications remain, 8 of them on TKT-85905379-133644, the exact ticket the client
+named.** He will retest and still see them; needs a one-off delete of the existing rows.
+
 **Open / not done:** **D5** complainant + accused fields — client owes the field list. **E** mobile
 focus-zoom + Enter-to-advance — hypothesis is the wizard's `BASE_CLASS` sets only `sm:text-sm` with
 no base 16px (iOS zooms below 16px) and there's no `viewport` export, but that is source-only and
@@ -682,6 +706,6 @@ Needs a product decision: country-over-dial-code at signup / an audited staff cu
 works on active accounts / per-ticket currency. The override is worth doing regardless — it's the
 only option that repairs existing accounts.
 
-Verified: 686 API + 285 web tests, 0 lint errors, 0 typecheck errors. No migration. All new guards
-mutation-proven (including all six review-driven ones); one pre-existing spec (`archived-tickets.spec.ts`, which pins the ticket-count query
+Verified: 686 API + 289 web tests, 0 lint errors, 0 typecheck errors. No migration. All new guards
+mutation-proven (including all ten review-driven ones across two review passes); one pre-existing spec (`archived-tickets.spec.ts`, which pins the ticket-count query
 count) failed honestly on the new `active` query and was updated.
