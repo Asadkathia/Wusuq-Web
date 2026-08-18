@@ -27,7 +27,16 @@ import { formatMoney } from '@wusuq/shared';
 import { ProfileCompletionBanner } from './profile-completion-banner';
 
 type ConsumerSummary = {
-  myTickets: { total: number; pending: number; inProgress: number; completed: number };
+  // `active` is server-derived (NOT COMPLETED and NOT DELIVERED) so it matches
+  // the My Tickets "Active" tab exactly. Never re-sum pending + inProgress to
+  // get it — that dropped PAID and WAITING_APPROVAL (batch-6 A).
+  myTickets: {
+    total: number;
+    pending: number;
+    inProgress: number;
+    active: number;
+    completed: number;
+  };
   myWalletBalance: number;
   myOutstanding: number;
   myActiveCases: number;
@@ -40,6 +49,8 @@ type ConsumerSummary = {
     service: { name: string };
   }>;
   myNextHearing: {
+    ticketId: string;
+    batchNo: string;
     scheduledDate: string;
     hearingType?: string | null;
     case: { title: string };
@@ -274,7 +285,12 @@ export default function ConsumerDashboardPage() {
         />
         <SummaryCard
           label="Active tickets"
-          value={summary ? String(summary.myTickets.pending + summary.myTickets.inProgress) : '—'}
+          // Batch-6 A: read the server's `active` directly. This was
+          // `pending + inProgress`, which counted UNPAID + ASSIGNED +
+          // IN_PROGRESS and silently dropped PAID and WAITING_APPROVAL — so a
+          // consumer with 1 UNPAID + 2 PAID saw "Active 1" here and "Active 3"
+          // on My Tickets, on the same data.
+          value={summary ? String(summary.myTickets.active) : '—'}
           icon={<Ticket className="h-4 w-4" />}
           hint={summary ? `${summary.myTickets.total} total` : undefined}
           tone="indigo"
@@ -411,18 +427,31 @@ export default function ConsumerDashboardPage() {
             {loading ? (
               <div className="mt-4 h-16 rounded-xl bg-surface-muted animate-pulse" />
             ) : summary?.myNextHearing ? (
-              <div className="mt-4 space-y-1">
+              // Batch-6 B: the whole block links to the ticket the hearing
+              // belongs to, and names it. Before, it rendered a service NAME
+              // and nothing else — the client had four "Lower Court Paralegal
+              // Service" tickets and couldn't tell which one this was.
+              <Link
+                href={`/consumer/tickets/${summary.myNextHearing.ticketId}`}
+                className="mt-4 block rounded-xl -mx-2 px-2 py-2 transition-colors hover:bg-surface-muted focus:outline-none focus:ring-2 focus:ring-primary-500/25"
+              >
                 <p className="text-base font-semibold tracking-tight text-slate-900">
                   {new Date(summary.myNextHearing.scheduledDate).toLocaleDateString(undefined, {
                     weekday: 'short', month: 'short', day: 'numeric',
                   })}
                 </p>
-                <p className="text-xs text-slate-500">
-                  {new Date(summary.myNextHearing.scheduledDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                  {summary.myNextHearing.hearingType ? ` · ${summary.myNextHearing.hearingType}` : ''}
-                </p>
+                {/* No time is rendered: we capture a hearing DATE only, so the
+                    stored value is midnight and toLocaleTimeString printed a
+                    meaningless "05:00" (midnight UTC in the local zone). */}
+                {summary.myNextHearing.hearingType ? (
+                  <p className="text-xs text-slate-500">{summary.myNextHearing.hearingType}</p>
+                ) : null}
                 <p className="mt-2 text-xs text-slate-600 line-clamp-2">{summary.myNextHearing.case.title}</p>
-              </div>
+                <p className="mt-1 font-mono text-[11px] text-slate-400">{summary.myNextHearing.batchNo}</p>
+                <span className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-primary-600">
+                  View ticket <ArrowRight className="h-3 w-3" />
+                </span>
+              </Link>
             ) : (
               <p className="mt-4 text-xs text-slate-500">No upcoming hearings scheduled.</p>
             )}

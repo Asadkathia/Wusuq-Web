@@ -71,6 +71,7 @@ export class DashboardService {
       totalTickets,
       pendingTickets,
       inProgressTickets,
+      activeTickets,
       completedTickets,
       walletUser,
       outstandingAgg,
@@ -95,6 +96,24 @@ export class DashboardService {
         where: {
           consumerId: userId,
           status: { in: ['ASSIGNED', 'IN_PROGRESS'] },
+          archivedAt: null,
+        },
+      }),
+      // Batch-6 A: THE definition of "active" for a consumer — anything not
+      // finished. It must match the My Tickets "Active" tab
+      // (consumer-ticket-board.tsx: NOT COMPLETED and NOT DELIVERED) because
+      // the consumer reads both screens side by side.
+      //
+      // The dashboard KPI used to be computed on the FE as
+      // `pending + inProgress` = UNPAID + ASSIGNED + IN_PROGRESS, which
+      // silently dropped PAID and WAITING_APPROVAL. The client's own account
+      // (1 UNPAID + 2 PAID + 1 COMPLETED) showed "Active 1" on the dashboard
+      // and "Active 3" on My Tickets. Derive it here, once, so a FE sum can't
+      // drift from the tab again.
+      this.prisma.ticket.count({
+        where: {
+          consumerId: userId,
+          status: { notIn: ['COMPLETED', 'DELIVERED'] },
           archivedAt: null,
         },
       }),
@@ -147,6 +166,13 @@ export class DashboardService {
         },
         orderBy: { scheduledDate: 'asc' },
         select: {
+          // Batch-6 B: the widget used to render only a service NAME, which is
+          // not an identifier — the client had four "Lower Court Paralegal
+          // Service" tickets and asked "we don't know which case has the next
+          // hearing… it should be clickable". id + batchNo make it both
+          // identifiable and linkable.
+          id: true,
+          batchNo: true,
           scheduledDate: true,
           hearingType: true,
           case: { select: { title: true } },
@@ -159,6 +185,9 @@ export class DashboardService {
       total: totalTickets,
       pending: pendingTickets,
       inProgress: inProgressTickets,
+      // Batch-6 A: server-derived; the FE must render this directly and never
+      // re-sum the component counts (see the count query above).
+      active: activeTickets,
       completed: completedTickets,
     };
 
@@ -181,6 +210,8 @@ export class DashboardService {
       // never sees a null case object.
       myNextHearing: myNextHearing
         ? {
+            ticketId: myNextHearing.id,
+            batchNo: myNextHearing.batchNo,
             scheduledDate: myNextHearing.scheduledDate,
             hearingType: myNextHearing.hearingType,
             case: {

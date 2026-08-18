@@ -53,9 +53,12 @@ describe('DashboardService.getConsumerSummary — archived-ticket exclusion (F1)
 
     await service.getConsumerSummary('consumer-1');
 
-    // Four count() calls (total/pending/inProgress/completed) each scope out
-    // archived tickets.
-    expect(ticketCount).toHaveBeenCalledTimes(4);
+    // Five count() calls — total / pending / inProgress / active / completed —
+    // each scope out archived tickets. `active` was added in batch-6 A (the
+    // NOT-COMPLETED-and-NOT-DELIVERED count the dashboard KPI now reads).
+    // The loop below is the real invariant; this number just pins that no
+    // ticket count is ever added without going through it.
+    expect(ticketCount).toHaveBeenCalledTimes(5);
     for (const call of ticketCount.mock.calls) {
       const where = (call[0] as { where: Record<string, unknown> }).where;
       expect(where).toMatchObject({ archivedAt: null });
