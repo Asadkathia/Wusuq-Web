@@ -656,6 +656,22 @@ Reviewed 6 videos + 2 voice notes + a chat-log scroll (11 → 18 Aug). Findings:
   flow. **D4** dropped the `city_type` chip (the station already resolves City vs Sadar) and the
   step-1 city picker for these flows (stations are district-keyed); Registry/Deed keeps both.
 
+**Caught by the pre-push review — D4 (removing the city picker) had four consequences I hadn't
+followed, two of them dead ends.** Worth internalising: *deleting an input means auditing everything
+that read it.* (1) `validateLocationStep` still hard-required `geoIds.cityId`, so step 1 dead-ended
+with "Please select a city" and no city control on screen; it now skips for FIR flows. (2)
+`serviceCity` used `??` while `handleDistrictChange` writes `city: ''` — **an empty string is not
+nullish**, so the fallback chain never reached `district_name` and every FIR ticket persisted
+`serviceCity: ''`, silently disabling the clerk city gate in `assign()` and blanking the City column;
+now `||`. (3) `showCity` was dead code — `LocationBlock` renders **only** in the `isFirFlow` branch,
+so the prop was constantly false; `LocationBlock` is FIR-only and its city tier is now removed
+outright. (4) `stepHasFirGeo` still matched `city_type`, and after D4 the only flow declaring it is
+**Registry/Deed** — so the FIR police-station panel leaked into Registry/Deed, the mirror image of
+the D3 bug. Also: the hoisted question rendered with **no visible label** (RadioField's `<legend>` is
+`sr-only`) and its `defaultValue` made the single-select collapse show only a chip on first paint —
+so the consumer never saw the question and was silently committed to the FIR branch, exactly the
+assumption D1 exists to remove. **`fir_mode` deliberately has no `defaultValue`.**
+
 **Open / not done:** **D5** complainant + accused fields — client owes the field list. **E** mobile
 focus-zoom + Enter-to-advance — hypothesis is the wizard's `BASE_CLASS` sets only `sm:text-sm` with
 no base 16px (iOS zooms below 16px) and there's no `viewport` export, but that is source-only and
@@ -666,6 +682,6 @@ Needs a product decision: country-over-dial-code at signup / an audited staff cu
 works on active accounts / per-ticket currency. The override is worth doing regardless — it's the
 only option that repairs existing accounts.
 
-Verified: 686 API + 279 web tests, 0 lint errors, 0 typecheck errors. No migration. All new guards
-mutation-proven; one pre-existing spec (`archived-tickets.spec.ts`, which pins the ticket-count query
+Verified: 686 API + 285 web tests, 0 lint errors, 0 typecheck errors. No migration. All new guards
+mutation-proven (including all six review-driven ones); one pre-existing spec (`archived-tickets.spec.ts`, which pins the ticket-count query
 count) failed honestly on the new `active` query and was updated.
