@@ -450,9 +450,15 @@ export function IntakeWizard({
     const cid = draft.consumerId;
     if (!cid || !flowHasDeliveryAddress) return;
     if (deliveryAddressSeededForRef.current === cid) return;
-    if (parseDeliveryAddress(draft.payload.delivery_address).house.trim()) {
-      // Already has a value (resumed draft, or the user typed one) — don't
-      // fetch or overwrite; mark seeded so we don't re-check every render.
+    // Batch-6 C: the skip must consider BOTH parts we seed. Keying it on
+    // `house` alone meant a resumed draft that had a street address but no
+    // city never got the profile city seeded — and `city` is now REQUIRED by
+    // isStructuredAddressComplete, so the consumer hit "Please complete the
+    // delivery address" on a form that looked filled in.
+    const seeded = parseDeliveryAddress(draft.payload.delivery_address);
+    if (seeded.house.trim() && seeded.city?.trim()) {
+      // Both already have values (resumed draft, or the user typed them) —
+      // don't fetch or overwrite; mark seeded so we don't re-check every render.
       deliveryAddressSeededForRef.current = cid;
       return;
     }
@@ -473,15 +479,19 @@ export function IntakeWizard({
         startTransition(() => {
           setDraft((c) => {
             const existing = parseDeliveryAddress(c.payload.delivery_address);
-            if (existing.house.trim()) return c; // never overwrite a non-empty value
+            // Seed each part independently, and never overwrite one the user
+            // already has — a draft can legitimately have a house but no city.
+            const nextHouse = !existing.house.trim() && address ? address : null;
+            const nextCity = !existing.city?.trim() && city ? city : null;
+            if (!nextHouse && !nextCity) return c;
             return {
               ...c,
               payload: {
                 ...c.payload,
                 delivery_address: JSON.stringify({
                   ...existing,
-                  ...(address ? { house: address } : {}),
-                  ...(city && !existing.city?.trim() ? { city } : {}),
+                  ...(nextHouse ? { house: nextHouse } : {}),
+                  ...(nextCity ? { city: nextCity } : {}),
                 }),
               },
             };
@@ -621,7 +631,14 @@ export function IntakeWizard({
   // province/district/station/city_type fields) now lives at step 2. We keep the
   // city_type chip and station picker on that step, but province/district inputs are
   // hidden because the user already picked them in step 1.
-  const stepHasFirGeo = Boolean(activeStep?.fields.some((field) => ['province', 'district_id', 'station_id', 'city_type'].includes(field.key)));
+  // Batch-6 D3 (both directions): `city_type` is NOT a discriminator. After D4
+  // removed it from the FIR flows the only flow still declaring it is
+  // Registry/Deed — so matching on it here rendered a "FIR details — select the
+  // police station" panel inside Registry/Deed, with a permanently disabled
+  // input (that flow never renders LocationBlock, so districtId is always
+  // empty). That is the exact cross-contamination D3 fixed in the other
+  // direction. Key on the fields genuinely unique to the FIR geo block.
+  const stepHasFirGeo = Boolean(activeStep?.fields.some((field) => ['province', 'district_id', 'station_id'].includes(field.key)));
   // Batch-6 D3: gate on `office_name` ONLY. This used to also match
   // `city_type`, which the Copy-of-FIR step ALSO declared — so the
   // "Registry / deed location — Office: Sub Registrar" block rendered inside
@@ -1500,7 +1517,11 @@ export function IntakeWizard({
         return false;
       }
     }
-    if (!geoIds.cityId) {
+    // Batch-6 D4: the FIR / criminal-record flows no longer HAVE a city
+    // picker (LocationBlock stops at district), so demanding a cityId here
+    // would dead-end step 1 with "Please select a city" and no city control
+    // anywhere on screen. Province + district are validated above instead.
+    if (!isFirFlow && !geoIds.cityId) {
       setApiError('Please select a city');
       return false;
     }
@@ -2124,10 +2145,16 @@ export function IntakeWizard({
         // re-click replays the same key and the API returns the
         // already-created ticket instead of a duplicate.
         requestId: submitRequestIdRef.current ?? undefined,
+        // Batch-6 D4: `||`, NOT `??`. handleDistrictChange writes `city: ''`
+        // (empty string, not undefined), and the FIR flows no longer set a
+        // city at all — with `??` the empty string is not nullish, so the
+        // chain short-circuited and every FIR ticket was created with
+        // serviceCity ''. That silently disables the clerk city gate in
+        // assign() and blanks the City column on the ticket/finance boards.
         serviceCity:
-          p.city ??
-          p.select_court_city ??
-          p.district_name ??
+          p.city ||
+          p.select_court_city ||
+          p.district_name ||
           '',
         caseType: isCriminalRecordSearch
           ? (p.subject_full_name ?? p.subject_cnic ?? '')
@@ -2288,13 +2315,8 @@ export function IntakeWizard({
                 <LocationBlock
                   geo={geo}
                   geoIds={geoIds}
-                  // Batch-6 D4: the FIR / criminal-record flows key their police
-                  // station off the DISTRICT, so the city picker is redundant.
-                  // Registry / Deed still requires `city`, so it keeps it.
-                  showCity={draft.flow === 'non_judicial_registry_deed'}
                   onProvinceChange={handleProvinceChange}
                   onDistrictChange={handleDistrictChange}
-                  onCityChange={handleCityChange}
                 />
               ) : (
                 <CityBlock
@@ -2501,7 +2523,16 @@ export function IntakeWizard({
               open the next form." Excluded from the flat loop below via
               HOISTED_FIELD_KEYS so it isn't rendered twice. */}
           {stepHasFirGeo && firModeField && (
-            <div className="md:col-span-2">
+            <div className="md:col-span-2 space-y-1">
+              {/* The visible question. The flat-field loop renders this label
+                  wrapper for every other field; RadioField's own <legend> is
+                  sr-only, so without it the consumer sees only the collapsed
+                  selection chip and never the question itself — the opposite
+                  of the D1 intent. */}
+              <label className="text-sm font-medium text-slate-700">
+                {firModeField.label}
+                <span className="text-rose-500 ml-0.5">*</span>
+              </label>
               {renderField(
                 firModeField,
                 draft.payload.fir_mode ?? '',

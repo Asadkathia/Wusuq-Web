@@ -297,29 +297,28 @@ export function CityBlock({
   );
 }
 
-// ─── Location Block (Province → District → City) — used by FIR flow ─────────
+// ─── Location Block (Province → District) — FIR / criminal-record only ──────
+// Batch-6 D4: the City tier was REMOVED. Police stations are keyed to the
+// DISTRICT, so the city picker was a second long tile grid that narrowed
+// nothing — client: "delete city … because everything is on top of it."
+// This block has exactly one call site (the FIR branch in intake-wizard.tsx);
+// Registry/Deed and the judicial flows use CityBlock instead and are
+// unaffected. `serviceCity` for these flows falls back to the district name.
 type LocationBlockProps = {
   geo: GeoState;
   geoIds: GeoIds;
-  /** Batch-6 D4: false for FIR / criminal-record, where the police station is
-   *  district-keyed and the city picker is dead weight. Defaults true. */
-  showCity?: boolean;
   onProvinceChange: (provinceId: string, name: string) => void;
   onDistrictChange: (districtId: string, name: string) => void;
-  onCityChange: (cityId: string, name: string) => void;
 };
 
 export function LocationBlock({
   geo,
   geoIds,
-  showCity = true,
   onProvinceChange,
   onDistrictChange,
-  onCityChange,
 }: LocationBlockProps) {
   const provinceOptions = toTileOptions(geo.provinces);
   const districtOptions = toTileOptions(geo.districts);
-  const cityOptions = toTileOptions(geo.cities);
   const findName = (items: { id: string; name: string }[], id: string) =>
     items.find((x) => x.id === id)?.name ?? '';
 
@@ -328,7 +327,7 @@ export function LocationBlock({
       <SectionHeader
         icon={<MapPinned className="h-4 w-4" />}
         title="Service location"
-        description="Tell us where this service is required — province, district, then city."
+        description="Tell us where this service is required — province, then district."
       />
 
       <div>
@@ -353,26 +352,6 @@ export function LocationBlock({
         />
       </div>
 
-      {/* Batch-6 D4: hidden for the FIR / criminal-record flows. Police
-          stations are keyed to the DISTRICT, so once a district is chosen the
-          city adds nothing and is a second long tile grid to scroll past —
-          client: "delete city … because everything is on top of it." Registry
-          / Deed still needs it (`city` is in its REQUIRED_FIELDS_BY_FLOW), so
-          this is opt-out, not removal. */}
-      {showCity ? (
-        <div>
-          <FieldLabel required>City</FieldLabel>
-          <SelectionTileGrid
-            options={cityOptions}
-            value={geoIds.cityId}
-            onChange={(v) => onCityChange(v, findName(geo.cities, v))}
-            ariaLabel="City"
-            disabled={!geoIds.districtId}
-            emptyPlaceholder="Select a district above to see cities."
-            matchPredicate={matchesCitySearch}
-          />
-        </div>
-      ) : null}
     </div>
   );
 }
@@ -541,6 +520,14 @@ export function FirBlock({
   // field-level error.
   if (firMode === 'search_by_cnic') return null;
 
+  // Batch-6 D2/D6: the station is required ONLY on the explicit FIR branch.
+  // The standalone `non_judicial_criminal_record_search` flow (still reachable
+  // by its own URL) has no `fir_mode` field at all, so firMode is '' — it must
+  // not be told a thana is mandatory when neither the flow definition nor the
+  // backend requires one. Same while the consumer has not yet answered the
+  // branching question.
+  const stationRequired = firMode === 'have_fir_number';
+
   return (
     <div className="md:col-span-2 rounded-2xl border border-border-soft bg-surface-muted/50 p-5 space-y-5">
       <SectionHeader
@@ -551,7 +538,7 @@ export function FirBlock({
 
       {geoIds.districtId && geo.policeStations.length > 0 ? (
         <div>
-          <FieldLabel required>Police station</FieldLabel>
+          <FieldLabel required={stationRequired}>Police station</FieldLabel>
           <SelectionTileGrid
             options={stationOptions}
             value={stationId}
@@ -561,7 +548,7 @@ export function FirBlock({
         </div>
       ) : (
         <label className="block">
-          <FieldLabel required>Police station</FieldLabel>
+          <FieldLabel required={stationRequired}>Police station</FieldLabel>
           <input
             className={inputClass}
             type="text"

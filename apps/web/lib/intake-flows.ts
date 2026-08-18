@@ -1409,7 +1409,12 @@ const copyOfFirSteps: IntakeStep[] = [
         label: 'What are you looking for?',
         type: 'radio',
         required: true,
-        defaultValue: 'have_fir_number',
+        // Batch-6 D1: NO defaultValue. Pre-answering this made the wizard
+        // collapse it to a selection chip on first paint (the shared
+        // single-select collapse behaviour), so the consumer never saw the
+        // question — and it silently committed them to the FIR branch, which
+        // is exactly the assumption the client asked us to stop making:
+        // "ask him what he wants; he'll say he just wants a criminal record."
         options: ['have_fir_number', 'search_by_cnic'],
         // Serializable map (not a function) — a function here crosses the RSC
         // server→client boundary and 500s the whole route. See optionsLabels.
