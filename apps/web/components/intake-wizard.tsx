@@ -474,7 +474,13 @@ export function IntakeWizard({
       .then((r) => {
         deliveryAddressSeededForRef.current = cid;
         const address = r.address?.trim();
-        const city = r.city?.trim();
+        // Fall back to the case city when the consumer has no profile city
+        // (e.g. they skipped onboarding). Without this the renderer DISPLAYS
+        // `addr.city ?? payload.city` while isStructuredAddressComplete reads
+        // only the stored JSON — so the box looks filled and Continue still
+        // fails with "Please complete the delivery address". Persisting the
+        // fallback keeps what is shown and what is validated the same value.
+        const city = r.city?.trim() || draft.payload.city?.trim();
         if (!address && !city) return;
         startTransition(() => {
           setDraft((c) => {
@@ -499,7 +505,7 @@ export function IntakeWizard({
         });
       })
       .catch(() => { deliveryAddressSeededForRef.current = cid; });
-  }, [draft.consumerId, draft.payload.delivery_address, flowHasDeliveryAddress, currentUser?.id]);
+  }, [draft.consumerId, draft.payload.delivery_address, draft.payload.city, flowHasDeliveryAddress, currentUser?.id]);
 
   // Clear a stale "Non Attested" selection when the user flips to Decided Case,
   // since that option is hidden in this configuration.
@@ -1363,7 +1369,20 @@ export function IntakeWizard({
     geo.loadDistrictPoliceStations(districtId);
     setPayloadField('district_id', districtId);
     setPayloadField('district_name', name);
-    setPayloadField('city', '');
+    // Batch-6 D4 follow-up: the FIR / criminal-record flows no longer ask for a
+    // city, so `city` would stay '' forever — and it is read by more than the
+    // wizard. The invoice line resolves its location from
+    // `select_court_city ?? city ?? select_city` (invoice-lines.ts) and would
+    // render no location at all, and `serviceCity` (the ticket column the clerk
+    // city gate matches on) would fall through to the district anyway. Stamp
+    // the district name so every downstream reader gets the most specific
+    // location these flows actually collect, instead of nothing.
+    //
+    // KNOWN LIMITATION: for the ~28 districts with no same-named GeoCity
+    // (Hunza → Aliabad/Gojal, Swat → Mingora/Babuzai — see the geo-seed notes),
+    // this district name will not match a rep's city, so `assign()` 409s unless
+    // the admin ticks "Override city restriction". Non-FIR flows are unchanged.
+    setPayloadField('city', isFirFlow ? name : '');
     setPayloadField('city_id', '');
     setPayloadField('station_id', '');
     setPayloadField('police_station', '');
@@ -1502,6 +1521,34 @@ export function IntakeWizard({
     draft.flow === 'non_judicial_copy_of_fir' ||
     draft.flow === 'non_judicial_criminal_record_search';
 
+  // Batch-6 D4 follow-up: hydrate `geoIds.provinceId` from the copied payload.
+  //
+  // The prefill paths (regenerate / edit / resume) hydrate district_id and
+  // city_id but never province — `handleProvinceChange` only persists the
+  // province NAME, so there is no id in the payload to copy. That was harmless
+  // while a city existed to fall back on. After D4 the FIR flows have nothing
+  // else: validateLocationStep hard-requires provinceId, so opening a FIR
+  // ticket via Regenerate or Edit dead-ended at step 1 with "Please select a
+  // province" over an empty District grid (districts are only fetched by
+  // loadDistricts, which handleProvinceChange normally triggers).
+  //
+  // Resolve the id by name once the province list is available, then load the
+  // districts so the grid populates. Runs only when a province name is present
+  // and the id is still empty, so a real user selection is never overwritten.
+  useEffect(() => {
+    const name = draft.payload.province?.trim();
+    if (!name || geoIds.provinceId || geo.provinces.length === 0) return;
+    const match = geo.provinces.find(
+      (p) => p.name.toLowerCase() === name.toLowerCase(),
+    );
+    if (!match) return;
+    startTransition(() => {
+      setGeoIds((g) => ({ ...g, provinceId: match.id }));
+    });
+    geo.loadDistricts(match.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft.payload.province, geoIds.provinceId, geo.provinces]);
+
   const validateLocationStep = useCallback(() => {
     if (!draft.consumerId) {
       setApiError(isConsumerVariant ? 'Your account information is missing.' : 'Please select a consumer');
@@ -1550,11 +1597,16 @@ export function IntakeWizard({
     return Boolean(
       draft.flow &&
       draft.consumerId &&
-      geoIds.cityId &&
+      // Batch-6 D4 follow-up: the FIR / criminal-record flows have no city
+      // picker, so gating autosave on cityId silently disabled it for them —
+      // no 5s autosave, no server draft row, no "Saved" pill, no resumed-draft
+      // banner, and a closed tab lost everything. Mirror validateLocationStep:
+      // district is what those flows actually complete.
+      (isFirFlow ? geoIds.districtId : geoIds.cityId) &&
       draft.serviceId &&
       (!isJudicial || draft.payload.select_court),
     );
-  }, [draft.consumerId, draft.flow, draft.payload.select_court, draft.serviceId, editMode, geoIds.cityId, isJudicial, selectedFlow]);
+  }, [draft.consumerId, draft.flow, draft.payload.select_court, draft.serviceId, editMode, geoIds.cityId, geoIds.districtId, isFirFlow, isJudicial, selectedFlow]);
 
   useEffect(() => {
     if (!didHydrateRef.current) {
