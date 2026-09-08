@@ -13,6 +13,13 @@ import { DataTableShell } from '@/components/ui/data-table-shell';
 import { StatusPill } from '@/components/ui/status-pill';
 import { CheckCircle2, XCircle, Plus, Wallet, RefreshCw, FileText, ExternalLink, History, X, Upload } from 'lucide-react';
 import { formatStaffMoney, toCurrency } from '@wusuq/shared';
+import {
+  normalizeTransactionHistory,
+  transactionAmountLabel,
+  transactionDateLabel,
+  transactionTypeLabel,
+  type WalletTransactionRow,
+} from '@/lib/wallet-transactions';
 const CONSUMER_ROLES = ['consumer', 'lawyer', 'company'] as const;
 
 type WalletUser = {
@@ -65,7 +72,7 @@ export function WalletBoard() {
   const [myWallet, setMyWallet] = useState<{ balance: number; credit?: number; due?: number; transactions: ConsumerTransaction[] } | null>(null);
 
   const [txUserId, setTxUserId] = useState<string | null>(null);
-  const [txHistory, setTxHistory] = useState<any[]>([]);
+  const [txHistory, setTxHistory] = useState<WalletTransactionRow[]>([]);
   const [txLoading, setTxLoading] = useState(false);
   const [uploadingReceipt, setUploadingReceipt] = useState(false);
 
@@ -167,8 +174,11 @@ export function WalletBoard() {
     setTxHistory([]);
     setTxLoading(true);
     try {
-      const result = await apiClient.get<any[]>(`/wallet/${userId}/transactions`);
-      setTxHistory(result);
+      // The endpoint returns `{ userId, items }`, NOT a bare array. Storing
+      // the envelope made `.length` undefined, skipped the empty state and
+      // crashed render on `.map` — white-screening the whole board.
+      const result = await apiClient.get<unknown>(`/wallet/${userId}/transactions`);
+      setTxHistory(normalizeTransactionHistory(result));
     } catch (error: any) {
       setMessage(error.message || 'Failed to load transaction history');
       setTxUserId(null);
@@ -365,7 +375,7 @@ export function WalletBoard() {
                         <div className="text-xs text-slate-500 mt-0.5 max-w-[150px] truncate">{tx.id}</div>
                       </td>
                       <td className="px-6 py-4">
-                        <div className="text-sm font-bold text-slate-900">{tx.amount.toLocaleString()} {tx.currency}</div>
+                        <div className="text-sm font-bold text-slate-900">{Number(tx.amount ?? 0).toLocaleString()} {tx.currency}</div>
                         {tx.pkrAmountEntered != null && (
                           // Task 7: the PKR figure actually wired on a
                           // PKR-rail payment against a non-PKR ticket, plus
@@ -376,7 +386,7 @@ export function WalletBoard() {
                             {tx.fxRateToPkr != null ? ` @ ${Number(tx.fxRateToPkr).toLocaleString()}` : ''}
                           </div>
                         )}
-                        <div className="text-xs text-slate-500 mt-0.5">{tx.paymentMode.replace('_', ' ')}</div>
+                        <div className="text-xs text-slate-500 mt-0.5">{(tx.paymentMode ?? '').replace(/_/g, ' ')}</div>
                       </td>
                       <td className="px-6 py-4">
                         {tx.receiptUrl ? (
@@ -595,12 +605,12 @@ export function WalletBoard() {
                   {txHistory.map(t => (
                     <div key={t.id} className="p-4 px-6 hover:bg-slate-50 flex justify-between items-center">
                       <div>
-                        <div className="text-sm font-semibold text-slate-900 capitalize">{t.type.replace('_', ' ')}</div>
-                        <div className="text-xs text-slate-500 mt-1">{new Date(t.createdAt).toLocaleString()}</div>
+                        <div className="text-sm font-semibold text-slate-900">{transactionTypeLabel(t.type)}</div>
+                        <div className="text-xs text-slate-500 mt-1">{transactionDateLabel(t.createdAt)}</div>
                       </div>
                       <div className="text-right">
                         <div className={`text-sm font-bold ${t.type === 'TOPUP' ? 'text-emerald-600' : 'text-slate-900'}`}>
-                          {t.type === 'TOPUP' ? '+' : '-'}{t.amount.toLocaleString()} {t.currency}
+                          {transactionAmountLabel(t)}
                         </div>
                         <div className="text-xs text-slate-400 mt-0.5">{t.status}</div>
                       </div>
