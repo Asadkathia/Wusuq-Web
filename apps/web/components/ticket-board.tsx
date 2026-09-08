@@ -11,6 +11,7 @@ import { chargeCapabilitiesFor, computeClerkEarningsBreakdown, computeTicketTota
 import { TICKET_STATUSES } from '@wusuq/shared';
 import { apiClient } from '@/lib/api-client';
 import { relativeTime } from '@/lib/relative-time';
+import { prefillPhase2Charge } from '@/lib/finalize-charges';
 import { paymentsClient } from '@/lib/payments-client';
 import { DataTableShell } from '@/components/ui/data-table-shell';
 import { FilterBar } from '@/components/ui/filter-bar';
@@ -317,6 +318,7 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
     nonAttestedCostPerPage: string;
     deliveryCharges: string;
     additionalCharges: string;
+    additionalServiceCost: string;
   };
   const EMPTY_FINALIZE: FinalizeForm = {
     noOfPages: '',
@@ -327,6 +329,7 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
     nonAttestedCostPerPage: '',
     deliveryCharges: '',
     additionalCharges: '',
+    additionalServiceCost: '',
   };
   const [costEditTicket, setCostEditTicket] = useState<TicketRow | null>(null);
   const [costEditForm, setCostEditForm] = useState<Record<string, string>>({});
@@ -370,10 +373,15 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
   const openFinalizeModal = async (ticket: TicketRow) => {
     setFinalizeTicket(ticket);
     setFinalizeDetail(null);
+    // Batch-7 2.7: each phase-2 input opens at max(final, representative
+    // submitted). The cap in computeClerkEarningsBreakdown is min(submitted,
+    // final), so a box left at 0 while the snapshot says 300 paid the
+    // representative NOTHING for that line and dropped it from the bill.
     setFinalizeForm({
       ...EMPTY_FINALIZE,
-      deliveryCharges: ticket.deliveryCharges ? String(ticket.deliveryCharges) : '',
+      deliveryCharges: prefillPhase2Charge(ticket.deliveryCharges, ticket.clerkDeliveryCharges),
       additionalCharges: ticket.additionalCharges ? String(ticket.additionalCharges) : '',
+      additionalServiceCost: ticket.additionalServiceCost ? String(ticket.additionalServiceCost) : '',
     });
     try {
       const detail = await apiClient.get<any>(`/tickets/${ticket.id}`);
@@ -387,8 +395,9 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
         attestedCostPerPage: detail.attestedCostPerPage ? String(detail.attestedCostPerPage) : f.attestedCostPerPage,
         nonAttestedPages: detail.nonAttestedPages ? String(detail.nonAttestedPages) : f.nonAttestedPages,
         nonAttestedCostPerPage: detail.nonAttestedCostPerPage ? String(detail.nonAttestedCostPerPage) : f.nonAttestedCostPerPage,
-        deliveryCharges: detail.deliveryCharges ? String(detail.deliveryCharges) : f.deliveryCharges,
+        deliveryCharges: prefillPhase2Charge(detail.deliveryCharges, detail.clerkDeliveryCharges) || f.deliveryCharges,
         additionalCharges: detail.additionalCharges ? String(detail.additionalCharges) : f.additionalCharges,
+        additionalServiceCost: detail.additionalServiceCost ? String(detail.additionalServiceCost) : f.additionalServiceCost,
       }));
     } catch {
       // Non-fatal: the dialog still works with the list-row values.
@@ -446,6 +455,7 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
       const payload = {
         deliveryCharges: Number(finalizeForm.deliveryCharges) || 0,
         additionalCharges: Number(finalizeForm.additionalCharges) || 0,
+        additionalServiceCost: Number(finalizeForm.additionalServiceCost) || 0,
         ...pagePair(finalizeForm.noOfPages, finalizeForm.costPerPage, 'noOfPages', 'costPerPage'),
         ...pagePair(finalizeForm.attestedPages, finalizeForm.attestedCostPerPage, 'attestedPages', 'attestedCostPerPage'),
         ...pagePair(finalizeForm.nonAttestedPages, finalizeForm.nonAttestedCostPerPage, 'nonAttestedPages', 'nonAttestedCostPerPage'),
@@ -2563,6 +2573,15 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
                       <p className="mt-1 text-xs text-slate-400">Clerk submitted: PKR {clerkSubmitted('deliveryCharges').toLocaleString()}</p>
                     </FormField>
                   )}
+                  {/* Batch-7 2.8: the taxed half of the two-cost model. Folds
+                      into the service base, so it IS taxed — distinct from
+                      "Additional Cost" below, which is a separate untaxed line. */}
+                  <FormField label="Additional Service Cost" htmlFor="fin-additional-service">
+                    <Input id="fin-additional-service" type="number" min="0" placeholder="0"
+                      value={finalizeForm.additionalServiceCost}
+                      onChange={(e) => setFinalizeForm((f) => ({ ...f, additionalServiceCost: e.target.value }))} />
+                    <p className="mt-1 text-xs text-slate-400">Added to the taxable service base.</p>
+                  </FormField>
                   {/* Additional Cost — admin-editable, viewable; persisted on finalize. Untaxed (separate line). */}
                   <FormField label="Additional Cost" htmlFor="fin-additional">
                     <Input id="fin-additional" type="number" min="0" placeholder="0"
@@ -2584,7 +2603,8 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
                     (caps.attestation ? attestedComputed + nonAttestedComputed : 0) +
                     (caps.printing ? printingComputed : 0) +
                     (caps.delivery ? (Number(finalizeForm.deliveryCharges) || 0) : 0) +
-                    (Number(finalizeForm.additionalCharges) || 0);
+                    (Number(finalizeForm.additionalCharges) || 0) +
+                    (Number(finalizeForm.additionalServiceCost) || 0);
                   const baseAmount = Number(finalizeTicket.serviceCost || 0);
                   // Compute the finalize total via the single source (computeTicketTotal),
                   // NOT base + phase2 — that hand-rolled sum omits tax (on the service
@@ -2593,7 +2613,10 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
                   const { totalAmount: finalizeTotal } = computeTicketTotal({
                     charges: {
                       serviceCost: baseAmount,
-                      additionalServiceCost: Number(finalizeTicket.additionalServiceCost || 0),
+                      // Batch-7 2.8: read the EDITABLE field, not the frozen
+                      // ticket column, so the preview tracks what the admin is
+                      // typing (it is taxed, so it moves the total twice over).
+                      additionalServiceCost: Number(finalizeForm.additionalServiceCost) || 0,
                       deliveryCharges: caps.delivery ? Number(finalizeForm.deliveryCharges) || 0 : 0,
                       printingCharges: caps.printing ? printingComputed : 0,
                       attestedCharges: caps.attestation ? attestedComputed : 0,

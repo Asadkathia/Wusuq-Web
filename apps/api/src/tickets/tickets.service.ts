@@ -3036,10 +3036,14 @@ export class TicketsService {
     // Task 7: route through the shared computeTicketTotal so the cumulative
     // total includes tax on phase-2 charges (taxRate defaults to 0 for legacy
     // tickets that predate the column).
+    // Batch-7 2.8: admin-editable at Review & Complete, same fallback rule.
+    const additionalServiceCost = Number(
+      dto.additionalServiceCost ?? ticket.additionalServiceCost ?? 0,
+    );
     const money = TicketsService.assembleFinalizeMoney({
       serviceCost: Number(ticket.serviceCost),
       additionalCharges,
-      additionalServiceCost: Number(ticket.additionalServiceCost ?? 0),
+      additionalServiceCost,
       discountPrice: Number(ticket.discountPrice ?? 0),
       promoDiscount: Number(ticket.promoDiscount ?? 0),
       taxRate: Number(ticket.taxRate ?? 0),
@@ -3090,6 +3094,7 @@ export class TicketsService {
         printingCharges: printing,
         deliveryCharges: delivery,
         additionalCharges,
+        additionalServiceCost,
         totalAmount: total,
         taxAmount: money.taxAmount,
         // B11: persist the (possibly admin-edited) page counts alongside the
