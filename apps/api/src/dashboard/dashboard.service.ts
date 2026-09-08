@@ -386,6 +386,98 @@ export class DashboardService {
    * PKR total). Extracted from `computeSummary` so it has direct test
    * coverage — see `aggregate-currency.spec.ts`.
    */
+  /**
+   * The four figures the client asked for by name (batch-7 3.1):
+   *   "1- Total Business  2- Wusuq Profit  3- Clerk Profit
+   *    4- Advance Amount from Consumers"
+   * and again as "how much did the representative take, how much advance is
+   * there, and what is the profit — the Super Admin can't see it."
+   *
+   * His own worked example on one PKR 1,100 ticket: representative 800,
+   * Wusuq 300, consumer advance 900.
+   *
+   * CURRENCY: `totalAmount` may be USD, but representative payouts are ALWAYS
+   * PKR (domestic). So business converts through the shared mixed-currency
+   * reduce — excluding-and-counting rate-less tickets, same contract as the
+   * revenue KPI — while the payout sum is added raw. Subtracting a raw USD
+   * total from a PKR payout is exactly the batch-5 A defect; do not "simplify"
+   * this by dropping the conversion.
+   */
+  private async getBusinessKpis(): Promise<{
+    totalBusiness: number;
+    wusuqProfit: number;
+    representativeProfit: number;
+    consumerAdvance: number;
+    unconvertedCount: number;
+  }> {
+    const [tickets, creditAgg] = await Promise.all([
+      this.prisma.ticket.findMany({
+        where: { archivedAt: null },
+        select: {
+          totalAmount: true,
+          amountPaid: true,
+          currency: true,
+          fxRateToPkr: true,
+          clerkCost: true,
+          defaultClerkCost: true,
+          attestedCharges: true,
+          nonAttestedCharges: true,
+          printingCharges: true,
+          deliveryCharges: true,
+          clerkAttestedCharges: true,
+          clerkNonAttestedCharges: true,
+          clerkPrintingCharges: true,
+          clerkDeliveryCharges: true,
+          formPayload: true,
+        },
+      }),
+      // "Advance amount from consumers" = prepaid credit still held. That is
+      // User.walletBalance, which is the credit only and never negative.
+      this.prisma.user.aggregate({ _sum: { walletBalance: true } }),
+    ]);
+
+    const { totalAmountPkr: totalBusiness, unconvertedCount } =
+      sumMixedCurrencyToPkr(tickets);
+
+    const representativeProfit = round2(
+      tickets.reduce((sum, t) => {
+        const payload =
+          t.formPayload && typeof t.formPayload === 'object'
+            ? (t.formPayload as Record<string, unknown>)
+            : undefined;
+        const wantPdf = payload?.want_pdf_before_dispatch === 'Yes';
+        // A NULL clerk* column means "no submission recorded" and must stay
+        // null through to the cap — coercing it to 0 would pay every
+        // representative nothing (the load-bearing guard in CLAUDE.md).
+        const orNull = (v: unknown) => (v == null ? null : Number(v));
+        return (
+          sum +
+          computeClerkEarningsBreakdown({
+            clerkCost: Number(t.clerkCost ?? 0),
+            defaultClerkCost: Number(t.defaultClerkCost ?? 0),
+            attestedCharges: Number(t.attestedCharges ?? 0),
+            nonAttestedCharges: Number(t.nonAttestedCharges ?? 0),
+            printingCharges: Number(t.printingCharges ?? 0),
+            deliveryCharges: Number(t.deliveryCharges ?? 0),
+            wantPdf,
+            clerkAttestedCharges: orNull(t.clerkAttestedCharges),
+            clerkNonAttestedCharges: orNull(t.clerkNonAttestedCharges),
+            clerkPrintingCharges: orNull(t.clerkPrintingCharges),
+            clerkDeliveryCharges: orNull(t.clerkDeliveryCharges),
+          }).total
+        );
+      }, 0),
+    );
+
+    return {
+      totalBusiness,
+      representativeProfit,
+      wusuqProfit: round2(totalBusiness - representativeProfit),
+      consumerAdvance: round2(Number(creditAgg._sum.walletBalance ?? 0)),
+      unconvertedCount,
+    };
+  }
+
   private async getRevenueKpis(): Promise<{
     totalRevenue: number;
     outstandingBalance: number;
@@ -478,6 +570,7 @@ export class DashboardService {
 
     const { totalRevenue, outstandingBalance, unconvertedCount } =
       await this.getRevenueKpis();
+    const business = await this.getBusinessKpis();
 
     const kpis = {
       totalTickets,
@@ -485,6 +578,11 @@ export class DashboardService {
       totalRevenue,
       outstandingBalance,
       unconvertedCount,
+      // Batch-7 3.1
+      totalBusiness: business.totalBusiness,
+      wusuqProfit: business.wusuqProfit,
+      representativeProfit: business.representativeProfit,
+      consumerAdvance: business.consumerAdvance,
     };
 
     // Period-over-period deltas (current window vs same-length prior window)

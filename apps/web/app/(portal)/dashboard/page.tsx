@@ -23,6 +23,8 @@ import {
   WalletCards,
   Briefcase,
   CalendarClock,
+  TrendingUp,
+  Users,
 } from 'lucide-react';
 import {
   LineChart,
@@ -217,7 +219,7 @@ export default function DashboardPage() {
               label: 'Tickets pending assignment',
               count: pendingActions.pendingTickets ?? 0,
               oldestAgeHours: null,
-              deepLink: '/tickets/pending',
+              deepLink: '/tickets/unpaid',
               severity: 'info',
             },
           ]
@@ -233,7 +235,7 @@ export default function DashboardPage() {
             value={kpis.totalTickets.toLocaleString()}
             icon={<Ticket className="h-4 w-4" />}
             delta={kpisDelta.totalTickets ?? null}
-            href="/tickets/pending"
+            href="/tickets/all"
             hint="Click to triage"
             spark={kpiSparks.totalTickets}
           />
@@ -250,7 +252,7 @@ export default function DashboardPage() {
             value={`PKR ${Number(kpis.totalRevenue).toLocaleString()}`}
             icon={<DollarSign className="h-4 w-4" />}
             delta={kpisDelta.totalRevenue ?? null}
-            href="/reports"
+            href="/finance"
             spark={kpiSparks.totalRevenue}
             hint={unconvertedNote ?? undefined}
           />
@@ -259,12 +261,48 @@ export default function DashboardPage() {
             value={`PKR ${Number(kpis.outstandingBalance).toLocaleString()}`}
             icon={<WalletCards className="h-4 w-4" />}
             delta={kpisDelta.outstandingBalance ?? null}
-            href="/finance"
+            href="/finance?filter=outstanding"
             hint={
               unconvertedNote
                 ? `${unconvertedNote} · Aged > 30d in Action Center`
-                : 'Aged > 30d in Action Center'
+                : 'Click to see who owes'
             }
+          />
+        </div>
+
+        {/* Batch-7 3.1 — the four figures the client asked for by name:
+            "1- Total Business 2- Wusuq Profit 3- Clerk Profit
+             4- Advance Amount from Consumers". All PKR: business converts
+            mixed-currency tickets server-side, representative payouts are
+            domestic by definition. */}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <KpiCard
+            title="Total Business"
+            value={`PKR ${Number(kpis.totalBusiness ?? 0).toLocaleString()}`}
+            icon={<Briefcase className="h-4 w-4" />}
+            href="/tickets/all"
+            hint="Billed across all tickets"
+          />
+          <KpiCard
+            title="Wusuq Profit"
+            value={`PKR ${Number(kpis.wusuqProfit ?? 0).toLocaleString()}`}
+            icon={<TrendingUp className="h-4 w-4" />}
+            href="/finance"
+            hint="Business minus representative pay"
+          />
+          <KpiCard
+            title="Representative Profit"
+            value={`PKR ${Number(kpis.representativeProfit ?? 0).toLocaleString()}`}
+            icon={<Users className="h-4 w-4" />}
+            href="/manage-users/representatives"
+            hint="Total payable to representatives"
+          />
+          <KpiCard
+            title="Consumer Advance"
+            value={`PKR ${Number(kpis.consumerAdvance ?? 0).toLocaleString()}`}
+            icon={<WalletCards className="h-4 w-4" />}
+            href="/wallet"
+            hint="Prepaid credit held on account"
           />
         </div>
 

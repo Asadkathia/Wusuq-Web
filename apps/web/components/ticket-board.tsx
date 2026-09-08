@@ -35,7 +35,11 @@ import { flowKeyToSlug } from '@/lib/intake-flows';
 
 type TicketBoardProps = {
   title: string;
-  status: TicketStatus;
+  // Batch-7 3.2a: OPTIONAL. Omitted = "every status" (the /tickets/all board
+  // the Total Tickets KPI links to). Every per-tab gate below is a
+  // `status === 'X'` comparison, so an absent status simply renders nothing
+  // tab-specific — the same way the archived mode already behaves.
+  status?: TicketStatus;
   // Restore/unarchive follow-up: when true, this board lists ONLY archived
   // tickets (server-side `archived=true` filter, staff-only) and swaps the
   // bulk/per-row "Delete" affordance for "Restore". `status` is still
@@ -536,7 +540,7 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
       // filter (staff-only) replaces the per-tab status filter entirely.
       if (archived) {
         q.set('archived', 'true');
-      } else {
+      } else if (status) {
         q.set('status', status);
       }
       if (dateRange !== 'all') q.set('dateRange', dateRange);
@@ -1210,7 +1214,13 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
     <div className="space-y-6">
       <SectionHeader
         title={title}
-        description={archived ? 'Archived tickets — restore them back into the active workflow.' : `Manage ${status.toLowerCase()} tickets and assignments.`}
+        description={
+          archived
+            ? 'Archived tickets — restore them back into the active workflow.'
+            : status
+              ? `Manage ${status.toLowerCase()} tickets and assignments.`
+              : 'Every ticket, across all statuses.'
+        }
         action={
           <button
             onClick={loadTickets}

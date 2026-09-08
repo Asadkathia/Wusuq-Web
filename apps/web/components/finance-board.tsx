@@ -15,7 +15,8 @@ import { StatCard } from '@/components/ui/stat-card';
 import { StatusPill } from '@/components/ui/status-pill';
 import { Banknote, FileText, CheckCircle, RefreshCw, HandCoins, Pencil, X, Check, CheckCircle2, XCircle, ExternalLink, Building2, SlidersHorizontal, Upload } from 'lucide-react';
 import { STAFF_LOGIN_PATH } from '@/lib/staff-routes';
-import { formatStaffMoney, toCurrency } from '@wusuq/shared';
+import { useSearchParams } from 'next/navigation';
+import { computeWusuqMarginPkr, formatStaffMoney, toCurrency } from '@wusuq/shared';
 
 type FinanceItem = {
   id: string;
@@ -67,6 +68,8 @@ const EMPTY_SUMMARY: FinanceSummary = {
 };
 
 export function FinanceBoard() {
+  const searchParams = useSearchParams();
+  const outstandingOnly = searchParams.get('filter') === 'outstanding';
   const [items, setItems] = useState<FinanceItem[]>([]);
   const [summary, setSummary] = useState<FinanceSummary>(EMPTY_SUMMARY);
   const [message, setMessage] = useState('');
@@ -189,15 +192,27 @@ export function FinanceBoard() {
     }),
     [summary],
   );
+  // Batch-7 3.7: Wusuq's cut across the board, alongside outstanding/collected.
+  // Row-level margins are PKR-converted individually (see the row cell), so the
+  // board total is the straight sum of the per-row payouts subtracted from the
+  // PKR-converted business total the server already returned.
+  const representativePayoutTotal = useMemo(
+    () => items.reduce((sum, i) => sum + Number(i.clerkPayout ?? 0), 0),
+    [items],
+  );
   const unconvertedNote =
     summary.unconvertedCount > 0
       ? `${summary.unconvertedCount} ticket(s) excluded — FX rate not set`
       : null;
 
   const filteredItems = useMemo(() => {
-    if (!search) return items;
+    // Batch-7 3.2c: the dashboard's Outstanding KPI links here with
+    // ?filter=outstanding. His complaint was "I can't tell WHOSE outstanding
+    // this is" — landing on the unfiltered board answered nothing.
+    const base = outstandingOnly ? items.filter((i) => Number(i.remaining ?? 0) > 0) : items;
+    if (!search) return base;
     const l = search.toLowerCase();
-    return items.filter(i => i.batchNo.toLowerCase().includes(l) || i.consumer.name.toLowerCase().includes(l) || i.service.name.toLowerCase().includes(l));
+    return base.filter(i => i.batchNo.toLowerCase().includes(l) || i.consumer.name.toLowerCase().includes(l) || i.service.name.toLowerCase().includes(l));
   }, [items, search]);
 
   const reconcile = async (ticketId: string) => {
@@ -428,10 +443,20 @@ export function FinanceBoard() {
         }
       />
 
+      {outstandingOnly && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
+          Showing only tickets with an outstanding balance.{' '}
+          <a href="/finance" className="font-semibold underline">Show all</a>
+        </div>
+      )}
+
       {/* KPI Row */}
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <StatCard title="Outstanding Balance" value={`PKR ${stats.outstanding.toLocaleString()}`} icon={<Banknote className="h-6 w-6 text-slate-400" />} hint={unconvertedNote ?? undefined} />
         <StatCard title="Total Collected" value={`PKR ${stats.collected.toLocaleString()}`} icon={<HandCoins className="h-6 w-6 text-slate-400" />} hint={unconvertedNote ?? undefined} />
+        {/* Batch-7 3.7 */}
+        <StatCard title="Representative Payout" value={`PKR ${representativePayoutTotal.toLocaleString()}`} icon={<HandCoins className="h-6 w-6 text-slate-400" />} hint="Domestic, always PKR" />
+        <StatCard title="Wusuq Profit" value={`PKR ${Math.max(0, summary.totalAmount - representativePayoutTotal).toLocaleString()}`} icon={<Banknote className="h-6 w-6 text-slate-400" />} hint={unconvertedNote ?? 'Business minus representative pay'} />
       </div>
 
       {/* ── Payment Approval Queue ─────────────────────────────────────── */}
@@ -775,10 +800,35 @@ export function FinanceBoard() {
                   )}
                   <div className="text-sm text-emerald-600">Paid: {formatStaffMoney(item.amountPaid, toCurrency(item.currency), item.fxRateToPkr)}</div>
                   {item.remaining > 0 && <div className="text-sm text-rose-600 font-medium mt-1">Due: {formatStaffMoney(item.remaining, toCurrency(item.currency), item.fxRateToPkr)}</div>}
-                  {/* Clerk payout stays PKR unconditionally — clerk payouts are
-                      domestic regardless of the consumer's billing currency —
-                      so this deliberately does NOT go through formatStaffMoney. */}
-                  {item.clerkPayout > 0 && <div className="text-sm text-violet-600 mt-1">Clerk: {item.clerkPayout}</div>}
+                  {/* Representative payout stays PKR unconditionally — payouts
+                      are domestic regardless of the consumer's billing currency
+                      — so this deliberately does NOT go through
+                      formatStaffMoney. */}
+                  {item.clerkPayout > 0 && (
+                    <div className="text-sm text-violet-600 mt-1">
+                      Representative: PKR {Number(item.clerkPayout).toLocaleString()}
+                    </div>
+                  )}
+                  {/* Batch-7 3.7: "how much is my profit? how much is the
+                      representative's profit?" — the row showed Total/Paid/Due
+                      and the payout but never Wusuq's cut. Margin mixes
+                      currencies (total may be USD, payout is always PKR), so it
+                      goes through computeWusuqMarginPkr, which returns null
+                      rather than an unconverted number when the FX rate is
+                      missing. */}
+                  {(() => {
+                    const margin = computeWusuqMarginPkr(
+                      Number(item.totalAmount ?? 0),
+                      toCurrency(item.currency),
+                      item.fxRateToPkr,
+                      Number(item.clerkPayout ?? 0),
+                    );
+                    return (
+                      <div className="text-sm text-indigo-600 mt-1">
+                        Wusuq: {margin === null ? '(rate not set)' : `PKR ${margin.toLocaleString()}`}
+                      </div>
+                    );
+                  })()}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
                   <StatusPill
