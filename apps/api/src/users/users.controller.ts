@@ -13,6 +13,7 @@ import type { JwtUser } from '../auth/types/jwt-user.type';
 import { RequirePermissions } from '../roles-permissions/decorators/permissions.decorator';
 import { CreateRepresentativeDto } from './dto/create-representative.dto';
 import { CreateUserDto } from './dto/create-user.dto';
+import { RecordPayoutDto } from './dto/record-payout.dto';
 import { ListUsersDto } from './dto/list-users.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UsersService } from './users.service';
@@ -123,5 +124,27 @@ export class UsersController {
   @Get(':id/tickets')
   userTickets(@Param('id') id: string) {
     return this.usersService.userTickets(id);
+  }
+
+  // Batch-7 2.6 — representative payouts. Writing money movement is
+  // finance.write (super-admin only, same bar as issuing an invoice);
+  // reading the history is users.read like the rest of this controller.
+  @RequirePermissions('finance.write')
+  @Post(':id/payouts')
+  recordPayout(
+    @Param('id') id: string,
+    @Body() dto: RecordPayoutDto,
+    @CurrentUser() actor: JwtUser | undefined,
+  ) {
+    return this.usersService.recordPayout(id, dto, {
+      actorUserId: actor?.sub,
+      actorEmail: actor?.email,
+    });
+  }
+
+  @RequirePermissions('users.read')
+  @Get(':id/payouts')
+  listPayouts(@Param('id') id: string) {
+    return this.usersService.listPayouts(id);
   }
 }

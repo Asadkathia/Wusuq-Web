@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { hash } from 'bcryptjs';
 import type { User, Prisma } from '@prisma/client';
 import { USER_ROLES, deriveCurrency } from '@wusuq/shared';
@@ -22,6 +26,80 @@ export class UsersService {
     private readonly auditLogsService: AuditLogsService,
     private readonly dispatcher: NotificationDispatcher,
   ) {}
+
+  /**
+   * Record a payout made to a representative (batch-7 2.6). See
+   * RecordPayoutDto for why this lands in the audit trail rather than a
+   * dedicated ledger.
+   */
+  async recordPayout(
+    representativeId: string,
+    dto: {
+      amount: number;
+      method: string;
+      reference?: string;
+      note?: string;
+    },
+    actor?: { actorUserId?: string; actorEmail?: string },
+  ) {
+    const rep = await this.prisma.user.findUnique({
+      where: { id: representativeId },
+      select: { id: true, name: true, role: true },
+    });
+    if (!rep) throw new NotFoundException('User not found');
+    if (rep.role !== 'representative') {
+      throw new BadRequestException('Payouts can only be recorded for representatives.');
+    }
+
+    const log = await this.auditLogsService.create({
+      action: 'REPRESENTATIVE_PAYOUT',
+      entity: 'USER',
+      entityId: representativeId,
+      actorUserId: actor?.actorUserId,
+      actorEmail: actor?.actorEmail,
+      metadata: {
+        amount: dto.amount,
+        // Payouts are domestic — always PKR, like every other
+        // representative-facing figure.
+        currency: 'PKR',
+        method: dto.method,
+        reference: dto.reference ?? null,
+        note: dto.note ?? null,
+      },
+    });
+    return { id: log.id, recorded: true };
+  }
+
+  /** Payout history for one representative (batch-7 2.6). */
+  async listPayouts(representativeId: string) {
+    const rows = await this.prisma.auditLog.findMany({
+      where: { action: 'REPRESENTATIVE_PAYOUT', entityId: representativeId },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+      select: {
+        id: true,
+        createdAt: true,
+        actorEmail: true,
+        metadata: true,
+      },
+    });
+    const items = rows.map((r) => {
+      const m = (r.metadata ?? {}) as Record<string, unknown>;
+      return {
+        id: r.id,
+        createdAt: r.createdAt,
+        recordedBy: r.actorEmail,
+        amount: Number(m.amount ?? 0),
+        method: String(m.method ?? ''),
+        reference: (m.reference as string | null) ?? null,
+        note: (m.note as string | null) ?? null,
+      };
+    });
+    return {
+      items,
+      totalPaidOut: items.reduce((sum, i) => sum + i.amount, 0),
+    };
+  }
 
   async findAll(query: ListUsersDto) {
     const skip = (query.page - 1) * query.limit;

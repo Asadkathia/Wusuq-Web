@@ -11,6 +11,20 @@ type ServicePickerProps = {
   basePath: string;
   title: string;
   subtitle?: string;
+  /**
+   * Batch-7 1.5: query string to append to every tile link.
+   *
+   * Regenerate now lands HERE rather than jumping straight back into the
+   * source flow, because the client wants to reuse a case for a DIFFERENT
+   * service: "he wants, on the same case, to do a Case File — or a Power of
+   * Attorney — so he doesn't have to type things again and again. He changes
+   * his service and the rest stays the same… it should not land straight on
+   * Case File, it should ask which service you want."
+   *
+   * Carrying `regenerateFromTicketId` through the pick is what lets the
+   * wizard prefill the case fields once a service is chosen.
+   */
+  linkQuery?: string;
 };
 
 export function ServicePicker({
@@ -19,6 +33,7 @@ export function ServicePicker({
   basePath,
   title,
   subtitle,
+  linkQuery,
 }: ServicePickerProps) {
   const isConsumer = variant === 'consumer';
 
@@ -68,7 +83,7 @@ export function ServicePicker({
       >
         {flows.map((flow) => {
           const Icon = flow.icon ?? Sparkles;
-          const href = `${basePath}/${flowKeyToSlug(flow.key)}`;
+          const href = `${basePath}/${flowKeyToSlug(flow.key)}${linkQuery ? `?${linkQuery}` : ''}`;
           const tile = (
             <li key={flow.key}>
               <Link

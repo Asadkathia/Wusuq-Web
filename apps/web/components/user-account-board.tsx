@@ -38,6 +38,16 @@ type Account = {
   consumerKind?: string | null;
 };
 
+type Payout = {
+  id: string;
+  createdAt: string;
+  recordedBy?: string | null;
+  amount: number;
+  method: string;
+  reference?: string | null;
+  note?: string | null;
+};
+
 type TicketRow = {
   id: string;
   batchNo: string;
@@ -56,6 +66,12 @@ export function UserAccountBoard({ userId }: { userId: string }) {
   const [transactions, setTransactions] = useState<WalletTransactionRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  // Batch-7 2.6 — representative payouts.
+  const [payouts, setPayouts] = useState<{ items: Payout[]; totalPaidOut: number } | null>(null);
+  const [payoutAmount, setPayoutAmount] = useState('');
+  const [payoutMethod, setPayoutMethod] = useState('BANK_TRANSFER');
+  const [payoutReference, setPayoutReference] = useState('');
+  const [payoutBusy, setPayoutBusy] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -76,6 +92,15 @@ export function UserAccountBoard({ userId }: { userId: string }) {
         .get<unknown>(`/wallet/${userId}/transactions`)
         .catch(() => null);
       setTransactions(normalizeTransactionHistory(tx));
+
+      if (user.role === 'representative') {
+        const p = await apiClient
+          .get<{ items: Payout[]; totalPaidOut: number }>(`/users/${userId}/payouts`)
+          .catch(() => null);
+        setPayouts(p);
+      } else {
+        setPayouts(null);
+      }
     } catch (err: unknown) {
       setError((err as { message?: string })?.message || 'Failed to load account');
     } finally {
@@ -92,6 +117,26 @@ export function UserAccountBoard({ userId }: { userId: string }) {
   const paid = tickets.reduce((sum, t) => sum + Number(t.amountPaid ?? 0), 0);
   const due = Math.max(0, billed - paid);
   const isRepresentative = account?.role === 'representative';
+
+  const recordPayout = async () => {
+    const amount = Number(payoutAmount);
+    if (!amount || amount <= 0 || payoutBusy) return;
+    setPayoutBusy(true);
+    try {
+      await apiClient.post(`/users/${userId}/payouts`, {
+        amount,
+        method: payoutMethod,
+        reference: payoutReference.trim() || undefined,
+      });
+      setPayoutAmount('');
+      setPayoutReference('');
+      await load();
+    } catch (err: unknown) {
+      setError((err as { message?: string })?.message || 'Failed to record payout');
+    } finally {
+      setPayoutBusy(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -182,6 +227,78 @@ export function UserAccountBoard({ userId }: { userId: string }) {
               </table>
             </DataTableShell>
           </div>
+
+          {/* Batch-7 2.6: "we will see how to send money to this account —
+              just like we are sending money to the client, we will also send
+              money to the representative." Recorded in the audit trail; see
+              RecordPayoutDto for why there is no payout ledger yet. */}
+          {isRepresentative ? (
+            <div>
+              <h3 className="mb-3 px-1 text-lg font-semibold text-slate-900">
+                Payouts{payouts ? ` — PKR ${payouts.totalPaidOut.toLocaleString()} paid out` : ''}
+              </h3>
+              <PanelCard className="p-5">
+                <div className="flex flex-wrap items-end gap-3">
+                  <label className="flex-1 min-w-[140px]">
+                    <span className="text-xs font-medium text-slate-600">Amount (PKR)</span>
+                    <input
+                      type="number"
+                      min="0"
+                      value={payoutAmount}
+                      onChange={(e) => setPayoutAmount(e.target.value)}
+                      className="mt-1 block w-full rounded-lg border-0 py-2 px-3 text-slate-900 ring-1 ring-inset ring-border-soft focus:ring-2 focus:ring-primary-600 sm:text-sm"
+                    />
+                  </label>
+                  <label className="flex-1 min-w-[140px]">
+                    <span className="text-xs font-medium text-slate-600">Method</span>
+                    <select
+                      value={payoutMethod}
+                      onChange={(e) => setPayoutMethod(e.target.value)}
+                      className="mt-1 block w-full rounded-lg border-0 py-2 px-3 text-slate-900 ring-1 ring-inset ring-border-soft focus:ring-2 focus:ring-primary-600 sm:text-sm"
+                    >
+                      <option value="BANK_TRANSFER">Bank transfer</option>
+                      <option value="JAZZ_CASH">JazzCash</option>
+                      <option value="EASY_PAISA">EasyPaisa</option>
+                    </select>
+                  </label>
+                  <label className="flex-1 min-w-[160px]">
+                    <span className="text-xs font-medium text-slate-600">Reference (optional)</span>
+                    <input
+                      type="text"
+                      value={payoutReference}
+                      onChange={(e) => setPayoutReference(e.target.value)}
+                      className="mt-1 block w-full rounded-lg border-0 py-2 px-3 text-slate-900 ring-1 ring-inset ring-border-soft focus:ring-2 focus:ring-primary-600 sm:text-sm"
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    onClick={recordPayout}
+                    disabled={payoutBusy || !payoutAmount}
+                    className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-700 disabled:opacity-50"
+                  >
+                    {payoutBusy ? 'Recording…' : 'Record payout'}
+                  </button>
+                </div>
+                {payouts && payouts.items.length > 0 ? (
+                  <ul className="mt-4 divide-y divide-border-soft border-t border-border-soft">
+                    {payouts.items.map((po) => (
+                      <li key={po.id} className="flex items-center justify-between py-2 text-sm">
+                        <span className="text-slate-600">
+                          {new Date(po.createdAt).toLocaleDateString()} · {po.method.replace(/_/g, ' ')}
+                          {po.reference ? ` · ${po.reference}` : ''}
+                        </span>
+                        <span className="font-semibold tabular-nums text-slate-900">
+                          PKR {po.amount.toLocaleString()}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-4 text-sm text-slate-500">No payouts recorded yet.</p>
+                )}
+              </PanelCard>
+            </div>
+          ) : null}
 
           <div>
             <h3 className="mb-3 px-1 text-lg font-semibold text-slate-900">Transaction history</h3>

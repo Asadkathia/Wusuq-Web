@@ -24,9 +24,26 @@ const tiles = nonJudicialFlows
       : flow,
   );
 
-export default function ConsumerNonJudicialServicesPage() {
+
+/**
+ * Batch-7 1.5: when arrived at via Regenerate, `regenerateFromTicketId` is
+ * carried through to whichever service the consumer picks, so they can order
+ * a DIFFERENT service against the same case without retyping it.
+ */
+export default async function ConsumerNonJudicialServicesPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const sp = await searchParams;
+  const regenerateFromTicketId =
+    typeof sp.regenerateFromTicketId === 'string' ? sp.regenerateFromTicketId : null;
+  const linkQuery = regenerateFromTicketId
+    ? `regenerateFromTicketId=${encodeURIComponent(regenerateFromTicketId)}`
+    : undefined;
   return (
     <ServicePicker
+      linkQuery={linkQuery}
       flows={tiles}
       variant="consumer"
       basePath="/consumer/paralegal-services/non-judicial"

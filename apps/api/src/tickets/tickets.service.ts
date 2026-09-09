@@ -1026,6 +1026,26 @@ export class TicketsService {
 
     await this.dispatcher.ticketCreated(ticket.id).catch(() => undefined);
 
+    // Batch-7 2.2: apply any prepaid credit the consumer is already holding,
+    // immediately. "So this is regenerated — why is the money not
+    // decreasing?" and, on the staff side, "super admin is saying the payment
+    // is waiting for the ticket, but it was already cut from that."
+    //
+    // Settlement already ran on top-up verification, admin adjustment and
+    // remainder finalize — never at ticket CREATION, which is the one moment
+    // a new due appears against existing credit. This is the same locked FIFO
+    // path (settleTicketsForUser -> clearPendingTickets), not a second money
+    // path, so the ordering and floor-at-0 guarantees are unchanged.
+    //
+    // try/catch, not .catch(): a synchronous throw must not fail a ticket
+    // that has already been created and charged.
+    try {
+      await this.walletService.settleTicketsForUser(dto.consumerId);
+    } catch {
+      // Non-fatal: the ticket exists and the credit stays on the wallet; the
+      // next settlement trigger picks it up.
+    }
+
     return ticket;
   }
 
@@ -1898,7 +1918,23 @@ export class TicketsService {
       metadata: { ticketId, visibleToConsumer: consumerVisible },
     });
 
-    if (consumerVisible) {
+    // Batch-7 6.1 — the batch's most-repeated complaint: the consumer got a
+    // "New document" bell, clicked it, and found nothing on the ticket.
+    //
+    // Root cause: consumer document visibility is gated on
+    // `visibleToConsumer` AND `status in (COMPLETED, DELIVERED)`
+    // (redactTicketForConsumer, WS-B B1/B2), but the notification fired on
+    // upload — which happens while the ticket is still IN_PROGRESS /
+    // WAITING_APPROVAL. So the bell pointed at a document the gate was
+    // correctly hiding.
+    //
+    // The gate itself is right: a deliverable must not reach the consumer
+    // before the admin approves and the remainder is settled. So the fix is
+    // to HOLD the bell, not to loosen the gate. afterRemainderFinalized
+    // fires it once the documents are genuinely visible.
+    const alreadyVisibleToConsumer =
+      target.status === 'COMPLETED' || target.status === 'DELIVERED';
+    if (consumerVisible && alreadyVisibleToConsumer) {
       await this.dispatcher
         .ticketDocumentUploaded(ticketId)
         .catch(() => undefined);
@@ -3283,6 +3319,19 @@ export class TicketsService {
     // from nextval() inside generate's own transaction. Best-effort: the
     // completion has already committed and must not roll back because
     // invoicing failed.
+    // Batch-7 6.1: release the "New document" bell that upload deliberately
+    // held back while the consumer gate was still hiding the deliverable.
+    try {
+      const visibleDocs = await this.prisma.ticketDocument.count({
+        where: { ticketId, visibleToConsumer: true },
+      });
+      if (visibleDocs > 0) {
+        await this.dispatcher.ticketDocumentUploaded(ticketId);
+      }
+    } catch {
+      // Non-fatal — the completion already committed.
+    }
+
     await this.autoIssueInvoice(ticketId, actor.actorUserId);
 
     await this.auditLogsService.create({
@@ -3522,7 +3571,9 @@ export class TicketsService {
   private async ensureTicketExists(id: string) {
     const ticket = await this.prisma.ticket.findUnique({
       where: { id },
-      select: { id: true, consumerId: true },
+      // `status` is needed by uploadDocument (batch-7 6.1) to decide whether
+      // a consumer-visible document is actually visible YET.
+      select: { id: true, consumerId: true, status: true },
     });
 
     if (!ticket) {
