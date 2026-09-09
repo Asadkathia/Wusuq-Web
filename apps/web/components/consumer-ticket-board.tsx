@@ -85,6 +85,8 @@ type TicketRow = {
   // ONLY when this is populated (an un-invoiced ticket has nothing to
   // download; invoices are admin-issued batches, not one-per-ticket anymore).
   invoiceItem?: { invoiceId: string; invoice: { invoiceNo: string } } | null;
+  // Batch-7 7.4: already filtered to consumer-visible + completed server-side.
+  documents?: Array<{ id: string; name?: string | null; caption?: string | null; category?: string | null }> | null;
 };
 
 // Lifecycle order for the compact progress strip on each card.
@@ -379,6 +381,9 @@ function TicketCard({ ticket, onOpen }: { ticket: TicketRow; onOpen: () => void 
   // an issued invoice — invoices are admin-issued multi-ticket batches now,
   // not generated per-ticket, so an un-invoiced ticket has nothing to fetch.
   const invoiceId = ticket.invoiceItem?.invoiceId ?? null;
+  // Batch-7 7.4: consumer-visible documents are already filtered server-side
+  // by redactTicketForConsumer (visibleToConsumer + COMPLETED/DELIVERED).
+  const docCount = Array.isArray(ticket.documents) ? ticket.documents.length : 0;
   const invoiceNo = ticket.invoiceItem?.invoice?.invoiceNo ?? null;
 
   // Show "Final payment due" when: remainder has been finalized but not yet fully paid
@@ -573,8 +578,8 @@ function TicketCard({ ticket, onOpen }: { ticket: TicketRow; onOpen: () => void 
         </div>
       ) : null}
 
-      {/* Regenerate / Download invoice / Pay later (C7/C8) */}
-      {rgHref || invoiceId || showFinalPayment || showPayNow ? (
+      {/* Regenerate / Documents / Download invoice / Pay later (C7/C8 + batch-7 7.4) */}
+      {rgHref || invoiceId || docCount > 0 || showFinalPayment || showPayNow ? (
         <div className="mt-2 flex flex-wrap items-center justify-end gap-2">
           {rgHref ? (
             <Link href={rgHref} onClick={(e) => e.stopPropagation()}>
@@ -582,6 +587,20 @@ function TicketCard({ ticket, onOpen }: { ticket: TicketRow; onOpen: () => void 
                 Regenerate
               </Button>
             </Link>
+          ) : null}
+          {/* Batch-7 7.4: "please add here — tcs receipt / Document By Clerk /
+              invoice". The deliverable and the courier receipt were reachable
+              only after opening the drawer; this surfaces them on the card and
+              opens straight to them. */}
+          {docCount > 0 ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={(e) => { e.stopPropagation(); onOpen(); }}
+              leftIcon={<FileText className="h-3.5 w-3.5" />}
+            >
+              Documents ({docCount})
+            </Button>
           ) : null}
           {invoiceId && invoiceNo ? (
             <Button
@@ -1002,7 +1021,12 @@ export function ConsumerTicketDetail({
                   </span>
                   <span className="min-w-0 flex-1 text-left">
                     <span className="block truncate text-sm font-medium text-slate-800">
-                      {documentCategoryLabel(doc.category)}
+                      {/* Batch-7 6.3/6.5: a caption names the document's ROLE
+                          ("TCS courier receipt") and outranks the generic
+                          category label — "how will the user know which case
+                          document this is? … right now there's one document,
+                          tomorrow there will be ten." */}
+                      {doc.caption?.trim() || documentCategoryLabel(doc.category)}
                     </span>
                     <span className="block truncate text-[11px] text-slate-400">{docName}</span>
                   </span>

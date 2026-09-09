@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { TicketStatus } from '@wusuq/shared';
-import { chargeCapabilitiesFor, computeClerkEarningsBreakdown, computeTicketTotal, computeWusuqMarginPkr, formatStaffMoney, toCurrency } from '@wusuq/shared';
+import { documentCategoryLabel, chargeCapabilitiesFor, computeClerkEarningsBreakdown, computeTicketTotal, computeWusuqMarginPkr, formatStaffMoney, toCurrency } from '@wusuq/shared';
 import { TICKET_STATUSES } from '@wusuq/shared';
 import { apiClient } from '@/lib/api-client';
 import { relativeTime } from '@/lib/relative-time';
@@ -31,6 +31,8 @@ import {
 } from '@/components/ui/dialog';
 import { UserCircle, MapPin, Tag, RefreshCw, CheckSquare, Clock, History, FileOutput, Eye, PlayCircle, Upload, X, XCircle, Calendar, FileText, Download, Trash2, RotateCcw, Pencil, Coins } from 'lucide-react';
 import { TicketDetailPanel } from './ticket-detail-panel';
+import { DocumentPreview } from '@/components/document-preview';
+import { downloadInvoice } from '@/lib/download-invoice';
 import { flowKeyToSlug } from '@/lib/intake-flows';
 
 type TicketBoardProps = {
@@ -60,6 +62,7 @@ type TicketRow = {
   deliveryStatus?: 'PENDING' | 'DISPATCHED' | null;
   trackingNo?: string | null;
   dispatchProofUrl?: string | null;
+  invoiceItem?: { invoiceId: string; invoice: { invoiceNo: string } } | null;
   serviceCost?: number | string | null;
   totalAmount?: number | string | null;
   amountPaid?: number | string | null;
@@ -344,6 +347,8 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
   // fetched on open since the list row doesn't carry these (Task 4.1).
   const [finalizeDetail, setFinalizeDetail] = useState<any>(null);
   const [finalizing, setFinalizing] = useState(false);
+  // Batch-7 6.6: inline preview for the Review & Complete document list.
+  const [previewDoc, setPreviewDoc] = useState<{ url: string; name: string } | null>(null);
 
   /** Internal-only: itemized payout to the clerk given the current (computed)
    *  phase-2 charges. Delegates to the shared single-source formula (adds the
@@ -997,7 +1002,14 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
           const formData = new FormData();
           formData.append('file', costsProofFile);
           formData.append('category', 'WORK_DOCUMENT');
-          formData.append('visibleToConsumer', 'false');
+          // Batch-7 6.2: the courier receipt IS for the consumer — "this
+          // should be automatically visible to consumer". It used to upload
+          // with visibleToConsumer:false, so the person waiting on the
+          // delivery could never see the tracking proof. The caption carries
+          // the role so the consumer row reads "TCS courier receipt" rather
+          // than a storage filename (6.3/6.5).
+          formData.append('visibleToConsumer', 'true');
+          formData.append('caption', 'TCS courier receipt');
           const doc = await apiClient.post<{ fileUrl?: string }>(
             `/tickets/${costsTicket.id}/documents/upload`,
             formData,
@@ -1559,6 +1571,25 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
                     <button onClick={() => setViewTicketId(ticket.id)} className="text-slate-600 hover:text-primary-700 bg-slate-100 hover:bg-primary-50 px-3 py-1.5 rounded-md flex items-center gap-1">
                       <Eye className="h-3.5 w-3.5" /> View Details
                     </button>
+                    {/* Batch-7 7.3: "I just need the power to download the
+                        invoice." The row offered Generate but no Download, so
+                        an already-invoiced ticket had no way to fetch its PDF
+                        from the list. */}
+                    {!isClerk && ticket.invoiceItem?.invoiceId && ticket.invoiceItem.invoice?.invoiceNo ? (
+                      <button
+                        onClick={async () => {
+                          const { invoiceId, invoice } = ticket.invoiceItem!;
+                          try {
+                            await downloadInvoice(invoiceId, invoice.invoiceNo);
+                          } catch (err: any) {
+                            flash(err?.message || 'Invoice download failed', true);
+                          }
+                        }}
+                        className="text-violet-600 hover:text-violet-900 bg-violet-50 hover:bg-violet-100 px-3 py-1.5 rounded-md flex items-center gap-1"
+                      >
+                        <Download className="h-3.5 w-3.5" /> Invoice
+                      </button>
+                    ) : null}
                     {isClerk ? (
                       <>
                         {status === 'ASSIGNED' && (
@@ -2734,21 +2765,46 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
                       {finalizeDetail.documents.map((doc: any) => (
                         <li key={doc.id} className="flex items-center justify-between gap-2">
                           <span className="flex items-center gap-2 min-w-0 truncate">
-                            <span className="truncate text-slate-700">{doc.name}</span>
+                            {/* Batch-7 6.3: lead with the ROLE, not the storage
+                                filename — "1788622198159-231181454.jpeg" told
+                                the admin nothing ("I don't know which document
+                                it is"), and it only gets worse: "right now
+                                there's one document, tomorrow there will be
+                                ten." */}
+                            <span className="flex min-w-0 flex-col">
+                              <span className="truncate text-slate-700">
+                                {documentCategoryLabel(doc.category)}
+                              </span>
+                              <span className="truncate text-[11px] text-slate-400">{doc.name}</span>
+                            </span>
                             {finalizeTicket?.dispatchProofUrl && doc.fileUrl === finalizeTicket.dispatchProofUrl && (
                               <span className="flex-shrink-0 rounded-full bg-indigo-100 px-2 py-0.5 text-[11px] font-medium text-indigo-700">
                                 TCS document
                               </span>
                             )}
                           </span>
-                          <button
-                            type="button"
-                            onClick={() => viewTicketDocument(finalizeTicket.id, doc.id, doc.name)}
-                            className="shrink-0 text-primary-600 hover:text-primary-800"
-                            aria-label={`Download ${doc.name ?? 'document'}`}
-                          >
-                            <Download className="h-4 w-4" />
-                          </button>
+                          <span className="flex shrink-0 items-center gap-1">
+                            {/* Batch-7 6.6: "wherever there is a download or an
+                                image, there must also be a View." */}
+                            <button
+                              type="button"
+                              onClick={() => setPreviewDoc({ url: `/tickets/${finalizeTicket.id}/documents/${doc.id}/download`, name: doc.name ?? 'Document' })}
+                              className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                              aria-label={`View ${doc.name ?? 'document'}`}
+                              title="View"
+                            >
+                              <Eye className="h-4 w-4" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => viewTicketDocument(finalizeTicket.id, doc.id, doc.name)}
+                              className="text-primary-600 hover:text-primary-800"
+                              aria-label={`Download ${doc.name ?? 'document'}`}
+                              title="Download"
+                            >
+                              <Download className="h-4 w-4" />
+                            </button>
+                          </span>
                         </li>
                       ))}
                     </ul>
@@ -2856,6 +2912,14 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
           onClose={() => setViewTicketId(null)}
           isClerkView={isClerk}
           onChange={loadTickets}
+        />
+      )}
+
+      {previewDoc && (
+        <DocumentPreview
+          url={previewDoc.url}
+          name={previewDoc.name}
+          onClose={() => setPreviewDoc(null)}
         />
       )}
     </div>

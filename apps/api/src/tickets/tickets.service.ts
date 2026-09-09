@@ -47,6 +47,7 @@ import { WalletService } from '../wallet/wallet.service';
 import { SettingsService } from '../settings/settings.service';
 import { PromosService } from '../promos/promos.service';
 import { CurrencyService } from '../currency/currency.service';
+import { InvoicesService } from '../invoices/invoices.service';
 
 const INTAKE_FLOWS = new Set([
   'judicial_case_files',
@@ -209,6 +210,10 @@ export class TicketsService {
     private readonly settingsService?: SettingsService,
     private readonly promosService?: PromosService,
     private readonly currencyService?: CurrencyService,
+    // Optional for the same reason as settingsService/promosService: ~30
+    // existing test instantiations pass a fixed argument list. Production DI
+    // still injects it.
+    private readonly invoicesService?: InvoicesService,
   ) {}
 
   async findAll(
@@ -321,6 +326,20 @@ export class TicketsService {
             select: {
               invoiceId: true,
               invoice: { select: { invoiceNo: true } },
+            },
+          },
+          // Batch-7 7.4: the consumer's My Tickets CARD needs to offer the
+          // documents ("tcs receipt / Document By Clerk / invoice — please add
+          // here"), not only the detail drawer. `redactTicketForConsumer`
+          // already filters this list to visibleToConsumer + completed, so the
+          // gate is unchanged; the card just needs to know a document exists.
+          documents: {
+            select: {
+              id: true,
+              name: true,
+              caption: true,
+              category: true,
+              visibleToConsumer: true,
             },
           },
         },
@@ -2434,6 +2453,35 @@ export class TicketsService {
         'Ticket was already dispatched or changed state — reload and retry',
       );
     }
+    // Batch-7 6.2: the courier receipt is FOR the consumer — "this should be
+    // automatically visible to consumer". Until now dispatch only stamped
+    // `dispatchProofUrl` on the ticket, and that column is stripped by
+    // redactTicketForConsumer, so the one person waiting on the parcel could
+    // never see the tracking proof. Record it as a consumer-visible document
+    // too; the caption carries the role so the row reads "TCS courier
+    // receipt" instead of a storage filename (6.3/6.5).
+    if (payload.proofUrl && payload.proofUrl !== ticket.dispatchProofUrl) {
+      // try/catch, NOT .catch() — a SYNCHRONOUS throw never reaches a promise
+      // handler, so a `.catch()` here would still take the whole dispatch
+      // down. Same rule as the batch-5 notification cleanup. The dispatch has
+      // already committed; mirroring the receipt is best-effort.
+      try {
+        await this.prisma.ticketDocument.create({
+          data: {
+            ticketId,
+            name: payload.proofUrl.split('/').pop() ?? 'courier-receipt',
+            type: 'application/octet-stream',
+            fileUrl: payload.proofUrl,
+            caption: 'TCS courier receipt',
+            visibleToConsumer: true,
+            category: 'WORK_DOCUMENT',
+            uploadedByUserId: actor?.actorUserId ?? null,
+          },
+        });
+      } catch {
+        // Non-fatal.
+      }
+    }
     const updated = await this.prisma.ticket.findUniqueOrThrow({
       where: { id: ticketId },
     });
@@ -3154,6 +3202,20 @@ export class TicketsService {
     await this.walletService.settleTicketsForUser(outcome.consumerId);
     await this.dispatcher.paymentRemainderDue(ticketId).catch(() => undefined);
 
+    // Batch-7 7.2: "Case completed payment due but no invoice." An invoice
+    // only ever existed when a super-admin deliberately issued one, so the
+    // consumer's My Invoices was empty for a completed, payable ticket — and
+    // Download Invoice (asked for four separate times) had nothing to fetch.
+    // Issue one automatically at completion.
+    //
+    // Safe by construction: generate() is idempotent per ticket via the
+    // InvoiceItem.ticketId unique guard (the double-billing guard), so a
+    // ticket already on an invoice is skipped, and the number still comes
+    // from nextval() inside generate's own transaction. Best-effort: the
+    // completion has already committed and must not roll back because
+    // invoicing failed.
+    await this.autoIssueInvoice(ticketId, actor.actorUserId);
+
     await this.auditLogsService.create({
       action: 'TICKET_REMAINDER_FINALIZED',
       entity: 'TICKET',
@@ -3169,6 +3231,24 @@ export class TicketsService {
         surplusCredited: outcome.surplusCredited,
       },
     });
+  }
+
+  /**
+   * Issue an invoice for a just-completed ticket, unless it is already on one.
+   * Batch-7 7.2 — see the call site in afterRemainderFinalized.
+   */
+  private async autoIssueInvoice(ticketId: string, actorUserId?: string) {
+    if (!this.invoicesService || !actorUserId) return;
+    try {
+      const existing = await this.prisma.invoiceItem.findUnique({
+        where: { ticketId },
+        select: { id: true },
+      });
+      if (existing) return;
+      await this.invoicesService.generate([ticketId], actorUserId);
+    } catch {
+      // Never let invoicing failure surface as a completion failure.
+    }
   }
 
   /**

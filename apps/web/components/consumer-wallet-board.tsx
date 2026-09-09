@@ -269,6 +269,12 @@ function TopupDialog({
       toast.error('Invalid amount', 'Please enter a positive number.');
       return;
     }
+    // Batch-7 2.1: proof is mandatory — verification is manual, so a top-up
+    // with no receipt just sits in the queue.
+    if (!receiptFile) {
+      toast.error('Receipt required', 'Please attach your payment receipt before submitting.');
+      return;
+    }
     setLoading(true);
     try {
       let receiptUrl: string | undefined;
@@ -329,7 +335,7 @@ function TopupDialog({
             )}
           </FormField>
 
-          <FormField label="Receipt" hint="Upload a photo of your payment receipt (optional, recommended)">
+          <FormField label="Receipt" required hint="Upload a photo of your payment receipt. Required — we cannot verify the top-up without it.">
             <label className={[
               'flex cursor-pointer items-center gap-3 rounded-xl border border-dashed px-4 py-4 transition-colors',
               receiptFile ? 'border-emerald-300 bg-emerald-50/40' : 'border-border-soft hover:bg-surface-muted',

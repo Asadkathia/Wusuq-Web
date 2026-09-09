@@ -176,6 +176,14 @@ export default function PayTicketPage() {
       return;
     }
 
+    // Batch-7 2.1: the receipt is MANDATORY — "this should be a must fill,
+    // you can't do it without it." Verification is manual, so a submission
+    // with no proof just parks in the queue and blocks the ticket.
+    if (!receiptFile) {
+      setSubmitError('Please attach your payment receipt before submitting.');
+      return;
+    }
+
     // Task 7: the FX conversion moved SERVER-SIDE (WalletService.topup /
     // resolveTopupAmount). This page submits exactly what the consumer typed
     // — on a domestic PKR rail (JazzCash/EasyPaisa) that figure IS PKR; on
@@ -480,7 +488,8 @@ export default function PayTicketPage() {
           {/* Receipt upload */}
           <FormField
             label="Payment receipt"
-            hint="Upload a photo or PDF of your bank receipt (optional, recommended)"
+            hint="Upload a photo or PDF of your bank receipt. Required — we cannot verify the payment without it."
+            required
           >
             <label
               className={[
