@@ -91,8 +91,12 @@ export function ConsumerDocumentsBoard() {
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">My documents</h1>
-          <p className="mt-1 text-sm text-slate-500">Final documents from your completed tickets.</p>
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Documents from Wusuq</h1>
+          {/* Batch-7 6.4 */}
+          <p className="mt-1 text-sm text-slate-500">
+            Deliverables and receipts <strong>we</strong> produced for your completed tickets. Files you
+            upload yourself are under “My Case Files” and “My Storage”.
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <div className="relative w-full sm:w-64">

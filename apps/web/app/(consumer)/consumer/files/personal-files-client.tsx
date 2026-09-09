@@ -13,9 +13,11 @@ export function PersonalFilesClient() {
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
       <header className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">My files</h1>
+          <h1 className="text-2xl font-semibold text-slate-900">My Storage</h1>
+          {/* Batch-7 6.4 */}
           <p className="mt-1 text-sm text-slate-500">
-            Personal storage for documents you want handy. Only you can see these.
+            Loose personal storage — anything you want kept handy but not tied to a case.
+            Only you can see these. Files for a specific case belong under “My Case Files”.
           </p>
         </div>
         <PersonalFilesUploader onSelect={f.upload} disabled={quotaFull} />

@@ -16,6 +16,12 @@ import { CountryPicker } from '@/components/ui/country-picker';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/components/ui/toast';
 import { phoneMaxLength, phonePlaceholder, validateLocalPhone } from '@/lib/phone';
+import {
+  EMPTY_STREET_ADDRESS,
+  formatStreetAddress,
+  parseStreetAddress,
+  type StreetAddressParts,
+} from '@/lib/street-address';
 
 type GeoRow = { id: string; name: string };
 
@@ -58,7 +64,11 @@ export function ConsumerProfileBoard() {
 
   // Address + location (H1) — same province→district→city cascade as
   // /consumer/onboarding, reusing the /geo/provinces|districts|cities endpoints.
-  const [address, setAddress] = useState('');
+  // Batch-7 1.4: three named parts composed into the single User.address
+  // column. A legacy free-text address parses back whole into `house` so
+  // nothing already saved is mangled — see lib/street-address.ts.
+  const [addrParts, setAddrParts] = useState<StreetAddressParts>(EMPTY_STREET_ADDRESS);
+  const address = formatStreetAddress(addrParts);
   const [postalCode, setPostalCode] = useState('');
   const [provinceId, setProvinceId] = useState('');
   const [districtId, setDistrictId] = useState('');
@@ -92,7 +102,7 @@ export function ConsumerProfileBoard() {
         if (r?.cnic) setCnic(r.cnic);
         if (r?.dateOfBirth) setDateOfBirth(String(r.dateOfBirth).slice(0, 10));
         if (r?.consumerKind) setConsumerKind(r.consumerKind as ConsumerKind);
-        if (r?.address) setAddress(r.address);
+        if (r?.address) setAddrParts(parseStreetAddress(r.address));
         if (r?.postalCode) setPostalCode(r.postalCode);
         if (r?.city) setCityName(r.city);
         if (r?.province) setPendingProvinceName(r.province);
@@ -396,12 +406,28 @@ export function ConsumerProfileBoard() {
                   <Home className="h-4 w-4 text-brand-500" /> Address
                 </div>
                 <div className="grid gap-5 sm:grid-cols-2">
-                  <FormField label="Street address" htmlFor="address">
+                  <FormField label="House / flat number" htmlFor="address">
                     <Input
                       id="address"
-                      value={address}
-                      onChange={(e) => setAddress(e.target.value)}
-                      placeholder="House / street / area"
+                      value={addrParts.house}
+                      onChange={(e) => setAddrParts((p) => ({ ...p, house: e.target.value }))}
+                      placeholder="e.g. House 12-A"
+                    />
+                  </FormField>
+                  <FormField label="Town / area" htmlFor="addressTown">
+                    <Input
+                      id="addressTown"
+                      value={addrParts.town}
+                      onChange={(e) => setAddrParts((p) => ({ ...p, town: e.target.value }))}
+                      placeholder="e.g. Johar Town"
+                    />
+                  </FormField>
+                  <FormField label="Block / sector / street" htmlFor="addressBlock">
+                    <Input
+                      id="addressBlock"
+                      value={addrParts.block}
+                      onChange={(e) => setAddrParts((p) => ({ ...p, block: e.target.value }))}
+                      placeholder="e.g. Block R-1"
                     />
                   </FormField>
                   <FormField label="Postal code" htmlFor="postalCode">

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { Select } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
+import { formatStreetAddress } from '@/lib/street-address';
 import { FormField } from '@/components/ui/form-field';
 import { Button } from '@/components/ui/button';
 import { PanelCard } from '@/components/ui/panel-card';
@@ -22,7 +23,12 @@ export default function ConsumerOnboardingPage() {
   const [step, setStep] = useState(1);
 
   const [name, setName] = useState('');
-  const [address, setAddress] = useState('');
+  // Batch-7 1.4: "Remove street address to House no. Town, Block". Three
+  // named parts, composed into the single User.address column on save.
+  const [addrHouse, setAddrHouse] = useState('');
+  const [addrTown, setAddrTown] = useState('');
+  const [addrBlock, setAddrBlock] = useState('');
+  const address = formatStreetAddress({ house: addrHouse, town: addrTown, block: addrBlock });
   const [postalCode, setPostalCode] = useState('');
 
   const [provinceId, setProvinceId] = useState('');
@@ -191,12 +197,28 @@ export default function ConsumerOnboardingPage() {
             <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
               <Home className="h-4 w-4 text-brand-500" /> Your address
             </div>
-            <FormField label="Street address" htmlFor="ob-address">
+            <FormField label="House / flat number" htmlFor="ob-house">
               <Input
-                id="ob-address"
-                value={address}
-                onChange={(e) => setAddress(e.target.value)}
-                placeholder="House / street / area"
+                id="ob-house"
+                value={addrHouse}
+                onChange={(e) => setAddrHouse(e.target.value)}
+                placeholder="e.g. House 12-A"
+              />
+            </FormField>
+            <FormField label="Town / area" htmlFor="ob-town">
+              <Input
+                id="ob-town"
+                value={addrTown}
+                onChange={(e) => setAddrTown(e.target.value)}
+                placeholder="e.g. Johar Town"
+              />
+            </FormField>
+            <FormField label="Block / sector / street" htmlFor="ob-block">
+              <Input
+                id="ob-block"
+                value={addrBlock}
+                onChange={(e) => setAddrBlock(e.target.value)}
+                placeholder="e.g. Block R-1"
               />
             </FormField>
             <FormField label="Postal code" htmlFor="ob-postal">

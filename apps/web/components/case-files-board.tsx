@@ -96,9 +96,12 @@ export function CaseFilesBoard() {
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 py-6">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Case Files</h1>
+          <h1 className="text-2xl font-semibold text-slate-900">My Case Files</h1>
+          {/* Batch-7 6.4: say plainly whose files these are and how they
+              differ from the other two areas. */}
           <p className="mt-1 text-sm text-slate-500">
-            Organize your documents by service, city, and court.
+            Files <strong>you</strong> upload and tag to a case — grouped by service, city and court.
+            Documents Wusuq produces for you live under “Documents from Wusuq”.
           </p>
         </div>
         <button
