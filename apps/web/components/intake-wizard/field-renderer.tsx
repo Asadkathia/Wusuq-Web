@@ -627,7 +627,7 @@ export function renderField(
         </div>
         <div>
           <label className="block text-xs font-medium text-slate-600 mb-1">
-            House / Flat / Apartment / Office Number
+            Street address
           </label>
           <input
             className={inputClass}
@@ -635,35 +635,22 @@ export function renderField(
             value={addr.house}
             onChange={(e) => update({ house: e.target.value })}
             onBlur={() => onBlur?.(field.key)}
-            placeholder="e.g. House 12-A"
+            placeholder="e.g. House 12-A, Block C, Near Liberty Market"
           />
+          <p className="mt-1 text-xs text-slate-500">
+            House / flat number, block or street, and area — all on one line.
+          </p>
         </div>
-        <div>
-          <label className="block text-xs font-medium text-slate-600 mb-1">
-            Block / Sector / Street / Building / Floor Name
-          </label>
-          <input
-            className={inputClass}
-            type="text"
-            value={addr.block}
-            onChange={(e) => update({ block: e.target.value })}
-            onBlur={() => onBlur?.(field.key)}
-            placeholder="e.g. Block C, DHA Phase 5"
-          />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-slate-600 mb-1">
-            Main Area / Town / Nearest Landmark
-          </label>
-          <input
-            className={inputClass}
-            type="text"
-            value={addr.mainArea}
-            onChange={(e) => update({ mainArea: e.target.value })}
-            onBlur={() => onBlur?.(field.key)}
-            placeholder="e.g. Near Liberty Market"
-          />
-        </div>
+        {/* Batch-7 1.3: the "Block / Sector / Street" and "Main Area / Town /
+            Nearest Landmark" inputs are GONE. The profile address already
+            carries the whole line ("House 2121, Lake City Block k, Raiwand
+            Road, Lahore"), so these duplicated it — and they were REQUIRED,
+            which forced junk in: the client typed "12" / "12" to get past the
+            red "Please complete the delivery address", and every ticket then
+            persisted `...Raiwand Road, Lahore, 12, 12, Lahore`.
+            `block`/`mainArea` are still PARSED (parseDeliveryAddress) and
+            preserved on save so historical tickets keep their data — only the
+            collection is removed. Do not reintroduce these inputs. */}
         {hasError && <p className="mt-1 text-xs text-rose-600">{errorMsg}</p>}
       </div>
     );

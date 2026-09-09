@@ -25,14 +25,29 @@ const INTERNAL_KEYS: ReadonlySet<string> = new Set(['parent_ticket_id']);
  * data being re-submitted.
  */
 export function buildRegeneratePayload(
-  sourcePayload: Record<string, string | undefined>,
+  sourcePayload: Record<string, unknown>,
 ): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [key, value] of Object.entries(sourcePayload)) {
     if (INTERNAL_KEYS.has(key)) continue;
+    if (value == null) continue;
     if (typeof value === 'string') {
       out[key] = value;
+      continue;
     }
+    // Batch-7 1.6: "Regenerate ticket misses the Address". The old guard was
+    // `typeof value === 'string'`, so any NON-string payload value was
+    // silently dropped — and `delivery_address` is a structured object that
+    // reaches the client as JSON (Prisma Json round-trips it as an object,
+    // and parseDeliveryAddress accepts both shapes precisely because of
+    // that). The address vanished while every plain-string field survived,
+    // which is exactly the symptom reported. Re-serialise objects to the
+    // wizard's wire format and stringify scalars instead of discarding them.
+    if (typeof value === 'object') {
+      out[key] = JSON.stringify(value);
+      continue;
+    }
+    out[key] = String(value);
   }
   return out;
 }

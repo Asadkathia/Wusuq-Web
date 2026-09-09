@@ -12,6 +12,7 @@ import { CountryPicker } from '@/components/ui/country-picker';
 import { WusuqLogo } from '@/components/ui/wusuq-logo';
 import { ATTRIBUTION, copyrightLine } from '@/components/ui/shell-footer';
 import { findCountry } from '@/lib/countries';
+import { phoneMaxLength, phonePlaceholder, validateLocalPhone } from '@/lib/phone';
 import { advanceOnEnter } from '@/lib/form-utils';
 import { safeConsumerNextPath } from '@/lib/staff-routes';
 
@@ -83,12 +84,9 @@ export default function ConsumerSignupPage() {
       setError('Please enter your mobile number.');
       return;
     }
-    const phoneValid =
-      countryCode === 'PK'
-        ? PK_PHONE_REGEX.test(phone.trim())
-        : GENERIC_PHONE_REGEX.test(phone.trim());
-    if (!phoneValid) {
-      setError('Enter a valid mobile number.');
+    const phoneError = validateLocalPhone(phone, countryCode, findCountry(countryCode).dial);
+    if (phoneError) {
+      setError(phoneError);
       return;
     }
     // Compose +<dial><local> (strip separators / leading + / leading zeros; don't
@@ -304,12 +302,12 @@ export default function ConsumerSignupPage() {
                     type="tel"
                     inputMode="tel"
                     autoComplete="tel"
-                    placeholder={countryCode === 'PK' ? '03001234567' : 'Phone number'}
+                    placeholder={phonePlaceholder(countryCode)}
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
                     leftIcon={<Phone className="h-4 w-4" />}
                     required
-                    maxLength={countryCode === 'PK' ? 10 : 15}
+                    maxLength={phoneMaxLength(countryCode)}
                   />
                 </div>
                 <p className="mt-1.5 text-xs text-slate-500">

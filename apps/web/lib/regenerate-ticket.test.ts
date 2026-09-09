@@ -1,4 +1,4 @@
-import { applyAuthoritativeHearingDates } from './regenerate-ticket';
+import { applyAuthoritativeHearingDates, buildRegeneratePayload } from './regenerate-ticket';
 
 
 describe('applyAuthoritativeHearingDates (batch-5 D)', () => {
@@ -41,5 +41,41 @@ describe('applyAuthoritativeHearingDates (batch-5 D)', () => {
       null,
     );
     expect(out.future_date).toBe('2026-07-27');
+  });
+});
+
+describe('buildRegeneratePayload — non-string payload values (batch-7 1.6)', () => {
+  it('keeps a structured delivery_address that arrives as an OBJECT', () => {
+    // "Regenerate ticket misses the Address": the old `typeof value ===
+    // 'string'` guard dropped every non-string value, and delivery_address
+    // is a structured object (parseDeliveryAddress accepts both shapes
+    // precisely because Prisma Json round-trips it as one). Plain-string
+    // fields survived, so only the address went missing.
+    const out = buildRegeneratePayload({
+      case_no: '12345',
+      delivery_address: { house: '213 R-1 Johar Town', block: '', mainArea: '', city: 'Lahore' },
+    } as Record<string, unknown>);
+    expect(out.case_no).toBe('12345');
+    expect(JSON.parse(out.delivery_address!)).toEqual({
+      house: '213 R-1 Johar Town', block: '', mainArea: '', city: 'Lahore',
+    });
+  });
+
+  it('keeps a delivery_address that arrives as a JSON STRING unchanged', () => {
+    const json = JSON.stringify({ house: 'H 12', block: '', mainArea: '', city: 'Lahore' });
+    expect(buildRegeneratePayload({ delivery_address: json }).delivery_address).toBe(json);
+  });
+
+  it('stringifies scalars rather than discarding them', () => {
+    const out = buildRegeneratePayload({ case_year: 2025, want_pdf: true } as Record<string, unknown>);
+    expect(out.case_year).toBe('2025');
+    expect(out.want_pdf).toBe('true');
+  });
+
+  it('still drops null/undefined and the internal lineage stamp', () => {
+    const out = buildRegeneratePayload({
+      parent_ticket_id: 'tkt_1', a: null, b: undefined, c: 'keep',
+    } as Record<string, unknown>);
+    expect(out).toEqual({ c: 'keep' });
   });
 });

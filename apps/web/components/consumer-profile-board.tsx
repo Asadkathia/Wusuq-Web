@@ -15,6 +15,7 @@ import { Select } from '@/components/ui/select';
 import { CountryPicker } from '@/components/ui/country-picker';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/components/ui/toast';
+import { phoneMaxLength, phonePlaceholder, validateLocalPhone } from '@/lib/phone';
 
 type GeoRow = { id: string; name: string };
 
@@ -314,7 +315,7 @@ export function ConsumerProfileBoard() {
                       type="tel"
                       value={phone}
                       onChange={(e) => setPhone(e.target.value)}
-                      placeholder={countryCode === 'PK' ? '03001234567' : 'Phone number'}
+                      placeholder={phonePlaceholder(countryCode)}
                       maxLength={countryCode === 'PK' ? 10 : 15}
                     />
                   </div>

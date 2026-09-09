@@ -21,7 +21,7 @@ import {
   Ticket as TicketIcon,
   Truck,
 } from 'lucide-react';
-import { FLOW_LABELS, isFlowKey, documentCategoryLabel, chargeCapabilitiesFor } from '@wusuq/shared';
+import { FLOW_LABELS, isFlowKey, documentCategoryLabel, chargeCapabilitiesFor, paymentModelFor, toCurrency, type FlowKey } from '@wusuq/shared';
 import {
   parseDeliveryAddress,
   courtTierFromCourtType,
@@ -764,6 +764,11 @@ export function ConsumerTicketDetail({
   // `remainderFinalizedAt` so the breakdown always reconciles with the Total
   // shown below it; before finalize the consumer sees only Service + Tax.
   const phase2Visible = Boolean(ticket.remainderFinalizedAt);
+  // Batch-7 1.7: a physical-document (SPLIT) flow whose phase-2 remainder has
+  // not been finalized yet is still showing only the phase-1 base.
+  const splitPending =
+    !ticket.remainderFinalizedAt &&
+    paymentModelFor(ticket.intakeFlow as FlowKey, toCurrency(ticket.currency)) === 'SPLIT';
   const charges: Array<[string, number]> = (
     [
       ['Service', Number(ticket.serviceCost || 0)],
@@ -940,9 +945,22 @@ export function ConsumerTicketDetail({
               </div>
             ) : null}
             <div className="flex items-center justify-between px-4 py-3 text-sm font-semibold">
-              <span className="text-slate-900">Total</span>
+              {/* Batch-7 1.7: on a SPLIT flow before the admin finalizes, this
+                  figure is the phase-1 BASE, not the final bill — calling it
+                  "Total" is what the client objected to: "instead of total
+                  cost, say this is service cost, and tell them the photocopy
+                  and TCS charges will be added accordingly — this will be a
+                  problem later." The checkout panel already relabels; the
+                  ticket view did not. */}
+              <span className="text-slate-900">{splitPending ? 'Base amount' : 'Total'}</span>
               <span className="tabular-nums text-slate-900">{money(total, currency)}</span>
             </div>
+            {splitPending ? (
+              <p className="px-4 pb-3 text-[11px] text-slate-500">
+                These are our basic charges. Photocopy, delivery, and attestation fees are added
+                after your case work is completed, and billed then.
+              </p>
+            ) : null}
           </div>
           <div className="mt-3 flex flex-wrap justify-end gap-2">
             {rgHref ? (

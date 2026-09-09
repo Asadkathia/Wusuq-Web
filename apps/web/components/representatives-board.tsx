@@ -12,6 +12,7 @@ import { StatusPill } from '@/components/ui/status-pill';
 import { CountryPicker } from '@/components/ui/country-picker';
 import { COUNTRIES, DEFAULT_COUNTRY_CODE, findCountry } from '@/lib/countries';
 import { RefreshCw, UserPlus, Phone, MapPin, Briefcase, Pencil, X, MonitorPlay } from 'lucide-react';
+import { phoneMaxLength, phonePlaceholder, validateLocalPhone } from '@/lib/phone';
 
 // ---------------------------------------------------------------------------
 // Static catalog — mirrors seeded services in the database. Courts are no
@@ -365,6 +366,15 @@ export function RepresentativesBoard() {
     if (!form.name.trim()) return setFormError('Name is required.');
     if (!editRep && !form.email.trim()) return setFormError('Email is required.');
     if (!editRep && !form.password.trim()) return setFormError('Password is required.');
+    // Batch-7 5.9: this form had NO phone validation, so 3001234567889998
+    // saved and 9-digit numbers saved too ("it works in 9 digits too"). The
+    // only feedback was a submit-time @MaxLength(16) message rendered under
+    // the JazzCash box. Validate inline, against the same shared rules the
+    // consumer signup uses.
+    if (form.phone.trim()) {
+      const phoneError = validateLocalPhone(form.phone, phoneCountryCode, findCountry(phoneCountryCode).dial);
+      if (phoneError) return setFormError(phoneError);
+    }
 
     setSaving(true);
     try {
@@ -752,7 +762,8 @@ export function RepresentativesBoard() {
                     className="block w-full rounded-lg border-0 py-2 px-3 text-slate-900 ring-1 ring-inset ring-border-soft focus:ring-2 focus:ring-primary-600 sm:text-sm"
                     value={form.phone}
                     onChange={(e) => setField('phone', e.target.value)}
-                    placeholder={phoneCountryCode === 'PK' ? '03001234567' : 'Phone number'}
+                    placeholder={phonePlaceholder(phoneCountryCode)}
+                    maxLength={phoneMaxLength(phoneCountryCode)}
                   />
                 </div>
               </label>
@@ -800,8 +811,24 @@ export function RepresentativesBoard() {
                   {textField('Account Number', 'payoutAccountNumber')}
                 </>
               )}
-              {form.payoutMethod === 'JAZZ_CASH' && textField('JazzCash Number', 'payoutJazzCash')}
-              {form.payoutMethod === 'EASY_PAISA' && textField('EasyPaisa Number', 'payoutEasyPaisa')}
+              {/* Batch-7 5.10: "this has account name … this should also have
+                  account name in JAZZCASH & EASYPAISA". Bank Transfer exposed
+                  an Account Title and the two wallet rails exposed only a
+                  number. Reuses the existing payoutAccountTitle column — the
+                  title of the receiving account is the same concept on every
+                  rail, so no migration is needed. */}
+              {form.payoutMethod === 'JAZZ_CASH' && (
+                <>
+                  {textField('Account Title', 'payoutAccountTitle')}
+                  {textField('JazzCash Number', 'payoutJazzCash')}
+                </>
+              )}
+              {form.payoutMethod === 'EASY_PAISA' && (
+                <>
+                  {textField('Account Title', 'payoutAccountTitle')}
+                  {textField('EasyPaisa Number', 'payoutEasyPaisa')}
+                </>
+              )}
 
               {/* ── Error ── */}
               {formError && (

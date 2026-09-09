@@ -29,6 +29,12 @@
 import { toDateInput } from './hearing-date';
 
 const COPIED_KEYS = [
+  // Batch-7 1.5b: `select_service` is REQUIRED by every flow's validator
+  // (REQUIRED_FIELDS_BY_FLOW) but was neither copied nor cleared, so an
+  // "Order Future Tickets" submit died on
+  // `Missing required payload field: select_service`. This is the batch-5 D1
+  // report, whose error text was illegible in the recording.
+  'select_service',
   'city',
   'city_id',
   'select_court',

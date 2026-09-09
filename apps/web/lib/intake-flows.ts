@@ -129,12 +129,13 @@ export function parseDeliveryAddress(value: unknown): StructuredAddress {
  */
 export function isStructuredAddressComplete(value: unknown): boolean {
   const addr = parseDeliveryAddress(value);
-  return Boolean(
-    addr.house.trim() &&
-      addr.block.trim() &&
-      addr.mainArea.trim() &&
-      addr.city?.trim(),
-  );
+  // Batch-7 1.3: `block` and `mainArea` are NO LONGER REQUIRED — the wizard
+  // stopped collecting them. They duplicated the street line that the
+  // consumer's profile address already supplies, and requiring them forced
+  // junk into every ticket ("12" / "12") just to clear the red
+  // "Please complete the delivery address". A deliverable address is the
+  // street line plus the city.
+  return Boolean(addr.house.trim() && addr.city?.trim());
 }
 
 /**
@@ -661,11 +662,17 @@ const caseFilesSteps: IntakeStep[] = [
       ...SET_TYPE_WITH_QUANTITIES,
       REQUIRED_DOCS_CASE_FILES,
       {
+        // Batch-7 1.2: the price is on the option itself. This was a bare
+        // Yes/No that silently added PKR 300 — "we have to tell them that if
+        // they click Yes, 300 rupees gets added." The PDF picker is hidden
+        // for USD tickets (flat all-inclusive pricing), so PKR is safe here.
         key: 'want_pdf_before_dispatch',
         label: 'Want PDF before dispatch?',
         type: 'radio',
         required: true,
         options: ['Yes', 'No'],
+        optionsLabels: { Yes: 'Yes (+PKR 300)', No: 'No' },
+        hint: 'A digital copy emailed before the physical dispatch. Adds PKR 300 to your total.',
       },
       {
         key: 'delivery_mode',

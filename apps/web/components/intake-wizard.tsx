@@ -9,6 +9,7 @@ import { buildRegeneratePayload, applyAuthoritativeHearingDates } from '@/lib/re
 import { PanelCard } from '@/components/ui/panel-card';
 import { ChevronRight, CheckCircle2, FolderOpen, Pencil, Sparkles, X } from 'lucide-react';
 import type { IntakeFlow, IntakeStep, CourtTier } from '@/lib/intake-flows';
+import { orderRequiredFirst } from '@/lib/field-order';
 import { courtTierFromCourtType, resolveRequired, docBundleLabel, normalizeDraftPayload, isStructuredAddressComplete, computeYearBand, parseBench, showWhenSatisfied, parseCities, stringifyCities, isFlowAvailableForCurrency, parseDeliveryAddress } from '@/lib/intake-flows';
 import { BENCH_TYPE_LABELS } from '@/lib/bench-types';
 import type { YearBand } from '@/lib/intake-flows';
@@ -2678,13 +2679,23 @@ export function IntakeWizard({
             />
           )}
 
-          {!isCityCourtStep && activeStep?.fields
+          {!isCityCourtStep && orderRequiredFirst(
             // DATE_HANDLED_KEYS are owned by CaseDateBlock — but only when
             // stepHasCaseDate (the full case_status + future_date triad is
             // present). For flows like Case Information and Case Search
             // that expose case_date / decided_date without the full triad,
             // render them via the default loop. 5-19-26 CI#1 / CS#4.
-            .filter((f) => !GEO_HANDLED_KEYS.has(f.key) && !HOISTED_FIELD_KEYS.has(f.key) && !(stepHasCaseDate && DATE_HANDLED_KEYS.has(f.key)))
+            (activeStep?.fields ?? []).filter(
+              (f) =>
+                !GEO_HANDLED_KEYS.has(f.key) &&
+                !HOISTED_FIELD_KEYS.has(f.key) &&
+                !(stepHasCaseDate && DATE_HANDLED_KEYS.has(f.key)),
+            ),
+            // Batch-7 1.1: must-fills first. Ordering runs AFTER the filter so
+            // the "gated by a same-step field" check in orderRequiredFirst
+            // sees exactly the fields being rendered.
+            (f) => resolveRequired(f, activeCourtTier) && showWhenSatisfied(f, draft.payload),
+          )
             .map((rawField) => {
               // A decided case has, by definition, been attested by the court — so the
               // "Non Attested" set type is invalid. Filter it out of the options when

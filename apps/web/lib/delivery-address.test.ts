@@ -35,10 +35,21 @@ describe('isStructuredAddressComplete (batch-6 C)', () => {
     expect(isStructuredAddressComplete(JSON.stringify({ ...full, city: '   ' }))).toBe(false);
   });
 
-  it('still rejects the other missing parts', () => {
-    for (const k of ['house', 'block', 'mainArea'] as const) {
-      expect(isStructuredAddressComplete(JSON.stringify({ ...full, [k]: '' }))).toBe(false);
+  it('still rejects a missing street line', () => {
+    expect(isStructuredAddressComplete(JSON.stringify({ ...full, house: '' }))).toBe(false);
+  });
+
+  it('NO LONGER requires block / mainArea (batch-7 1.3)', () => {
+    // Those two inputs were removed: they duplicated the street line the
+    // consumer's profile address already supplies, and requiring them forced
+    // junk into every ticket — the client typed "12" / "12" purely to clear
+    // the red "Please complete the delivery address", so every ticket
+    // persisted `...Raiwand Road, Lahore, 12, 12, Lahore`. A deliverable
+    // address is the street line plus the city.
+    for (const k of ['block', 'mainArea'] as const) {
+      expect(isStructuredAddressComplete(JSON.stringify({ ...full, [k]: '' }))).toBe(true);
     }
+    expect(isStructuredAddressComplete(JSON.stringify({ house: '213 R-1 Johar Town', city: 'Lahore' }))).toBe(true);
   });
 
   it('round-trips a consumer city that differs from the court city', () => {
