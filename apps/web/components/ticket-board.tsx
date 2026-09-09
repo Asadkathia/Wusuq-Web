@@ -360,8 +360,11 @@ export function TicketBoard({ title, status, archived = false, immature = false 
   const [finalizing, setFinalizing] = useState(false);
   // Batch-7 6.6: inline preview for the Review & Complete document list.
   const [previewDoc, setPreviewDoc] = useState<{ url: string; name: string } | null>(null);
-  // Batch-7 5.5: courier fee captured at Mark Dispatched.
-  const [dispatchCost, setDispatchCost] = useState('');
+  // Batch-7 5.5 was REVERTED (review finding 6): a courier fee entered at
+  // dispatch cannot be billed — dispatch runs after the total is finalized —
+  // and writing it would have inflated the representative payout past what
+  // was reviewed. The fee belongs in the cost dialog, which now shows the
+  // delivery address alongside it (5.3).
   // Batch-7 11.5: the admin can record/correct the next hearing at review
   // time. The representative can leave it blank on submit, and until now
   // nobody could add it afterwards — "in the finalized ticket can I do
@@ -483,7 +486,14 @@ export function TicketBoard({ title, status, archived = false, immature = false 
       const payload = {
         deliveryCharges: Number(finalizeForm.deliveryCharges) || 0,
         additionalCharges: Number(finalizeForm.additionalCharges) || 0,
-        additionalServiceCost: Number(finalizeForm.additionalServiceCost) || 0,
+        // Review finding 14: same conditional-spread rule as pagePair above.
+        // Sending an explicit 0 for a blank field wins the server's
+        // `dto.x ?? persisted` chain and would ZERO a previously-set taxable
+        // additional service cost — and the detail prefill it relies on is
+        // wrapped in a swallowing catch, so a failed fetch made that silent.
+        ...(finalizeForm.additionalServiceCost.trim() === ''
+          ? {}
+          : { additionalServiceCost: Number(finalizeForm.additionalServiceCost) || 0 }),
         ...pagePair(finalizeForm.noOfPages, finalizeForm.costPerPage, 'noOfPages', 'costPerPage'),
         ...pagePair(finalizeForm.attestedPages, finalizeForm.attestedCostPerPage, 'attestedPages', 'attestedCostPerPage'),
         ...pagePair(finalizeForm.nonAttestedPages, finalizeForm.nonAttestedCostPerPage, 'nonAttestedPages', 'nonAttestedCostPerPage'),
@@ -1032,13 +1042,11 @@ export function TicketBoard({ title, status, archived = false, immature = false 
       const formData = new FormData();
       if (dispatchFile) formData.append('file', dispatchFile);
       if (dispatchTracking.trim()) formData.append('trackingNo', dispatchTracking.trim());
-      if (dispatchCost.trim()) formData.append('deliveryCharges', dispatchCost.trim());
       await apiClient.post(`/tickets/${dispatchTicket.id}/dispatch`, formData);
       flash(`Ticket ${dispatchTicket.batchNo} marked dispatched.`);
       setDispatchTicket(null);
       setDispatchFile(null);
       setDispatchTracking('');
-      setDispatchCost('');
       loadTickets();
     } catch (error: any) {
       flash(error.message || 'Dispatch failed', true);
@@ -2549,7 +2557,7 @@ export function TicketBoard({ title, status, archived = false, immature = false 
         <PanelCard className="mt-6">
           <div className="flex items-start justify-between">
             <SectionHeader title={`Mark Dispatched — ${dispatchTicket.batchNo}`} description="Confirm you sent the physical files for delivery. Attach a courier receipt and/or tracking number." />
-            <button onClick={() => { setDispatchTicket(null); setDispatchFile(null); setDispatchTracking(''); setDispatchCost(''); }} className="p-1.5 text-slate-400 hover:text-slate-700 rounded-md transition-colors"><X className="h-5 w-5" /></button>
+            <button onClick={() => { setDispatchTicket(null); setDispatchFile(null); setDispatchTracking(''); }} className="p-1.5 text-slate-400 hover:text-slate-700 rounded-md transition-colors"><X className="h-5 w-5" /></button>
           </div>
           <div className="mt-4 space-y-4">
             {/* Batch-7 5.3: the address, right where the parcel is being sent. */}
@@ -2559,22 +2567,6 @@ export function TicketBoard({ title, status, archived = false, immature = false 
                 <p className="mt-1 text-slate-800">{deliveryAddressLine(dispatchTicket)}</p>
               </div>
             ) : null}
-            {/* Batch-7 5.5: "I uploaded the file when I wrote the tracking
-                number — also add cost here." The courier fee is known at
-                dispatch time, so capture it here rather than making the
-                representative reopen the cost dialog. */}
-            <label className="block">
-              <span className="text-sm font-medium text-slate-700">Delivery cost (PKR)</span>
-              <input
-                type="number"
-                min="0"
-                value={dispatchCost}
-                onChange={(e) => setDispatchCost(e.target.value)}
-                placeholder="0"
-                className="mt-2 block w-full rounded-lg border-0 py-2 px-3 text-slate-900 shadow-sm ring-1 ring-inset ring-border-soft focus:ring-2 focus:ring-primary-600 sm:text-sm"
-              />
-              <p className="mt-1 text-xs text-slate-500">Courier charge for this dispatch. Leave blank to keep the current value.</p>
-            </label>
             <label className="block">
               <span className="text-sm font-medium text-slate-700">Tracking number</span>
               <input
@@ -2607,7 +2599,7 @@ export function TicketBoard({ title, status, archived = false, immature = false 
               <button onClick={submitDispatch} disabled={dispatching || (!dispatchFile && !dispatchTracking.trim() && !dispatchTicket.dispatchProofUrl)} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 disabled:opacity-50 transition-colors">
                 {dispatching ? 'Saving…' : 'Mark Dispatched'}
               </button>
-              <button onClick={() => { setDispatchTicket(null); setDispatchFile(null); setDispatchTracking(''); setDispatchCost(''); }} className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm ring-1 ring-inset ring-border-soft hover:bg-slate-50 transition-colors">Cancel</button>
+              <button onClick={() => { setDispatchTicket(null); setDispatchFile(null); setDispatchTracking(''); }} className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm ring-1 ring-inset ring-border-soft hover:bg-slate-50 transition-colors">Cancel</button>
             </div>
           </div>
         </PanelCard>

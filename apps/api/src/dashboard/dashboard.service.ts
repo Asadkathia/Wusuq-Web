@@ -570,14 +570,38 @@ export class DashboardService {
       }),
       // "Advance amount from consumers" = prepaid credit still held. That is
       // User.walletBalance, which is the credit only and never negative.
-      this.prisma.user.aggregate({ _sum: { walletBalance: true } }),
+      //
+      // Review finding 8: scoped to CONSUMER-CLASS roles (staff and
+      // representative balances are not consumer advances) and to PKR wallets
+      // — a wallet has no stamped FX rate (credit accrues across many top-ups,
+      // so no single rate applies), and this KPI renders as PKR. Non-PKR
+      // wallets are counted separately rather than summed in raw.
+      this.prisma.user.aggregate({
+        _sum: { walletBalance: true },
+        where: {
+          role: { in: ['consumer', 'lawyer', 'company'] },
+          currency: 'PKR',
+        },
+      }),
     ]);
 
     const { totalAmountPkr: totalBusiness, unconvertedCount } =
       sumMixedCurrencyToPkr(tickets);
 
+    // Review finding 7: `sumMixedCurrencyToPkr` EXCLUDES non-PKR tickets with
+    // no stamped fxRateToPkr. Reducing the payout over the full list would
+    // subtract pay for business that was never counted, understating
+    // wusuqProfit — potentially negative, the batch-5 A defect again. Reduce
+    // over exactly the same set the business figure was built from.
+    const convertible = tickets.filter(
+      (t) =>
+        (t.currency ?? 'PKR') === 'PKR' ||
+        convertToPkr(1, t.fxRateToPkr as unknown as number | string | null) !==
+          null,
+    );
+
     const representativeProfit = round2(
-      tickets.reduce((sum, t) => {
+      convertible.reduce((sum, t) => {
         const payload =
           t.formPayload && typeof t.formPayload === 'object'
             ? (t.formPayload as Record<string, unknown>)
@@ -610,7 +634,7 @@ export class DashboardService {
       totalBusiness,
       representativeProfit,
       wusuqProfit: round2(totalBusiness - representativeProfit),
-      consumerAdvance: round2(Number(creditAgg._sum.walletBalance ?? 0)),
+      consumerAdvance: round2(Number(creditAgg._sum?.walletBalance ?? 0)),
       unconvertedCount,
     };
   }

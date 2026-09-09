@@ -405,6 +405,11 @@ export function IntakeWizard({
   const serviceCategory: 'judicial' | 'non_judicial' = draft.flow.startsWith('non_judicial') ? 'non_judicial' : 'judicial';
   const isJudicial = serviceCategory === 'judicial';
   const isConsumerVariant = variant === 'consumer';
+  // Review finding 11: /wallet/me is the ACTING user's wallet. During
+  // staff-on-behalf intake (and staff Regenerate) that is the admin, so the
+  // credit figure and the checkbox would describe the wrong account entirely.
+  // Offer the choice only when the consumer is buying for themselves.
+  const isSelfIntake = isConsumerVariant && (!draft.consumerId || draft.consumerId === currentUser?.id);
 
   useEffect(() => {
     apiClient.get<any>(`/services?type=${serviceCategory}&limit=50`)
@@ -2978,7 +2983,7 @@ export function IntakeWizard({
           summary={checkoutSummary}
           hasFlow={Boolean(draft.flow)}
           isSplit={isSplitFlow}
-          walletSlot={walletCredit > 0 ? (
+          walletSlot={walletCredit > 0 && isSelfIntake ? (
             <label className="flex cursor-pointer items-start gap-2 select-none">
               <input
                 type="checkbox"
@@ -2991,7 +2996,8 @@ export function IntakeWizard({
                   Use my wallet balance ({formatMoney(walletCredit, currency)} available)
                 </span>
                 <span className="mt-0.5 block text-slate-500">
-                  Leave unticked to pay for this request separately — your balance stays untouched.
+                  Applied to your oldest unpaid request first. Leave unticked to pay for this
+                  request separately — your balance stays untouched.
                 </span>
               </span>
             </label>

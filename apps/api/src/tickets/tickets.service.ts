@@ -12,22 +12,24 @@ import { Prisma, UserRole } from '@prisma/client';
 import type { TicketStatus } from '@wusuq/shared';
 import {
   PAYLOAD_FIELD_ALIASES as SHARED_ALIASES,
+  ROLE_PERMISSIONS,
+  buildPricingResolveInput,
+  chargeCapabilitiesFor,
+  computeTicketTotal,
+  courtTierFromCourtType,
+  isConsumerRole,
+  isFlowKey,
+  isFullyPaid,
+  isStaffRole,
+  paymentModelFor,
   readAliased,
   recommendationsForCase,
-  isFlowKey,
-  type FlowKey,
   requiredFieldsFor,
-  courtTierFromCourtType,
-  type CourtTier,
-  paymentModelFor,
-  chargeCapabilitiesFor,
-  isFullyPaid,
-  buildPricingResolveInput,
-  isConsumerRole,
-  isStaffRole,
-  computeTicketTotal,
   toCurrency,
+  type CourtTier,
+  type FlowKey,
   type TicketChargeComponents,
+  type UserRole as SharedUserRole,
 } from '@wusuq/shared';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { PricingService } from '../pricing/pricing.service';
@@ -419,6 +421,22 @@ export class TicketsService {
         deliveryStatus: ticket.deliveryStatus,
         trackingNo: ticket.trackingNo,
         invoiceItem: ticket.invoiceItem ?? null,
+        // Batch-7 7.4 (review finding 1): findAll projects an explicit
+        // ALLOWLIST — it does NOT run redactTicketForConsumer — so `documents`
+        // has to be emitted here or the ticket-card buttons can never render.
+        // The consumer gate is therefore applied EXPLICITLY, mirroring
+        // redactTicketForConsumer: visible-to-consumer only, and only once the
+        // ticket is COMPLETED/DELIVERED. Emitted for consumers alone; staff and
+        // representatives read documents from the detail panel, so shipping
+        // them here would only widen the surface for no gain.
+        ...(pureConsumer
+          ? {
+              documents:
+                ticket.status === 'COMPLETED' || ticket.status === 'DELIVERED'
+                  ? (ticket.documents ?? []).filter((d) => d.visibleToConsumer)
+                  : [],
+            }
+          : {}),
         // Clerk cost and internal ops state are back-office only — never expose
         // to consumers (CLAUDE.md). Admin/staff AND the assigned representative
         // (their own pay-out) still carry them.
@@ -1455,7 +1473,9 @@ export class TicketsService {
   async assign(
     id: string,
     dto: AssignTicketDto,
-    actor?: { actorUserId?: string; actorEmail?: string },
+    // `actorRole` is the LOWERCASE shared UserRole off the JWT (not the
+    // UPPERCASE Prisma enum) — it gates the pricing-rule write-back below.
+    actor?: { actorUserId?: string; actorEmail?: string; actorRole?: string },
   ) {
     const ticket = await this.prisma.ticket.findUnique({
       where: { id },
@@ -1598,8 +1618,30 @@ export class TicketsService {
     // combination, so the next ticket of the same shape prefills it. Written
     // AFTER the assignment commits and best-effort — a pricing-rule write must
     // never fail an assignment.
-    if (dto.saveClerkCostAsDefault && clerkCost != null) {
-      await this.saveDefaultClerkCost(ticket, Number(clerkCost));
+    // Review finding 4: `clerkCost` is `dto.clerkCost ?? 0`, so a `!= null`
+    // guard can never fail. Ticking "override" + "save as default" and leaving
+    // the amount blank would therefore write clerkBaseCost = 0 onto the matched
+    // PricingRule, destroying the configured default for every future ticket in
+    // that pricing cell. Only a real, positive figure is worth persisting.
+    if (
+      dto.saveClerkCostAsDefault &&
+      dto.clerkCost != null &&
+      dto.clerkCost > 0
+    ) {
+      // Review finding 5: `assign` is gated on `tickets.write`, but every
+      // mutating pricing-rule route was deliberately moved behind
+      // `settings.write` in the 2026-07-08 follow-up. lead-admin holds the
+      // former and not the latter, so without this check assigning a ticket
+      // would let them rewrite the live rate card. Permission is re-derived
+      // from the actor's role server-side; never trust a client flag.
+      const canEditPricing =
+        !!actor?.actorRole &&
+        (ROLE_PERMISSIONS[actor.actorRole as SharedUserRole] ?? []).includes(
+          'settings.write',
+        );
+      if (canEditPricing) {
+        await this.saveDefaultClerkCost(ticket, Number(clerkCost));
+      }
     }
 
     return { id, representativeId: dto.representativeId, assigned: true };
@@ -2448,6 +2490,19 @@ export class TicketsService {
       });
     }
 
+    // Review finding 2: `finalized` is null for every digital ONE_TIME flow
+    // and every USD ticket (chargeCapabilitiesFor -> NO_CHARGES), so hanging
+    // the document bell and the auto-invoice off it meant they NEVER fired for
+    // those — strictly worse than the early bell it replaced. Both belong to
+    // "the ticket reached a terminal state", which is what this checks.
+    if (
+      review.finalStatus === 'COMPLETED' ||
+      review.finalStatus === 'DELIVERED'
+    ) {
+      await this.releaseHeldDocumentNotification(ticketId);
+      await this.autoIssueInvoice(ticketId, actor?.actorUserId);
+    }
+
     await this.auditLogsService.create({
       action: 'TICKET_REVIEWED_COMPLETED',
       entity: 'TICKET',
@@ -2524,12 +2579,6 @@ export class TicketsService {
     payload: {
       proofUrl?: string;
       trackingNo?: string;
-      // Batch-7 5.5: courier fee entered alongside the tracking number.
-      // Written to BOTH the final column and the representative's frozen
-      // snapshot, exactly as submitClerkCosts does — otherwise the
-      // min(submitted, final) payout cap would pay 0 for a delivery the
-      // representative actually recorded.
-      deliveryCharges?: number;
     },
     actor?: { actorUserId?: string; actorEmail?: string; actorRole?: string },
   ) {
@@ -2556,13 +2605,15 @@ export class TicketsService {
         deliveryStatus: 'DISPATCHED',
         dispatchProofUrl: payload.proofUrl ?? ticket.dispatchProofUrl,
         trackingNo: trimmedTracking || ticket.trackingNo,
-        ...(Number.isFinite(payload.deliveryCharges) &&
-        payload.deliveryCharges !== undefined
-          ? {
-              deliveryCharges: payload.deliveryCharges,
-              clerkDeliveryCharges: payload.deliveryCharges,
-            }
-          : {}),
+        // Review finding 6: dispatch must NOT move money. It only runs from
+        // COMPLETED — i.e. after finalizeRemainderCore already computed
+        // totalAmount — so writing deliveryCharges here would change a charge
+        // component without recomputing the total: the consumer is never
+        // billed for it, the breakdown stops reconciling with the Total, and
+        // because the same value also lands in clerkDeliveryCharges the
+        // min(submitted, final) cap is satisfied at the new figure, raising the
+        // payout past anything an admin reviewed. The courier fee has to be
+        // entered in the cost dialog, before admin review.
       },
     });
     if (dispatched.count !== 1) {
@@ -3331,21 +3382,6 @@ export class TicketsService {
     // from nextval() inside generate's own transaction. Best-effort: the
     // completion has already committed and must not roll back because
     // invoicing failed.
-    // Batch-7 6.1: release the "New document" bell that upload deliberately
-    // held back while the consumer gate was still hiding the deliverable.
-    try {
-      const visibleDocs = await this.prisma.ticketDocument.count({
-        where: { ticketId, visibleToConsumer: true },
-      });
-      if (visibleDocs > 0) {
-        await this.dispatcher.ticketDocumentUploaded(ticketId);
-      }
-    } catch {
-      // Non-fatal — the completion already committed.
-    }
-
-    await this.autoIssueInvoice(ticketId, actor.actorUserId);
-
     await this.auditLogsService.create({
       action: 'TICKET_REMAINDER_FINALIZED',
       entity: 'TICKET',
@@ -3364,12 +3400,41 @@ export class TicketsService {
   }
 
   /**
+   * Batch-7 6.1: release the "New document" bell that uploadDocument
+   * deliberately held back while the consumer visibility gate was still
+   * hiding the deliverable. Called once the ticket reaches a terminal state.
+   */
+  private async releaseHeldDocumentNotification(ticketId: string) {
+    try {
+      const visibleDocs = await this.prisma.ticketDocument.count({
+        where: { ticketId, visibleToConsumer: true },
+      });
+      if (visibleDocs > 0) {
+        await this.dispatcher.ticketDocumentUploaded(ticketId);
+      }
+    } catch {
+      // Non-fatal — the completion already committed.
+    }
+  }
+
+  /**
    * Issue an invoice for a just-completed ticket, unless it is already on one.
    * Batch-7 7.2 — see the call site in afterRemainderFinalized.
    */
   private async autoIssueInvoice(ticketId: string, actorUserId?: string) {
     if (!this.invoicesService || !actorUserId) return;
     try {
+      // Review finding 9: this used to hang off afterRemainderFinalized, which
+      // also runs on the standalone finalizeRemainder path — so an invoice
+      // could be issued for a ticket that had not completed. Re-check here
+      // rather than trusting the call site.
+      const t = await this.prisma.ticket.findUnique({
+        where: { id: ticketId },
+        select: { status: true, archivedAt: true },
+      });
+      if (!t || t.archivedAt) return;
+      if (t.status !== 'COMPLETED' && t.status !== 'DELIVERED') return;
+
       const existing = await this.prisma.invoiceItem.findUnique({
         where: { ticketId },
         select: { id: true },

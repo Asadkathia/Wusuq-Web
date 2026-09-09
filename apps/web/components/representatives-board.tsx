@@ -380,9 +380,11 @@ export function RepresentativesBoard() {
     try {
       const composedPhone = composePhone(form.phone, phoneCountryCode);
       if (editRep) {
-        const payload: Record<string, string> = {
+        const payload: Record<string, string | undefined> = {
           name: form.name,
-          phone: composedPhone,
+          // Review finding 3: send undefined, not '', for a user with no
+          // stored phone — @IsOptional() skips null/undefined only.
+          phone: composedPhone || undefined,
           address: form.address,
           serviceFocus: form.serviceFocus,
           court: form.court,

@@ -5,9 +5,17 @@ import {
 } from './street-address';
 
 describe('parseStreetAddress (batch-7 1.4)', () => {
-  it('splits the three parts we write', () => {
+  it('NEVER guesses a split — a stored line stays whole (review finding 15)', () => {
+    // "H 12, Johar Town, Lahore" is an ordinary address whose third part is
+    // the CITY. Splitting on comma count would label it "Block / sector /
+    // street", and the consumer would then "correct" it into a wrong value.
+    // There is no marker telling a composed line from a typed one, so any
+    // split is a guess.
+    expect(parseStreetAddress('H 12, Johar Town, Lahore')).toEqual({
+      house: 'H 12, Johar Town, Lahore', town: '', block: '',
+    });
     expect(parseStreetAddress('H 12, Johar Town, Block R-1')).toEqual({
-      house: 'H 12', town: 'Johar Town', block: 'Block R-1',
+      house: 'H 12, Johar Town, Block R-1', town: '', block: '',
     });
   });
 
@@ -45,9 +53,12 @@ describe('formatStreetAddress', () => {
     expect(formatStreetAddress({ house: 'H 12', town: '', block: 'Block R' })).toBe('H 12, Block R');
   });
 
-  it('round-trips a structured address', () => {
+  it('composing then parsing keeps the full line (no round-trip split)', () => {
     const parts = { house: 'H 12', town: 'Johar Town', block: 'Block R-1' };
-    expect(parseStreetAddress(formatStreetAddress(parts))).toEqual(parts);
+    const line = formatStreetAddress(parts);
+    expect(line).toBe('H 12, Johar Town, Block R-1');
+    // Deliberately NOT symmetric — see the parse test above.
+    expect(parseStreetAddress(line)).toEqual({ house: line, town: '', block: '' });
   });
 
   it('is empty for empty parts', () => {

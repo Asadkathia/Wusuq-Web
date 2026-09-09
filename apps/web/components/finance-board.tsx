@@ -213,7 +213,7 @@ export function FinanceBoard() {
     if (!search) return base;
     const l = search.toLowerCase();
     return base.filter(i => i.batchNo.toLowerCase().includes(l) || i.consumer.name.toLowerCase().includes(l) || i.service.name.toLowerCase().includes(l));
-  }, [items, search]);
+  }, [items, search, outstandingOnly]);
 
   const reconcile = async (ticketId: string) => {
     // Fix 1: prevent double-submission while an upload/POST is in flight
@@ -456,7 +456,17 @@ export function FinanceBoard() {
         <StatCard title="Total Collected" value={`PKR ${stats.collected.toLocaleString()}`} icon={<HandCoins className="h-6 w-6 text-slate-400" />} hint={unconvertedNote ?? undefined} />
         {/* Batch-7 3.7 */}
         <StatCard title="Representative Payout" value={`PKR ${representativePayoutTotal.toLocaleString()}`} icon={<HandCoins className="h-6 w-6 text-slate-400" />} hint="Domestic, always PKR" />
-        <StatCard title="Wusuq Profit" value={`PKR ${Math.max(0, summary.totalAmount - representativePayoutTotal).toLocaleString()}`} icon={<Banknote className="h-6 w-6 text-slate-400" />} hint={unconvertedNote ?? 'Business minus representative pay'} />
+        {/* Review finding 10: no Math.max clamp — a genuine loss must show as
+            a negative, not be silently rendered as PKR 0, since that is exactly
+            the number the client asked to see. The hint carries the
+            rate-not-set caveat when tickets were excluded from the business
+            total but their payouts were not. */}
+        <StatCard
+          title="Wusuq Profit"
+          value={`PKR ${(summary.totalAmount - representativePayoutTotal).toLocaleString()}`}
+          icon={<Banknote className="h-6 w-6 text-slate-400" />}
+          hint={unconvertedNote ?? 'Business minus representative pay'}
+        />
       </div>
 
       {/* ── Payment Approval Queue ─────────────────────────────────────── */}

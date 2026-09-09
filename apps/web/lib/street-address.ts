@@ -35,13 +35,17 @@ export function parseStreetAddress(value: string | null | undefined): StreetAddr
   const raw = (value ?? '').trim();
   if (!raw) return { ...EMPTY_STREET_ADDRESS };
 
-  const parts = raw.split(',').map((p) => p.trim());
-  // Only treat it as structured when it has exactly the three parts we write.
-  // A 2-part or 4-part string is someone's own free-form address and must not
-  // be silently re-interpreted into the wrong boxes.
-  if (parts.length === 3 && parts.every(Boolean)) {
-    return { house: parts[0]!, town: parts[1]!, block: parts[2]! };
-  }
+  // Review finding 15: this used to split ANY exactly-3-part string into
+  // house/town/block. But "H 12, Johar Town, Lahore" is an extremely common
+  // real address, and that guess puts the CITY into the "Block / sector /
+  // street" box — the consumer then sees their city mislabelled and
+  // "corrects" it, writing a wrong value back.
+  //
+  // A stored address is just a line; there is no marker distinguishing one we
+  // composed from one someone typed, so ANY split is a guess. Don't guess:
+  // keep the stored line whole in `house` (the field labelled for the street
+  // line) and leave the other two blank for the consumer to fill in if they
+  // want the finer structure. Lossless, and never mislabels.
   return { house: raw, town: '', block: '' };
 }
 

@@ -122,7 +122,7 @@ export function UsersBoard() {
     setSaving(true);
     try {
       if (editUser) {
-        await apiClient.patch(`/users/${editUser.id}`, { name: form.name, phone: form.phone, cnic: form.cnic, role: form.role, address: form.address, province: form.province, district: form.district, city: form.city });
+        await apiClient.patch(`/users/${editUser.id}`, { name: form.name, phone: form.phone.trim() || undefined, cnic: form.cnic, role: form.role, address: form.address, province: form.province, district: form.district, city: form.city });
         setMessage('User updated');
       } else {
         await apiClient.post('/users', form);
