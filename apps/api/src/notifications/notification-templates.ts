@@ -46,11 +46,11 @@ export const notificationTemplates = {
   }),
   ticketClerkCostsForBackOffice: (batchNo: string): Copy => ({
     title: `Costs submitted — ${batchNo}`,
-    body: `Clerk costs for ticket ${batchNo} are ready for review.`,
+    body: `Representative costs for ticket ${batchNo} are ready for review.`,
   }),
   ticketClerkReceiptSubmittedForBackOffice: (batchNo: string): Copy => ({
     title: `Receipt submitted — ${batchNo}`,
-    body: `A clerk receipt for ticket ${batchNo} is awaiting verification.`,
+    body: `A representative receipt for ticket ${batchNo} is awaiting verification.`,
   }),
   ticketDispatchedForAdmin: (
     batchNo: string,
@@ -58,8 +58,8 @@ export const notificationTemplates = {
   ): Copy => ({
     title: `Package dispatched — ${batchNo}`,
     body: trackingNo
-      ? `The clerk dispatched the files for ticket ${batchNo} (tracking ${trackingNo}). Confirm delivery once received.`
-      : `The clerk dispatched the files for ticket ${batchNo}. Confirm delivery once received.`,
+      ? `The representative dispatched the files for ticket ${batchNo} (tracking ${trackingNo}). Confirm delivery once received.`
+      : `The representative dispatched the files for ticket ${batchNo}. Confirm delivery once received.`,
   }),
   ticketDocumentUploadedForConsumer: (batchNo: string): Copy => ({
     title: `New document — ${batchNo}`,

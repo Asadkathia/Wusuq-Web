@@ -1,6 +1,15 @@
 'use client';
 
 import Link from 'next/link';
+import {
+  CartesianGrid,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
 import { useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import {
@@ -26,7 +35,12 @@ import { apiClient } from '@/lib/api-client';
 import { formatMoney } from '@wusuq/shared';
 import { ProfileCompletionBanner } from './profile-completion-banner';
 
+type TrendPoint = { date: string; count: number };
+
 type ConsumerSummary = {
+  // Batch-7 3.8: "also add Graph just like super admin on Consumer and
+  // Representative side." Optional so a stale cached bundle can't crash.
+  ticketTrend?: TrendPoint[];
   // `active` is server-derived (NOT COMPLETED and NOT DELIVERED) so it matches
   // the My Tickets "Active" tab exactly. Never re-sum pending + inProgress to
   // get it — that dropped PAID and WAITING_APPROVAL (batch-6 A).
@@ -475,6 +489,27 @@ export default function ConsumerDashboardPage() {
           </PanelCard>
         </div>
       </section>
+
+      {/* Batch-7 3.8 — the staff Ticket Volume Trend, scoped to this
+          consumer's own tickets. NOTE: this is the REAL consumer dashboard;
+          the portal page's consumer branch is a different component that
+          consumers never reach (the root router sends them here). */}
+      {summary?.ticketTrend && summary.ticketTrend.length > 0 ? (
+        <section className="rounded-2xl bg-surface p-5 ring-1 ring-border-soft shadow-elev-1">
+          <h3 className="mb-4 text-sm font-semibold text-slate-900">Ticket Volume Trend</h3>
+          <div className="h-64 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={summary.ticketTrend} margin={{ top: 5, right: 20, bottom: 5, left: -20 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                <XAxis dataKey="date" stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} />
+                <YAxis stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} allowDecimals={false} />
+                <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
+                <Line type="monotone" dataKey="count" stroke="#3b82f6" strokeWidth={3} dot={{ r: 3, strokeWidth: 2 }} activeDot={{ r: 6 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </section>
+      ) : null}
     </div>
   );
 }
