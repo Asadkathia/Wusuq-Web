@@ -1553,7 +1553,44 @@ export class TicketsService {
         .catch(() => undefined);
     }
 
+    // Batch-7 2.5: persist the entered fee as the default for this pricing
+    // combination, so the next ticket of the same shape prefills it. Written
+    // AFTER the assignment commits and best-effort — a pricing-rule write must
+    // never fail an assignment.
+    if (dto.saveClerkCostAsDefault && clerkCost != null) {
+      await this.saveDefaultClerkCost(ticket, Number(clerkCost));
+    }
+
     return { id, representativeId: dto.representativeId, assigned: true };
+  }
+
+  /**
+   * Write a clerk cost back onto the PricingRule the ticket priced against.
+   * Re-resolves through the SAME shared builder intake used, so the rule we
+   * update is the rule the next ticket will match.
+   */
+  private async saveDefaultClerkCost(
+    ticket: { intakeFlow: string | null; formPayload: unknown; currency: string | null },
+    clerkCost: number,
+  ) {
+    try {
+      if (!ticket.intakeFlow || !isFlowKey(ticket.intakeFlow)) return;
+      const payload = (ticket.formPayload ?? {}) as Record<string, string | undefined>;
+      const resolved = await this.pricingService.resolve(
+        buildPricingResolveInput(
+          ticket.intakeFlow,
+          payload,
+          toCurrency(ticket.currency),
+        ),
+      );
+      if (!resolved.matched || !resolved.ruleId) return;
+      await this.prisma.pricingRule.update({
+        where: { id: resolved.ruleId },
+        data: { clerkBaseCost: clerkCost },
+      });
+    } catch {
+      // Non-fatal — the assignment already succeeded.
+    }
   }
 
   async representativeCandidates(filters: {

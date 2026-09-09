@@ -4,7 +4,7 @@
  
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { advanceOnEnter } from '@/lib/form-utils';
 import { SectionHeader } from '@/components/ui/section-header';
@@ -73,6 +73,13 @@ export function WalletBoard() {
 
   const [txUserId, setTxUserId] = useState<string | null>(null);
   const [txHistory, setTxHistory] = useState<WalletTransactionRow[]>([]);
+  // Batch-7 2.4: PendingTopup rows carry only a userId; the Consumer Wallets
+  // list already has the names, so resolve against it rather than adding a
+  // per-row fetch.
+  const userNameById = useMemo(
+    () => Object.fromEntries(users.map((u) => [u.userId, u.consumerName])),
+    [users],
+  );
   const [txLoading, setTxLoading] = useState(false);
   const [uploadingReceipt, setUploadingReceipt] = useState(false);
 
@@ -371,7 +378,10 @@ export function WalletBoard() {
                   {pending.map((tx) => (
                     <tr key={tx.id} className="hover:bg-slate-50 group transition-colors">
                       <td className="px-6 py-4">
-                        <div className="text-sm font-medium text-slate-900">{tx.userId}</div>
+                        {/* Batch-7 2.4: name first, id as a quiet subtitle. */}
+                        <div className="text-sm font-medium text-slate-900">
+                          {userNameById[tx.userId] ?? tx.userId}
+                        </div>
                         <div className="text-xs text-slate-500 mt-0.5 max-w-[150px] truncate">{tx.id}</div>
                       </td>
                       <td className="px-6 py-4">
@@ -464,12 +474,31 @@ export function WalletBoard() {
                 </thead>
                 <tbody className="bg-white divide-y divide-slate-100">
                   {users.map((user) => (
-                    <tr key={user.userId} onClick={() => viewTransactions(user.userId)} className="hover:bg-slate-50 transition-colors cursor-pointer group">
+                    <tr
+                      key={user.userId}
+                      onClick={() => { window.location.href = `/manage-users/${user.userId}`; }}
+                      className="hover:bg-slate-50 transition-colors cursor-pointer group"
+                    >
                       <td className="px-6 py-4">
                         <div className="font-medium text-slate-900 text-sm group-hover:text-primary-600 transition-colors flex items-center gap-2">
-                          {user.consumerName} <History className="h-3.5 w-3.5 opacity-0 group-hover:opacity-100 text-slate-400" />
+                          {user.consumerName}
+                          {/* Quick peek at the ledger without leaving the
+                              board; the row itself opens the full account. */}
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); void viewTransactions(user.userId); }}
+                            className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-primary-600"
+                            aria-label={`Transaction history for ${user.consumerName}`}
+                            title="Transaction history"
+                          >
+                            <History className="h-3.5 w-3.5" />
+                          </button>
                         </div>
-                        <div className="text-xs text-slate-500 mt-0.5">{user.userId}</div>
+                        {/* Batch-7 2.4: the raw cuid told nobody anything —
+                            "you have given the number, but why is the name not
+                            coming?" The name is the heading above; this is now
+                            a route into the account rather than an id dump. */}
+                        <div className="text-xs text-primary-600 mt-0.5">View account & history →</div>
                       </td>
                       <td className="px-6 py-4 text-right">
                         <div className="font-bold text-slate-900 text-sm">

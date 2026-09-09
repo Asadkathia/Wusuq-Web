@@ -93,11 +93,17 @@ export function UsersBoard() {
   // Free-text search stays a client-side filter over the already role-scoped
   // page (unchanged from before — only the role dimension moved server-side).
   const q = search.toLowerCase();
-  const filtered = users.filter((u) =>
-    (u.name ?? '').toLowerCase().includes(q) ||
-    (u.email ?? '').toLowerCase().includes(q) ||
-    (u.role ?? '').toLowerCase().includes(q)
-  );
+  const filtered = users
+    // Batch-7 3.9: representatives belong on /manage-users/representatives,
+    // which is where their payout details, court tier and city scoping live.
+    // Listing them here duplicated that board and mixed two populations in
+    // one table.
+    .filter((u) => (u.role ?? '').toLowerCase() !== 'representative')
+    .filter((u) =>
+      (u.name ?? '').toLowerCase().includes(q) ||
+      (u.email ?? '').toLowerCase().includes(q) ||
+      (u.role ?? '').toLowerCase().includes(q)
+    );
 
   const openCreate = () => { setForm(emptyForm); setShowCreate(true); setEditUser(null); };
   const openEdit = (u: UserData) => {
@@ -195,7 +201,7 @@ export function UsersBoard() {
     <div className="space-y-6">
       <SectionHeader
         title="Manage Users"
-        description="View and administer user accounts, roles, and statuses across the platform."
+        description="Consumers and staff. Representatives are managed on their own board."
         action={
           <div className="flex gap-2">
             <button onClick={load} disabled={loading}
@@ -308,10 +314,16 @@ export function UsersBoard() {
           actions={
             <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
               <select className="w-full sm:w-auto rounded-lg border-0 py-2 pl-3 pr-8 text-slate-900 shadow-sm ring-1 ring-inset ring-border-soft focus:ring-2 focus:ring-primary-600 sm:text-sm" value={roleFilter} onChange={e => setRoleFilter(e.target.value)}>
+                {/* Batch-7 3.9: "there should be only Consumers in Users and
+                    Representative on Representatives." Representatives have
+                    their own board (with payout details, court tier and city
+                    scoping); listing them here duplicated it and mixed the two
+                    populations in one table. The option is gone and the rows
+                    are filtered out below. */}
                 <option value="all">All Roles</option>
                 <option value="consumer">Consumer</option>
                 <option value="lawyer">Lawyer</option>
-                <option value="representative">Representative</option>
+                <option value="company">Company</option>
                 <option value="manager-admin">Manager Admin</option>
               </select>
             </div>

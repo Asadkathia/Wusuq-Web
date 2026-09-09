@@ -74,12 +74,14 @@ describe('DashboardService.getConsumerSummary — archived-ticket exclusion (F1)
     ).where;
     expect(aggWhere).toMatchObject({ archivedAt: null });
 
-    // Recent-activity list ("Recent activity" source).
-    expect(ticketFindMany).toHaveBeenCalledTimes(1);
-    const recentWhere = (
-      ticketFindMany.mock.calls[0][0] as { where: Record<string, unknown> }
-    ).where;
-    expect(recentWhere).toMatchObject({ archivedAt: null });
+    // Recent-activity list, plus the batch-7 3.8 own-ticket trend series.
+    // As with the counts above, the LOOP is the invariant; the number just
+    // pins that no findMany is added without going through it.
+    expect(ticketFindMany).toHaveBeenCalledTimes(2);
+    for (const call of ticketFindMany.mock.calls) {
+      const where = (call[0] as { where: Record<string, unknown> }).where;
+      expect(where).toMatchObject({ archivedAt: null });
+    }
 
     // Next-hearing lookup.
     expect(ticketFindFirst).toHaveBeenCalledTimes(1);

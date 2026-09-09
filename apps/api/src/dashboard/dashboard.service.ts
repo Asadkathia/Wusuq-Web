@@ -64,6 +64,31 @@ export class DashboardService {
 
   constructor(private readonly prisma: PrismaService) {}
 
+  /**
+   * Batch-7 3.8: "also add Graph just like super admin on Consumer and
+   * Representative side." Same 30-day daily series the staff Ticket Volume
+   * Trend uses, scoped to one person's own tickets.
+   */
+  private async ownTicketTrend(
+    where: Prisma.TicketWhereInput,
+    days = 30,
+  ): Promise<Array<{ date: string; count: number }>> {
+    const since = startOfDay(subDays(new Date(), days - 1));
+    const rows = await this.prisma.ticket.findMany({
+      where: { ...where, createdAt: { gte: since }, archivedAt: null },
+      select: { createdAt: true },
+    });
+    const buckets = new Map<string, number>();
+    for (let i = days - 1; i >= 0; i--) {
+      buckets.set(format(subDays(new Date(), i), 'MMM dd'), 0);
+    }
+    for (const r of rows) {
+      const day = format(r.createdAt, 'MMM dd');
+      if (buckets.has(day)) buckets.set(day, (buckets.get(day) ?? 0) + 1);
+    }
+    return Array.from(buckets.entries()).map(([date, count]) => ({ date, count }));
+  }
+
   async getConsumerSummary(userId: string) {
     const now = new Date();
 
@@ -195,7 +220,10 @@ export class DashboardService {
       Number(outstandingAgg._sum.totalAmount || 0) -
       Number(outstandingAgg._sum.amountPaid || 0);
 
+    const ticketTrend = await this.ownTicketTrend({ consumerId: userId });
+
     return {
+      ticketTrend,
       myTickets,
       myWalletBalance: Number(walletUser?.walletBalance || 0),
       myOutstanding: myOutstanding > 0 ? myOutstanding : 0,
@@ -392,6 +420,78 @@ export class DashboardService {
       pendingAcceptance: counts['ASSIGNED'] ?? 0,
       recent,
       upcomingHearings,
+      // Batch-7 3.8 — scoped to this representative's own assignments.
+      ticketTrend: await this.ownTicketTrend({
+        assignments: { some: { representativeId: repId } },
+      }),
+    };
+  }
+
+  /**
+   * Batch-7 3.4 — registration analytics.
+   *
+   * Verbatim: "we need to have data — how many people are registered with us,
+   * how many lawyers, how many non-lawyers and how many companies, today,
+   * this month, this year. From which area and so on." (He flagged it as
+   * "maybe later", so this is the read-only aggregate, no new UI surface
+   * beyond the reports page.)
+   *
+   * `consumerKind` carries the user-type split (LAWYER / NON_LAWYER /
+   * CORPORATE — the display labels are remapped in CONSUMER_KIND_LABELS) and
+   * `province`/`city` carry the area.
+   */
+  async getRegistrationStats() {
+    const now = new Date();
+    const startOfToday = startOfDay(now);
+    const startOfThisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const startOfThisYear = new Date(now.getFullYear(), 0, 1);
+
+    // Consumer-class roles only — staff and representatives are not
+    // "people registered with us" in the sense he means. Prisma's enum
+    // spelling, not the lowercase shared UserRole.
+    const base: Prisma.UserWhereInput = {
+      role: { in: ['consumer', 'lawyer', 'company'] },
+    };
+
+    const [total, today, thisMonth, thisYear, byKind, byProvince, byCity] =
+      await Promise.all([
+        this.prisma.user.count({ where: base }),
+        this.prisma.user.count({ where: { ...base, createdAt: { gte: startOfToday } } }),
+        this.prisma.user.count({ where: { ...base, createdAt: { gte: startOfThisMonth } } }),
+        this.prisma.user.count({ where: { ...base, createdAt: { gte: startOfThisYear } } }),
+        this.prisma.user.groupBy({
+          by: ['consumerKind'],
+          where: base,
+          _count: { _all: true },
+        }),
+        this.prisma.user.groupBy({
+          by: ['province'],
+          where: base,
+          _count: { _all: true },
+        }),
+        this.prisma.user.groupBy({
+          by: ['city'],
+          where: base,
+          _count: { _all: true },
+        }),
+      ]);
+
+    const toRows = (
+      rows: Array<Record<string, unknown> & { _count: { _all: number } }>,
+      key: string,
+    ) =>
+      rows
+        .map((r) => ({
+          label: (r[key] as string | null) ?? 'Unspecified',
+          count: r._count._all,
+        }))
+        .sort((a, b) => b.count - a.count);
+
+    return {
+      totals: { total, today, thisMonth, thisYear },
+      byKind: toRows(byKind as never, 'consumerKind'),
+      byProvince: toRows(byProvince as never, 'province'),
+      byCity: toRows(byCity as never, 'city').slice(0, 20),
     };
   }
 

@@ -6,6 +6,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import type { TicketStatus } from '@wusuq/shared';
 import { documentCategoryLabel, chargeCapabilitiesFor, computeClerkEarningsBreakdown, computeTicketTotal, computeWusuqMarginPkr, formatStaffMoney, toCurrency } from '@wusuq/shared';
 import { TICKET_STATUSES } from '@wusuq/shared';
@@ -223,6 +224,8 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
   const [representativeId, setRepresentativeId] = useState('');
   const [clerkCost, setClerkCost] = useState('');
   const [overrideClerkCost, setOverrideClerkCost] = useState(false);
+  // Batch-7 2.5
+  const [saveClerkCostDefault, setSaveClerkCostDefault] = useState(false);
   const [forceAssign, setForceAssign] = useState(false);
   const [assignWarning, setAssignWarning] = useState('');
   // C3: separate from the city-override toggle above — reveals reps whose
@@ -812,6 +815,7 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
     setRepresentativeId('');
     setClerkCost(ticket.defaultClerkCost != null ? String(ticket.defaultClerkCost) : '');
     setOverrideClerkCost(false);
+    setSaveClerkCostDefault(false);
     setForceAssign(false);
     setShowOtherTierReps(false);
     setAssignWarning('');
@@ -833,6 +837,8 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
         representativeId,
         clerkCost: resolvedClerkCost,
         forceAssign,
+        // Batch-7 2.5 — only meaningful alongside an explicit override.
+        saveClerkCostAsDefault: overrideClerkCost && saveClerkCostDefault,
       });
       setAssignTicket(null);
       flash('Ticket assigned');
@@ -1497,13 +1503,38 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
                   </div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
+                  {/* Batch-7 3.3: "it has made me clickable so that if I want
+                      to go to his account, how can I go?" Staff only — a
+                      representative must not be able to open a consumer's
+                      account page. */}
                   <div className="flex items-center gap-2">
                      <UserCircle className="h-4 w-4 text-slate-400" />
-                     <span className="text-sm text-slate-700">{ticket.consumer.name}</span>
+                     {!isClerk && ticket.consumer.id ? (
+                       <Link
+                         href={`/manage-users/${ticket.consumer.id}`}
+                         onClick={(e) => e.stopPropagation()}
+                         className="text-sm text-slate-700 hover:text-primary-700 hover:underline"
+                       >
+                         {ticket.consumer.name}
+                       </Link>
+                     ) : (
+                       <span className="text-sm text-slate-700">{ticket.consumer.name}</span>
+                     )}
                   </div>
                   {ticket.assignedRepresentative && (
                     <div className="mt-0.5 text-xs text-slate-500 pl-6">
-                      → {ticket.assignedRepresentative.name}
+                      →{' '}
+                      {!isClerk && ticket.assignedRepresentative.id ? (
+                        <Link
+                          href={`/manage-users/${ticket.assignedRepresentative.id}`}
+                          onClick={(e) => e.stopPropagation()}
+                          className="hover:text-primary-700 hover:underline"
+                        >
+                          {ticket.assignedRepresentative.name}
+                        </Link>
+                      ) : (
+                        ticket.assignedRepresentative.name
+                      )}
                     </div>
                   )}
                 </td>
@@ -1932,6 +1963,21 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
               />
               {!overrideClerkCost && assignTicket.defaultClerkCost == null && (
                 <p className="mt-1 text-xs text-slate-400">No default cost — enable override to set a value.</p>
+              )}
+              {/* Batch-7 2.5: "where will the cost be edited from? Every time
+                  I have to do this here — give a 'save for future'." Writes
+                  the value back to the pricing rule this ticket matched, so
+                  the next ticket of the same shape prefills it. */}
+              {overrideClerkCost && (
+                <label className="mt-2 flex items-center gap-2 text-xs text-slate-600 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={saveClerkCostDefault}
+                    onChange={(e) => setSaveClerkCostDefault(e.target.checked)}
+                    className="h-3.5 w-3.5 rounded border-slate-300 text-primary-600 focus:ring-primary-600"
+                  />
+                  Save as the default for this service &amp; court
+                </label>
               )}
             </div>
           </div>

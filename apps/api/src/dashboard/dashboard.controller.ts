@@ -20,6 +20,13 @@ export class DashboardController {
     return this.dashboardService.getSummary(range || '7d');
   }
 
+  // Batch-7 3.4 — registration analytics. Staff-only via reports.read.
+  @Get('registrations')
+  @RequirePermissions('reports.read')
+  async getRegistrationStats() {
+    return this.dashboardService.getRegistrationStats();
+  }
+
   // Clerk (representative) dashboard — self-scoped by actor.sub. Gated on
   // `tickets.read` (representatives hold it); a non-clerk caller just gets an
   // empty summary since they have no assignments.

@@ -46,7 +46,13 @@ const CHART_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#e
 const CONSUMER_ROLES = ['consumer', 'lawyer', 'company'] as const;
 const RANGE_STORAGE_KEY = 'wusuq_dashboard_range';
 
+type TrendPoint = { date: string; count: number };
+
+
 type ConsumerSummary = {
+  // Batch-7 3.8: "also add Graph just like super admin on Consumer and
+  // Representative side." Optional so a stale cached bundle can't crash.
+  ticketTrend?: TrendPoint[];
   myTickets: { total: number; pending: number; inProgress: number; completed: number };
   myWalletBalance: number;
   myOutstanding: number;
@@ -96,6 +102,7 @@ type ClerkSummary = {
     delivered: number;
   };
   pendingAcceptance: number;
+  ticketTrend?: TrendPoint[];
   recent: Array<{ id: string; batchNo: string; status: string; service: string | null; caseNo: string | null }>;
   upcomingHearings: Array<{
     id: string;
@@ -112,6 +119,29 @@ function getStatusVariant(st: string) {
   if (st === 'PAID' || st === 'ASSIGNED' || st === 'IN_PROGRESS')
     return 'info' as const;
   return 'neutral' as const;
+}
+
+
+/** Batch-7 3.8: the staff Ticket Volume Trend, reusable for the consumer and
+ *  representative dashboards. */
+function TicketTrendCard({ data }: { data: TrendPoint[] }) {
+  if (!data || data.length === 0) return null;
+  return (
+    <PanelCard>
+      <h3 className="mb-4 text-sm font-semibold text-slate-900">Ticket Volume Trend</h3>
+      <div className="h-64 w-full">
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={data} margin={{ top: 5, right: 20, bottom: 5, left: -20 }}>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+            <XAxis dataKey="date" stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} />
+            <YAxis stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} allowDecimals={false} />
+            <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
+            <Line type="monotone" dataKey="count" stroke="#3b82f6" strokeWidth={3} dot={{ r: 3, strokeWidth: 2 }} activeDot={{ r: 6 }} />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+    </PanelCard>
+  );
 }
 
 export default function DashboardPage() {
@@ -494,6 +524,9 @@ export default function DashboardPage() {
             </PanelCard>
           </div>
         </div>
+
+        {/* Batch-7 3.8 */}
+        {summary.ticketTrend ? <TicketTrendCard data={summary.ticketTrend} /> : null}
       </div>
     );
   };
@@ -623,6 +656,9 @@ export default function DashboardPage() {
             )}
           </PanelCard>
         </div>
+
+        {/* Batch-7 3.8 */}
+        {s.ticketTrend ? <TicketTrendCard data={s.ticketTrend} /> : null}
       </div>
     );
   };

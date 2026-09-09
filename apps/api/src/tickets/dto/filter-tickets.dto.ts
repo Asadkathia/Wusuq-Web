@@ -16,6 +16,13 @@ export class FilterTicketsDto extends PaginationQueryDto {
   @IsString()
   representativeId?: string;
 
+  // NOTE (batch-7 3.3/3.6): `consumerId` is inherited from PaginationQueryDto,
+  // so staff CAN already filter by it. It is safe from a consumer-class
+  // caller because the controller overwrites it with `user.sub` before the
+  // query reaches the service, and forces `representativeId` for
+  // representatives — neither can widen their own scope with it.
+
+
   // Restore/unarchive follow-up: when true, findAll returns ONLY archived
   // tickets (archivedAt not null) instead of the default non-archived list.
   // Staff-only — the controller strips this for consumer/representative

@@ -10,6 +10,7 @@ import { SectionHeader } from '@/components/ui/section-header';
 import { PanelCard } from '@/components/ui/panel-card';
 import { DataTableShell } from '@/components/ui/data-table-shell';
 import { BarChart3, Download, Play, RefreshCw, FileText } from 'lucide-react';
+import { CONSUMER_KIND_LABELS } from '@wusuq/shared';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 export function ReportsBoard() {
@@ -18,6 +19,14 @@ export function ReportsBoard() {
   const [result, setResult] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
+
+  // Batch-7 3.4
+  const [registrations, setRegistrations] = useState<{
+    totals: { total: number; today: number; thisMonth: number; thisYear: number };
+    byKind: Array<{ label: string; count: number }>;
+    byProvince: Array<{ label: string; count: number }>;
+    byCity: Array<{ label: string; count: number }>;
+  } | null>(null);
 
   const [dateRange, setDateRange] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -34,6 +43,10 @@ export function ReportsBoard() {
 
   useEffect(() => {
     loadTypes();
+    apiClient
+      .get<typeof registrations>('/dashboard/registrations')
+      .then((r) => setRegistrations(r))
+      .catch(() => setRegistrations(null));
   }, [loadTypes]);
 
   const run = async () => {
@@ -195,6 +208,53 @@ export function ReportsBoard() {
         title="Reports & Analytics" 
         description="Generate standard operational and financial reports dynamically."
       />
+
+      {/* Batch-7 3.4: "we need to have data — how many people are registered
+          with us, how many lawyers, how many non-lawyers and how many
+          companies, today, this month, this year. From which area and so on." */}
+      {registrations ? (
+        <div className="space-y-4">
+          <h3 className="px-1 text-sm font-bold uppercase tracking-wider text-slate-500">Registrations</h3>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {([
+              ['Total registered', registrations.totals.total],
+              ['Today', registrations.totals.today],
+              ['This month', registrations.totals.thisMonth],
+              ['This year', registrations.totals.thisYear],
+            ] as const).map(([label, value]) => (
+              <PanelCard key={label} className="p-5">
+                <p className="text-xs font-bold uppercase tracking-wider text-slate-400">{label}</p>
+                <p className="mt-1 text-2xl font-bold text-slate-900">{Number(value).toLocaleString()}</p>
+              </PanelCard>
+            ))}
+          </div>
+          <div className="grid gap-4 lg:grid-cols-3">
+            {([
+              ['By user type', registrations.byKind],
+              ['By province', registrations.byProvince],
+              ['By city', registrations.byCity],
+            ] as const).map(([label, rows]) => (
+              <PanelCard key={label} className="p-5">
+                <p className="mb-3 text-xs font-bold uppercase tracking-wider text-slate-400">{label}</p>
+                {rows.length === 0 ? (
+                  <p className="text-sm text-slate-500">No data yet.</p>
+                ) : (
+                  <ul className="space-y-1.5">
+                    {rows.slice(0, 8).map((r) => (
+                      <li key={r.label} className="flex items-center justify-between text-sm">
+                        <span className="truncate text-slate-700">
+                          {CONSUMER_KIND_LABELS[r.label as keyof typeof CONSUMER_KIND_LABELS] ?? r.label}
+                        </span>
+                        <span className="tabular-nums font-semibold text-slate-900">{r.count}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </PanelCard>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       <PanelCard className="p-4 bg-slate-50/50 flex flex-col sm:flex-row items-center gap-4">
         <div className="flex-1 w-full">
