@@ -84,6 +84,9 @@ type ClerkSummary = {
     // Optional so an older API response (or a stale cached bundle) can't
     // crash the page — the itemization render below guards on its presence.
     breakdown?: ClerkEarningsBreakdown;
+    // Batch-7 5.8: same shape, accumulated over IN_PROGRESS +
+    // WAITING_APPROVAL. Optional for the same reason as `breakdown`.
+    pendingBreakdown?: ClerkEarningsBreakdown;
   };
   counts: {
     assigned: number;
@@ -524,7 +527,26 @@ export default function DashboardPage() {
               </p>
             )}
           </div>
-          <StatCard title="Pending earnings" value={formatMoney(Number(s.earnings.pending || 0), 'PKR')} icon={<WalletCards className="opacity-50" />} />
+          <div>
+            <StatCard title="Pending earnings" value={formatMoney(Number(s.earnings.pending || 0), 'PKR')} icon={<WalletCards className="opacity-50" />} />
+            {/* Batch-7 5.8: the tile the client annotated — PKR 1,900 with
+                "COPY 600" / "DELIVERY 400" and an arrow to 900. */}
+            {s.earnings.pendingBreakdown ? (
+              <p className="mt-1.5 px-1 text-xs text-slate-500">
+                {[
+                  ['Representative cost', s.earnings.pendingBreakdown.base],
+                  ['Attested', s.earnings.pendingBreakdown.attested],
+                  ['Non-attested', s.earnings.pendingBreakdown.nonAttested],
+                  ['Photocopy', s.earnings.pendingBreakdown.printing],
+                  ['Delivery', s.earnings.pendingBreakdown.delivery],
+                  ['PDF', s.earnings.pendingBreakdown.pdfFee],
+                ]
+                  .filter(([, v]) => Number(v) > 0)
+                  .map(([label, v]) => `${label} ${Number(v).toLocaleString()}`)
+                  .join('  +  ')}
+              </p>
+            ) : null}
+          </div>
           <StatCard title="This month" value={formatMoney(Number(s.earnings.thisMonth || 0), 'PKR')} icon={<CheckCircle2 className="opacity-50" />} />
           <StatCard title="To accept" value={s.pendingAcceptance} icon={<Ticket className="opacity-50" />} />
         </div>

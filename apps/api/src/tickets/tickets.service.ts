@@ -2420,7 +2420,16 @@ export class TicketsService {
    */
   async dispatchDelivery(
     ticketId: string,
-    payload: { proofUrl?: string; trackingNo?: string },
+    payload: {
+      proofUrl?: string;
+      trackingNo?: string;
+      // Batch-7 5.5: courier fee entered alongside the tracking number.
+      // Written to BOTH the final column and the representative's frozen
+      // snapshot, exactly as submitClerkCosts does — otherwise the
+      // min(submitted, final) payout cap would pay 0 for a delivery the
+      // representative actually recorded.
+      deliveryCharges?: number;
+    },
     actor?: { actorUserId?: string; actorEmail?: string; actorRole?: string },
   ) {
     const ticket = await this.prisma.ticket.findUnique({
@@ -2446,6 +2455,12 @@ export class TicketsService {
         deliveryStatus: 'DISPATCHED',
         dispatchProofUrl: payload.proofUrl ?? ticket.dispatchProofUrl,
         trackingNo: trimmedTracking || ticket.trackingNo,
+        ...(Number.isFinite(payload.deliveryCharges) && payload.deliveryCharges !== undefined
+          ? {
+              deliveryCharges: payload.deliveryCharges,
+              clerkDeliveryCharges: payload.deliveryCharges,
+            }
+          : {}),
       },
     });
     if (dispatched.count !== 1) {

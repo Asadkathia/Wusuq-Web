@@ -576,11 +576,20 @@ export class TicketsController {
     @Param('id') id: string,
     @UploadedFile() file: { path: string } | undefined,
     @Body('trackingNo') trackingNo: string | undefined,
+    // Batch-7 5.5: the courier fee is known at dispatch time.
+    @Body('deliveryCharges') deliveryCharges: string | undefined,
     @CurrentUser() actor: JwtUser | undefined,
   ) {
     return this.ticketsService.dispatchDelivery(
       id,
-      { proofUrl: file?.path, trackingNo },
+      {
+        proofUrl: file?.path,
+        trackingNo,
+        deliveryCharges:
+          deliveryCharges === undefined || deliveryCharges === ''
+            ? undefined
+            : Number(deliveryCharges),
+      },
       {
         actorUserId: actor?.sub,
         actorEmail: actor?.email,

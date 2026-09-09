@@ -283,6 +283,19 @@ export class DashboardService {
       pdfFee: 0,
       total: 0,
     };
+    // Batch-7 5.8: "Clerk Earning is 900, Photocopy is 600 and delivery is
+    // 400 — please make such tabs, it will be easier for the clerk." He
+    // annotated the PENDING tile, which was a single opaque 1,900; only the
+    // realized tile carried an itemisation.
+    const pendingBreakdown = {
+      base: 0,
+      attested: 0,
+      nonAttested: 0,
+      printing: 0,
+      delivery: 0,
+      pdfFee: 0,
+      total: 0,
+    };
     const counts: Record<string, number> = {};
 
     for (const t of tickets) {
@@ -318,6 +331,9 @@ export class DashboardService {
         if (t.updatedAt >= startOfMonth) thisMonth += earn;
       } else if (PENDING.has(t.status)) {
         pending += earn;
+        for (const k of Object.keys(pendingBreakdown) as (keyof typeof pendingBreakdown)[]) {
+          pendingBreakdown[k] += b[k];
+        }
       }
     }
 
@@ -354,6 +370,16 @@ export class DashboardService {
           delivery: round2(breakdown.delivery),
           pdfFee: round2(breakdown.pdfFee),
           total: round2(breakdown.total),
+        },
+        // Batch-7 5.8
+        pendingBreakdown: {
+          base: round2(pendingBreakdown.base),
+          attested: round2(pendingBreakdown.attested),
+          nonAttested: round2(pendingBreakdown.nonAttested),
+          printing: round2(pendingBreakdown.printing),
+          delivery: round2(pendingBreakdown.delivery),
+          pdfFee: round2(pendingBreakdown.pdfFee),
+          total: round2(pendingBreakdown.total),
         },
       },
       counts: {

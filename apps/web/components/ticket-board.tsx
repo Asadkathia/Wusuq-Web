@@ -12,6 +12,8 @@ import { TICKET_STATUSES } from '@wusuq/shared';
 import { apiClient } from '@/lib/api-client';
 import { relativeTime } from '@/lib/relative-time';
 import { prefillPhase2Charge } from '@/lib/finalize-charges';
+import { chargeFieldVisibility } from '@/lib/clerk-charge-fields';
+import { parseDeliveryAddress } from '@/lib/intake-flows';
 import { paymentsClient } from '@/lib/payments-client';
 import { DataTableShell } from '@/components/ui/data-table-shell';
 import { FilterBar } from '@/components/ui/filter-bar';
@@ -103,6 +105,9 @@ type TicketRow = {
   nextDate?: string | null;
   hearingType?: string | null;
   payload?: Record<string, string> | null;
+  // findAll uses `include` without `select`, so every scalar column comes back
+  // — including the intake payload under its real column name.
+  formPayload?: Record<string, unknown> | null;
   case?: { caseNo: string | null; court: string | null; caseYear: number | null } | null;
   assignmentStatus?: 'ACTIVE' | 'ACCEPTED' | 'REJECTED' | 'SUPERSEDED' | null;
   consumer: { id: string; name: string };
@@ -349,6 +354,13 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
   const [finalizing, setFinalizing] = useState(false);
   // Batch-7 6.6: inline preview for the Review & Complete document list.
   const [previewDoc, setPreviewDoc] = useState<{ url: string; name: string } | null>(null);
+  // Batch-7 5.5: courier fee captured at Mark Dispatched.
+  const [dispatchCost, setDispatchCost] = useState('');
+  // Batch-7 11.5: the admin can record/correct the next hearing at review
+  // time. The representative can leave it blank on submit, and until now
+  // nobody could add it afterwards — "in the finalized ticket can I do
+  // something else, next date of hearing? … no, I can't."
+  const [finalizeNextHearing, setFinalizeNextHearing] = useState('');
 
   /** Internal-only: itemized payout to the clerk given the current (computed)
    *  phase-2 charges. Delegates to the shared single-source formula (adds the
@@ -382,6 +394,7 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
   const openFinalizeModal = async (ticket: TicketRow) => {
     setFinalizeTicket(ticket);
     setFinalizeDetail(null);
+    setFinalizeNextHearing('');
     // Batch-7 2.7: each phase-2 input opens at max(final, representative
     // submitted). The cap in computeClerkEarningsBreakdown is min(submitted,
     // final), so a box left at 0 while the snapshot says 300 paid the
@@ -470,6 +483,17 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
         ...pagePair(finalizeForm.nonAttestedPages, finalizeForm.nonAttestedCostPerPage, 'nonAttestedPages', 'nonAttestedCostPerPage'),
       };
       await paymentsClient.reviewAndComplete(finalizeTicket.id, payload);
+      // Recorded after the completion succeeds so a bad date can never block
+      // the money path. Best-effort: surfaced as a warning, not a failure.
+      if (finalizeNextHearing.trim()) {
+        try {
+          await apiClient.post(`/tickets/${finalizeTicket.id}/next-hearing`, {
+            scheduledDate: finalizeNextHearing.trim(),
+          });
+        } catch (hearingErr: any) {
+          flash(hearingErr?.message || 'Ticket completed, but the next hearing date could not be saved', true);
+        }
+      }
       flash(`Ticket ${finalizeTicket.batchNo} reviewed & completed.`);
       setFinalizeTicket(null);
       setFinalizeForm(EMPTY_FINALIZE);
@@ -502,13 +526,35 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
   }> = [
     { label: 'Additional Cost', key: 'additionalCharges' },
     { label: 'Delivery Charges', key: 'deliveryCharges' },
-    { label: 'No. of Pages', key: 'noOfPages' },
-    { label: 'Cost Per Page', key: 'costPerPage' },
+    // Batch-7 5.2: named, not generic. Three unlabelled "pages × rate" pairs
+    // side by side is what the client called extra and "not clear to
+    // understand" — this pair is the PHOTOCOPY charge and is real, so it is
+    // renamed rather than removed.
+    { label: 'Photocopy Pages', key: 'noOfPages' },
+    { label: 'Photocopy Cost Per Page', key: 'costPerPage' },
     { label: 'Non-Attested Pages', key: 'nonAttestedPages' },
     { label: 'Non-Attested Cost Per Page', key: 'nonAttestedCostPerPage' },
     { label: 'Attested Pages', key: 'attestedPages' },
     { label: 'Attested Cost Per Page', key: 'attestedCostPerPage' },
   ];
+
+  /**
+   * Batch-7 5.3: the representative enters delivery charges without seeing
+   * where the parcel is going — "please bring the delivery address here".
+   * Reads the same structured/legacy shapes the detail panel handles.
+   */
+  const deliveryAddressLine = (ticket: TicketRow | null): string | null => {
+    if (!ticket) return null;
+    const raw = ((ticket.formPayload ?? ticket.payload) as Record<string, unknown> | null | undefined)
+      ?.delivery_address;
+    if (raw == null || raw === '') return null;
+    const addr = parseDeliveryAddress(raw);
+    const parts = [addr.house, addr.block, addr.mainArea, addr.city]
+      .map((v) => (v ?? '').trim())
+      .filter(Boolean);
+    if (parts.length > 0) return parts.join(', ');
+    return typeof raw === 'string' ? raw.trim() || null : null;
+  };
 
   const selectedIds = useMemo(
     () => Object.entries(selected).filter(([, checked]) => checked).map(([id]) => id),
@@ -895,7 +941,10 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
     try {
       await apiClient.post(`/tickets/${ticket.id}/accept-assignment`, {});
       flash(`Ticket ${ticket.batchNo} accepted and moved to In Progress.`);
-      loadTickets();
+      // Batch-7 11.3: "when he accepts, it should automatically take him into
+      // [In Progress]." The ticket has just left ASSIGNED, so refreshing this
+      // board leaves the representative staring at a row that vanished.
+      router.push('/tickets/in-progress');
     } catch (error: any) {
       const msg: string = error?.message || '';
       // Benign race (Bug #10): the ticket already left ASSIGNED. Refresh the
@@ -960,11 +1009,13 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
       const formData = new FormData();
       if (dispatchFile) formData.append('file', dispatchFile);
       if (dispatchTracking.trim()) formData.append('trackingNo', dispatchTracking.trim());
+      if (dispatchCost.trim()) formData.append('deliveryCharges', dispatchCost.trim());
       await apiClient.post(`/tickets/${dispatchTicket.id}/dispatch`, formData);
       flash(`Ticket ${dispatchTicket.batchNo} marked dispatched.`);
       setDispatchTicket(null);
       setDispatchFile(null);
       setDispatchTracking('');
+      setDispatchCost('');
       loadTickets();
     } catch (error: any) {
       flash(error.message || 'Dispatch failed', true);
@@ -1469,6 +1520,18 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
                     const age = statusAge(ticket.statusSince ?? ticket.createdAt ?? null);
                     return (
                       <div className="mt-1 flex items-center gap-2 text-xs">
+                        {/* Batch-7 11.2: a representative could not see what
+                            they would earn until AFTER accepting — "here he
+                            doesn't come to know, this is his money." Their own
+                            fee is not consumer money, so showing it on the row
+                            does not weaken the audit-1.1 redaction; consumer
+                            totals stay hidden below. Always PKR — payouts are
+                            domestic. */}
+                        {isClerk && Number(ticket.clerkCost ?? ticket.defaultClerkCost ?? 0) > 0 && (
+                          <span className="font-medium text-emerald-700">
+                            Your fee: PKR {Number(ticket.clerkCost ?? ticket.defaultClerkCost ?? 0).toLocaleString()}
+                          </span>
+                        )}
                         {/* Consumer money is never shown to clerks (audit 1.1). */}
                         {!isClerk && (
                           <span className="text-slate-500">
@@ -2031,13 +2094,18 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
           </DialogHeader>
           {costsTicket && (() => {
             const caps = chargeCapabilitiesFor(costsTicket.intakeFlow);
+            // Batch-7 5.1: only the set type the consumer actually ordered.
+            const setTypeVisibility = chargeFieldVisibility(
+              (costsTicket.formPayload ?? costsTicket.payload) as Record<string, unknown> | null | undefined,
+              caps.attestation,
+            );
             const visibleFields = clerkCostFields.filter(({ key }) => {
-              if (
-                key === 'attestedPages' ||
-                key === 'attestedCostPerPage' ||
-                key === 'nonAttestedPages' ||
-                key === 'nonAttestedCostPerPage'
-              ) return caps.attestation;
+              if (key === 'attestedPages' || key === 'attestedCostPerPage') {
+                return setTypeVisibility.attested;
+              }
+              if (key === 'nonAttestedPages' || key === 'nonAttestedCostPerPage') {
+                return setTypeVisibility.nonAttested;
+              }
               if (key === 'deliveryCharges') return caps.delivery;
               if (key === 'additionalCharges') return true; // always show additional
               // noOfPages and costPerPage drive printing
@@ -2052,6 +2120,14 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
                     This service type has no billable phase-2 charges.
                   </p>
                 ) : (
+                  <>
+                  {/* Batch-7 5.3 */}
+                  {caps.delivery && deliveryAddressLine(costsTicket) ? (
+                    <div className="rounded-xl border border-border-soft bg-slate-50 px-4 py-3 text-sm">
+                      <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Deliver to</p>
+                      <p className="mt-1 text-slate-800">{deliveryAddressLine(costsTicket)}</p>
+                    </div>
+                  ) : null}
                   <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3">
                     {visibleFields.map(({ label, key }) => (
                       <FormField key={key} label={label} htmlFor={`cc-${key}`}>
@@ -2110,6 +2186,7 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
                       </>
                     )}
                   </div>
+                  </>
                 )}
 
                 {/* C12: TCS courier receipt + tracking# — physical-delivery flows only. */}
@@ -2398,9 +2475,32 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
         <PanelCard className="mt-6">
           <div className="flex items-start justify-between">
             <SectionHeader title={`Mark Dispatched — ${dispatchTicket.batchNo}`} description="Confirm you sent the physical files for delivery. Attach a courier receipt and/or tracking number." />
-            <button onClick={() => { setDispatchTicket(null); setDispatchFile(null); setDispatchTracking(''); }} className="p-1.5 text-slate-400 hover:text-slate-700 rounded-md transition-colors"><X className="h-5 w-5" /></button>
+            <button onClick={() => { setDispatchTicket(null); setDispatchFile(null); setDispatchTracking(''); setDispatchCost(''); }} className="p-1.5 text-slate-400 hover:text-slate-700 rounded-md transition-colors"><X className="h-5 w-5" /></button>
           </div>
           <div className="mt-4 space-y-4">
+            {/* Batch-7 5.3: the address, right where the parcel is being sent. */}
+            {deliveryAddressLine(dispatchTicket) ? (
+              <div className="rounded-xl border border-border-soft bg-slate-50 px-4 py-3 text-sm">
+                <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Deliver to</p>
+                <p className="mt-1 text-slate-800">{deliveryAddressLine(dispatchTicket)}</p>
+              </div>
+            ) : null}
+            {/* Batch-7 5.5: "I uploaded the file when I wrote the tracking
+                number — also add cost here." The courier fee is known at
+                dispatch time, so capture it here rather than making the
+                representative reopen the cost dialog. */}
+            <label className="block">
+              <span className="text-sm font-medium text-slate-700">Delivery cost (PKR)</span>
+              <input
+                type="number"
+                min="0"
+                value={dispatchCost}
+                onChange={(e) => setDispatchCost(e.target.value)}
+                placeholder="0"
+                className="mt-2 block w-full rounded-lg border-0 py-2 px-3 text-slate-900 shadow-sm ring-1 ring-inset ring-border-soft focus:ring-2 focus:ring-primary-600 sm:text-sm"
+              />
+              <p className="mt-1 text-xs text-slate-500">Courier charge for this dispatch. Leave blank to keep the current value.</p>
+            </label>
             <label className="block">
               <span className="text-sm font-medium text-slate-700">Tracking number</span>
               <input
@@ -2433,7 +2533,7 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
               <button onClick={submitDispatch} disabled={dispatching || (!dispatchFile && !dispatchTracking.trim() && !dispatchTicket.dispatchProofUrl)} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 disabled:opacity-50 transition-colors">
                 {dispatching ? 'Saving…' : 'Mark Dispatched'}
               </button>
-              <button onClick={() => { setDispatchTicket(null); setDispatchFile(null); setDispatchTracking(''); }} className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm ring-1 ring-inset ring-border-soft hover:bg-slate-50 transition-colors">Cancel</button>
+              <button onClick={() => { setDispatchTicket(null); setDispatchFile(null); setDispatchTracking(''); setDispatchCost(''); }} className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm ring-1 ring-inset ring-border-soft hover:bg-slate-50 transition-colors">Cancel</button>
             </div>
           </div>
         </PanelCard>
@@ -2629,6 +2729,20 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
                       value={finalizeForm.additionalCharges}
                       onChange={(e) => setFinalizeForm((f) => ({ ...f, additionalCharges: e.target.value }))} />
                     <p className="mt-1 text-xs text-slate-400">Separate line; not taxed.</p>
+                  </FormField>
+                  {/* Batch-7 11.5 */}
+                  <FormField label="Next hearing date (optional)" htmlFor="fin-next-hearing">
+                    <Input
+                      id="fin-next-hearing"
+                      type="date"
+                      value={finalizeNextHearing}
+                      onChange={(e) => setFinalizeNextHearing(e.target.value)}
+                    />
+                    <p className="mt-1 text-xs text-slate-400">
+                      {finalizeDetail?.scheduledDate
+                        ? `Currently ${String(finalizeDetail.scheduledDate).slice(0, 10)} — set a new date to reschedule.`
+                        : 'Not recorded by the representative. Set it here if the case is still pending.'}
+                    </p>
                   </FormField>
                 </div>
                 {/* Base + phase-2 total, and the internal earnings/margin summary — share one
