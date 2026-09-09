@@ -383,7 +383,11 @@ function TicketCard({ ticket, onOpen }: { ticket: TicketRow; onOpen: () => void 
   const invoiceId = ticket.invoiceItem?.invoiceId ?? null;
   // Batch-7 7.4: consumer-visible documents are already filtered server-side
   // by redactTicketForConsumer (visibleToConsumer + COMPLETED/DELIVERED).
-  const docCount = Array.isArray(ticket.documents) ? ticket.documents.length : 0;
+  const docs = Array.isArray(ticket.documents) ? ticket.documents : [];
+  // The courier receipt is captioned at upload (dispatchDelivery / the clerk
+  // cost dialog), so the caption is what distinguishes it from a deliverable.
+  const tcsDoc = docs.find((d) => /tcs|courier/i.test(d.caption ?? ''));
+  const repDocCount = docs.filter((d) => d !== tcsDoc).length;
   const invoiceNo = ticket.invoiceItem?.invoice?.invoiceNo ?? null;
 
   // Show "Final payment due" when: remainder has been finalized but not yet fully paid
@@ -579,7 +583,7 @@ function TicketCard({ ticket, onOpen }: { ticket: TicketRow; onOpen: () => void 
       ) : null}
 
       {/* Regenerate / Documents / Download invoice / Pay later (C7/C8 + batch-7 7.4) */}
-      {rgHref || invoiceId || docCount > 0 || showFinalPayment || showPayNow ? (
+      {rgHref || invoiceId || docs.length > 0 || showFinalPayment || showPayNow ? (
         <div className="mt-2 flex flex-wrap items-center justify-end gap-2">
           {rgHref ? (
             <Link href={rgHref} onClick={(e) => e.stopPropagation()}>
@@ -588,18 +592,30 @@ function TicketCard({ ticket, onOpen }: { ticket: TicketRow; onOpen: () => void 
               </Button>
             </Link>
           ) : null}
-          {/* Batch-7 7.4: "please add here — tcs receipt / Document By Clerk /
-              invoice". The deliverable and the courier receipt were reachable
-              only after opening the drawer; this surfaces them on the card and
-              opens straight to them. */}
-          {docCount > 0 ? (
+          {/* Batch-7 7.4 / item 9: "please add here — tcs receipt / Document
+              By Clerk / invoice", drawn as three buttons on this action row,
+              left of Pay now / Regenerate / Pay later. Each opens the detail
+              drawer at the Documents section; the invoice downloads directly.
+              A button only renders when the thing behind it exists, so the
+              row never offers a dead control. */}
+          {tcsDoc ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={(e) => { e.stopPropagation(); onOpen(); }}
+              leftIcon={<Truck className="h-3.5 w-3.5" />}
+            >
+              TCS receipt
+            </Button>
+          ) : null}
+          {repDocCount > 0 ? (
             <Button
               variant="secondary"
               size="sm"
               onClick={(e) => { e.stopPropagation(); onOpen(); }}
               leftIcon={<FileText className="h-3.5 w-3.5" />}
             >
-              Documents ({docCount})
+              Document{repDocCount > 1 ? `s (${repDocCount})` : ''}
             </Button>
           ) : null}
           {invoiceId && invoiceNo ? (

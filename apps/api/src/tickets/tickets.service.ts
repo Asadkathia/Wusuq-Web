@@ -1026,24 +1026,28 @@ export class TicketsService {
 
     await this.dispatcher.ticketCreated(ticket.id).catch(() => undefined);
 
-    // Batch-7 2.2: apply any prepaid credit the consumer is already holding,
-    // immediately. "So this is regenerated — why is the money not
-    // decreasing?" and, on the staff side, "super admin is saying the payment
-    // is waiting for the ticket, but it was already cut from that."
+    // Batch-7 2.2 (owner decision 2026-09-09): wallet credit is applied ONLY
+    // when the consumer explicitly asks for it at checkout — "ask the user if
+    // he wants to use wallet balance or pay separately."
     //
-    // Settlement already ran on top-up verification, admin adjustment and
-    // remainder finalize — never at ticket CREATION, which is the one moment
-    // a new due appears against existing credit. This is the same locked FIFO
-    // path (settleTicketsForUser -> clearPendingTickets), not a second money
-    // path, so the ordering and floor-at-0 guarantees are unchanged.
+    // An earlier revision settled unconditionally here. That fixed his "why is
+    // the money not decreasing?" but took the choice away: a consumer holding
+    // credit for a specific future ticket would have had it silently consumed
+    // by whatever they ordered next. Opting in keeps both behaviours available.
     //
-    // try/catch, not .catch(): a synchronous throw must not fail a ticket
-    // that has already been created and charged.
-    try {
-      await this.walletService.settleTicketsForUser(dto.consumerId);
-    } catch {
-      // Non-fatal: the ticket exists and the credit stays on the wallet; the
-      // next settlement trigger picks it up.
+    // Settlement itself is the same locked FIFO path used by top-up
+    // verification / admin adjustment / remainder finalize — not a second
+    // money path — so ordering and the floor-at-0 guarantee are unchanged.
+    //
+    // try/catch, not .catch(): a synchronous throw must not fail a ticket that
+    // has already been created and charged.
+    if (dto.useWalletBalance) {
+      try {
+        await this.walletService.settleTicketsForUser(dto.consumerId);
+      } catch {
+        // Non-fatal: the ticket exists and the credit stays on the wallet;
+        // the next settlement trigger picks it up.
+      }
     }
 
     return ticket;

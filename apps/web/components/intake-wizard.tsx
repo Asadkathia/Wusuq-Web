@@ -14,7 +14,7 @@ import { courtTierFromCourtType, resolveRequired, docBundleLabel, normalizeDraft
 import { BENCH_TYPE_LABELS } from '@/lib/bench-types';
 import type { YearBand } from '@/lib/intake-flows';
 import { judgeDesignationsForCaseType } from '@/lib/judge-designations';
-import { buildPricingResolveInput, computeTicketTotal, computeCaseSearchBase, computeDecidedAgeSurcharge } from '@wusuq/shared';
+import { buildPricingResolveInput, computeCaseSearchBase, computeDecidedAgeSurcharge, computeTicketTotal, formatMoney } from '@wusuq/shared';
 
 import type { IntakeWizardProps, TicketDraft, ServiceHit, LocalUser, CityCourtGroup } from './intake-wizard/types';
 import { StepRail } from './intake-wizard/step-rail';
@@ -268,6 +268,11 @@ export function IntakeWizard({
   // Consumer billing currency (PKR default; USD for international customers).
   // Seeded from the stored user and confirmed via /wallet/me on mount.
   const [currency, setCurrency] = useState<'PKR' | 'USD'>('PKR');
+  // Batch-7 2.2: prepaid credit on the consumer's wallet, and whether they
+  // have chosen to spend it on THIS ticket. Default false — "ask the user if
+  // he wants to use wallet balance or pay separately."
+  const [walletCredit, setWalletCredit] = useState(0);
+  const [useWalletCredit, setUseWalletCredit] = useState(false);
   // Promo-code state: the code the user typed, the validated discount amount,
   // and any validation error message.
   const [promoCode, setPromoCode] = useState('');
@@ -417,9 +422,16 @@ export function IntakeWizard({
 
   // Resolve the consumer's billing currency. /wallet/me is authoritative (it
   // reads User.currency server-side); the stored user is the instant seed.
+  // Batch-7 2.2: the same call carries the prepaid `credit`, which drives the
+  // "use my wallet balance" choice at checkout.
   useEffect(() => {
-    apiClient.get<{ currency?: 'PKR' | 'USD' }>('/wallet/me')
-      .then((r) => { if (r.currency) startTransition(() => setCurrency(r.currency!)); })
+    apiClient.get<{ currency?: 'PKR' | 'USD'; credit?: number }>('/wallet/me')
+      .then((r) => {
+        startTransition(() => {
+          if (r.currency) setCurrency(r.currency);
+          setWalletCredit(Number(r.credit ?? 0));
+        });
+      })
       .catch(() => {});
   }, []);
 
@@ -2198,6 +2210,10 @@ export function IntakeWizard({
         // re-click replays the same key and the API returns the
         // already-created ticket instead of a duplicate.
         requestId: submitRequestIdRef.current ?? undefined,
+        // Batch-7 2.2 (owner 2026-09-09): opt-in. The consumer chooses at
+        // checkout whether their prepaid credit pays for this ticket, rather
+        // than it being consumed automatically.
+        useWalletBalance: useWalletCredit,
         // Batch-6 D4: `||`, NOT `??`. handleDistrictChange writes `city: ''`
         // (empty string, not undefined), and the FIR flows no longer set a
         // city at all — with `??` the empty string is not nullish, so the
@@ -2962,6 +2978,24 @@ export function IntakeWizard({
           summary={checkoutSummary}
           hasFlow={Boolean(draft.flow)}
           isSplit={isSplitFlow}
+          walletSlot={walletCredit > 0 ? (
+            <label className="flex cursor-pointer items-start gap-2 select-none">
+              <input
+                type="checkbox"
+                checked={useWalletCredit}
+                onChange={(e) => setUseWalletCredit(e.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+              />
+              <span className="text-xs text-slate-700">
+                <span className="font-semibold">
+                  Use my wallet balance ({formatMoney(walletCredit, currency)} available)
+                </span>
+                <span className="mt-0.5 block text-slate-500">
+                  Leave unticked to pay for this request separately — your balance stays untouched.
+                </span>
+              </span>
+            </label>
+          ) : undefined}
           promoSlot={currency === 'USD' ? undefined : (
             <div className="space-y-2">
               <p className="text-xs font-semibold text-slate-700">Promo code</p>

@@ -1,4 +1,5 @@
 import {
+  IsBoolean,
   IsDateString,
   IsObject,
   IsOptional,
@@ -17,6 +18,19 @@ export class CreateTicketIntakeDto {
   @IsString()
   @MaxLength(64)
   requestId?: string;
+
+  /**
+   * Batch-7 2.2 (owner decision 2026-09-09): apply the consumer's prepaid
+   * wallet credit to this ticket. OPT-IN — "ask the user if he wants to use
+   * wallet balance or pay separately."
+   *
+   * Absent/false leaves the credit untouched; the ticket simply stays unpaid
+   * until they pay it, and the existing settlement triggers (top-up
+   * verification, admin adjustment, remainder finalize) behave as before.
+   */
+  @IsOptional()
+  @IsBoolean()
+  useWalletBalance?: boolean;
 
   @IsString()
   consumerId!: string;

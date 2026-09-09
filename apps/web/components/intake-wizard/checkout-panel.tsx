@@ -35,6 +35,11 @@ type CheckoutPanelProps = {
    */
   isSplit?: boolean;
   /**
+   * Batch-7 2.2 — the "use my wallet balance or pay separately" choice.
+   * Rendered above the promo slot so the consumer sees it before submitting.
+   */
+  walletSlot?: React.ReactNode;
+  /**
    * Optional slot rendered between the line-items list and the subtotal/total
    * footer. Used by IntakeWizard to embed the promo-code input inside the
    * sticky checkout sidebar without coupling state to this component.
@@ -47,7 +52,7 @@ function formatAmount(amount: number | null, currency: string): string {
   return formatMoney(amount, currency === 'USD' ? 'USD' : 'PKR');
 }
 
-export function CheckoutPanel({ summary, hasFlow, isSplit, promoSlot }: CheckoutPanelProps) {
+export function CheckoutPanel({ summary, hasFlow, isSplit, promoSlot, walletSlot }: CheckoutPanelProps) {
   const { items, subtotal, fees, total, currency } = summary;
 
   return (
@@ -96,6 +101,7 @@ export function CheckoutPanel({ summary, hasFlow, isSplit, promoSlot }: Checkout
           </div>
         ) : null}
 
+        {walletSlot ? <div className="border-t border-border-soft pt-3">{walletSlot}</div> : null}
         <footer className="space-y-2 border-t border-border-soft px-5 py-4 text-sm">
           <div className="flex items-center justify-between text-slate-600">
             <span>Subtotal</span>
