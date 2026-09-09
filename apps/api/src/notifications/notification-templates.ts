@@ -65,6 +65,12 @@ export const notificationTemplates = {
     title: `New document — ${batchNo}`,
     body: `A document is now available on your request ${batchNo}.`,
   }),
+  // Batch-7 8.4: "in a completed ticket, if super admin edits it, will the
+  // consumer receive a notification or not? It should be received."
+  ticketEditedForConsumer: (batchNo: string): Copy => ({
+    title: `Request updated — ${batchNo}`,
+    body: `Your request ${batchNo} was updated by our team. Open it to see the current details and charges.`,
+  }),
   ticketRegeneratedForConsumer: (batchNo: string): Copy => ({
     title: `Request regenerated — ${batchNo}`,
     body: `A new request ${batchNo} has been created from a previous one.`,

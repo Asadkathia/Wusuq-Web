@@ -278,6 +278,19 @@ export class NotificationDispatcher {
     });
   }
 
+  /** Batch-7 8.4 — a staff edit/reprice of an existing ticket. */
+  async ticketEdited(ticketId: string): Promise<void> {
+    const t = await this.loadTicket(ticketId);
+    if (!t) return;
+    const copy = T.ticketEditedForConsumer(t.batchNo);
+    await this.notifications.create({
+      userId: t.consumerId,
+      ...copy,
+      type: NOTIFICATION_TYPES.TICKET_STATUS_CHANGED,
+      metadata: { ticketId: t.id, batchNo: t.batchNo },
+    });
+  }
+
   async ticketRegenerated(ticketId: string): Promise<void> {
     const t = await this.loadTicket(ticketId);
     if (!t) return;

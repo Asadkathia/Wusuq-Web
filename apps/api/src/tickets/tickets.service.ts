@@ -3925,6 +3925,16 @@ export class TicketsService {
       },
     });
 
+    // Batch-7 8.4: "if super admin edits a completed ticket, will the consumer
+    // receive a notification? It should be received — this is our system."
+    // The reprice already committed; notifying is best-effort. try/catch, not
+    // .catch() — a synchronous throw never reaches a promise handler.
+    try {
+      await this.dispatcher.ticketEdited(id);
+    } catch {
+      // Non-fatal.
+    }
+
     return this.findOne(id);
   }
 }

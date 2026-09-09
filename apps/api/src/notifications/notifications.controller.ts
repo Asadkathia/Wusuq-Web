@@ -1,5 +1,6 @@
 import {
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -45,6 +46,12 @@ export class NotificationsController {
   @Patch(':id/read')
   markRead(@Param('id') id: string, @CurrentUser() user: JwtUser) {
     return this.notificationsService.markRead(id, user.sub);
+  }
+
+  // Batch-7 8.1. Scoped to the caller's own rows via the JWT subject.
+  @Delete('clear-all')
+  clearAll(@CurrentUser() user: JwtUser) {
+    return this.notificationsService.clearAll(user.sub);
   }
 
   @Post('mark-all-read')

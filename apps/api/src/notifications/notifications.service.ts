@@ -80,4 +80,19 @@ export class NotificationsService {
     });
     return { success: true };
   }
+
+  /**
+   * Batch-7 8.1: "please add Read All & Clear All".
+   *
+   * Own-scope only — the `userId` filter is the authorization boundary, and
+   * it comes from the JWT, never a parameter. Notifications are derived
+   * messages: the durable trail lives in AuditLog and TicketStatusHistory,
+   * so clearing them destroys nothing of record.
+   */
+  async clearAll(userId: string) {
+    const { count } = await this.prisma.notification.deleteMany({
+      where: { userId },
+    });
+    return { success: true, cleared: count };
+  }
 }

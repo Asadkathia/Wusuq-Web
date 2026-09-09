@@ -1004,8 +1004,10 @@ export function ConsumerTicketDetail({
         </section>
       ) : null}
 
+      {/* Batch-7 8.3: the "New document" bell links to #documents so it lands
+          on the document rather than the top of the ticket. */}
       {Array.isArray(ticket.documents) && ticket.documents.length > 0 ? (
-        <section>
+        <section id="documents" className="scroll-mt-20">
           <h4 className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Documents</h4>
           <div className="mt-3 space-y-2">
             {ticket.documents.map((doc: any) => {

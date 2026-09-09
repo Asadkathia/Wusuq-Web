@@ -102,6 +102,13 @@ export function ShellTopbar({ variant, walletHref, profileHref = '/profile', onS
     setUnread(0);
   };
 
+  // Batch-7 8.1: "please add Read All & Clear All".
+  const clearAll = async () => {
+    await apiClient.delete('/notifications/clear-all').catch(() => {});
+    setNotifications([]);
+    setUnread(0);
+  };
+
   const markOne = async (id: string) => {
     await apiClient.patch(`/notifications/${id}/read`, {}).catch(() => {});
     setNotifications((n) => n.map((x) => (x.id === id ? { ...x, isRead: true } : x)));
@@ -110,10 +117,23 @@ export function ShellTopbar({ variant, walletHref, profileHref = '/profile', onS
 
   const hrefFor = (n: Notification): string | null => {
     const ticketId = n.metadata?.ticketId;
+    const type = n.type ?? '';
+    // Batch-7 8.2: a staff "payment pending / needs review" bell used to open
+    // the ticket detail — "when I enter this notification it comes not to the
+    // desired page, to verify payment." Send it to the verification queue.
+    // `payment.submitted` is the "a payment needs review" bell.
+    if (variant !== 'consumer' && /^payment\.submitted$/i.test(type)) {
+      return '/wallet';
+    }
     if (ticketId) {
+      // Batch-7 8.3: a "New document" bell should land ON the document, not
+      // just the ticket. The detail page opens its Documents section from
+      // this hash.
+      const isDocument = /document/i.test(type);
+      const suffix = isDocument ? '#documents' : '';
       return variant === 'consumer'
-        ? `/consumer/tickets/${ticketId}`
-        : `/tickets/${ticketId}`;
+        ? `/consumer/tickets/${ticketId}${suffix}`
+        : `/tickets/${ticketId}${suffix}`;
     }
     return null;
   };
@@ -206,11 +226,18 @@ export function ShellTopbar({ variant, walletHref, profileHref = '/profile', onS
           <MenuContent align="end" className="w-80 p-0">
             <div className="flex items-center justify-between border-b border-border-soft px-4 py-3">
               <span className="text-sm font-semibold text-slate-900">Notifications</span>
-              {unread > 0 ? (
-                <button onClick={markAllRead} className="text-xs font-medium text-brand-600 hover:text-brand-700 transition-colors">
-                  Mark all read
-                </button>
-              ) : null}
+              <span className="flex items-center gap-3">
+                {unread > 0 ? (
+                  <button onClick={markAllRead} className="text-xs font-medium text-brand-600 hover:text-brand-700 transition-colors">
+                    Read all
+                  </button>
+                ) : null}
+                {notifications.length > 0 ? (
+                  <button onClick={clearAll} className="text-xs font-medium text-slate-500 hover:text-rose-600 transition-colors">
+                    Clear all
+                  </button>
+                ) : null}
+              </span>
             </div>
             <ul className="max-h-72 divide-y divide-border-soft overflow-y-auto">
               {notifications.length === 0 ? (
