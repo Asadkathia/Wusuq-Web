@@ -1,5 +1,13 @@
 import { COURT_TIERS, PAYMENT_MODES } from '@wusuq/shared';
-import { IsEmail, IsIn, IsOptional, IsString, Matches, MaxLength, MinLength } from 'class-validator';
+import {
+  IsEmail,
+  IsIn,
+  IsOptional,
+  IsString,
+  Matches,
+  MaxLength,
+  MinLength,
+} from 'class-validator';
 
 export class CreateRepresentativeDto {
   @IsString()

@@ -1607,12 +1607,19 @@ export class TicketsService {
    * update is the rule the next ticket will match.
    */
   private async saveDefaultClerkCost(
-    ticket: { intakeFlow: string | null; formPayload: unknown; currency: string | null },
+    ticket: {
+      intakeFlow: string | null;
+      formPayload: unknown;
+      currency: string | null;
+    },
     clerkCost: number,
   ) {
     try {
       if (!ticket.intakeFlow || !isFlowKey(ticket.intakeFlow)) return;
-      const payload = (ticket.formPayload ?? {}) as Record<string, string | undefined>;
+      const payload = (ticket.formPayload ?? {}) as Record<
+        string,
+        string | undefined
+      >;
       const resolved = await this.pricingService.resolve(
         buildPricingResolveInput(
           ticket.intakeFlow,
@@ -2545,7 +2552,8 @@ export class TicketsService {
         deliveryStatus: 'DISPATCHED',
         dispatchProofUrl: payload.proofUrl ?? ticket.dispatchProofUrl,
         trackingNo: trimmedTracking || ticket.trackingNo,
-        ...(Number.isFinite(payload.deliveryCharges) && payload.deliveryCharges !== undefined
+        ...(Number.isFinite(payload.deliveryCharges) &&
+        payload.deliveryCharges !== undefined
           ? {
               deliveryCharges: payload.deliveryCharges,
               clerkDeliveryCharges: payload.deliveryCharges,

@@ -15,7 +15,7 @@ function makeDispatcher() {
     ticketClerkReceiptDecided: jest.fn().mockResolvedValue(undefined),
     ticketDocumentUploaded: jest.fn().mockResolvedValue(undefined),
     ticketEdited: jest.fn(async () => undefined),
-      ticketRegenerated: jest.fn().mockResolvedValue(undefined),
+    ticketRegenerated: jest.fn().mockResolvedValue(undefined),
     ticketDispatched: jest.fn().mockResolvedValue(undefined),
     paymentRemainderDue: jest.fn().mockResolvedValue(undefined),
     caseDriftDetected: jest.fn().mockResolvedValue(undefined),

@@ -86,7 +86,10 @@ export class DashboardService {
       const day = format(r.createdAt, 'MMM dd');
       if (buckets.has(day)) buckets.set(day, (buckets.get(day) ?? 0) + 1);
     }
-    return Array.from(buckets.entries()).map(([date, count]) => ({ date, count }));
+    return Array.from(buckets.entries()).map(([date, count]) => ({
+      date,
+      count,
+    }));
   }
 
   async getConsumerSummary(userId: string) {
@@ -359,7 +362,9 @@ export class DashboardService {
         if (t.updatedAt >= startOfMonth) thisMonth += earn;
       } else if (PENDING.has(t.status)) {
         pending += earn;
-        for (const k of Object.keys(pendingBreakdown) as (keyof typeof pendingBreakdown)[]) {
+        for (const k of Object.keys(
+          pendingBreakdown,
+        ) as (keyof typeof pendingBreakdown)[]) {
           pendingBreakdown[k] += b[k];
         }
       }
@@ -456,9 +461,15 @@ export class DashboardService {
     const [total, today, thisMonth, thisYear, byKind, byProvince, byCity] =
       await Promise.all([
         this.prisma.user.count({ where: base }),
-        this.prisma.user.count({ where: { ...base, createdAt: { gte: startOfToday } } }),
-        this.prisma.user.count({ where: { ...base, createdAt: { gte: startOfThisMonth } } }),
-        this.prisma.user.count({ where: { ...base, createdAt: { gte: startOfThisYear } } }),
+        this.prisma.user.count({
+          where: { ...base, createdAt: { gte: startOfToday } },
+        }),
+        this.prisma.user.count({
+          where: { ...base, createdAt: { gte: startOfThisMonth } },
+        }),
+        this.prisma.user.count({
+          where: { ...base, createdAt: { gte: startOfThisYear } },
+        }),
         this.prisma.user.groupBy({
           by: ['consumerKind'],
           where: base,

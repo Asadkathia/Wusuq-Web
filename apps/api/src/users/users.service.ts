@@ -48,7 +48,9 @@ export class UsersService {
     });
     if (!rep) throw new NotFoundException('User not found');
     if (rep.role !== 'representative') {
-      throw new BadRequestException('Payouts can only be recorded for representatives.');
+      throw new BadRequestException(
+        'Payouts can only be recorded for representatives.',
+      );
     }
 
     const log = await this.auditLogsService.create({
@@ -89,8 +91,9 @@ export class UsersService {
         id: r.id,
         createdAt: r.createdAt,
         recordedBy: r.actorEmail,
-        amount: Number(m.amount ?? 0),
-        method: String(m.method ?? ''),
+        amount:
+          typeof m.amount === 'number' ? m.amount : Number(m.amount ?? 0) || 0,
+        method: typeof m.method === 'string' ? m.method : '',
         reference: (m.reference as string | null) ?? null,
         note: (m.note as string | null) ?? null,
       };

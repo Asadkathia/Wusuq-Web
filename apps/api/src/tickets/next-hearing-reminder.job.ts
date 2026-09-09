@@ -57,10 +57,11 @@ export class NextHearingReminderJob {
 
     let sent = 0;
     for (const ticket of candidates) {
-      const caseStatus = String(
-        ((ticket.formPayload ?? {}) as Record<string, unknown>).case_status ?? '',
-      );
-      if (!/pending/i.test(caseStatus)) continue;
+      const rawStatus = ((ticket.formPayload ?? {}) as Record<string, unknown>)
+        .case_status;
+      // Only a string is meaningful here; anything else is malformed payload.
+      if (typeof rawStatus !== 'string' || !/pending/i.test(rawStatus))
+        continue;
 
       const representativeId = ticket.assignments[0]?.representativeId;
       if (!representativeId) continue;

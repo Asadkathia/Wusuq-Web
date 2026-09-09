@@ -22,7 +22,6 @@ export class FilterTicketsDto extends PaginationQueryDto {
   // query reaches the service, and forces `representativeId` for
   // representatives — neither can widen their own scope with it.
 
-
   // Restore/unarchive follow-up: when true, findAll returns ONLY archived
   // tickets (archivedAt not null) instead of the default non-archived list.
   // Staff-only — the controller strips this for consumer/representative
