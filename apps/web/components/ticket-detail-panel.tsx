@@ -34,6 +34,8 @@ type Props = {
   /** Called after a mutation inside the drawer (accept/reject) so the parent
    *  list can refresh and the now-stale row leaves its previous bucket. */
   onChange?: () => void;
+  /** Batch-7 5.7 — hand the ticket back to the board's Assign dialog. */
+  onAssign?: (ticketId: string) => void;
 };
 
 
@@ -44,7 +46,7 @@ const STATUS_VARIANT: Record<string, 'success' | 'warning' | 'error' | 'neutral'
   COMPLETED: 'success',
 };
 
-export function TicketDetailPanel({ ticketId, onClose, isClerkView = false, onChange }: Props) {
+export function TicketDetailPanel({ ticketId, onClose, isClerkView = false, onChange, onAssign }: Props) {
   const router = useRouter();
   const [ticket, setTicket] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -157,6 +159,18 @@ export function TicketDetailPanel({ ticketId, onClose, isClerkView = false, onCh
             )}
           </div>
           <div className="flex items-center gap-2">
+            {/* Batch-7 5.7: "if you want to give him the button of assign
+                here, then give it." Staff only, and only while the ticket is
+                actually assignable. Delegates to the board's dialog rather
+                than duplicating rep loading / tier scoping / city override. */}
+            {!isClerkView && onAssign && ticket && (ticket.status === 'UNPAID' || ticket.status === 'PAID') && (
+              <button
+                onClick={() => onAssign(ticket.id)}
+                className="rounded-md bg-primary-600 px-3 py-1.5 text-sm text-white hover:bg-primary-700"
+              >
+                Assign
+              </button>
+            )}
             {isAssignedToMe && (
               <div className="flex gap-2">
                 <button

@@ -61,6 +61,10 @@ function buildNavItems(counts: Record<string, number>): NavItem[] {
         { label: 'Waiting Approval', href: '/tickets/waiting-approval', count: hrefCount['/tickets/waiting-approval'] },
         { label: 'Completed Tickets', href: '/tickets/completed', count: hrefCount['/tickets/completed'] },
         { label: 'Delivered Tickets', href: '/tickets/delivered', count: hrefCount['/tickets/delivered'] },
+        // Batch-7 3.2a / 4.1: no count badges — /tickets/counts is keyed by
+        // status and these two are derived views, not statuses.
+        { label: 'All Tickets', href: '/tickets/all' },
+        { label: 'Immature Tickets', href: '/tickets/immature' },
         // Restore/unarchive follow-up: no count badge — /tickets/counts is
         // scoped to non-archived tickets, and this tab is admin-only anyway
         // (buildClerkItems below doesn't include it).

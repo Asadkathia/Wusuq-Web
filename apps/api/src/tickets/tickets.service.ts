@@ -196,6 +196,15 @@ const STATUS_TRANSITIONS: Record<TicketStatus, TicketStatus[]> = {
   DELIVERED: [],
 };
 
+/**
+ * Age after which an unpaid, never-paid ticket is considered "immature"
+ * (batch-7 4.1). The client used 10 days as his example, not as a rule — it
+ * lives here as one named constant so it is one edit to change.
+ */
+export const IMMATURE_TICKET_AGE_DAYS = 10;
+const IMMATURE_TICKET_CUTOFF = () =>
+  new Date(Date.now() - IMMATURE_TICKET_AGE_DAYS * 24 * 60 * 60 * 1000);
+
 @Injectable()
 export class TicketsService {
   private readonly logger = new Logger(TicketsService.name);
@@ -238,6 +247,14 @@ export class TicketsService {
           }
         : {}),
       ...(query.consumerId ? { consumerId: query.consumerId } : {}),
+      // Batch-7 4.1: aged, never-paid, still UNPAID. Derived — see the DTO.
+      ...(query.immature
+        ? {
+            status: 'UNPAID' as const,
+            amountPaid: { lte: 0 },
+            createdAt: { lt: IMMATURE_TICKET_CUTOFF() },
+          }
+        : {}),
       ...(query.representativeId
         ? {
             assignments: {

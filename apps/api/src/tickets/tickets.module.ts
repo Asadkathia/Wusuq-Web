@@ -11,6 +11,7 @@ import { CurrencyModule } from '../currency/currency.module';
 import { InvoicesModule } from '../invoices/invoices.module';
 import { TicketsController } from './tickets.controller';
 import { TicketsService } from './tickets.service';
+import { NextHearingReminderJob } from './next-hearing-reminder.job';
 
 @Module({
   imports: [
@@ -27,7 +28,7 @@ import { TicketsService } from './tickets.service';
     InvoicesModule,
   ],
   controllers: [TicketsController],
-  providers: [TicketsService],
+  providers: [TicketsService, NextHearingReminderJob],
   exports: [TicketsService],
 })
 export class TicketsModule {}

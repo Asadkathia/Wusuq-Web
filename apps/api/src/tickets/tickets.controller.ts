@@ -81,6 +81,10 @@ export class TicketsController {
     // The Archived view is staff-only — strip the filter for consumer/rep
     // callers regardless of what the query string carries (never trust a
     // client-supplied flag to widen scope past their own tickets).
+    if ((isConsumer || isRepresentative) && query.immature) {
+      // Batch-7 4.1: staff-only triage view, same rule as `archived`.
+      query.immature = false;
+    }
     if ((isConsumer || isRepresentative) && query.archived) {
       query.archived = false;
     }

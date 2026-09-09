@@ -40,6 +40,9 @@ import { flowKeyToSlug } from '@/lib/intake-flows';
 
 type TicketBoardProps = {
   title: string;
+  // Batch-7 4.1: aged, never-paid tickets — a derived triage bucket, not a
+  // new status, so a consumer who pays leaves it on its own.
+  immature?: boolean;
   // Batch-7 3.2a: OPTIONAL. Omitted = "every status" (the /tickets/all board
   // the Total Tickets KPI links to). Every per-tab gate below is a
   // `status === 'X'` comparison, so an absent status simply renders nothing
@@ -195,7 +198,7 @@ const EMPTY_CLERK_COSTS: ClerkCostsForm = {
   costPerPage: '',
 };
 
-export function TicketBoard({ title, status, archived = false }: TicketBoardProps) {
+export function TicketBoard({ title, status, archived = false, immature = false }: TicketBoardProps) {
   const router = useRouter();
   const [tickets, setTickets] = useState<TicketRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -523,6 +526,18 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
     }
   };
 
+  /**
+   * Batch-7 9.1: is this a still-open case whose next hearing we ought to
+   * know? Reads the intake payload's case status; COMPLETED/DELIVERED tickets
+   * are excluded because batch-4 already established a finished ticket should
+   * not advertise a hearing.
+   */
+  const isPendingCase = (ticket: TicketRow): boolean => {
+    if (ticket.status === 'COMPLETED' || ticket.status === 'DELIVERED') return false;
+    const payload = (ticket.formPayload ?? ticket.payload) as Record<string, unknown> | null | undefined;
+    return /pending/i.test(String(payload?.case_status ?? ''));
+  };
+
   const clerkCostFields: Array<{
     label: string;
     key: keyof ClerkCostsForm;
@@ -594,6 +609,8 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
       // filter (staff-only) replaces the per-tab status filter entirely.
       if (archived) {
         q.set('archived', 'true');
+      } else if (immature) {
+        q.set('immature', 'true');
       } else if (status) {
         q.set('status', status);
       }
@@ -609,7 +626,7 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
     } finally {
       setLoading(false);
     }
-  }, [status, archived, dateRange, serviceFilter, isClerk, isConsumer, currentUserId, flash]);
+  }, [status, archived, immature, dateRange, serviceFilter, isClerk, isConsumer, currentUserId, flash]);
 
   useEffect(() => {
     loadTickets();
@@ -1286,9 +1303,11 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
         description={
           archived
             ? 'Archived tickets — restore them back into the active workflow.'
-            : status
-              ? `Manage ${status.toLowerCase()} tickets and assignments.`
-              : 'Every ticket, across all statuses.'
+            : immature
+              ? 'Ordered but never paid, and older than 10 days. Nothing is written here — a consumer who pays drops out of this list on their own. Archive the ones that are genuinely dead.'
+              : status
+                ? `Manage ${status.toLowerCase()} tickets and assignments.`
+                : 'Every ticket, across all statuses.'
         }
         action={
           <button
@@ -1592,7 +1611,7 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
                       </div>
                     )}
                     {/* Next hearing date — prefer nextDate over scheduledDate */}
-                    {(ticket.nextDate || ticket.scheduledDate) && (
+                    {(ticket.nextDate || ticket.scheduledDate) ? (
                       <div className="flex items-center gap-1 text-xs text-slate-500 mt-1">
                         <Calendar className="h-3 w-3 shrink-0" />
                         <span>
@@ -1600,7 +1619,16 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
                           {ticket.hearingType ? ` · ${ticket.hearingType}` : ''}
                         </span>
                       </div>
-                    )}
+                    ) : isPendingCase(ticket) ? (
+                      /* Batch-7 9.1: "the representative forgot to enter the
+                         next date… we should ALWAYS know the next date of a
+                         pending case." A pending case with no next hearing is
+                         a gap, so say so instead of rendering nothing. */
+                      <div className="mt-1 flex items-center gap-1 text-xs font-medium text-amber-600">
+                        <Calendar className="h-3 w-3 shrink-0" />
+                        <span>Pending · next hearing not set</span>
+                      </div>
+                    ) : null}
                     {/* Assignment acceptance */}
                     <div className="flex flex-wrap gap-1 mt-1.5">
                       {ticket.assignmentStatus && (
@@ -3072,6 +3100,12 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
           onClose={() => setViewTicketId(null)}
           isClerkView={isClerk}
           onChange={loadTickets}
+          onAssign={(id) => {
+            const target = tickets.find((t) => t.id === id);
+            if (!target) return;
+            setViewTicketId(null);
+            void openAssign(target);
+          }}
         />
       )}
 

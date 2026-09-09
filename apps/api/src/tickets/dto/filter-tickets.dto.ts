@@ -31,4 +31,24 @@ export class FilterTicketsDto extends PaginationQueryDto {
   @Transform(({ value }) => value === true || value === 'true')
   @IsBoolean()
   archived?: boolean;
+
+  /**
+   * Batch-7 4.1 — the "immature ticket" bucket.
+   *
+   * "What if a client just orders a ticket and never pays, never returns
+   * back? We should either delete the ticket or move it to an immature
+   * ticket." / "This ticket has been sent to me for 10 days and it has not
+   * sent me any money."
+   *
+   * Deliberately DERIVED, not a new status: an immature ticket is simply one
+   * that is still UNPAID, has never been paid a rupee, and has aged past the
+   * threshold. Nothing is written, so a consumer who comes back and pays
+   * leaves the bucket on its own — which is exactly the recoverability he
+   * asked for ("maybe the client will start it at some point"). Staff-only,
+   * stripped for consumer/representative callers like `archived`.
+   */
+  @IsOptional()
+  @Transform(({ value }) => value === true || value === 'true')
+  @IsBoolean()
+  immature?: boolean;
 }
