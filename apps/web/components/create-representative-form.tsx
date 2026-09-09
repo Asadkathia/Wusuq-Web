@@ -102,7 +102,7 @@ export default function CreateRepresentativeForm() {
         className="w-full max-w-2xl bg-white/[0.04] backdrop-blur-[16px] rounded-3xl p-8 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.1)] border border-white/10 relative z-10"
       >
         <div className="mb-10 text-center form-element">
-          <h1 className="text-3xl font-semibold text-white tracking-tight mb-2">Create Clerk</h1>
+          <h1 className="text-3xl font-semibold text-white tracking-tight mb-2">Create Representative</h1>
           <p className="text-slate-400">Add a new representative to the system.</p>
         </div>
 
@@ -125,7 +125,7 @@ export default function CreateRepresentativeForm() {
                 <Mail size={16} className="text-blue-400" /> Email Address
               </label>
               <div className="relative">
-                <input type="email" id="email" placeholder="clerk@example.com" className={inputClasses} />
+                <input type="email" id="email" placeholder="representative@example.com" className={inputClasses} />
               </div>
             </div>
 

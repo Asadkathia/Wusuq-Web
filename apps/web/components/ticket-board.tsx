@@ -416,7 +416,7 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
       window.open(url, '_blank', 'noopener');
       setTimeout(() => URL.revokeObjectURL(url), 60_000);
     } catch (error: any) {
-      flash(error.message || 'Failed to open clerk receipt', true);
+      flash(error.message || 'Failed to open representative receipt', true);
     }
   };
 
@@ -662,7 +662,7 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
     if (selectedIds.length === 0) return flash('Select at least one ticket', true);
     // Confirm every bulk action — 'delete' soft-archives (irreversible from the
     // app). Critical on the Unpaid/Paid tabs where the same checkbox also feeds
-    // "Assign selected to clerk": naming the action + count stops an accidental
+    // "Assign selected to representative": naming the action + count stops an accidental
     // Apply from archiving tickets the admin only meant to route (review G1/G2).
     const verb = bulkAction === 'delete' ? 'Archive' : 'Complete';
     if (!window.confirm(`${verb} ${selectedIds.length} selected ticket(s)?${bulkAction === 'delete' ? " They're removed from lists, dues, and settlement — this can't be undone from the app." : ''}`)) {
@@ -1053,7 +1053,7 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
         sendBackTicket.id,
         sendBackReason || undefined,
       );
-      flash(`Ticket ${sendBackTicket.batchNo} sent back to clerk.`);
+      flash(`Ticket ${sendBackTicket.batchNo} sent back to representative.`);
       setSendBackTicket(null);
       setSendBackReason('');
       loadTickets();
@@ -1281,7 +1281,7 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
                         disabled={Object.values(pendingSelected).filter(Boolean).length === 0}
                         className="w-full sm:w-auto rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-primary-500 disabled:opacity-50 transition-colors"
                       >
-                        Assign selected to clerk
+                        Assign selected to representative
                       </button>
                     )}
                     {/* B12: bulk Complete/Delete now available on every tab
@@ -1812,7 +1812,7 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
 
             <div className="block">
               <div className="flex items-center justify-between">
-                <span className="text-sm font-medium text-slate-700">Clerk Cost</span>
+                <span className="text-sm font-medium text-slate-700">Representative Cost</span>
                 <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer select-none">
                   <input
                     type="checkbox"
@@ -1825,7 +1825,7 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
                     }}
                     className="h-3.5 w-3.5 rounded border-slate-300 text-primary-600 focus:ring-primary-600"
                   />
-                  Override clerk cost
+                  Override representative cost
                 </label>
               </div>
               <input
@@ -2413,7 +2413,7 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
           <div className="flex items-start justify-between">
             <SectionHeader
               title={`Send Back Ticket ${sendBackTicket.batchNo}`}
-              description="Optionally include what the clerk needs to revise before resubmitting."
+              description="Optionally include what the representative needs to revise before resubmitting."
             />
             <button onClick={() => setSendBackTicket(null)} className="p-1.5 text-slate-400 hover:text-slate-700 rounded-md transition-colors">
               <X className="h-5 w-5" />
@@ -2427,7 +2427,7 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
                 value={sendBackReason}
                 onChange={(e) => setSendBackReason(e.target.value)}
                 className="mt-2 block w-full rounded-xl border-0 px-3 py-2.5 text-slate-900 ring-1 ring-inset ring-border-soft placeholder:text-slate-400 focus:ring-2 focus:ring-amber-500 sm:text-sm"
-                placeholder="Describe what the clerk should correct."
+                placeholder="Describe what the representative should correct."
               />
             </label>
             <div className="flex gap-3">
@@ -2453,7 +2453,7 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
         <DialogContent size="xl">
           <DialogHeader>
             <DialogTitle>Review &amp; Complete{finalizeTicket ? ` — ${finalizeTicket.batchNo}` : ''}</DialogTitle>
-            <DialogDescription>Verify the clerk&rsquo;s submission, finalize any phase-2 charges, and complete the ticket. Digital services are delivered automatically once fully paid.</DialogDescription>
+            <DialogDescription>Verify the representative&rsquo;s submission, finalize any phase-2 charges, and complete the ticket. Digital services are delivered automatically once fully paid.</DialogDescription>
           </DialogHeader>
           {finalizeTicket && (() => {
             // Currency is REQUIRED here: this is a charge-COMPUTING site, and
@@ -2494,7 +2494,7 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
                   <CheckSquare className="h-4 w-4 shrink-0" />
                   {finalizeTicket.clerkReceiptUrl ? (
                     <span>
-                      Clerk receipt submitted.{' '}
+                      Representative receipt submitted.{' '}
                       <button
                         type="button"
                         onClick={() => viewClerkReceipt(finalizeTicket.id)}
@@ -2504,13 +2504,13 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
                       </button>
                     </span>
                   ) : (
-                    'No clerk receipt on file.'
+                    'No representative receipt on file.'
                   )}
                   {!hasAnyCap ? ' No phase-2 charges for this service.' : ''}
                 </div>
 
                 <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-                  Final charges (admin) — editable page counts, compare against the clerk&rsquo;s submitted totals
+                  Final charges (admin) — editable page counts, compare against the representative&rsquo;s submitted totals
                 </p>
                 <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3">
                   {caps.attestation && (
@@ -2531,7 +2531,7 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
                             PKR {((Number(finalizeForm.attestedPages) || 0) * (Number(finalizeForm.attestedCostPerPage) || 0)).toLocaleString()}
                           </span>
                         </div>
-                        <p className="mt-1 text-xs text-slate-400">Clerk submitted: PKR {clerkSubmitted('attestedCharges').toLocaleString()}</p>
+                        <p className="mt-1 text-xs text-slate-400">Representative submitted: PKR {clerkSubmitted('attestedCharges').toLocaleString()}</p>
                       </FormField>
                       <FormField label="Non-Attested Pages" htmlFor="fin-non-attested-pages">
                         <Input id="fin-non-attested-pages" type="number" min="0" placeholder="0"
@@ -2549,7 +2549,7 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
                             PKR {((Number(finalizeForm.nonAttestedPages) || 0) * (Number(finalizeForm.nonAttestedCostPerPage) || 0)).toLocaleString()}
                           </span>
                         </div>
-                        <p className="mt-1 text-xs text-slate-400">Clerk submitted: PKR {clerkSubmitted('nonAttestedCharges').toLocaleString()}</p>
+                        <p className="mt-1 text-xs text-slate-400">Representative submitted: PKR {clerkSubmitted('nonAttestedCharges').toLocaleString()}</p>
                       </FormField>
                     </>
                   )}
@@ -2571,7 +2571,7 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
                             PKR {((Number(finalizeForm.noOfPages) || 0) * (Number(finalizeForm.costPerPage) || 0)).toLocaleString()}
                           </span>
                         </div>
-                        <p className="mt-1 text-xs text-slate-400">Clerk submitted: PKR {clerkSubmitted('printingCharges').toLocaleString()}</p>
+                        <p className="mt-1 text-xs text-slate-400">Representative submitted: PKR {clerkSubmitted('printingCharges').toLocaleString()}</p>
                       </FormField>
                     </>
                   )}
@@ -2580,7 +2580,7 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
                       <Input id="fin-delivery" type="number" min="0" placeholder="0"
                         value={finalizeForm.deliveryCharges}
                         onChange={(e) => setFinalizeForm((f) => ({ ...f, deliveryCharges: e.target.value }))} />
-                      <p className="mt-1 text-xs text-slate-400">Clerk submitted: PKR {clerkSubmitted('deliveryCharges').toLocaleString()}</p>
+                      <p className="mt-1 text-xs text-slate-400">Representative submitted: PKR {clerkSubmitted('deliveryCharges').toLocaleString()}</p>
                     </FormField>
                   )}
                   {/* Batch-7 2.8: the taxed half of the two-cost model. Folds
@@ -2667,7 +2667,7 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
                         <span className="font-medium">Phase-2 total:</span>{' '}
                         {formatStaffMoney(phase2Total, toCurrency(finalizeTicket.currency), finalizeTicket.fxRateToPkr)}
                       </div>
-                      {/* Clerk earnings summary — internal only, never shown to consumers.
+                      {/* Representative earnings summary — internal only, never shown to consumers.
                           Stays literal PKR (unconverted): clerk pay-outs are domestic
                           regardless of the consumer's billing currency, same as the
                           "Wusuq earnings" margin line below — do not run these through
@@ -2675,16 +2675,16 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
                       <div className="rounded-lg border border-amber-100 bg-amber-50 px-4 py-3 text-sm">
                         <div className="flex items-center justify-between">
                           <span className="font-medium text-amber-800">
-                            {repName ? `${repName}'s earnings` : 'Clerk earnings'}
+                            {repName ? `${repName}'s earnings` : 'Representative earnings'}
                           </span>
                           <span className="font-semibold text-amber-900">PKR {earnings.toLocaleString()}</span>
                         </div>
                         <p className="mt-0.5 text-xs text-amber-700">
-                          Clerk cost{repName ? ` · ${repName}` : ''} + phase-2 charges (internal only)
+                          Representative cost{repName ? ` · ${repName}` : ''} + phase-2 charges (internal only)
                         </p>
                         <p className="mt-1 text-xs text-slate-500">
                           {[
-                            ['Clerk cost', b.base],
+                            ['Representative cost', b.base],
                             ['Attested', b.attested],
                             ['Non-attested', b.nonAttested],
                             ['Printing', b.printing],
@@ -2702,7 +2702,7 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
                           <span className="font-medium text-indigo-800">Wusuq earnings</span>
                           <span className="font-semibold text-indigo-900">{wusuqEarnings === null ? 'PKR — (rate not set)' : `PKR ${wusuqEarnings.toLocaleString()}`}</span>
                         </div>
-                        <p className="mt-0.5 text-xs text-indigo-700">Total minus clerk earnings (internal only)</p>
+                        <p className="mt-0.5 text-xs text-indigo-700">Total minus representative earnings (internal only)</p>
                       </div>
                     </>
                   );
@@ -2711,7 +2711,7 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
                 {/* Clerk availability report — what the clerk reported. */}
                 {finalizeDetail?.clerkReport && (
                   <div className="rounded-lg border border-slate-200 px-4 py-3 text-sm">
-                    <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">Clerk report</p>
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">Representative report</p>
                     <div className="grid grid-cols-2 gap-2 text-slate-700">
                       <div>Attested available: <span className="font-medium">{finalizeDetail.clerkReport.attestedAvailable ? 'Yes' : 'No'}</span></div>
                       <div>Non-attested available: <span className="font-medium">{finalizeDetail.clerkReport.nonAttestedAvailable ? 'Yes' : 'No'}</span></div>
@@ -2769,7 +2769,7 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
               }}
               disabled={finalizing}
             >
-              Send back to clerk
+              Send back to representative
             </Button>
             <Button variant="primary" onClick={submitFinalize} disabled={finalizing}>
               {finalizing ? 'Completing…' : 'Approve & Complete'}
@@ -2789,7 +2789,7 @@ export function TicketBoard({ title, status, archived = false }: TicketBoardProp
             onClick={(e: React.MouseEvent) => e.stopPropagation()}
           >
             <SectionHeader
-              title="Assign selected tickets to clerk"
+              title="Assign selected tickets to representative"
               description={`Assign ${
                 Object.values(pendingSelected).filter(Boolean).length
               } selected ticket(s) to a representative.`}

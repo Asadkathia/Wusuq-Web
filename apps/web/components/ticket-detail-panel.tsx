@@ -129,7 +129,7 @@ export function TicketDetailPanel({ ticketId, onClose, isClerkView = false, onCh
   // Customer-facing total is ALWAYS Ticket.totalAmount (the single source —
   // computeTicketTotal on the server). Never hand-sum components here: that
   // both re-included the internal clerk cost (Bug #5) and omitted tax, so the
-  // admin panel disagreed with the consumer receipt. Clerk earnings are shown
+  // admin panel disagreed with the consumer receipt. Representative earnings are shown
   // as their own separate internal line below.
   const customerTotal = ticket ? Number(ticket.totalAmount || 0) : 0;
 
@@ -207,7 +207,7 @@ export function TicketDetailPanel({ ticketId, onClose, isClerkView = false, onCh
 
           {ticket && (
             <>
-              {/* ── Clerk view: only Case Details + Clerk Cost ── */}
+              {/* ── Clerk view: only Case Details + Representative Cost ── */}
               {isClerkView ? (
                 <>
                   {/* Service & Case Details (clerk) */}
@@ -243,10 +243,10 @@ export function TicketDetailPanel({ ticketId, onClose, isClerkView = false, onCh
                     })()}
                   </PanelCard>
 
-                  {/* Clerk Cost (clerk view) */}
+                  {/* Representative Cost (clerk view) */}
                   {(() => {
                     const repName = ticket.assignments?.[0]?.representative?.name as string | undefined;
-                    const clerkLabel = repName ? `Clerk — ${repName}` : 'Clerk';
+                    const clerkLabel = repName ? `Representative — ${repName}` : 'Representative';
                     return (
                       <PanelCard className="p-4">
                         <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
@@ -260,7 +260,7 @@ export function TicketDetailPanel({ ticketId, onClose, isClerkView = false, onCh
                               currency — do not run this through
                               formatStaffMoney in a later sweep. */}
                           <div className="flex justify-between">
-                            <span className="text-slate-500">Clerk Cost</span>
+                            <span className="text-slate-500">Representative Cost</span>
                             <span className="font-medium text-slate-800">
                               PKR {Number(ticket.clerkCost || 0).toLocaleString()}
                             </span>
@@ -353,7 +353,7 @@ export function TicketDetailPanel({ ticketId, onClose, isClerkView = false, onCh
                         ...(phase2Visible && caps.attestation ? [['Non-Attested Charges', ticket.nonAttestedCharges] as [string, unknown]] : []),
                         ...(phase2Visible ? [['Additional Charges', ticket.additionalCharges] as [string, unknown]] : []),
                         ['Additional Service Cost', ticket.additionalServiceCost],
-                        // Clerk cost is internal-only and excluded from the
+                        // Representative cost is internal-only and excluded from the
                         // customer total — it appears solely in the separate
                         // clerk-earnings line below (Bug #5).
                         ['Discount', ticket.discountPrice ? `-${Number(ticket.discountPrice).toLocaleString()}` : null],
@@ -380,7 +380,7 @@ export function TicketDetailPanel({ ticketId, onClose, isClerkView = false, onCh
                               </span>
                             </div>
                           ))}
-                          {/* Clerk earnings stay literal PKR, unconverted — clerk pay-outs
+                          {/* Representative earnings stay literal PKR, unconverted — clerk pay-outs
                               are domestic regardless of the consumer's billing currency.
                               Do not run this through formatStaffMoney in a later sweep.
                               The Wusuq-margin line below is ALSO PKR, but it is derived
@@ -390,12 +390,12 @@ export function TicketDetailPanel({ ticketId, onClose, isClerkView = false, onCh
                           {clerkEarnings > 0 && (
                             <div className="border-b border-dashed border-amber-200 pb-1.5">
                               <div className="flex justify-between text-amber-800">
-                                <span className="font-medium">{repName ? `${repName}'s earnings` : 'Clerk earnings'}</span>
+                                <span className="font-medium">{repName ? `${repName}'s earnings` : 'Representative earnings'}</span>
                                 <span className="font-semibold">PKR {clerkEarnings.toLocaleString()}</span>
                               </div>
                               <p className="mt-1 text-xs text-slate-500">
                                 {[
-                                  ['Clerk cost', clerkBreakdown.base],
+                                  ['Representative cost', clerkBreakdown.base],
                                   ['Attested', clerkBreakdown.attested],
                                   ['Non-attested', clerkBreakdown.nonAttested],
                                   ['Printing', clerkBreakdown.printing],
@@ -512,10 +512,10 @@ export function TicketDetailPanel({ ticketId, onClose, isClerkView = false, onCh
                     );
                   })()}
 
-                  {/* Clerk Availability Report */}
+                  {/* Representative Availability Report */}
                   <PanelCard className="p-4">
                     <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
-                      <ClipboardCheck className="h-4 w-4 text-primary-500" />Clerk Availability Report
+                      <ClipboardCheck className="h-4 w-4 text-primary-500" />Representative Availability Report
                     </h3>
                     {ticket.clerkReport ? (
                       <div className="grid grid-cols-2 gap-3 text-sm">

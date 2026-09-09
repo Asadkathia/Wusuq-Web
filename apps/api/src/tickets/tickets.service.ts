@@ -1920,7 +1920,7 @@ export class TicketsService {
       select: { clerkReceiptUrl: true },
     });
     if (!ticket?.clerkReceiptUrl) {
-      throw new NotFoundException('Clerk receipt not found');
+      throw new NotFoundException('Representative receipt not found');
     }
     if (isConsumerRole(caller.role)) {
       throw new ForbiddenException('Not permitted');
@@ -2174,7 +2174,7 @@ export class TicketsService {
             ticketId,
             from: 'IN_PROGRESS',
             to: 'WAITING_APPROVAL',
-            note: 'Clerk submitted work receipt',
+            note: 'Representative submitted work receipt',
           },
         });
         return;
@@ -2188,7 +2188,7 @@ export class TicketsService {
       });
       if (resubmitted.count !== 1) {
         throw new ConflictException(
-          'Ticket is not accepting a clerk receipt in its current state',
+          'Ticket is not accepting a representative receipt in its current state',
         );
       }
     });

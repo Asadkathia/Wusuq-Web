@@ -28,7 +28,7 @@ describe('ticket-detail-panel (clerk-earnings itemization)', () => {
   });
 
   it('renders the itemized line with all six payout components', () => {
-    expect(source).toMatch(/\['Clerk cost', clerkBreakdown\.base\]/);
+    expect(source).toMatch(/\['Representative cost', clerkBreakdown\.base\]/);
     expect(source).toMatch(/\['Attested', clerkBreakdown\.attested\]/);
     expect(source).toMatch(/\['Non-attested', clerkBreakdown\.nonAttested\]/);
     expect(source).toMatch(/\['Printing', clerkBreakdown\.printing\]/);

@@ -55,7 +55,7 @@ it('clerkSubmitted no longer accepts additionalCharges (no clerk column for it)'
 it('renders the itemized clerk-earnings breakdown beneath the total', () => {
   // Asserts on the actual itemization array literal, not just that the
   // breakdown fields exist somewhere in the file.
-  expect(src).toMatch(/\['Clerk cost', b\.base\]/);
+  expect(src).toMatch(/\['Representative cost', b\.base\]/);
   expect(src).toMatch(/\['Attested', b\.attested\]/);
   expect(src).toMatch(/\['Non-attested', b\.nonAttested\]/);
   expect(src).toMatch(/\['Printing', b\.printing\]/);

@@ -843,7 +843,7 @@ export class DashboardService {
       },
       {
         key: 'clerk_submitted',
-        label: 'Clerk submissions to verify',
+        label: 'Representative submissions to verify',
         count: clerkSubmittedCount,
         oldestAgeHours: null,
         deepLink: '/tickets/in-progress',

@@ -210,7 +210,7 @@ export function CostRulesBoard({ title }: CostRulesBoardProps) {
     <div className="space-y-6">
       <SectionHeader
         title={title}
-        description="Manage the baseline pricing rules applied to clerk tasks across the system."
+        description="Manage the baseline pricing rules applied to representative tasks across the system."
         action={
           <button
             onClick={load}
@@ -233,13 +233,13 @@ export function CostRulesBoard({ title }: CostRulesBoardProps) {
       <PanelCard className="p-6">
         <h3 className="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2">
           <Calculator className="h-5 w-5 text-primary-600" />
-          Add New Clerk Cost Rule
+          Add New Representative Cost Rule
         </h3>
         <form onSubmit={createRule} onKeyDown={advanceOnEnter} className="space-y-4">
           <RuleFormFields f={form} onChange={patch => setForm(c => ({ ...c, ...patch }))} />
           <div className="flex justify-end pt-2">
             <button type="submit" disabled={loading} className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 disabled:opacity-50 transition-colors">
-              <Plus className="h-4 w-4" /> Save Clerk Rule
+              <Plus className="h-4 w-4" /> Save Representative Rule
             </button>
           </div>
         </form>

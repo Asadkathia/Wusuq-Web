@@ -511,7 +511,7 @@ export default function DashboardPage() {
             {s.earnings.breakdown && (
               <p className="mt-1.5 px-1 text-xs text-slate-500">
                 {[
-                  ['Clerk cost', s.earnings.breakdown.base],
+                  ['Representative cost', s.earnings.breakdown.base],
                   ['Attested', s.earnings.breakdown.attested],
                   ['Non-attested', s.earnings.breakdown.nonAttested],
                   ['Printing', s.earnings.breakdown.printing],
