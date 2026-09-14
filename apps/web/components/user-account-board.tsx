@@ -8,7 +8,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Mail, MapPin, Phone, Ticket as TicketIcon, Wallet } from 'lucide-react';
-import { formatStaffMoney, toCurrency } from '@wusuq/shared';
+import { formatStaffMoney, sumMixedCurrencyToPkr, toCurrency } from '@wusuq/shared';
 import { apiClient } from '@/lib/api-client';
 import { PanelCard } from '@/components/ui/panel-card';
 import { SectionHeader } from '@/components/ui/section-header';
@@ -113,8 +113,21 @@ export function UserAccountBoard({ userId }: { userId: string }) {
   }, [load]);
 
   const currency = toCurrency(account?.currency);
-  const billed = tickets.reduce((sum, t) => sum + Number(t.totalAmount ?? 0), 0);
-  const paid = tickets.reduce((sum, t) => sum + Number(t.amountPaid ?? 0), 0);
+  /**
+   * Batch-8 item 6. These three cards used to be
+   * `formatStaffMoney(rawSum, currency)` with NO `fxRateToPkr`, so a USD
+   * consumer's page read "$15.00 (rate not set)" three times — while the
+   * ticket row directly beneath it rendered PKR 4,275 from the very rate the
+   * cards were dropping. One screen, contradicting itself.
+   *
+   * Tickets DO carry a stamped per-ticket rate, so these are true
+   * multi-ticket aggregates and follow the same exclude-and-count contract as
+   * every other one: sum PKR equivalents, and say how many rows had no rate.
+   * (The wallet-credit chip in the header is a different case and correctly
+   * keeps the "(rate not set)" marker — a wallet has no stamped rate at all.)
+   */
+  const { totalAmountPkr: billed, amountPaidPkr: paid, unconvertedCount } =
+    sumMixedCurrencyToPkr(tickets);
   const due = Math.max(0, billed - paid);
   const isRepresentative = account?.role === 'representative';
 
@@ -188,10 +201,18 @@ export function UserAccountBoard({ userId }: { userId: string }) {
 
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <StatCard title="Tickets" value={String(tickets.length)} icon={<TicketIcon className="opacity-50" />} />
-            <StatCard title="Billed" value={formatStaffMoney(billed, currency)} icon={<Wallet className="opacity-50" />} />
-            <StatCard title="Paid" value={formatStaffMoney(paid, currency)} icon={<Wallet className="opacity-50" />} />
-            <StatCard title="Outstanding" value={formatStaffMoney(due, currency)} icon={<Wallet className="opacity-50" />} />
+            {/* PKR equivalents — these are cross-ticket aggregates, so they are
+                stated in one currency rather than the consumer's. */}
+            <StatCard title="Billed" value={formatStaffMoney(billed, 'PKR')} icon={<Wallet className="opacity-50" />} />
+            <StatCard title="Paid" value={formatStaffMoney(paid, 'PKR')} icon={<Wallet className="opacity-50" />} />
+            <StatCard title="Outstanding" value={formatStaffMoney(due, 'PKR')} icon={<Wallet className="opacity-50" />} />
           </div>
+          {unconvertedCount > 0 ? (
+            <p className="px-1 text-xs text-amber-700">
+              {unconvertedCount} ticket{unconvertedCount === 1 ? '' : 's'} excluded from these
+              totals — FX rate not set.
+            </p>
+          ) : null}
 
           <div>
             <h3 className="mb-3 px-1 text-lg font-semibold text-slate-900">

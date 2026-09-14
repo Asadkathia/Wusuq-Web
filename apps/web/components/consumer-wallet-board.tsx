@@ -128,18 +128,42 @@ export function ConsumerWalletBoard() {
               <span className="font-mono">{formatMoney(data?.balance ?? 0, currency)}</span>
             </p>
           )}
-          {/* Breakdown: prepaid credit vs outstanding ticket dues. */}
-          {!loading && (data?.due ?? 0) > 0 ? (
+          {/* Batch-8 item 5b. The hero number is a NET (credit − dues), and a
+              consumer holding 5,000 against an 1,100 ticket read the resulting
+              3,900 as "the money was taken from me" — he had deliberately NOT
+              ticked the wallet checkbox at checkout. The breakdown existed but
+              only appeared when something was owed, and only as a small chip
+              under a very large number.
+
+              It now renders whenever there is any credit or any due, and names
+              the parts explicitly: what you have put in, and what is committed
+              but NOT yet spent. */}
+          {!loading && ((data?.due ?? 0) > 0 || (data?.credit ?? 0) > 0) ? (
             <p className="mt-3 inline-flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg bg-white/10 px-3 py-1.5 text-xs ring-1 ring-inset ring-white/20">
-              <span className="tabular-nums">{formatMoney(data?.due ?? 0, currency)} owed</span>
-              <span className="text-brand-100/60">·</span>
-              <span className="tabular-nums">{formatMoney(data?.credit ?? 0, currency)} credit</span>
+              <span className="tabular-nums">
+                {formatMoney(data?.credit ?? 0, currency)} credit added
+              </span>
+              {(data?.due ?? 0) > 0 ? (
+                <>
+                  <span className="text-brand-100/60">−</span>
+                  <span className="tabular-nums">
+                    {formatMoney(data?.due ?? 0, currency)} committed to unpaid tickets
+                  </span>
+                </>
+              ) : null}
             </p>
           ) : null}
+          {/* This line used to read "Funds are used automatically to settle new
+              tickets on completion." Since batch-7 2.2 the consumer must OPT IN
+              with a checkbox at checkout, so that sentence told him his money
+              was being spent automatically — which is exactly the conclusion he
+              drew from the net figure above. Describe the real behaviour. */}
           <p className="mt-2 text-xs text-brand-100/80">
             {(data?.balance ?? 0) < 0
               ? 'Top up to clear your dues — tickets are released for processing once paid.'
-              : 'Funds are used automatically to settle new tickets on completion.'}
+              : (data?.due ?? 0) > 0
+                ? 'Your credit is still yours — nothing has been deducted. Choose “use my wallet balance” when you pay a ticket to spend it.'
+                : 'Choose “use my wallet balance” when you order or pay a ticket to spend this credit.'}
           </p>
         </div>
       </div>

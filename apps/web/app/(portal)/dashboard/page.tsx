@@ -330,12 +330,22 @@ export default function DashboardPage() {
             href="/manage-users/representatives"
             hint="Total payable to representatives"
           />
+          {/* Batch-8 item 7: this figure counts PKR wallets only — a wallet
+              carries no stamped FX rate (credit accrues across many top-ups,
+              so no single rate applies), so non-PKR credit cannot be folded
+              into a PKR total. It used to be dropped SILENTLY; now it is
+              excluded AND counted, the same contract the ticket aggregates
+              above already follow. */}
           <KpiCard
             title="Consumer Advance"
             value={`PKR ${Number(kpis.consumerAdvance ?? 0).toLocaleString()}`}
             icon={<WalletCards className="h-4 w-4" />}
             href="/wallet"
-            hint="Prepaid credit held on account"
+            hint={
+              Number(kpis.consumerAdvanceExcluded ?? 0) > 0
+                ? `Prepaid credit held on account · ${Number(kpis.consumerAdvanceExcluded)} foreign-currency wallet(s) excluded`
+                : 'Prepaid credit held on account'
+            }
           />
         </div>
 

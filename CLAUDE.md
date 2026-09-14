@@ -757,3 +757,66 @@ Shipped all 60 batch-7 items (spec `DOcs/superpowers/specs/2026-09-08-client-rev
 - **Run `apps/api/scripts/purge-archived-ticket-notifications.ts`** (dry-run by default, `--apply` to delete) to clear the stale bells on tickets archived before the batch-5 cleanup — the client re-reported these.
 - Browser QA ran against the **production Neon DB**, so it was deliberately READ-ONLY. Write paths verified by unit tests + code only, never exercised: receipt-required submit (2.1), settle-at-creation (2.2), payout recording (2.6), auto-issue invoice (7.2), clear-all notifications (8.1), delivery cost at dispatch (5.5). **Re-test these on a scratch DB before release.**
 - The `/clerk-costs` endpoint that `cost-rules-board.tsx` calls **does not exist on the API** — a pre-existing dead screen, unrelated to this batch, still unfixed.
+
+### 2026-09-14 18:40 · branch main · sess 0fa7a7d6
+
+### 2026-09-14 19:02 · branch main · sess 0d77fa1a
+
+### 2026-09-14 19:17 · branch main · sess 0d77fa1a
+
+### 2026-09-14 · branch `fix/batch8-client-review` · client review batch 8
+
+Shipped all 11 items (spec `DOcs/superpowers/specs/2026-09-12-client-review-batch8-findings.md`).
+Sources: two 12 Sep WhatsApp videos + the 8 Sep chat scroll, re-extracted properly. Verified:
+**715 API + 366 web tests, 0 lint errors, 0 typecheck errors, full build green**, plus live
+read-only verification against the production Neon DB.
+
+**Durable invariants:**
+- **`sumMixedCurrencyToPkr` now lives in `@wusuq/shared`.** It had been privately duplicated in
+  `dashboard.service.ts` and `finance.service.ts` (differing only in a result key name), so the web
+  could not reach it — the staff account page hand-rolled a RAW cross-currency sum instead and
+  rendered "$15.00 (rate not set)" over a rate that was stamped on the very ticket below it. Never
+  re-implement it locally. Its input type is the structural `MoneyLike` (`number | string |
+  { toString(): string }`) so shared stays framework-free while accepting Prisma `Decimal`.
+- **Representative Profit counts only tickets with an ACTIVE assignment.** `PDF_CLERK_FEE` is
+  unconditional inside `computeClerkEarningsBreakdown`, so before this every unassigned ticket whose
+  consumer bought a PDF leaked exactly PKR 100 into "Total payable to representatives" — the
+  client's "I haven't assigned anyone, where did this 100 go?". `getBusinessKpis` and
+  `getRepresentativeEarnings` share the rule AND the FX-convertible set so the drill-down **sums to
+  the KPI**; change one and you must change the other.
+- **`Number(x ?? 0)` on `clerkCost` defeats the `defaultClerkCost` fallback.** The shared fn branches
+  on `clerkCost != null`, and `0 != null` is TRUE. Third instance of this coercion class. Pass null
+  through (`orNull`), exactly as CLAUDE.md already warns for this function.
+- **Exclude-AND-count is the contract, and the count is the half that gets forgotten.** Consumer
+  Advance filtered to PKR wallets with a comment claiming non-PKR ones were "counted separately" —
+  no such count existed, so USD credit vanished silently. Now returns `nonPkrWalletCount`.
+- **A wallet has no stamped FX rate** (credit accrues across many top-ups), so "(rate not set)" on a
+  wallet balance is CORRECT and deliberate. Only ticket-derived aggregates carry per-row rates and
+  must convert. Don't "fix" the wallet chip.
+- **`WalletService.list` is consumer-class-scoped.** It had no role filter at all, so the board
+  headed "Consumer Wallets" listed 16 representatives + the super admin (17 of 82 rows) — batch-7
+  item `6-` applied to Manage Users and missed here. Ordering is `[walletBalance desc, createdAt
+  desc]`; note that compares raw magnitudes across currencies, which is unavoidable without a
+  per-wallet rate, so every row must keep rendering its own currency.
+- **`payTicketFromWallet` is targeted, not FIFO.** `clearPendingTickets` settles across every open
+  ticket; the consumer picked ONE, so credit must not be consumed by an older one. Lock order is
+  USER then TICKET (same as `finalizeRemainderCore`) — reordering deadlocks. 404 (never 403) on a
+  foreign ticket. Partial payment is allowed. No receipt on this path: the mandatory-receipt rule
+  (batch-7 2.1) evidences an EXTERNAL transfer and there is none.
+- **Wallet copy must match the opt-in.** The hero said "Funds are used automatically to settle new
+  tickets on completion" while batch-7 2.2 made wallet use an explicit checkbox — which is exactly
+  why the client read the net balance as a deduction. The net figure now always shows its two parts
+  ("X credit added − Y committed to unpaid tickets") and the topbar chip carries them in its tooltip.
+- **Resetting one form field can blank another's.** `handlePayoutMethodChange` predated batch-7 5.10
+  and cleared `payoutAccountTitle` for every non-bank method; 5.10 then added an Account Title input
+  to the JazzCash/EasyPaisa branches reusing that key. Only rail-specific NUMBER fields reset.
+
+**⚠️ Operational follow-ups:**
+- **No migration in this batch.**
+- **`POST /wallet/pay-ticket/:ticketId` is a WRITE path and was verified by unit tests + code only.**
+  Live verification stayed READ-ONLY (production Neon DB). **Exercise it on a scratch DB before
+  release**, along with the batch-7 write paths still listed as untested above.
+- Live read-only check confirmed: Representative Profit 2,250 → **2,150** (the unassigned ticket's
+  100 gone); the drill-down rows (Nasir Mehmood 1,250 + Abbas Ali 900) **reconcile exactly** with
+  the KPI; 2 USD wallets now reported as excluded; wallet board 82 → **65 rows** with Ali Zain
+  Cheema's PKR 5,000 at the top.

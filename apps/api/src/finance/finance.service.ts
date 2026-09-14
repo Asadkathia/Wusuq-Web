@@ -7,9 +7,8 @@ import { Prisma, TicketStatus } from '@prisma/client';
 import {
   computeClerkEarnings,
   computeTicketTotal,
-  convertToPkr,
   isBaseCovered,
-  round2,
+  sumMixedCurrencyToPkr,
 } from '@wusuq/shared';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -71,54 +70,6 @@ function clerkPayoutFor(ticket: {
         : toNumber(ticket.clerkDeliveryCharges),
     wantPdf: wantPdfFromFormPayload(ticket.formPayload),
   });
-}
-
-// The finance summary spans tickets of mixed currency. PKR tickets
-// contribute their amount directly; non-PKR tickets convert via the
-// stamped `fxRateToPkr` and are EXCLUDED (and counted) when that rate is
-// missing — a silently understated total is worse than a visibly
-// incomplete one. Same reduce contract as
-// `apps/api/src/dashboard/aggregate-currency.spec.ts` and
-// `dashboard.service.ts`'s KPI aggregate.
-function sumMixedCurrencyToPkr(
-  items: Array<{
-    totalAmount: Prisma.Decimal | number | string | null;
-    amountPaid: Prisma.Decimal | number | string | null;
-    currency: string | null;
-    fxRateToPkr: Prisma.Decimal | number | string | null;
-  }>,
-): { totalAmountPkr: number; paidAmountPkr: number; unconvertedCount: number } {
-  let totalAmountPkr = 0;
-  let paidAmountPkr = 0;
-  let unconvertedCount = 0;
-
-  for (const item of items) {
-    if ((item.currency ?? 'PKR') === 'PKR') {
-      totalAmountPkr += toNumber(item.totalAmount);
-      paidAmountPkr += toNumber(item.amountPaid);
-      continue;
-    }
-    const pkrTotal = convertToPkr(
-      item.totalAmount as number | string | null,
-      item.fxRateToPkr as number | string | null,
-    );
-    const pkrPaid = convertToPkr(
-      item.amountPaid as number | string | null,
-      item.fxRateToPkr as number | string | null,
-    );
-    if (pkrTotal === null || pkrPaid === null) {
-      unconvertedCount += 1;
-      continue;
-    }
-    totalAmountPkr += pkrTotal;
-    paidAmountPkr += pkrPaid;
-  }
-
-  return {
-    totalAmountPkr: round2(totalAmountPkr),
-    paidAmountPkr: round2(paidAmountPkr),
-    unconvertedCount,
-  };
 }
 
 @Injectable()
@@ -209,8 +160,8 @@ export class FinanceService {
       total,
       summary: {
         totalAmount: summary.totalAmountPkr,
-        paidAmount: summary.paidAmountPkr,
-        remainingAmount: summary.totalAmountPkr - summary.paidAmountPkr,
+        paidAmount: summary.amountPaidPkr,
+        remainingAmount: summary.totalAmountPkr - summary.amountPaidPkr,
         unconvertedCount: summary.unconvertedCount,
       },
     };

@@ -7,56 +7,10 @@ import {
   isFlowKey,
   computeClerkEarningsBreakdown,
   convertToPkr,
+  sumMixedCurrencyToPkr,
   round2,
   type FlowKey,
 } from '@wusuq/shared';
-
-// Multi-user KPI aggregates span tickets of mixed currency. PKR tickets
-// contribute their amount directly; non-PKR tickets convert via the stamped
-// `fxRateToPkr` and are EXCLUDED (and counted) when that rate is missing —
-// a silently understated total is worse than a visibly incomplete one. Same
-// reduce contract as `apps/api/src/dashboard/aggregate-currency.spec.ts` and
-// `finance.service.ts`'s `summary` reduce.
-function sumMixedCurrencyToPkr(
-  rows: Array<{
-    totalAmount: Prisma.Decimal | number | string | null;
-    amountPaid: Prisma.Decimal | number | string | null;
-    currency: string | null;
-    fxRateToPkr: Prisma.Decimal | number | string | null;
-  }>,
-): { totalAmountPkr: number; amountPaidPkr: number; unconvertedCount: number } {
-  let totalAmountPkr = 0;
-  let amountPaidPkr = 0;
-  let unconvertedCount = 0;
-
-  for (const r of rows) {
-    if ((r.currency ?? 'PKR') === 'PKR') {
-      totalAmountPkr += Number(r.totalAmount ?? 0);
-      amountPaidPkr += Number(r.amountPaid ?? 0);
-      continue;
-    }
-    const pkrTotal = convertToPkr(
-      r.totalAmount as number | string | null,
-      r.fxRateToPkr as number | string | null,
-    );
-    const pkrPaid = convertToPkr(
-      r.amountPaid as number | string | null,
-      r.fxRateToPkr as number | string | null,
-    );
-    if (pkrTotal === null || pkrPaid === null) {
-      unconvertedCount += 1;
-      continue;
-    }
-    totalAmountPkr += pkrTotal;
-    amountPaidPkr += pkrPaid;
-  }
-
-  return {
-    totalAmountPkr: round2(totalAmountPkr),
-    amountPaidPkr: round2(amountPaidPkr),
-    unconvertedCount,
-  };
-}
 
 @Injectable()
 export class DashboardService {
@@ -546,8 +500,9 @@ export class DashboardService {
     representativeProfit: number;
     consumerAdvance: number;
     unconvertedCount: number;
+    nonPkrWalletCount: number;
   }> {
-    const [tickets, creditAgg] = await Promise.all([
+    const [tickets, creditAgg, nonPkrWalletCount] = await Promise.all([
       this.prisma.ticket.findMany({
         where: { archivedAt: null },
         select: {
@@ -566,6 +521,17 @@ export class DashboardService {
           clerkPrintingCharges: true,
           clerkDeliveryCharges: true,
           formPayload: true,
+          // Batch-8 item 1: "PKR 100 has gone to a representative
+          // automatically — I haven't assigned anyone." Representative Profit
+          // is money PAYABLE TO A PERSON, so a ticket nobody is working on
+          // must contribute nothing. Without this the unconditional
+          // PDF_CLERK_FEE (exactly 100) leaked in from every unassigned
+          // ticket whose consumer bought a PDF.
+          assignments: {
+            where: { status: { in: ['ACTIVE', 'ACCEPTED'] } },
+            select: { id: true },
+            take: 1,
+          },
         },
       }),
       // "Advance amount from consumers" = prepaid credit still held. That is
@@ -574,13 +540,24 @@ export class DashboardService {
       // Review finding 8: scoped to CONSUMER-CLASS roles (staff and
       // representative balances are not consumer advances) and to PKR wallets
       // — a wallet has no stamped FX rate (credit accrues across many top-ups,
-      // so no single rate applies), and this KPI renders as PKR. Non-PKR
-      // wallets are counted separately rather than summed in raw.
+      // so no single rate applies), and this KPI renders as PKR.
       this.prisma.user.aggregate({
         _sum: { walletBalance: true },
         where: {
           role: { in: ['consumer', 'lawyer', 'company'] },
           currency: 'PKR',
+        },
+      }),
+      // Batch-8 item 7: excluding non-PKR wallets from a PKR total is right,
+      // but the old comment claimed they were "counted separately" while no
+      // such count existed — so USD credit vanished with no marker at all.
+      // Every other mixed-currency aggregate here surfaces an exclusion count
+      // ("N excluded — FX rate not set"); this one now does too.
+      this.prisma.user.count({
+        where: {
+          role: { in: ['consumer', 'lawyer', 'company'] },
+          currency: { not: 'PKR' },
+          walletBalance: { gt: 0 },
         },
       }),
     ]);
@@ -602,6 +579,8 @@ export class DashboardService {
 
     const representativeProfit = round2(
       convertible.reduce((sum, t) => {
+        // Batch-8 item 1: no active assignment → nobody is owed anything.
+        if (t.assignments.length === 0) return sum;
         const payload =
           t.formPayload && typeof t.formPayload === 'object'
             ? (t.formPayload as Record<string, unknown>)
@@ -614,8 +593,15 @@ export class DashboardService {
         return (
           sum +
           computeClerkEarningsBreakdown({
-            clerkCost: Number(t.clerkCost ?? 0),
-            defaultClerkCost: Number(t.defaultClerkCost ?? 0),
+            // Batch-8 item 2: these two were `Number(x ?? 0)`, which turns a
+            // NULL clerkCost into 0. The shared fn branches on
+            // `clerkCost != null`, and `0 != null` is TRUE, so the
+            // defaultClerkCost fallback could never fire and an assigned
+            // ticket with no explicit cost reported a base of 0. Same
+            // coercion CLAUDE.md already warns about for this function —
+            // pass the null through.
+            clerkCost: orNull(t.clerkCost),
+            defaultClerkCost: orNull(t.defaultClerkCost),
             attestedCharges: Number(t.attestedCharges ?? 0),
             nonAttestedCharges: Number(t.nonAttestedCharges ?? 0),
             printingCharges: Number(t.printingCharges ?? 0),
@@ -636,7 +622,139 @@ export class DashboardService {
       wusuqProfit: round2(totalBusiness - representativeProfit),
       consumerAdvance: round2(Number(creditAgg._sum?.walletBalance ?? 0)),
       unconvertedCount,
+      nonPkrWalletCount,
     };
+  }
+
+  /**
+   * Batch-8 item 3 — Representative Profit, split by person.
+   *
+   * The KPI told the owner PKR 100 was payable but its drill-down
+   * (/manage-users/representatives) carried only payout METHOD fields, so he
+   * could not tell who was owed it: "how will I know WHO the money went to?"
+   *
+   * Deliberately mirrors `getBusinessKpis` exactly — same active-assignment
+   * rule, same FX-convertible ticket set, same `computeClerkEarningsBreakdown`
+   * — so these rows SUM to the KPI. If you change the rule in one, change it
+   * in the other or the drill-down stops reconciling with the number that was
+   * clicked. Amounts are PKR: representative payouts are domestic regardless
+   * of the consumer's billing currency.
+   */
+  async getRepresentativeEarnings(): Promise<
+    Array<{
+      representativeId: string;
+      name: string;
+      email: string;
+      ticketCount: number;
+      realized: number;
+      pending: number;
+      total: number;
+    }>
+  > {
+    const assignments = await this.prisma.assignment.findMany({
+      where: {
+        status: { in: ['ACTIVE', 'ACCEPTED'] },
+        ticket: { archivedAt: null },
+      },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        representativeId: true,
+        representative: { select: { name: true, email: true } },
+        ticket: {
+          select: {
+            id: true,
+            status: true,
+            currency: true,
+            fxRateToPkr: true,
+            clerkCost: true,
+            defaultClerkCost: true,
+            attestedCharges: true,
+            nonAttestedCharges: true,
+            printingCharges: true,
+            deliveryCharges: true,
+            clerkAttestedCharges: true,
+            clerkNonAttestedCharges: true,
+            clerkPrintingCharges: true,
+            clerkDeliveryCharges: true,
+            formPayload: true,
+          },
+        },
+      },
+    });
+
+    const REALIZED = new Set(['COMPLETED', 'DELIVERED']);
+    const orNull = (v: unknown) => (v == null ? null : Number(v));
+    const rows = new Map<
+      string,
+      {
+        representativeId: string;
+        name: string;
+        email: string;
+        ticketCount: number;
+        realized: number;
+        pending: number;
+        total: number;
+      }
+    >();
+    // A ticket must be counted once even if it somehow carries two live
+    // assignment rows — `getBusinessKpis` takes one per ticket, so this must
+    // too or the drill-down would exceed the KPI it explains.
+    const seenTickets = new Set<string>();
+
+    for (const a of assignments) {
+      const t = a.ticket;
+      if (!t || seenTickets.has(t.id)) continue;
+      // Same exclusion as the KPI: a non-PKR ticket with no stamped rate is
+      // outside the business total, so its payout is outside this figure too.
+      const convertible =
+        (t.currency ?? 'PKR') === 'PKR' ||
+        convertToPkr(1, t.fxRateToPkr as unknown as number | string | null) !==
+          null;
+      if (!convertible) continue;
+      seenTickets.add(t.id);
+
+      const payload =
+        t.formPayload && typeof t.formPayload === 'object'
+          ? (t.formPayload as Record<string, unknown>)
+          : undefined;
+      const amount = computeClerkEarningsBreakdown({
+        clerkCost: orNull(t.clerkCost),
+        defaultClerkCost: orNull(t.defaultClerkCost),
+        attestedCharges: Number(t.attestedCharges ?? 0),
+        nonAttestedCharges: Number(t.nonAttestedCharges ?? 0),
+        printingCharges: Number(t.printingCharges ?? 0),
+        deliveryCharges: Number(t.deliveryCharges ?? 0),
+        wantPdf: payload?.want_pdf_before_dispatch === 'Yes',
+        clerkAttestedCharges: orNull(t.clerkAttestedCharges),
+        clerkNonAttestedCharges: orNull(t.clerkNonAttestedCharges),
+        clerkPrintingCharges: orNull(t.clerkPrintingCharges),
+        clerkDeliveryCharges: orNull(t.clerkDeliveryCharges),
+      }).total;
+
+      const row = rows.get(a.representativeId) ?? {
+        representativeId: a.representativeId,
+        name: a.representative?.name ?? '—',
+        email: a.representative?.email ?? '',
+        ticketCount: 0,
+        realized: 0,
+        pending: 0,
+        total: 0,
+      };
+      row.ticketCount += 1;
+      if (REALIZED.has(t.status)) row.realized += amount;
+      else row.pending += amount;
+      row.total += amount;
+      rows.set(a.representativeId, row);
+    }
+
+    return [...rows.values()]
+      .map((r) => ({
+        ...r,
+        realized: round2(r.realized),
+        pending: round2(r.pending),
+        total: round2(r.total),
+      }))
+      .sort((a, b) => b.total - a.total);
   }
 
   private async getRevenueKpis(): Promise<{
@@ -744,6 +862,10 @@ export class DashboardService {
       wusuqProfit: business.wusuqProfit,
       representativeProfit: business.representativeProfit,
       consumerAdvance: business.consumerAdvance,
+      // Batch-8 item 7: how many consumer wallets hold credit in a currency
+      // this PKR total cannot include. Rendered as an exclusion note, the
+      // same contract every other mixed-currency aggregate follows.
+      consumerAdvanceExcluded: business.nonPkrWalletCount,
     };
 
     // Period-over-period deltas (current window vs same-length prior window)

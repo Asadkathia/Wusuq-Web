@@ -109,6 +109,9 @@ export default function PayTicketPage() {
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // Batch-8 item 5 — prepaid credit available to spend on THIS ticket.
+  const [walletCredit, setWalletCredit] = useState(0);
+  const [payingFromWallet, setPayingFromWallet] = useState(false);
   const [submitted, setSubmitted] = useState(false);
 
   const [, startTransition] = useTransition();
@@ -127,6 +130,14 @@ export default function PayTicketPage() {
           paymentSettingsClient.get().catch(() => null),
         ]);
         if (cancelled) return;
+        // Batch-8 item 5: how much prepaid credit this consumer is holding —
+        // decides whether the "pay from wallet" option is offered at all.
+        apiClient
+          .get<{ credit?: number; currency?: 'PKR' | 'USD' }>('/wallet/me')
+          .then((w) => {
+            if (!cancelled) startTransition(() => setWalletCredit(Number(w.credit ?? 0)));
+          })
+          .catch(() => {});
         startTransition(() => {
           setTicket(ticketData);
           setBankDetails(settings);
@@ -235,6 +246,41 @@ export default function PayTicketPage() {
       startTransition(() => {
         setSubmitError(message);
         setSubmitting(false);
+      });
+    }
+  };
+
+  /**
+   * Batch-8 item 5 — spend prepaid credit on this ticket instead of depositing
+   * again. No receipt: there is no external transfer to evidence, which is
+   * why the mandatory-receipt rule (batch-7 2.1) does not apply on this path.
+   */
+  const handlePayFromWallet = async () => {
+    if (!ticketId || payingFromWallet || submitting) return;
+    startTransition(() => {
+      setSubmitError(null);
+      setPayingFromWallet(true);
+    });
+    try {
+      const res = await apiClient.post<{ applied: number; walletBalance: number }>(
+        `/wallet/pay-ticket/${ticketId}`,
+        {},
+      );
+      toast.success(
+        `${formatMoney(res.applied, currencyOf(ticket))} paid from your wallet`,
+        `Remaining credit: ${formatMoney(res.walletBalance, currencyOf(ticket))}`,
+      );
+      router.push('/consumer/my-tickets');
+    } catch (err) {
+      const message =
+        err instanceof ApiError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : 'Could not pay from wallet';
+      startTransition(() => {
+        setSubmitError(message);
+        setPayingFromWallet(false);
       });
     }
   };
@@ -413,6 +459,46 @@ export default function PayTicketPage() {
           </div>
         </div>
       </PanelCard>
+
+      {/* Batch-8 item 5 — pay from prepaid credit.
+
+          Batch-7 2.2 put the "use my wallet balance" choice on the INTAKE
+          checkout only, so for an already-created unpaid ticket this page
+          offered nothing but Bank transfer / JazzCash / Easypaisa plus a
+          MANDATORY receipt. A consumer holding 5,000 was being told to deposit
+          1,100 again and upload proof of it. Rendered above the transfer
+          methods because it is the cheaper, instant path when credit covers
+          the bill.
+
+          The wallet and the ticket are always the same currency (Ticket.currency
+          snapshots User.currency at intake), so no conversion applies here. */}
+      {walletCredit > 0 && dueNow > 0 ? (
+        <PanelCard className="mb-4 border-brand-200 bg-brand-50/40">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold text-slate-900">Pay from wallet balance</h2>
+              <p className="mt-1 text-sm text-slate-600">
+                You have {formatMoney(walletCredit, currency)} in credit.{' '}
+                {walletCredit >= dueNow
+                  ? `This covers the full ${formatMoney(dueNow, currency)} — no transfer or receipt needed.`
+                  : `${formatMoney(walletCredit, currency)} will be applied and ${formatMoney(dueNow - walletCredit, currency)} will remain due.`}
+              </p>
+            </div>
+            <Button
+              type="button"
+              onClick={handlePayFromWallet}
+              disabled={payingFromWallet || submitting}
+            >
+              {payingFromWallet
+                ? 'Paying…'
+                : `Use ${formatMoney(Math.min(walletCredit, dueNow), currency)}`}
+            </Button>
+          </div>
+          <p className="mt-3 border-t border-brand-200/60 pt-3 text-xs text-slate-500">
+            Prefer to transfer instead? Use a payment method below.
+          </p>
+        </PanelCard>
+      ) : null}
 
       {/* Payment method details */}
       {availableMethods(bankDetails).length > 0 ? (

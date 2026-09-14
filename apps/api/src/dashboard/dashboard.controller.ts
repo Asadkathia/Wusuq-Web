@@ -27,6 +27,16 @@ export class DashboardController {
     return this.dashboardService.getRegistrationStats();
   }
 
+  // Batch-8 item 3 — "if I click here I just get all the representatives; how
+  // will I know WHO the money went to?" Decomposes the Representative Profit
+  // KPI by person. Staff-only (reports.read) because it exposes every
+  // representative's payable.
+  @Get('representative-earnings')
+  @RequirePermissions('reports.read')
+  async getRepresentativeEarnings() {
+    return this.dashboardService.getRepresentativeEarnings();
+  }
+
   // Clerk (representative) dashboard — self-scoped by actor.sub. Gated on
   // `tickets.read` (representatives hold it); a non-clerk caller just gets an
   // empty summary since they have no assignments.

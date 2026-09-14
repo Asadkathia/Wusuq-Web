@@ -30,6 +30,9 @@ describe('DashboardService.getConsumerSummary — archived-ticket exclusion (F1)
         // Batch-7 3.1: getBusinessKpis sums prepaid consumer credit for the
         // "Consumer Advance" KPI.
         aggregate: jest.fn(async () => ({ _sum: { walletBalance: 0 } })),
+        // Batch-8 item 7: and counts the non-PKR wallets it must EXCLUDE from
+        // that PKR total, so the dashboard can say how many were left out.
+        count: jest.fn(async () => 0),
       },
       case: {
         count: jest.fn(async () => 0),
@@ -220,6 +223,8 @@ describe('DashboardService.getSummary — admin summary counts exclude archived 
         // Batch-7 3.1: getBusinessKpis sums prepaid consumer credit for the
         // "Consumer Advance" KPI.
         aggregate: jest.fn(async () => ({ _sum: { walletBalance: 0 } })),
+        // Batch-8 item 7: non-PKR wallets excluded from that PKR total.
+        count: jest.fn(async () => 0),
       },
     } as unknown as PrismaService;
     return { prisma, ticketCount, ticketGroupBy };

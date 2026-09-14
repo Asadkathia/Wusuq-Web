@@ -27,21 +27,47 @@ export class WalletService {
   async list(query: PaginationQueryDto) {
     const skip = (query.page - 1) * query.limit;
 
-    const userWhere = query.search
-      ? {
-          OR: [
-            { name: { contains: query.search, mode: 'insensitive' as const } },
-            { email: { contains: query.search, mode: 'insensitive' as const } },
-          ],
-        }
-      : {};
+    // Batch-8 item 4b: the board is headed "Consumer Wallets" but this query
+    // had NO role filter, so it listed every representative and the super
+    // admin too — 17 of 82 rows. The client: "I don't know what CATEGORY
+    // these are coming from." Same rule as batch-7 item 6- ("only Consumers
+    // in Users, Representatives on Representatives"), which was applied to
+    // Manage Users and missed here. Mirrors the consumer-class scope
+    // `DashboardService.getBusinessKpis` already uses for Consumer Advance.
+    // Annotated rather than inferred: extracting the literal to a variable
+    // loses the contextual typing that makes `in: [...]` resolve to UserRole[].
+    const userWhere: Prisma.UserWhereInput = {
+      role: { in: ['consumer', 'lawyer', 'company'] },
+      ...(query.search
+        ? {
+            OR: [
+              {
+                name: { contains: query.search, mode: 'insensitive' as const },
+              },
+              {
+                email: { contains: query.search, mode: 'insensitive' as const },
+              },
+            ],
+          }
+        : {}),
+    };
 
     const [users, total, pendingTopups] = await this.prisma.$transaction([
       this.prisma.user.findMany({
         where: userWhere,
         skip,
         take: query.limit,
-        orderBy: { createdAt: 'desc' },
+        // Batch-8 item 4: "whoever has sent money should come to the top — he
+        // sent 5,000 and he's at the very bottom." Was `createdAt: 'desc'`,
+        // which ranked every zero-balance account above the people actually
+        // holding credit. `createdAt` stays as the tiebreaker so the order is
+        // stable across pages.
+        //
+        // NOTE this compares raw magnitudes across currencies (a wallet has no
+        // stamped FX rate — see `accountBalance` below), so USD 50 sorts under
+        // PKR 5,000. Every row renders its own currency, so the figure is
+        // never mislabelled; there is no rate with which to do better.
+        orderBy: [{ walletBalance: 'desc' }, { createdAt: 'desc' }],
         include: {
           _count: {
             select: { walletTransactions: true },
@@ -474,6 +500,100 @@ export class WalletService {
         'BANK_TRANSFER',
         tx,
       );
+    });
+  }
+
+  /**
+   * Batch-8 item 5 — spend prepaid credit on ONE specific ticket, on demand.
+   *
+   * Batch-7 2.2 made wallet use OPT-IN, but the choice was only offered at
+   * INTAKE checkout. For an already-created unpaid ticket — the normal case —
+   * `/consumer/tickets/[id]/pay` offered Bank transfer / JazzCash / Easypaisa
+   * and a MANDATORY receipt, so a consumer holding PKR 5,000 was told to
+   * deposit PKR 1,100 again and upload proof of it: "then I'd have to deposit
+   * money again — so where is the accounting happening?"
+   *
+   * Deliberately targeted rather than reusing `clearPendingTickets`, which is
+   * FIFO across every open ticket — the consumer picked THIS ticket and must
+   * not have credit silently consumed by an older one.
+   *
+   * Lock order is USER then TICKET, matching `finalizeRemainderCore` and
+   * wallet settlement. Reordering these deadlocks; don't.
+   */
+  async payTicketFromWallet(
+    userId: string,
+    ticketId: string,
+  ): Promise<{ applied: number; walletBalance: number; status: string }> {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT id FROM "User" WHERE id = ${userId} FOR UPDATE`;
+      const user = await tx.user.findUnique({
+        where: { id: userId },
+        select: { walletBalance: true },
+      });
+      if (!user) throw new NotFoundException('User not found');
+
+      await tx.$executeRaw`SELECT id FROM "Ticket" WHERE id = ${ticketId} FOR UPDATE`;
+      const ticket = await tx.ticket.findUnique({
+        where: { id: ticketId },
+        select: {
+          id: true,
+          batchNo: true,
+          consumerId: true,
+          totalAmount: true,
+          amountPaid: true,
+          serviceCost: true,
+          status: true,
+          currency: true,
+          archivedAt: true,
+        },
+      });
+      // 404 rather than 403 on someone else's ticket so ids can't be probed
+      // (the audit 3.1 rule).
+      if (!ticket || ticket.archivedAt || ticket.consumerId !== userId) {
+        throw new NotFoundException('Ticket not found');
+      }
+
+      const credit = Number(user.walletBalance);
+      const totalAmount = Number(ticket.totalAmount);
+      const remaining = totalAmount - Number(ticket.amountPaid);
+      if (totalAmount <= 0 || remaining <= 0) {
+        throw new BadRequestException('This ticket has nothing left to pay.');
+      }
+      if (credit <= 0) {
+        throw new BadRequestException('Your wallet has no credit to use.');
+      }
+
+      // Partial is allowed: paying what credit covers is strictly better than
+      // refusing, and the remainder stays due exactly as before.
+      const applied = Math.min(credit, remaining);
+
+      await this.applyPaymentToTicket(
+        tx,
+        {
+          ticketId: ticket.id,
+          batchNo: ticket.batchNo,
+          totalAmount,
+          amountPaid: Number(ticket.amountPaid),
+          serviceCost: Number(ticket.serviceCost),
+          status: ticket.status,
+          currency: ticket.currency,
+        },
+        applied,
+        'BANK_TRANSFER',
+        userId,
+      );
+
+      const walletBalance = credit - applied;
+      await tx.user.update({
+        where: { id: userId },
+        data: { walletBalance },
+      });
+
+      const after = await tx.ticket.findUnique({
+        where: { id: ticket.id },
+        select: { status: true },
+      });
+      return { applied, walletBalance, status: after?.status ?? ticket.status };
     });
   }
 

@@ -82,6 +82,20 @@ const PAYOUT_METHOD_LABELS: Record<PaymentMode, string> = {
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
+/**
+ * Batch-8 item 3 — one row of `GET /dashboard/representative-earnings`.
+ * Always PKR: representative payouts are domestic regardless of the
+ * consumer's billing currency, so these are NOT run through
+ * `formatStaffMoney`.
+ */
+type RepEarningsRow = {
+  representativeId: string;
+  ticketCount: number;
+  realized: number;
+  pending: number;
+  total: number;
+};
+
 type RepData = {
   id: string;
   name: string;
@@ -147,7 +161,15 @@ export function RepresentativesBoard() {
   const [editRep, setEditRep] = useState<RepData | null>(null);
   const [form, setForm] = useState<FormState>(emptyForm);
   const [saving, setSaving] = useState(false);
+  const [earnings, setEarnings] = useState<Map<string, RepEarningsRow>>(new Map());
   const [formError, setFormError] = useState('');
+  // Batch-8 item 9: the phone-length message used to land in the single
+  // `formError` block at the BOTTOM of the form — i.e. under the JazzCash
+  // box, which is exactly what the client pointed at ("it gave us the error
+  // later", rendered below a field it does not describe). Phone errors get
+  // their own slot beside the phone input, and fire as you type rather than
+  // only on submit.
+  const [phoneError, setPhoneError] = useState('');
 
   // Cascading geo dropdowns for the clerk's territory: Province → District →
   // City/Tehsil. Driven by GeoCity ids; the form stores the chosen NAMES
@@ -256,6 +278,18 @@ export function RepresentativesBoard() {
       const result = await apiClient.get<any>('/users?limit=200');
       const allUsers: any[] = result.items ?? [];
       setReps(allUsers.filter((u) => u.role === 'representative'));
+      // Batch-8 item 3: the dashboard's "Representative Profit" KPI links
+      // here, but this board carried only payout METHOD fields — "how will I
+      // know WHO the money went to?". These rows sum to that KPI.
+      // Best-effort: a failure must not blank the representative list.
+      const earnings = await apiClient
+        .get<RepEarningsRow[]>('/dashboard/representative-earnings')
+        .catch(() => [] as RepEarningsRow[]);
+      const byId = new Map<string, RepEarningsRow>();
+      for (const row of Array.isArray(earnings) ? earnings : []) {
+        byId.set(row.representativeId, row);
+      }
+      setEarnings(byId);
     } catch (error: any) {
       setMessage(error.message || 'Failed to load representatives');
     } finally {
@@ -347,12 +381,21 @@ export function RepresentativesBoard() {
     }));
   };
 
+  // Batch-8 item 8: this handler predates batch-7 5.10 and cleared
+  // `payoutAccountTitle` for every non-bank method. 5.10 then added an
+  // "Account Title" input to the JAZZ_CASH *and* EASY_PAISA branches reusing
+  // that same key — so selecting or changing the method blanked the very
+  // field those branches exist to collect, and editing an existing JazzCash
+  // representative destroyed the loaded title on screen.
+  //
+  // The account title is the same concept on every rail, so it is deliberately
+  // NOT reset here; only the rail-specific number fields are.
   const handlePayoutMethodChange = (method: string) => {
     setForm((c) => ({
       ...c,
       payoutMethod: method,
       payoutBankName: method === 'BANK_TRANSFER' ? c.payoutBankName : '',
-      payoutAccountTitle: method === 'BANK_TRANSFER' ? c.payoutAccountTitle : '',
+      payoutAccountTitle: c.payoutAccountTitle,
       payoutAccountNumber: method === 'BANK_TRANSFER' ? c.payoutAccountNumber : '',
       payoutJazzCash: method === 'JAZZ_CASH' ? c.payoutJazzCash : '',
       payoutEasyPaisa: method === 'EASY_PAISA' ? c.payoutEasyPaisa : '',
@@ -372,9 +415,13 @@ export function RepresentativesBoard() {
     // the JazzCash box. Validate inline, against the same shared rules the
     // consumer signup uses.
     if (form.phone.trim()) {
-      const phoneError = validateLocalPhone(form.phone, phoneCountryCode, findCountry(phoneCountryCode).dial);
-      if (phoneError) return setFormError(phoneError);
+      const err = validateLocalPhone(form.phone, phoneCountryCode, findCountry(phoneCountryCode).dial);
+      if (err) {
+        setPhoneError(err);
+        return;
+      }
     }
+    setPhoneError('');
 
     setSaving(true);
     try {
@@ -523,6 +570,8 @@ export function RepresentativesBoard() {
               <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Representative</th>
               <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Location</th>
               <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Court / Focus</th>
+              {/* Batch-8 item 3 — decomposes the Representative Profit KPI. */}
+              <th scope="col" className="px-6 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Payable (PKR)</th>
               <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Status</th>
               <th scope="col" className="px-6 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Actions</th>
             </tr>
@@ -560,6 +609,30 @@ export function RepresentativesBoard() {
                     )}
                   </div>
                 </td>
+                {/* Batch-8 item 3: who the Representative Profit is owed to.
+                    Literal PKR by design — payouts are domestic, so this must
+                    NOT go through formatStaffMoney. */}
+                <td className="px-6 py-4 whitespace-nowrap text-right">
+                  {(() => {
+                    const e = earnings.get(rep.id);
+                    if (!e || e.total === 0) {
+                      return <span className="text-sm text-slate-400">—</span>;
+                    }
+                    return (
+                      <div className="flex flex-col items-end gap-0.5">
+                        <span className="text-sm font-semibold tabular-nums text-slate-900">
+                          {e.total.toLocaleString()}
+                        </span>
+                        <span className="text-xs text-slate-500">
+                          {e.pending > 0
+                            ? `${e.pending.toLocaleString()} pending · `
+                            : ''}
+                          {e.ticketCount} ticket{e.ticketCount === 1 ? '' : 's'}
+                        </span>
+                      </div>
+                    );
+                  })()}
+                </td>
                 <td className="px-6 py-4 whitespace-nowrap">
                   <StatusPill
                     label={rep.isActive ? 'ACTIVE' : 'INACTIVE'}
@@ -594,7 +667,7 @@ export function RepresentativesBoard() {
             ))}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-6 py-12 text-center text-sm text-slate-500">
+                <td colSpan={6} className="px-6 py-12 text-center text-sm text-slate-500">
                   {loading ? 'Loading...' : 'No representatives found.'}
                 </td>
               </tr>
@@ -763,11 +836,29 @@ export function RepresentativesBoard() {
                     type="tel"
                     className="block w-full rounded-lg border-0 py-2 px-3 text-slate-900 ring-1 ring-inset ring-border-soft focus:ring-2 focus:ring-primary-600 sm:text-sm"
                     value={form.phone}
-                    onChange={(e) => setField('phone', e.target.value)}
+                    onChange={(e) => {
+                      const next = e.target.value;
+                      setField('phone', next);
+                      // Live feedback — the client's complaint was that the
+                      // length error "fires only on submit".
+                      setPhoneError(
+                        next.trim()
+                          ? (validateLocalPhone(
+                              next,
+                              phoneCountryCode,
+                              findCountry(phoneCountryCode).dial,
+                            ) ?? '')
+                          : '',
+                      );
+                    }}
                     placeholder={phonePlaceholder(phoneCountryCode)}
                     maxLength={phoneMaxLength(phoneCountryCode)}
+                    aria-invalid={phoneError ? true : undefined}
                   />
                 </div>
+                {phoneError ? (
+                  <p className="mt-1 text-xs font-medium text-rose-700">{phoneError}</p>
+                ) : null}
               </label>
 
               {textField(

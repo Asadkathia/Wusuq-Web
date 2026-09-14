@@ -86,6 +86,25 @@ export class WalletController {
     );
   }
 
+  /**
+   * Batch-8 item 5 — settle one ticket from the caller's own prepaid credit.
+   *
+   * ALWAYS self-scoped: the ticket owner is taken from the JWT and the service
+   * 404s on anyone else's ticket. There is deliberately no admin "pay on
+   * behalf" branch here (unlike `topup` above) — spending a consumer's credit
+   * is the consumer's decision.
+   */
+  @RequirePermissions('wallet.topup')
+  @Throttle({ upload: { limit: 30, ttl: 60_000 } })
+  @Post('pay-ticket/:ticketId')
+  payTicketFromWallet(
+    @Param('ticketId') ticketId: string,
+    @CurrentUser() actor: JwtUser | undefined,
+  ) {
+    if (!actor) throw new UnauthorizedException();
+    return this.walletService.payTicketFromWallet(actor.sub, ticketId);
+  }
+
   @RequirePermissions('wallet.topup')
   @Throttle({ upload: { limit: 30, ttl: 60_000 } })
   @Post('receipt')

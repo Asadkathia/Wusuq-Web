@@ -43,6 +43,9 @@ export function ShellTopbar({ variant, walletHref, profileHref = '/profile', onS
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unread, setUnread] = useState(0);
   const [walletBalance, setWalletBalance] = useState<number | null>(null);
+  // Batch-8 item 5b — the two halves behind the net figure.
+  const [walletCredit, setWalletCredit] = useState(0);
+  const [walletDue, setWalletDue] = useState(0);
   const [walletCurrency, setWalletCurrency] = useState<'PKR' | 'USD'>('PKR');
   const [user, setUser] = useState<{ name?: string; email?: string; role?: string } | null>(null);
 
@@ -56,10 +59,16 @@ export function ShellTopbar({ variant, walletHref, profileHref = '/profile', onS
 
     if (variant === 'consumer') {
       apiClient
-        .get<{ balance?: number; currency?: 'PKR' | 'USD' }>('/wallet/me')
+        .get<{ balance?: number; credit?: number; due?: number; currency?: 'PKR' | 'USD' }>('/wallet/me')
         .then((r) => {
           startTransition(() => {
             setWalletBalance(Number(r.balance ?? 0));
+            // Batch-8 item 5b: the chip shows the NET balance, which a
+            // consumer reads as "my money went down". /wallet/me already
+            // returns the parts — carry them so the tooltip can say what the
+            // number is made of instead of leaving him to guess.
+            setWalletCredit(Number(r.credit ?? 0));
+            setWalletDue(Number(r.due ?? 0));
             if (r.currency) setWalletCurrency(r.currency);
           });
         })
@@ -196,7 +205,13 @@ export function ShellTopbar({ variant, walletHref, profileHref = '/profile', onS
         {variant === 'consumer' && walletBalance !== null ? (
           <Link
             href={walletHref ?? '/consumer/my-wallet'}
-            title={walletBalance < 0 ? 'You owe this amount — tap to pay' : 'Wallet balance'}
+            title={
+              walletBalance < 0
+                ? 'You owe this amount — tap to pay'
+                : walletDue > 0
+                  ? `${formatMoney(walletCredit, walletCurrency)} credit added, less ${formatMoney(walletDue, walletCurrency)} committed to unpaid tickets. Nothing has been deducted.`
+                  : 'Wallet balance'
+            }
             className={`hidden sm:inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-semibold ring-1 ring-inset transition-colors ${
               walletBalance < 0
                 ? 'bg-rose-50 text-rose-700 ring-rose-100 hover:bg-rose-100'

@@ -830,6 +830,76 @@ export function convertToPkr(
 }
 
 /**
+ * A money value as it may arrive from any layer: a plain number, a string
+ * (JSON-serialised Decimal), or a Prisma `Decimal` instance. Structural so
+ * this package never imports a Prisma type — the core stays framework-free.
+ */
+export type MoneyLike =
+  | number
+  | string
+  | { toString(): string }
+  | null
+  | undefined;
+
+/**
+ * Sum a MIXED-CURRENCY set of tickets into PKR.
+ *
+ * PKR rows contribute directly; non-PKR rows convert via their own stamped
+ * `fxRateToPkr` and are **EXCLUDED and COUNTED** when that rate is missing —
+ * a silently understated total is worse than a visibly incomplete one, and
+ * callers render the count as "N excluded — FX rate not set". This is THE
+ * contract for every multi-ticket aggregate in the app (dashboard KPIs,
+ * finance summary, aged outstanding, per-account totals).
+ *
+ * Hoisted here in batch-8 item 6: it had been privately duplicated in
+ * `dashboard.service.ts` and `finance.service.ts` (differing only in a result
+ * key name), and the staff account page — a third consumer — could not reach
+ * it, so it hand-rolled a RAW cross-currency sum instead and rendered
+ * "(rate not set)" over a rate that existed. Never re-implement this locally.
+ */
+export function sumMixedCurrencyToPkr(
+  rows: Array<{
+    totalAmount?: MoneyLike;
+    amountPaid?: MoneyLike;
+    currency?: string | null;
+    fxRateToPkr?: MoneyLike;
+  }>,
+): { totalAmountPkr: number; amountPaidPkr: number; unconvertedCount: number } {
+  let totalAmountPkr = 0;
+  let amountPaidPkr = 0;
+  let unconvertedCount = 0;
+  // Prisma Decimal columns reach us as objects; `Number()` goes through
+  // valueOf/toString and yields the right value. Coerce at the boundary so
+  // this module stays framework-free (it must not import Prisma types).
+  const n = (v: MoneyLike): number | null =>
+    v === null || v === undefined ? null : Number(v);
+
+  for (const r of rows) {
+    if ((r.currency ?? 'PKR') === 'PKR') {
+      totalAmountPkr += n(r.totalAmount) ?? 0;
+      amountPaidPkr += n(r.amountPaid) ?? 0;
+      continue;
+    }
+    const rate = n(r.fxRateToPkr);
+    const pkrTotal = convertToPkr(n(r.totalAmount), rate);
+    const pkrPaid = convertToPkr(n(r.amountPaid), rate);
+    // Both legs must convert or the row is not representable in PKR at all.
+    if (pkrTotal === null || pkrPaid === null) {
+      unconvertedCount += 1;
+      continue;
+    }
+    totalAmountPkr += pkrTotal;
+    amountPaidPkr += pkrPaid;
+  }
+
+  return {
+    totalAmountPkr: round2(totalAmountPkr),
+    amountPaidPkr: round2(amountPaidPkr),
+    unconvertedCount,
+  };
+}
+
+/**
  * Domestic PKR payment rails. A consumer using JazzCash or EasyPaisa already
  * holds PKR, so the amount they enter IS a PKR figure and must be converted
  * to the wallet's native currency before it is credited. BANK_TRANSFER is
