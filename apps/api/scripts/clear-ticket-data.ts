@@ -13,8 +13,11 @@
  *
  * Usage (from apps/api):
  *   npx tsx scripts/clear-ticket-data.ts                  # DRY RUN, prints a plan
- *   npx tsx scripts/clear-ticket-data.ts --apply          # delete
- *   npx tsx scripts/clear-ticket-data.ts --apply --reset-wallets
+ *   ALLOW_DESTRUCTIVE_WIPE=true npx tsx scripts/clear-ticket-data.ts --apply
+ *   ALLOW_DESTRUCTIVE_WIPE=true npx tsx scripts/clear-ticket-data.ts --apply --reset-wallets
+ *
+ * `--apply` REFUSES to run without ALLOW_DESTRUCTIVE_WIPE=true, and always
+ * refuses under NODE_ENV=production — see assertSafeToWipe below.
  *
  * --reset-wallets also zeroes User.walletBalance. Consider it: deleting the
  * WalletTransaction ledger while leaving balances behind means a consumer can
@@ -55,9 +58,51 @@ const STEPS: Array<{
   { label: 'Case',                count: (t) => t.case.count(),                wipe: (t) => t.case.deleteMany() },
 ];
 
+/** Marks a refusal so it prints as advice, not as a crash. */
+class SafetyRefusal extends Error {}
+
+/**
+ * Refuse to run destructively against anything that looks like production.
+ *
+ * Review finding 1 (batch-8): `--apply` deletes the entire money ledger —
+ * Payment, WalletTransaction, Invoice, InvoiceItem — in one transaction, and
+ * this repo's `.env` habitually points at the PRODUCTION Neon database (every
+ * live QA pass in the session log ran against it). One `--apply` in the wrong
+ * shell is unrecoverable. `prisma:seed` already sets the precedent of refusing
+ * in production; this is the far more dangerous script and had no guard at all.
+ *
+ * Opt in explicitly with ALLOW_DESTRUCTIVE_WIPE=true, and never in NODE_ENV=production.
+ */
+function assertSafeToWipe() {
+  if (process.env.NODE_ENV === 'production') {
+    throw new SafetyRefusal(
+      'Refusing to wipe: NODE_ENV=production. This script destroys the money ledger.',
+    );
+  }
+  if (process.env.ALLOW_DESTRUCTIVE_WIPE !== 'true') {
+    throw new SafetyRefusal(
+      'Refusing to wipe without ALLOW_DESTRUCTIVE_WIPE=true.\n' +
+        `  DATABASE_URL host: ${describeDbHost()}\n` +
+        '  Confirm that is NOT production, then re-run:\n' +
+        '    ALLOW_DESTRUCTIVE_WIPE=true npx tsx scripts/clear-ticket-data.ts --apply',
+    );
+  }
+}
+
+/** Host only — never print the full URL, it carries credentials. */
+function describeDbHost(): string {
+  try {
+    return new URL(process.env.DATABASE_URL ?? '').host || '(unparseable)';
+  } catch {
+    return '(unset or unparseable)';
+  }
+}
+
 async function main() {
   const apply = process.argv.includes('--apply');
   const resetWallets = process.argv.includes('--reset-wallets');
+  // Checked BEFORE the plan is printed so a refusal is the first thing seen.
+  if (apply) assertSafeToWipe();
 
   const plan: Array<[string, number]> = [];
   for (const step of STEPS) {
@@ -102,7 +147,13 @@ async function main() {
 
 main()
   .catch((error) => {
-    console.error(error);
+    // A safety refusal is an expected outcome, not a failure to debug — a
+    // stack trace buries the one line that says what to do next.
+    if (error instanceof SafetyRefusal) {
+      console.error(`\n${error.message}\n`);
+    } else {
+      console.error(error);
+    }
     process.exitCode = 1;
   })
   .finally(() => void prisma.$disconnect());

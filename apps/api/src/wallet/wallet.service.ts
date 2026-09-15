@@ -4,7 +4,13 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import type { PaymentMode, Prisma, TicketStatus } from '@prisma/client';
-import { isPkrRail, round2 } from '@wusuq/shared';
+import {
+  CONSUMER_CLASS_ROLES,
+  isPkrRail,
+  paymentModelFor,
+  round2,
+  toCurrency,
+} from '@wusuq/shared';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { NotificationDispatcher } from '../notifications/notification-dispatcher.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -34,10 +40,12 @@ export class WalletService {
     // in Users, Representatives on Representatives"), which was applied to
     // Manage Users and missed here. Mirrors the consumer-class scope
     // `DashboardService.getBusinessKpis` already uses for Consumer Advance.
-    // Annotated rather than inferred: extracting the literal to a variable
-    // loses the contextual typing that makes `in: [...]` resolve to UserRole[].
+    // Review finding 9: use the canonical shared tuple — a hardcoded copy
+    // silently drops a future consumer-class role from this board. Spread it:
+    // Prisma needs a mutable array, and the annotation supplies the typing the
+    // inline literal would otherwise have got from context.
     const userWhere: Prisma.UserWhereInput = {
-      role: { in: ['consumer', 'lawyer', 'company'] },
+      role: { in: [...CONSUMER_CLASS_ROLES] },
       ...(query.search
         ? {
             OR: [
@@ -524,7 +532,7 @@ export class WalletService {
     userId: string,
     ticketId: string,
   ): Promise<{ applied: number; walletBalance: number; status: string }> {
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT id FROM "User" WHERE id = ${userId} FOR UPDATE`;
       const user = await tx.user.findUnique({
         where: { id: userId },
@@ -545,6 +553,10 @@ export class WalletService {
           status: true,
           currency: true,
           archivedAt: true,
+          // Batch-8 review finding 4 — needed to derive the SAME phase-aware
+          // "due now" the pay page shows.
+          intakeFlow: true,
+          remainderFinalizedAt: true,
         },
       });
       // 404 rather than 403 on someone else's ticket so ids can't be probed
@@ -555,8 +567,36 @@ export class WalletService {
 
       const credit = Number(user.walletBalance);
       const totalAmount = Number(ticket.totalAmount);
-      const remaining = totalAmount - Number(ticket.amountPaid);
-      if (totalAmount <= 0 || remaining <= 0) {
+      const amountPaid = Number(ticket.amountPaid);
+
+      /**
+       * Batch-8 review finding 4 — this MUST be the phase-aware "due now", not
+       * `totalAmount − amountPaid`.
+       *
+       * For a SPLIT flow before the remainder is finalized the consumer owes
+       * the phase-1 base only, which is what `computeDueNow` on the pay page
+       * shows. `totalAmount` already carries tax (and any additional charges),
+       * so with a non-zero tax rate the button read "Use PKR 3,000 — this
+       * covers the full amount" while the server would have silently debited
+       * PKR 3,300. Tax is currently configured at 0, so this was dormant, but
+       * it is one settings change away from taking money the consumer was
+       * never shown.
+       *
+       * Deliberately derived HERE rather than accepting an amount from the
+       * client: the server is the authority on what is owed. Mirrors
+       * `computeDueNow` in `app/(consumer)/consumer/tickets/[id]/pay/page.tsx`
+       * — change one and you must change the other.
+       */
+      const model = paymentModelFor(
+        ticket.intakeFlow ?? undefined,
+        toCurrency(ticket.currency),
+      );
+      const dueNow =
+        model === 'SPLIT' && !ticket.remainderFinalizedAt
+          ? round2(Number(ticket.serviceCost) - amountPaid)
+          : round2(totalAmount - amountPaid);
+
+      if (totalAmount <= 0 || dueNow <= 0) {
         throw new BadRequestException('This ticket has nothing left to pay.');
       }
       if (credit <= 0) {
@@ -565,7 +605,7 @@ export class WalletService {
 
       // Partial is allowed: paying what credit covers is strictly better than
       // refusing, and the remainder stays due exactly as before.
-      const applied = Math.min(credit, remaining);
+      const applied = round2(Math.min(credit, dueNow));
 
       await this.applyPaymentToTicket(
         tx,
@@ -573,17 +613,24 @@ export class WalletService {
           ticketId: ticket.id,
           batchNo: ticket.batchNo,
           totalAmount,
-          amountPaid: Number(ticket.amountPaid),
+          amountPaid,
           serviceCost: Number(ticket.serviceCost),
           status: ticket.status,
           currency: ticket.currency,
         },
         applied,
+        // PaymentMode has no WALLET member and adding one needs a migration,
+        // so this keeps the same mode the existing auto-settlement path uses;
+        // the NOTE is what distinguishes a deliberate spend from an automatic
+        // one (review finding 6).
         'BANK_TRANSFER',
         userId,
+        `Paid from wallet balance for ticket ${ticket.batchNo}`,
       );
 
-      const walletBalance = credit - applied;
+      // Review finding 8: both operands are Number()-coerced Decimals, so
+      // 5000.10 − 1100.05 would otherwise persist 3900.049999999999.
+      const walletBalance = round2(credit - applied);
       await tx.user.update({
         where: { id: userId },
         data: { walletBalance },
@@ -593,8 +640,35 @@ export class WalletService {
         where: { id: ticket.id },
         select: { status: true },
       });
-      return { applied, walletBalance, status: after?.status ?? ticket.status };
+      return {
+        applied,
+        walletBalance,
+        status: after?.status ?? ticket.status,
+        batchNo: ticket.batchNo,
+      };
     });
+
+    // Review finding 5: every other money-moving path here writes an audit row
+    // (topup, verifyTopup, rejectTopup, adjustWallet). Written AFTER commit —
+    // an audit row for a rolled-back debit would be a lie (same rule as
+    // INVOICE_GENERATED).
+    await this.auditLogsService.create({
+      action: 'WALLET_TICKET_PAYMENT',
+      entity: 'TICKET',
+      entityId: ticketId,
+      actorUserId: userId,
+      metadata: {
+        batchNo: result.batchNo,
+        applied: result.applied,
+        walletBalanceAfter: result.walletBalance,
+      },
+    });
+
+    return {
+      applied: result.applied,
+      walletBalance: result.walletBalance,
+      status: result.status,
+    };
   }
 
   /**
@@ -771,6 +845,11 @@ export class WalletService {
     deducted: number,
     paymentMode: PaymentMode,
     userId: string,
+    // Batch-8 review finding 6: the note was hardcoded "Auto-deducted", which
+    // is a lie on the consumer-initiated path — they deliberately chose to
+    // spend their credit, which is the whole point of the batch-7 2.2 opt-in.
+    // Callers that ARE automatic keep the default.
+    note?: string,
   ) {
     const newAmountPaid = ticket.amountPaid + deducted;
     const data: { amountPaid: { increment: number }; status?: TicketStatus } = {
@@ -795,7 +874,7 @@ export class WalletService {
         status: 'VERIFIED',
         type: 'TICKET_DEBIT',
         verifiedAt: new Date(),
-        note: `Auto-deducted for ticket ${ticket.batchNo}`,
+        note: note ?? `Auto-deducted for ticket ${ticket.batchNo}`,
       },
     });
   }

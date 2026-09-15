@@ -5,6 +5,7 @@ import { subDays, startOfDay, endOfDay, format } from 'date-fns';
 import {
   recommendationsForCase,
   isFlowKey,
+  CONSUMER_CLASS_ROLES,
   computeClerkEarningsBreakdown,
   convertToPkr,
   sumMixedCurrencyToPkr,
@@ -409,7 +410,7 @@ export class DashboardService {
     // "people registered with us" in the sense he means. Prisma's enum
     // spelling, not the lowercase shared UserRole.
     const base: Prisma.UserWhereInput = {
-      role: { in: ['consumer', 'lawyer', 'company'] },
+      role: { in: [...CONSUMER_CLASS_ROLES] },
     };
 
     const [total, today, thisMonth, thisYear, byKind, byProvince, byCity] =
@@ -544,7 +545,7 @@ export class DashboardService {
       this.prisma.user.aggregate({
         _sum: { walletBalance: true },
         where: {
-          role: { in: ['consumer', 'lawyer', 'company'] },
+          role: { in: [...CONSUMER_CLASS_ROLES] },
           currency: 'PKR',
         },
       }),
@@ -555,7 +556,7 @@ export class DashboardService {
       // ("N excluded — FX rate not set"); this one now does too.
       this.prisma.user.count({
         where: {
-          role: { in: ['consumer', 'lawyer', 'company'] },
+          role: { in: [...CONSUMER_CLASS_ROLES] },
           currency: { not: 'PKR' },
           walletBalance: { gt: 0 },
         },

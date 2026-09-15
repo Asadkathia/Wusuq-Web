@@ -5,7 +5,14 @@ function build(ticket: any) {
   const prisma = {
     ticket: {
       findUnique: jest.fn(async () => ticket),
-      update: jest.fn(async ({ data }: any) => ({ ...ticket, ...data })),
+      // Batch-8 review finding 3: updateCharge now includes live
+      // assignments so its returned clerkPayout applies the same
+      // no-assignment rule as the list and the dashboard KPI.
+      update: jest.fn(async ({ data }: any) => ({
+        ...ticket,
+        ...data,
+        assignments: [{ id: 'a1' }],
+      })),
     },
   };
   const auditLogsService = { create: jest.fn() };

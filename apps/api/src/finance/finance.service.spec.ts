@@ -114,6 +114,8 @@ describe('FinanceService', () => {
       clerkPrintingCharges: null,
       clerkDeliveryCharges: null,
       formPayload: null,
+      // Batch-8 review finding 3 — assigned, so a payout is owed.
+      assignments: [{ id: 'a1' }],
     };
     const prisma = {
       $transaction: jest.fn().mockResolvedValue([[ticketRow], 1]),

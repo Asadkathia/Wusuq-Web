@@ -56,6 +56,20 @@ describe('item 9 — the phone error renders beside the phone field', () => {
   it('no longer routes phone validation into the generic formError', () => {
     expect(repsBoard).not.toMatch(/if \(phoneError\) return setFormError\(phoneError\)/);
   });
+
+  // Review finding 7: phoneError lives OUTSIDE `form`, so setForm(emptyForm)
+  // did not clear it — type an invalid number, cancel, reopen "Add
+  // Representative", and a stale red error sat under an empty field. A
+  // regression in the very item this batch ships.
+  it('clears the phone error when the form is opened or closed', () => {
+    const between = (from: string, to: string) =>
+      repsBoard.slice(repsBoard.indexOf(from), repsBoard.indexOf(to));
+    expect(between('const openCreate', 'const openEdit')).toContain("setPhoneError('')");
+    expect(between('const openEdit', 'const handleServiceChange')).toContain("setPhoneError('')");
+    const close = between('const closeModal', 'const handlePayoutMethodChange');
+    expect(close).toContain("setPhoneError('')");
+    expect(close).toContain("setFormError('')");
+  });
 });
 
 describe('item 3 — representatives board shows what each is owed', () => {

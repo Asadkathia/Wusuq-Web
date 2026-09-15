@@ -59,8 +59,13 @@ never fires. An ASSIGNED ticket whose `clerkCost` was never set reports a base o
 the rule's `defaultClerkCost`, **under-reporting** representative pay.
 
 This is the exact coercion CLAUDE.md already warns about for this function
-(*"never coerce that null to 0 before the cap"*). `finance.service.ts`'s `clerkPayoutFor` gets it
-right; the new KPI does not. Pass `null` through.
+(*"never coerce that null to 0 before the cap"*). Pass `null` through.
+
+> ⚠️ **CORRECTION (pre-push review).** I originally wrote here that
+> "`finance.service.ts`'s `clerkPayoutFor` gets it right". **It does not** — it passes
+> `clerkCost: toNumber(ticket.clerkCost)` (i.e. `Number(null ?? 0)` = 0) and never passes
+> `defaultClerkCost` **at all**, so the same fallback could never fire there either. The two
+> surfaces disagreed about the same ticket. Both are fixed; see §10.
 
 ## 3. Representative Profit has no per-representative breakdown
 
@@ -470,3 +475,56 @@ the half he actually pointed at. Render the message next to the phone input.
 
 Plus the two standing batch-6 F items (signup cannot express residence; no staff currency override),
 which are latent rather than live — no account is mispriced today.
+
+---
+
+## 10. Pre-push code review — 10 findings, all real, all fixed
+
+Ran at high effort over the whole branch diff. **Every finding verified against the code before
+acting**; none were rejected. Three were defects in the batch-8 work itself, four were defects the
+batch-8 fixes *exposed* on sibling surfaces, and one was a correction to this document.
+
+| # | Finding | Verdict |
+|---|---|---|
+| 1 | `clear-ticket-data.ts --apply` had **no environment guard** | 🔴 confirmed |
+| 2 | finance `clerkPayoutFor` has the same `?? 0` bug **and never passes `defaultClerkCost`** | 🔴 confirmed — worse than reported |
+| 3 | finance `clerkPayout` not gated on an active assignment → contradicts the fixed KPI | 🔴 confirmed |
+| 4 | Pay page shows a phase-aware due; server debited `totalAmount − amountPaid` | 🔴 confirmed (dormant: tax rate is 0) |
+| 5 | `payTicketFromWallet` wrote no `AuditLog` | confirmed |
+| 6 | Ledger row said `BANK_TRANSFER` + "Auto-deducted" for a deliberate spend | confirmed |
+| 7 | `phoneError` never cleared on form open/close | confirmed — regression in item 9 |
+| 8 | `walletBalance = credit − applied` unrounded | confirmed |
+| 9 | Consumer-class roles hardcoded instead of `CONSUMER_CLASS_ROLES` | confirmed |
+| 10 | `getRepresentativeEarnings` unbounded | confirmed — **deliberately not fixed**, see below |
+
+### The two that matter most
+
+**Finding 3 is the same failure this file documents twice already.** Item 1 fixed the KPI so an
+unassigned ticket pays nobody; `finance.service.ts` — a different surface reading the same
+concept — kept paying `PDF_CLERK_FEE`. The client's own reproduction was still visible on the
+finance board, which is the screen he asked to show Wusuq profit on. **Fixing a shared money rule
+on one surface is not fixing it.**
+
+**Finding 4 was real but dormant.** `computeDueNow` returns the phase-1 base for a SPLIT ticket
+before finalize; the server used `totalAmount − amountPaid`, which includes tax. `tax.rate` is
+currently `0` in production, so the two agreed by accident — one settings change from the button
+saying "covers the full PKR 3,000" while the server took PKR 3,300. The due is now derived
+**server-side** (the authority), mirroring `computeDueNow`; change one and you must change the other.
+
+### Deliberately NOT fixed
+
+**Finding 10 (unbounded query).** `getRepresentativeEarnings` loads every live assignment with its
+ticket row. Real, but it is the *same* unbounded scan `getBusinessKpis` already does, and the
+drill-down must reconcile with that KPI exactly — paginating one without the other breaks the
+reconciliation this batch exists to provide. Fixing it properly means moving both to a SQL
+aggregate. Logged as a follow-up rather than half-done.
+
+### Verification after the review fixes
+
+726 API + 367 web tests (up from 715 + 366), 0 lint, 0 typecheck, build green. **All seven new
+review-driven guards mutation-proven** — including one that had to be rewritten: the rounding test
+originally used operands that happened to subtract cleanly, so it passed with `round2` removed. A
+guard that cannot fail is not a guard; it now uses `5000.3 − 1100.1`, which genuinely drifts.
+
+Live read-only re-check: the finance board and the dashboard KPI now **agree at 2,150**, with the
+unassigned ticket contributing **0** on both.

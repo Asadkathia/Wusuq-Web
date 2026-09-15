@@ -52,11 +52,16 @@ const BASE_TICKET = {
   totalAmount: 1000,
   amountPaid: 1000,
   clerkCost: 0,
+  defaultClerkCost: null,
   formPayload: null,
   clerkAttestedCharges: null,
   clerkNonAttestedCharges: null,
   clerkPrintingCharges: null,
   clerkDeliveryCharges: null,
+  // Batch-8 review finding 3: a payout needs somebody to pay. These cases all
+  // exercise the CAP, so they represent a ticket that IS assigned; the
+  // no-assignment rule has its own cases below.
+  assignments: [{ id: 'a1' }],
 };
 
 describe('finance clerkPayout uses the shared capped earnings', () => {
@@ -170,5 +175,60 @@ describe('finance clerkPayout uses the shared capped earnings', () => {
     const result = await service.updateCharge('t1', {} as never);
 
     expect(result.clerkPayout).toBe(500);
+  });
+});
+
+/**
+ * Batch-8 review findings 2 + 3 — the finance board must agree with the
+ * dashboard KPI about who is owed what. Both were fixed in the KPI first and
+ * left broken here, which is the "sibling surface" failure CLAUDE.md flags.
+ */
+describe('finance clerkPayout — assignment gate and defaultClerkCost (batch-8 review)', () => {
+  const assignedPdfTicket = {
+    ...BASE_TICKET,
+    clerkCost: 0,
+    defaultClerkCost: null,
+    formPayload: { want_pdf_before_dispatch: 'Yes' },
+    assignments: [{ id: 'a1' }],
+  };
+
+  // FINDING 3 — the client's exact reproduction, on the finance board this
+  // time: an unassigned ticket with a PDF still paid out PDF_CLERK_FEE (100).
+  it('pays NOTHING for a ticket with no live assignment', async () => {
+    const { service } = build({ ...assignedPdfTicket, assignments: [] });
+    const res = await service.findAll({ page: 1, limit: 20 } as never);
+    expect(res.items[0]?.clerkPayout).toBe(0);
+  });
+
+  it('still pays the PDF fee once the ticket IS assigned', async () => {
+    const { service } = build(assignedPdfTicket);
+    const res = await service.findAll({ page: 1, limit: 20 } as never);
+    expect(res.items[0]?.clerkPayout).toBe(100);
+  });
+
+  // FINDING 2 — `toNumber(null)` is 0, `0 != null` is TRUE, so the shared fn's
+  // fallback could never fire; defaultClerkCost was never even passed.
+  it('falls back to defaultClerkCost when clerkCost is NULL', async () => {
+    const { service } = build({
+      ...BASE_TICKET,
+      clerkCost: null,
+      defaultClerkCost: 600,
+      formPayload: null,
+      assignments: [{ id: 'a1' }],
+    });
+    const res = await service.findAll({ page: 1, limit: 20 } as never);
+    expect(res.items[0]?.clerkPayout).toBe(600);
+  });
+
+  it('honours an explicit clerkCost of 0 rather than falling back', async () => {
+    const { service } = build({
+      ...BASE_TICKET,
+      clerkCost: 0,
+      defaultClerkCost: 600,
+      formPayload: null,
+      assignments: [{ id: 'a1' }],
+    });
+    const res = await service.findAll({ page: 1, limit: 20 } as never);
+    expect(res.items[0]?.clerkPayout).toBe(0);
   });
 });

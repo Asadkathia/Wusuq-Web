@@ -318,6 +318,10 @@ export function RepresentativesBoard() {
   const openCreate = () => {
     setEditRep(null);
     setForm(emptyForm);
+    // Review finding 7: phoneError is NOT part of `form`, so resetting the
+    // form left a stale red error under an empty phone field on reopen —
+    // a regression in the very item (9) this batch ships.
+    setPhoneError('');
     setPhoneCountryCode(DEFAULT_COUNTRY_CODE);
     setProvinceId(''); setDistrictId(''); setDistricts([]); setCities([]);
     setCityId(''); setCourtGroups([]); setCourtsLoaded(false);
@@ -326,6 +330,7 @@ export function RepresentativesBoard() {
   };
 
   const openEdit = (rep: RepData) => {
+    setPhoneError('');
     const sid = serviceIdFromName(rep.serviceFocus);
     const { countryCode: repCountryCode, local: repPhoneLocal } = decomposePhone(rep.phone);
     setEditRep(rep);
@@ -358,6 +363,9 @@ export function RepresentativesBoard() {
   const closeModal = () => {
     setShowModal(false);
     setEditRep(null);
+    // Cancel must not leave validation state behind for the next open.
+    setFormError('');
+    setPhoneError('');
   };
 
   const setField = (key: keyof FormState, value: string) =>

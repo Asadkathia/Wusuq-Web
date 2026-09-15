@@ -243,6 +243,10 @@ describe('FinanceService.findAll — summary sums PKR equivalents', () => {
         clerkPrintingCharges: null,
         clerkDeliveryCharges: null,
         formPayload: null,
+        // Batch-8 review finding 3: clerkPayoutFor pays nobody without a live
+        // assignment. This spec is about the CURRENCY summary, so the tickets
+        // are assigned — the no-assignment rule is covered in clerk-payout.spec.
+        assignments: [{ id: 'a1' }],
       },
       {
         id: 't2',
@@ -273,6 +277,10 @@ describe('FinanceService.findAll — summary sums PKR equivalents', () => {
         clerkPrintingCharges: null,
         clerkDeliveryCharges: null,
         formPayload: null,
+        // Batch-8 review finding 3: clerkPayoutFor pays nobody without a live
+        // assignment. This spec is about the CURRENCY summary, so the tickets
+        // are assigned — the no-assignment rule is covered in clerk-payout.spec.
+        assignments: [{ id: 'a1' }],
       },
       {
         id: 't3',
@@ -303,6 +311,10 @@ describe('FinanceService.findAll — summary sums PKR equivalents', () => {
         clerkPrintingCharges: null,
         clerkDeliveryCharges: null,
         formPayload: null,
+        // Batch-8 review finding 3: clerkPayoutFor pays nobody without a live
+        // assignment. This spec is about the CURRENCY summary, so the tickets
+        // are assigned — the no-assignment rule is covered in clerk-payout.spec.
+        assignments: [{ id: 'a1' }],
       },
     ];
     const prisma = mkPrisma(items);

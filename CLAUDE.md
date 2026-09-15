@@ -820,3 +820,55 @@ read-only verification against the production Neon DB.
   100 gone); the drill-down rows (Nasir Mehmood 1,250 + Abbas Ali 900) **reconcile exactly** with
   the KPI; 2 USD wallets now reported as excluded; wallet board 82 → **65 rows** with Ali Zain
   Cheema's PKR 5,000 at the top.
+
+### 2026-09-15 19:53 · branch fix/batch8-client-review · sess 7f562c34
+
+### 2026-09-15 19:53 · branch fix/batch8-client-review · sess 0d77fa1a
+
+### 2026-09-15 · batch-8 pre-push code review (10 findings, all real)
+
+High-effort review over the whole branch before push. Every finding verified against the code
+first; none rejected. 726 API + 367 web tests, 0 lint, 0 typecheck, build green.
+
+**New durable invariants:**
+- **`clear-ticket-data.ts --apply` now REFUSES without `ALLOW_DESTRUCTIVE_WIPE=true`, and always
+  under `NODE_ENV=production`.** It deletes the whole money ledger (Payment, WalletTransaction,
+  Invoice, InvoiceItem) in one transaction, and this repo's `.env` points at the production Neon
+  DB — the refusal prints the `DATABASE_URL` **host only** (never the URL; it carries credentials).
+  `prisma:seed` already set this precedent; the far more dangerous script had no guard at all.
+- **🔴 Fixing a shared money rule on ONE surface is not fixing it — third occurrence.** Item 1 gated
+  the KPI on an active assignment; `finance.service.ts` kept paying `PDF_CLERK_FEE` for an
+  unassigned ticket, so the client's own reproduction was still live on the finance board.
+  `clerkPayoutFor` now takes `assignments` as a REQUIRED field — a caller that forgets the Prisma
+  `include` gets a type error, not a silent 0. Don't make it optional.
+- **`clerkPayoutFor` also had the batch-8 item-2 bug AND never passed `defaultClerkCost` at all.**
+  `toNumber(null)` = 0 and `0 != null` is TRUE, so the fallback could never fire. The dashboard and
+  finance therefore reported different bases for the same ticket. (The batch-8 spec originally
+  claimed finance "gets it right" — that claim was wrong and is now corrected in the spec.)
+- **`payTicketFromWallet` derives the PHASE-AWARE due server-side**, mirroring `computeDueNow` in
+  the pay page: SPLIT before finalize owes the phase-1 base, everything else owes
+  `totalAmount − amountPaid`. The server used the latter unconditionally, and `totalAmount` carries
+  tax — with `tax.rate` at 0 the two agreed by accident, one settings change from the button saying
+  "covers the full PKR 3,000" while the server debited 3,300. **Change one and you must change the
+  other.** The amount is never accepted from the client.
+- **The wallet-payment ledger row must not claim to be automatic.** `applyPaymentToTicket` takes an
+  optional `note`; the consumer-initiated path passes "Paid from wallet balance…". `PaymentMode` has
+  no `WALLET` member (that needs a migration), so the mode stays `BANK_TRANSFER` and the NOTE is what
+  distinguishes a deliberate spend from auto-settlement.
+- **`WALLET_TICKET_PAYMENT` audit row is written AFTER the transaction commits** — an audit row for
+  a rolled-back debit would be a lie (same rule as `INVOICE_GENERATED`). Every other money-moving
+  path in `WalletService` already audited.
+- **Use `CONSUMER_CLASS_ROLES` from `@wusuq/shared`**, never another `['consumer','lawyer','company']`
+  literal — spread it (`in: [...CONSUMER_CLASS_ROLES]`) since Prisma needs a mutable array. Hardcoded
+  copies silently drop a future consumer-class role from the wallet board and the Consumer Advance sum.
+- **State that lives OUTSIDE the form object must be reset explicitly.** `phoneError` survived
+  `setForm(emptyForm)`, so cancelling an invalid phone and reopening showed a stale red error under
+  an empty field — a regression inside the item that shipped the error slot.
+- **A guard that cannot fail is not a guard.** The new rounding test first used operands that
+  subtract cleanly, so it passed with `round2` removed. Mutation-testing caught it; it now uses
+  `5000.3 − 1100.1`, which genuinely drifts in IEEE-754.
+
+**⚠️ Follow-up deliberately NOT done:** `getRepresentativeEarnings` is unbounded — but it is the
+same unbounded scan `getBusinessKpis` already performs, and the drill-down must reconcile with that
+KPI exactly, so paginating one without the other breaks the reconciliation. Fixing it properly means
+moving BOTH to a SQL aggregate. Tracked, not half-done.

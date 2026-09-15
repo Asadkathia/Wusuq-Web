@@ -36,6 +36,7 @@ function wantPdfFromFormPayload(
 // hand-roll this sum (that drift is exactly what Task 6 closes).
 function clerkPayoutFor(ticket: {
   clerkCost: Prisma.Decimal | number | string | null;
+  defaultClerkCost: Prisma.Decimal | number | string | null;
   attestedCharges: Prisma.Decimal | number | string | null;
   nonAttestedCharges: Prisma.Decimal | number | string | null;
   printingCharges: Prisma.Decimal | number | string | null;
@@ -45,9 +46,28 @@ function clerkPayoutFor(ticket: {
   clerkPrintingCharges: Prisma.Decimal | number | string | null;
   clerkDeliveryCharges: Prisma.Decimal | number | string | null;
   formPayload: Prisma.JsonValue | null | undefined;
+  assignments: Array<{ id: string }>;
 }) {
+  // Batch-8 review finding 3: a payout is money owed TO A PERSON, so a ticket
+  // with no ACTIVE/ACCEPTED assignment owes nobody anything. Without this the
+  // finance board still showed the unconditional PDF_CLERK_FEE (100) on an
+  // unassigned ticket — the client's exact "I haven't assigned anyone, where
+  // did this 100 go?" — contradicting the dashboard KPI, which this batch
+  // fixed. The two surfaces must agree; callers pass only live assignments.
+  if (ticket.assignments.length === 0) return 0;
   return computeClerkEarnings({
-    clerkCost: toNumber(ticket.clerkCost),
+    // Batch-8 review finding 2: this was `toNumber(ticket.clerkCost)`, i.e.
+    // `Number(null ?? 0)` = 0, and `defaultClerkCost` was never passed at all.
+    // `computeClerkEarnings` branches on `clerkCost != null` and `0 != null`
+    // is TRUE, so the fallback could never fire — a ticket priced only by its
+    // rule's default reported a base of 0 here while the dashboard reported
+    // the real figure. Same coercion class CLAUDE.md flags for this function:
+    // the null must survive to the branch.
+    clerkCost: ticket.clerkCost == null ? null : toNumber(ticket.clerkCost),
+    defaultClerkCost:
+      ticket.defaultClerkCost == null
+        ? null
+        : toNumber(ticket.defaultClerkCost),
     attestedCharges: toNumber(ticket.attestedCharges),
     nonAttestedCharges: toNumber(ticket.nonAttestedCharges),
     printingCharges: toNumber(ticket.printingCharges),
@@ -110,6 +130,13 @@ export class FinanceService {
           consumer: { select: { id: true, name: true } },
           service: {
             select: { id: true, name: true, category: true, type: true },
+          },
+          // Batch-8 review finding 3 — clerkPayoutFor pays nobody when a
+          // ticket has no live assignment, matching the dashboard KPI.
+          assignments: {
+            where: { status: { in: ['ACTIVE', 'ACCEPTED'] } },
+            select: { id: true },
+            take: 1,
           },
         },
       }),
@@ -362,6 +389,15 @@ export class FinanceService {
         taxAmount: money.taxAmount,
         totalAmount,
         priceBreakdown: priceBreakdown as Prisma.InputJsonValue,
+      },
+      // Batch-8 review finding 3: the returned clerkPayout must apply the same
+      // no-assignment rule as the list and the dashboard KPI.
+      include: {
+        assignments: {
+          where: { status: { in: ['ACTIVE', 'ACCEPTED'] } },
+          select: { id: true },
+          take: 1,
+        },
       },
     });
 
