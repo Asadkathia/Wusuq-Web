@@ -208,6 +208,61 @@ describe('submitClerkCosts — capability gate (batch-9 Task 2, fix round 1)', (
     expect(payout.total).toBe(0);
   });
 
+  it('a PKR DIGITAL-flow ticket (judicial_case_information — recognized flow, absent from SERVICE_CHARGE_CAPABILITIES) zeroes a leftover printingCharges — fix round 2 regression coverage', async () => {
+    // Fix round 2: round 1 conflated "not a key in SERVICE_CHARGE_
+    // CAPABILITIES" with "unknown/legacy" — a digital flow is a recognized
+    // FlowKey deliberately absent from that map (it resolves through
+    // chargeCapabilitiesFor's `?? NO_CHARGES` fallback), NOT the same as a
+    // null legacy flow. This is the exact case the round-1 spec covered and
+    // the round-2 fix deleted; restored here per the review.
+    const { service, updateSpy } = makeTicketsService({
+      intakeFlow: 'judicial_case_information',
+      currency: 'PKR',
+      printingCharges: 500, // legacy leftover — MUST be zeroed, not preserved
+      deliveryCharges: 300,
+      attestedCharges: 400,
+      nonAttestedCharges: 200,
+      clerkCost: 400,
+    });
+
+    await service.submitClerkCosts(
+      'ticket-1',
+      {
+        deliveryCharges: 999,
+        printingCharges: 999,
+        attestedCharges: 999,
+        nonAttestedCharges: 999,
+      } as never,
+      repActor(),
+    );
+
+    const data = (
+      updateSpy.mock.calls.at(-1) as [{ data: Record<string, unknown> }]
+    )[0].data;
+
+    expect(Number(data.deliveryCharges)).toBe(0);
+    expect(Number(data.printingCharges)).toBe(0);
+    expect(Number(data.attestedCharges)).toBe(0);
+    expect(Number(data.nonAttestedCharges)).toBe(0);
+    expect(Number(data.clerkDeliveryCharges)).toBe(0);
+    expect(Number(data.clerkPrintingCharges)).toBe(0);
+    expect(Number(data.clerkAttestedCharges)).toBe(0);
+    expect(Number(data.clerkNonAttestedCharges)).toBe(0);
+
+    const payout = computeClerkEarningsBreakdown({
+      clerkCost: 400,
+      attestedCharges: Number(data.attestedCharges),
+      clerkAttestedCharges: data.clerkAttestedCharges as number,
+      nonAttestedCharges: Number(data.nonAttestedCharges),
+      clerkNonAttestedCharges: data.clerkNonAttestedCharges as number,
+      printingCharges: Number(data.printingCharges),
+      clerkPrintingCharges: data.clerkPrintingCharges as number,
+      deliveryCharges: Number(data.deliveryCharges),
+      clerkDeliveryCharges: data.clerkDeliveryCharges as number,
+    });
+    expect(payout.total).toBe(400); // clerkCost only — no leftover leak.
+  });
+
   it('a USD ticket with intakeFlow: null still gets zeroed (currency is definitive regardless of flow)', async () => {
     const { service, updateSpy } = makeTicketsService({
       intakeFlow: null,
@@ -371,6 +426,41 @@ describe('saveClerkCharges — capability gate (batch-9 Task 2, fix round 1)', (
     expect(data.nonAttestedCharges).toBe(0);
   });
 
+  it('a PKR DIGITAL-flow ticket (judicial_case_information) zeroes a leftover charge — fix round 2 regression coverage', async () => {
+    const { service, updateSpy } = makeSaveChargesService({
+      intakeFlow: 'judicial_case_information',
+      currency: 'PKR',
+      printingCharges: 500, // legacy leftover — MUST be zeroed
+      deliveryCharges: 300,
+      attestedCharges: 400,
+      nonAttestedCharges: 200,
+      clerkCost: 400,
+    });
+
+    await service.saveClerkCharges(
+      'ticket-1',
+      { printingCharges: 999, deliveryCharges: 999 } as never,
+      repActor(),
+    );
+
+    const data = (
+      updateSpy.mock.calls.at(-1) as [{ data: Record<string, unknown> }]
+    )[0].data;
+    expect(data.printingCharges).toBe(0);
+    expect(data.deliveryCharges).toBe(0);
+    expect(data.attestedCharges).toBe(0);
+    expect(data.nonAttestedCharges).toBe(0);
+
+    const payout = computeClerkEarningsBreakdown({
+      clerkCost: 400,
+      attestedCharges: Number(data.attestedCharges),
+      nonAttestedCharges: Number(data.nonAttestedCharges),
+      printingCharges: Number(data.printingCharges),
+      deliveryCharges: Number(data.deliveryCharges),
+    });
+    expect(payout.total).toBe(400); // clerkCost only.
+  });
+
   it('intakeFlow: null (unknown, PKR) — an existing persisted charge SURVIVES a draft save that tries to change it', async () => {
     const { service, updateSpy, ticket } = makeSaveChargesService({
       intakeFlow: null,
@@ -499,6 +589,38 @@ describe('FinanceService.updateCharge — capability gate (batch-9 Task 2, fix r
     expect(data.deliveryCharges).toBe(300);
     expect(data.attestedCharges).toBe(900);
     expect(result.clerkPayout).toBe(400 + 300 + 900);
+  });
+
+  it('a PKR DIGITAL-flow ticket (judicial_case_information) zeroes a leftover charge via an admin override attempt — fix round 2 regression coverage', async () => {
+    const { service, prisma } = build({
+      ...BASE_TICKET,
+      intakeFlow: 'judicial_case_information',
+      currency: 'PKR',
+      printingCharges: 500, // legacy leftover — MUST be zeroed
+      deliveryCharges: 300,
+      attestedCharges: 400,
+      nonAttestedCharges: 200,
+      clerkCost: 400,
+    });
+
+    const result = await service.updateCharge('t1', {
+      deliveryCharges: 999,
+      printingCharges: 999,
+      attestedCharges: 999,
+      nonAttestedCharges: 999,
+    } as never);
+
+    const data = (prisma.ticket.update.mock.calls.at(-1) as any)[0].data;
+    expect(data.deliveryCharges).toBe(0);
+    expect(data.printingCharges).toBe(0);
+    expect(data.attestedCharges).toBe(0);
+    expect(data.nonAttestedCharges).toBe(0);
+
+    expect(result.charges.deliveryCharges).toBe(0);
+    expect(result.charges.printingCharges).toBe(0);
+    expect(result.charges.attestedCharges).toBe(0);
+    expect(result.charges.nonAttestedCharges).toBe(0);
+    expect(result.clerkPayout).toBe(400); // clerkCost only — no leftover leak.
   });
 
   it('a USD ticket with intakeFlow: null still gets zeroed (currency is definitive regardless of flow)', async () => {

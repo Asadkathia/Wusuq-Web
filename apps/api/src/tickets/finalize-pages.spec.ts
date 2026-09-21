@@ -1,4 +1,5 @@
 import { jest } from '@jest/globals';
+import { computeClerkEarningsBreakdown } from '@wusuq/shared';
 import { TicketsService } from './tickets.service';
 
 // Workstream D1, Task 3 (B11): admin "Review & Complete" recomputes
@@ -290,5 +291,114 @@ describe('finalizeRemainder — editable page counts (B11)', () => {
       }),
     );
     expectFinalizeNeverWritesClerkSnapshot(updateMany);
+  });
+});
+
+// Batch-9 Task 2 (§4, fix round 2): finalizeRemainderCore is reachable
+// directly via `POST /tickets/:id/finalize-remainder` (finalizeRemainder,
+// tested here), which BYPASSES reviewAndComplete's `hasCaps` guard. Before
+// this fix it force-wrote literal 0 for the four gated charges on ANY
+// ticket whose capability determination wasn't a straightforward "known and
+// granted" — including a legacy null-flow ticket carrying real
+// already-persisted money. It is now routed through the same
+// resolveGatedCharge (packages/shared) as updateCharge/saveClerkCharges/
+// submitClerkCosts: `undefined` (leave the column untouched) only for a
+// genuinely unrecognized flow; a recognized FlowKey — physical or digital —
+// is always definitive.
+describe('finalizeRemainder — capability gate for legacy/digital flows (batch-9 Task 2, fix round 2)', () => {
+  it('a null-flow (legacy, unknown) ticket PRESERVES existing charges and rejects a smuggled dto value', async () => {
+    const { service, updateMany } = buildHarness({
+      intakeFlow: null,
+      clerkCost: 10,
+      attestedCharges: 400,
+      nonAttestedCharges: 0,
+      printingCharges: 150,
+      deliveryCharges: 250,
+    });
+
+    await service.finalizeRemainder(
+      'tkt-1',
+      {
+        attestedCharges: 999,
+        nonAttestedCharges: 999,
+        printingCharges: 999,
+        deliveryCharges: 999,
+      },
+      actor,
+    );
+
+    const data = (
+      updateMany.mock.calls[0][0] as { data: Record<string, unknown> }
+    ).data;
+
+    // Prisma `undefined` = column left untouched — not zeroed, not
+    // overwritten with the smuggled 999.
+    expect(data.attestedCharges).toBeUndefined();
+    expect(data.nonAttestedCharges).toBeUndefined();
+    expect(data.printingCharges).toBeUndefined();
+    expect(data.deliveryCharges).toBeUndefined();
+
+    // The total still finalizes correctly against the PERSISTED figures
+    // (3000 base + 400 attested + 0 nonAttested + 150 printing + 250
+    // delivery = 3800) — an unknown determination affects only what gets
+    // WRITTEN to the four gated columns, never the total computation.
+    expect(data.totalAmount).toBe(3000 + 400 + 0 + 150 + 250);
+
+    expectFinalizeNeverWritesClerkSnapshot(updateMany);
+
+    // The payout is unaffected — still exactly what the persisted figures
+    // always implied, not zeroed and not inflated by the smuggled 999s.
+    const payout = computeClerkEarningsBreakdown({
+      clerkCost: 10,
+      attestedCharges: 400,
+      nonAttestedCharges: 0,
+      printingCharges: 150,
+      deliveryCharges: 250,
+    });
+    expect(payout.total).toBe(10 + 400 + 0 + 150 + 250);
+  });
+
+  it('a recognized DIGITAL flow (judicial_case_information) ZEROES a leftover charge — the fix-round-1 regression this round closes', async () => {
+    const { service, updateMany } = buildHarness({
+      intakeFlow: 'judicial_case_information',
+      clerkCost: 400,
+      attestedCharges: 400,
+      nonAttestedCharges: 200,
+      printingCharges: 500, // legacy leftover — MUST be zeroed
+      deliveryCharges: 300,
+    });
+
+    await service.finalizeRemainder(
+      'tkt-1',
+      {
+        attestedCharges: 999,
+        nonAttestedCharges: 999,
+        printingCharges: 999,
+        deliveryCharges: 999,
+      },
+      actor,
+    );
+
+    const data = (
+      updateMany.mock.calls[0][0] as { data: Record<string, unknown> }
+    ).data;
+
+    expect(data.attestedCharges).toBe(0);
+    expect(data.nonAttestedCharges).toBe(0);
+    expect(data.printingCharges).toBe(0);
+    expect(data.deliveryCharges).toBe(0);
+    // Digital flow — no phase-2 charges, total is base only.
+    expect(data.totalAmount).toBe(3000);
+
+    expectFinalizeNeverWritesClerkSnapshot(updateMany);
+
+    const payout = computeClerkEarningsBreakdown({
+      clerkCost: 400,
+      attestedCharges: Number(data.attestedCharges),
+      nonAttestedCharges: Number(data.nonAttestedCharges),
+      printingCharges: Number(data.printingCharges),
+      deliveryCharges: Number(data.deliveryCharges),
+    });
+    expect(payout.total).toBe(400); // clerkCost only — no leftover leak.
   });
 });

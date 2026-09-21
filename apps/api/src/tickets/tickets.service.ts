@@ -3283,47 +3283,71 @@ export class TicketsService {
       );
     }
 
-    const caps = chargeCapabilitiesFor(
-      ticket.intakeFlow,
-      toCurrency(ticket.currency),
-    );
+    // Batch-9 Task 2 (§4, fix round 2): this is the fourth site the money
+    // rule touches — reachable directly via the live
+    // `POST /tickets/:id/finalize-remainder` endpoint, which bypasses
+    // `reviewAndComplete`'s `hasCaps` guard (~line 2416-2426). It used to
+    // force literal 0 unconditionally for a null-flow ticket, which
+    // destroys legacy pre-flow-tracking money data exactly like the other
+    // three sites did before round 1. Routed through the same
+    // resolveGatedCharge (packages/shared) as updateCharge/
+    // saveClerkCharges/submitClerkCosts: `undefined` (leave the write
+    // untouched) only for a genuinely unrecognized flow; a recognized
+    // FlowKey — physical OR digital — is always definitive and resolves
+    // through chargeCapabilitiesFor, so a digital-flow ticket is correctly
+    // zeroed while a legacy null-flow ticket is not.
+    const currency = toCurrency(ticket.currency);
+    const persistedAttested = Number(ticket.attestedCharges ?? 0);
+    const persistedNonAttested = Number(ticket.nonAttestedCharges ?? 0);
+    const persistedPrinting = Number(ticket.printingCharges ?? 0);
+    const persistedDelivery = Number(ticket.deliveryCharges ?? 0);
     // Attestation / printing / delivery have NO default rates — they are the
     // amounts the clerk entered (and the admin may edit). Absent dto fields
     // fall back to pages × rate (B11: the admin may edit the page counts
-    // instead of the lump), then to the persisted columns, never to 0.
-    const attested = caps.attestation
-      ? Number(
-          dto.attestedCharges ??
-            this.computePageCharges(
-              dto.attestedPages,
-              dto.attestedCostPerPage,
-            ) ??
-            ticket.attestedCharges ??
-            0,
-        )
-      : 0;
-    const nonAttested = caps.attestation
-      ? Number(
-          dto.nonAttestedCharges ??
-            this.computePageCharges(
-              dto.nonAttestedPages,
-              dto.nonAttestedCostPerPage,
-            ) ??
-            ticket.nonAttestedCharges ??
-            0,
-        )
-      : 0;
-    const printing = caps.printing
-      ? Number(
-          dto.printingCharges ??
-            this.computePageCharges(dto.noOfPages, dto.costPerPage) ??
-            ticket.printingCharges ??
-            0,
-        )
-      : 0;
-    const delivery = caps.delivery
-      ? Number(dto.deliveryCharges ?? ticket.deliveryCharges ?? 0)
-      : 0;
+    // instead of the lump), then to the persisted columns, never to 0 (nor,
+    // for an unknown-capability ticket, to a fresh dto value).
+    const attestedWrite = resolveGatedCharge(
+      ticket.intakeFlow,
+      currency,
+      'attestation',
+      dto.attestedCharges,
+      this.computePageCharges(dto.attestedPages, dto.attestedCostPerPage) ??
+        persistedAttested,
+    );
+    const nonAttestedWrite = resolveGatedCharge(
+      ticket.intakeFlow,
+      currency,
+      'attestation',
+      dto.nonAttestedCharges,
+      this.computePageCharges(
+        dto.nonAttestedPages,
+        dto.nonAttestedCostPerPage,
+      ) ?? persistedNonAttested,
+    );
+    const printingWrite = resolveGatedCharge(
+      ticket.intakeFlow,
+      currency,
+      'printing',
+      dto.printingCharges,
+      this.computePageCharges(dto.noOfPages, dto.costPerPage) ??
+        persistedPrinting,
+    );
+    const deliveryWrite = resolveGatedCharge(
+      ticket.intakeFlow,
+      currency,
+      'delivery',
+      dto.deliveryCharges,
+      persistedDelivery,
+    );
+    // `writeValue ?? persisted` for the total/money computation and the
+    // returned result below: when the column is left untouched (write ===
+    // undefined), the persisted value IS the correct figure to finalize
+    // against — resolveGatedCharge only returns `undefined` to mean "keep
+    // whatever's there", never as a stand-in for zero.
+    const attested = attestedWrite ?? persistedAttested;
+    const nonAttested = nonAttestedWrite ?? persistedNonAttested;
+    const printing = printingWrite ?? persistedPrinting;
+    const delivery = deliveryWrite ?? persistedDelivery;
     // Task 4.1: "Additional Cost" is admin-editable at Review & Complete. Like
     // the other phase-2 charges, an absent dto field falls back to the
     // persisted column, never to 0.
@@ -3392,10 +3416,15 @@ export class TicketsService {
     const updated = await tx.ticket.updateMany({
       where: { id: ticketId, remainderFinalizedAt: null },
       data: {
-        attestedCharges: attested,
-        nonAttestedCharges: nonAttested,
-        printingCharges: printing,
-        deliveryCharges: delivery,
+        // The *Write variants, not the merged variables above: for an
+        // unknown-capability (unrecognized flow) ticket these are
+        // `undefined`, and Prisma treats `undefined` in `data` as "don't
+        // touch this column" — preserving legacy money instead of
+        // overwriting it with the persisted value as a no-op.
+        attestedCharges: attestedWrite,
+        nonAttestedCharges: nonAttestedWrite,
+        printingCharges: printingWrite,
+        deliveryCharges: deliveryWrite,
         additionalCharges,
         additionalServiceCost,
         totalAmount: total,

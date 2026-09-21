@@ -633,19 +633,40 @@ export function chargeCapabilitiesFor(
  * This function separates the two: `currency === 'USD'` is always
  * definitive (checked first, exactly like `chargeCapabilitiesFor` — a
  * USD ticket has no phase-2 charges regardless of flow, and that IS the
- * client's actual reported bug this task exists to close). A flow that is a
- * recognized key in `SERVICE_CHARGE_CAPABILITIES` is definitive. A flow
- * that is null, or a string not in that map (typo, future/removed flow,
- * pre-migration data), is UNKNOWN — the caller must return `undefined`
- * (Prisma's "leave this column unchanged") rather than `0`, and must not
- * accept a new value for it either.
+ * client's actual reported bug this task exists to close).
  *
- * ONE function, not inlined at each of the three call sites
+ * Fix round 2 (review finding): round 1 conflated "not a key in
+ * `SERVICE_CHARGE_CAPABILITIES`" with "unknown/legacy". That map holds
+ * ONLY the four PHYSICAL flows — the four DIGITAL flows
+ * (`judicial_case_information`, `judicial_case_search`,
+ * `judicial_case_filing`, `judicial_power_of_attorney`) are legitimate,
+ * active, RECOGNIZED flow keys that are deliberately absent from it,
+ * because `chargeCapabilitiesFor` resolves them through its `?? NO_CHARGES`
+ * fallback. Treating "not in the map" as "unknown" left a PKR digital
+ * ticket's stale/admin-set charges untouched instead of zeroed — reopening
+ * part of the §4 leak this task exists to close, just scoped to PKR digital
+ * flows instead of USD.
+ *
+ * The correct test for "definitive" is `isFlowKey(flow)` — is this a
+ * recognized flow at all, physical or digital — not map membership. A
+ * recognized `FlowKey` is ALWAYS definitive: resolve its capabilities
+ * through `chargeCapabilitiesFor` itself (never read
+ * `SERVICE_CHARGE_CAPABILITIES` directly here) so the two can never diverge
+ * again — that divergence is the whole bug, twice now. Only `!flow ||
+ * !isFlowKey(flow)` — null, or a string that isn't a recognized flow at all
+ * (typo, future/removed flow, pre-migration data) — is genuinely UNKNOWN:
+ * the caller must return `undefined` (Prisma's "leave this column
+ * unchanged") rather than `0`, and must not accept a new value for it
+ * either.
+ *
+ * ONE function, not inlined at each of the four call sites
  * (finance.service.ts updateCharge, tickets.service.ts saveClerkCharges,
- * tickets.service.ts submitClerkCosts) — three copies of this exact class
- * of money rule is how the §4 defect shipped in the first place (Task 1
- * closed the UI, the first Task-2 pass closed two of three server paths,
- * review found the third).
+ * tickets.service.ts submitClerkCosts, tickets.service.ts
+ * finalizeRemainderCore) — copies of this exact class of money rule is how
+ * the §4 defect shipped in the first place (Task 1 closed the UI, the
+ * first Task-2 pass closed two of three server paths, round 1 found and
+ * fixed the third but broke null-flow preservation, round 2 fixes the
+ * digital-flow regression that introduced).
  *
  * @param flow The ticket's `intakeFlow` (nullable).
  * @param currency The ticket's currency.
@@ -674,9 +695,8 @@ export function resolveGatedCharge(
   fallback: number | undefined,
 ): number | undefined {
   if (currency === 'USD') return 0;
-  const caps = flow ? SERVICE_CHARGE_CAPABILITIES[flow] : undefined;
-  if (!caps) return undefined;
-  if (!caps[capability]) return 0;
+  if (!flow || !isFlowKey(flow)) return undefined;
+  if (!chargeCapabilitiesFor(flow, currency)[capability]) return 0;
   return dtoValue ?? fallback;
 }
 
