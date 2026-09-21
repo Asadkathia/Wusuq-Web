@@ -13,7 +13,7 @@ import { TICKET_STATUSES } from '@wusuq/shared';
 import { apiClient } from '@/lib/api-client';
 import { relativeTime } from '@/lib/relative-time';
 import { prefillPhase2Charge } from '@/lib/finalize-charges';
-import { chargeFieldVisibility } from '@/lib/clerk-charge-fields';
+import { readSetType, visibleChargeFields } from '@/lib/clerk-charge-fields';
 import { parseDeliveryAddress } from '@/lib/intake-flows';
 import { paymentsClient } from '@/lib/payments-client';
 import { DataTableShell } from '@/components/ui/data-table-shell';
@@ -2175,23 +2175,30 @@ export function TicketBoard({ title, status, archived = false, immature = false 
             <DialogDescription>Submit your final cost breakdown before the admin-approval upload step.</DialogDescription>
           </DialogHeader>
           {costsTicket && (() => {
-            const caps = chargeCapabilitiesFor(costsTicket.intakeFlow);
-            // Batch-7 5.1: only the set type the consumer actually ordered.
-            const setTypeVisibility = chargeFieldVisibility(
-              (costsTicket.formPayload ?? costsTicket.payload) as Record<string, unknown> | null | undefined,
-              caps.attestation,
-            );
+            // Currency is REQUIRED here (charge-COMPUTING site): a USD ticket
+            // is all-inclusive flat with no phase-2 remainder at all — see
+            // the identical fix + rationale on the Review & Complete dialog
+            // below (batch-5 A / Task 1).
+            const currency = toCurrency(costsTicket.currency);
+            const caps = chargeCapabilitiesFor(costsTicket.intakeFlow, currency);
+            const payload = (costsTicket.formPayload ?? costsTicket.payload) as Record<string, unknown> | null | undefined;
+            // Task 1: rows are derived from the ticket (flow + currency +
+            // set_type) via the single shared helper — never a flat,
+            // unconditional field list. Both this dialog and the admin
+            // Review & Complete dialog below call the SAME helper so they
+            // always agree on which rows a given ticket shows.
+            const visibility = visibleChargeFields(costsTicket.intakeFlow, currency, readSetType(payload));
             const visibleFields = clerkCostFields.filter(({ key }) => {
               if (key === 'attestedPages' || key === 'attestedCostPerPage') {
-                return setTypeVisibility.attested;
+                return visibility.attested;
               }
               if (key === 'nonAttestedPages' || key === 'nonAttestedCostPerPage') {
-                return setTypeVisibility.nonAttested;
+                return visibility.nonAttested;
               }
-              if (key === 'deliveryCharges') return caps.delivery;
+              if (key === 'deliveryCharges') return visibility.delivery;
               if (key === 'additionalCharges') return true; // always show additional
-              // noOfPages and costPerPage drive printing
-              if (key === 'noOfPages' || key === 'costPerPage') return caps.printing;
+              // noOfPages and costPerPage drive printing (photocopy)
+              if (key === 'noOfPages' || key === 'costPerPage') return visibility.printing;
               return true;
             });
             const noCaps = !caps.attestation && !caps.printing && !caps.delivery && !caps.pdf;
@@ -2225,7 +2232,7 @@ export function TicketBoard({ title, status, archived = false, immature = false 
                         />
                       </FormField>
                     ))}
-                    {caps.printing && (
+                    {visibility.printing && (
                       <FormField label="Printing charges" hint="Computed automatically">
                         <div className="flex h-11 items-center rounded-xl border border-border-soft bg-surface-muted px-4 text-sm">
                           <span className="flex-1 font-semibold tabular-nums text-slate-900">
@@ -2243,29 +2250,33 @@ export function TicketBoard({ title, status, archived = false, immature = false 
                         </div>
                       </FormField>
                     )}
-                    {caps.attestation && (
-                      <>
-                        <FormField label="Attested charges" hint="Computed automatically">
-                          <div className="flex h-11 items-center rounded-xl border border-border-soft bg-surface-muted px-4 text-sm">
-                            <span className="flex-1 font-semibold tabular-nums text-slate-900">
-                              PKR {((Number(clerkCosts.attestedPages) || 0) * (Number(clerkCosts.attestedCostPerPage) || 0)).toLocaleString()}
-                            </span>
-                            <span className="text-xs text-slate-500">
-                              {clerkCosts.attestedPages || '0'} × {clerkCosts.attestedCostPerPage || '0'}
-                            </span>
-                          </div>
-                        </FormField>
-                        <FormField label="Non-attested charges" hint="Computed automatically">
-                          <div className="flex h-11 items-center rounded-xl border border-border-soft bg-surface-muted px-4 text-sm">
-                            <span className="flex-1 font-semibold tabular-nums text-slate-900">
-                              PKR {((Number(clerkCosts.nonAttestedPages) || 0) * (Number(clerkCosts.nonAttestedCostPerPage) || 0)).toLocaleString()}
-                            </span>
-                            <span className="text-xs text-slate-500">
-                              {clerkCosts.nonAttestedPages || '0'} × {clerkCosts.nonAttestedCostPerPage || '0'}
-                            </span>
-                          </div>
-                        </FormField>
-                      </>
+                    {/* Task 1: each attestation preview is gated on its OWN
+                        set-type-narrowed visibility, not the flow-level
+                        `caps.attestation` — an attested-only ticket must not
+                        show a non-attested preview box (and vice versa). */}
+                    {visibility.attested && (
+                      <FormField label="Attested charges" hint="Computed automatically">
+                        <div className="flex h-11 items-center rounded-xl border border-border-soft bg-surface-muted px-4 text-sm">
+                          <span className="flex-1 font-semibold tabular-nums text-slate-900">
+                            PKR {((Number(clerkCosts.attestedPages) || 0) * (Number(clerkCosts.attestedCostPerPage) || 0)).toLocaleString()}
+                          </span>
+                          <span className="text-xs text-slate-500">
+                            {clerkCosts.attestedPages || '0'} × {clerkCosts.attestedCostPerPage || '0'}
+                          </span>
+                        </div>
+                      </FormField>
+                    )}
+                    {visibility.nonAttested && (
+                      <FormField label="Non-attested charges" hint="Computed automatically">
+                        <div className="flex h-11 items-center rounded-xl border border-border-soft bg-surface-muted px-4 text-sm">
+                          <span className="flex-1 font-semibold tabular-nums text-slate-900">
+                            PKR {((Number(clerkCosts.nonAttestedPages) || 0) * (Number(clerkCosts.nonAttestedCostPerPage) || 0)).toLocaleString()}
+                          </span>
+                          <span className="text-xs text-slate-500">
+                            {clerkCosts.nonAttestedPages || '0'} × {clerkCosts.nonAttestedCostPerPage || '0'}
+                          </span>
+                        </div>
+                      </FormField>
                     )}
                   </div>
                   </>
@@ -2669,10 +2680,19 @@ export function TicketBoard({ title, status, archived = false, immature = false 
               toCurrency(finalizeTicket.currency),
             );
             const hasAnyCap = caps.attestation || caps.printing || caps.delivery || caps.pdf;
+            const finalizePayload =
+              ((finalizeDetail?.formPayload ?? finalizeTicket.payload) ?? {}) as Record<string, unknown>;
+            // Task 1: same derivation as the representative "Update ticket
+            // payments" dialog above, so admin and representative see
+            // identical rows for the same ticket — an attested-only order
+            // must not show the non-attested pair here either.
+            const visibility = visibleChargeFields(
+              finalizeTicket.intakeFlow,
+              toCurrency(finalizeTicket.currency),
+              readSetType(finalizePayload),
+            );
             // PDF purchased → the clerk earns their PDF cut (shared formula).
-            const wantPdf =
-              (((finalizeDetail?.formPayload ?? finalizeTicket.payload) ?? {}) as Record<string, unknown>)
-                .want_pdf_before_dispatch === 'Yes';
+            const wantPdf = finalizePayload.want_pdf_before_dispatch === 'Yes';
             // Reads the CLERK SET, not the working columns — the working
             // columns are overwritten by finalize, which made this line wrong
             // on any second open of the dialog.
@@ -2710,7 +2730,7 @@ export function TicketBoard({ title, status, archived = false, immature = false 
                   Final charges (admin) — editable page counts, compare against the representative&rsquo;s submitted totals
                 </p>
                 <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3">
-                  {caps.attestation && (
+                  {visibility.attested && (
                     <>
                       <FormField label="Attested Pages" htmlFor="fin-attested-pages">
                         <Input id="fin-attested-pages" type="number" min="0" placeholder="0"
@@ -2730,6 +2750,13 @@ export function TicketBoard({ title, status, archived = false, immature = false 
                         </div>
                         <p className="mt-1 text-xs text-slate-400">Representative submitted: PKR {clerkSubmitted('attestedCharges').toLocaleString()}</p>
                       </FormField>
+                    </>
+                  )}
+                  {/* Task 1: gated on its OWN set-type-narrowed visibility,
+                      not the flow-level `caps.attestation` — an
+                      attested-only ticket must not show this pair. */}
+                  {visibility.nonAttested && (
+                    <>
                       <FormField label="Non-Attested Pages" htmlFor="fin-non-attested-pages">
                         <Input id="fin-non-attested-pages" type="number" min="0" placeholder="0"
                           value={finalizeForm.nonAttestedPages}
@@ -2750,7 +2777,7 @@ export function TicketBoard({ title, status, archived = false, immature = false 
                       </FormField>
                     </>
                   )}
-                  {caps.printing && (
+                  {visibility.printing && (
                     <>
                       <FormField label="No. of Pages" htmlFor="fin-pages">
                         <Input id="fin-pages" type="number" min="0" placeholder="0"
@@ -2772,7 +2799,7 @@ export function TicketBoard({ title, status, archived = false, immature = false 
                       </FormField>
                     </>
                   )}
-                  {caps.delivery && (
+                  {visibility.delivery && (
                     <FormField label="Delivery Charges" htmlFor="fin-delivery">
                       <Input id="fin-delivery" type="number" min="0" placeholder="0"
                         value={finalizeForm.deliveryCharges}
@@ -2821,9 +2848,10 @@ export function TicketBoard({ title, status, archived = false, immature = false 
                   const nonAttestedComputed = (Number(finalizeForm.nonAttestedPages) || 0) * (Number(finalizeForm.nonAttestedCostPerPage) || 0);
                   const printingComputed = (Number(finalizeForm.noOfPages) || 0) * (Number(finalizeForm.costPerPage) || 0);
                   const phase2Total =
-                    (caps.attestation ? attestedComputed + nonAttestedComputed : 0) +
-                    (caps.printing ? printingComputed : 0) +
-                    (caps.delivery ? (Number(finalizeForm.deliveryCharges) || 0) : 0) +
+                    (visibility.attested ? attestedComputed : 0) +
+                    (visibility.nonAttested ? nonAttestedComputed : 0) +
+                    (visibility.printing ? printingComputed : 0) +
+                    (visibility.delivery ? (Number(finalizeForm.deliveryCharges) || 0) : 0) +
                     (Number(finalizeForm.additionalCharges) || 0) +
                     (Number(finalizeForm.additionalServiceCost) || 0);
                   const baseAmount = Number(finalizeTicket.serviceCost || 0);
@@ -2838,10 +2866,10 @@ export function TicketBoard({ title, status, archived = false, immature = false 
                       // ticket column, so the preview tracks what the admin is
                       // typing (it is taxed, so it moves the total twice over).
                       additionalServiceCost: Number(finalizeForm.additionalServiceCost) || 0,
-                      deliveryCharges: caps.delivery ? Number(finalizeForm.deliveryCharges) || 0 : 0,
-                      printingCharges: caps.printing ? printingComputed : 0,
-                      attestedCharges: caps.attestation ? attestedComputed : 0,
-                      nonAttestedCharges: caps.attestation ? nonAttestedComputed : 0,
+                      deliveryCharges: visibility.delivery ? Number(finalizeForm.deliveryCharges) || 0 : 0,
+                      printingCharges: visibility.printing ? printingComputed : 0,
+                      attestedCharges: visibility.attested ? attestedComputed : 0,
+                      nonAttestedCharges: visibility.nonAttested ? nonAttestedComputed : 0,
                       additionalCharges: Number(finalizeForm.additionalCharges) || 0,
                     },
                     discountPrice: Number(finalizeTicket.discountPrice || 0),

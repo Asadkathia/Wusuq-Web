@@ -78,3 +78,55 @@ describe('Review & Complete dialog (N1 — TCS/dispatch-proof document label)', 
     expect(src).toMatch(/TCS document/);
   });
 });
+
+describe('dynamic phase-2 charge rows (batch-9 Task 1)', () => {
+  // Background: clerkCostFields used to be a flat, unconditional array of 8
+  // entries — every representative saw every charge row on every ticket.
+  // Rows must now be DERIVED from the ticket (flow + currency + set_type),
+  // never a flat list. `toContain('visibleChargeFields')` alone would be
+  // satisfied by the import line even if the symbol were never called, so
+  // these assert on actual CALL sites (trailing paren) and on the two
+  // dialogs branching on the result independently, not on a single
+  // combined `caps.attestation` flag.
+
+  it('calls the shared visibleChargeFields helper (not a flat unconditional list)', () => {
+    const calls = src.match(/visibleChargeFields\(/g) ?? [];
+    // One call in the representative "Update ticket payments" dialog, one
+    // in the admin "Review & Complete" dialog — see the next two tests.
+    expect(calls.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('the representative dialog derives visibility from the ticket (flow + currency + set_type)', () => {
+    expect(src).toMatch(
+      /const visibility = visibleChargeFields\(costsTicket\.intakeFlow, currency, readSetType\(payload\)\)/,
+    );
+    // The representative dialog's caps computation must pass currency too
+    // (a charge-COMPUTING site) — the historical bug on this exact line was
+    // omitting it, which let a USD ticket fold PKR-magnitude charges in.
+    expect(src).toMatch(
+      /const caps = chargeCapabilitiesFor\(costsTicket\.intakeFlow, currency\)/,
+    );
+  });
+
+  it('the admin Review & Complete dialog derives visibility from the ticket too, and the two dialogs agree', () => {
+    expect(src).toMatch(
+      /const visibility = visibleChargeFields\(\s*finalizeTicket\.intakeFlow,\s*toCurrency\(finalizeTicket\.currency\),\s*readSetType\(finalizePayload\),\s*\)/,
+    );
+  });
+
+  it('the attested and non-attested rows are gated INDEPENDENTLY, not by one combined caps.attestation flag', () => {
+    // Before this task both dialogs showed the attested AND non-attested
+    // pair together whenever the flow merely HAD an attestation
+    // capability, ignoring the ticket's own set_type — an attested-only
+    // order still showed a non-attested pair. Each pair must now branch on
+    // its own `visibility.*` field.
+    expect(src).toMatch(/\{visibility\.attested && \(/);
+    expect(src).toMatch(/\{visibility\.nonAttested && \(/);
+    // The old combined-gate pattern must be gone from both dialogs.
+    expect(src).not.toMatch(/\{caps\.attestation && \(/);
+  });
+
+  it('the photocopy (printing) pair is gated on visibility.printing, not the flow-level caps.printing', () => {
+    expect(src).toMatch(/\{visibility\.printing && \(/);
+  });
+});

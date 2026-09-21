@@ -119,7 +119,14 @@ function expectFinalizeNeverWritesClerkSnapshot(updateMany: jest.Mock) {
 }
 
 describe('finalizeRemainder — editable page counts (B11)', () => {
-  it('recomputes attestedCharges from pages × rate and persists the page count', async () => {
+  // Batch-9 Task 1 (owner decision 2026-09-21):
+  // SERVICE_CHARGE_CAPABILITIES.judicial_case_files.printing is now FALSE —
+  // Case Files bills its pages through the attested/non-attested counts, so
+  // a third "Photocopy" counter is redundant. No flow now has BOTH
+  // attestation AND printing capabilities at once, so the tests below split
+  // by flow: judicial_case_files (attestation, no printing) and
+  // non_judicial_copy_of_fir (printing, no attestation).
+  it('recomputes attestedCharges from pages × rate and persists the page count (Case Files)', async () => {
     const { service, updateMany } = buildHarness();
 
     await service.finalizeRemainder(
@@ -134,26 +141,49 @@ describe('finalizeRemainder — editable page counts (B11)', () => {
           attestedCharges: 200,
           attestedPages: 8,
           attestedCostPerPage: 25,
-          // 3,000 base + 200 attested + 150 printing (persisted, untouched)
-          // + 250 delivery
-          totalAmount: 3000 + 200 + 150 + 250,
+          // Case Files has no printing capability — the persisted 150 is
+          // forced to 0 regardless of the dto/persisted column.
+          printingCharges: 0,
+          // 3,000 base + 200 attested + 0 printing (capability-gated) + 250 delivery
+          totalAmount: 3000 + 200 + 0 + 250,
         }),
       }),
     );
     expectFinalizeNeverWritesClerkSnapshot(updateMany);
   });
 
-  it('recomputes printingCharges + nonAttestedCharges from pages × rate', async () => {
+  it('recomputes nonAttestedCharges from pages × rate (Case Files)', async () => {
     const { service, updateMany } = buildHarness();
 
     await service.finalizeRemainder(
       'tkt-1',
-      {
-        noOfPages: 20,
-        costPerPage: 4,
-        nonAttestedPages: 6,
-        nonAttestedCostPerPage: 10,
-      },
+      { nonAttestedPages: 6, nonAttestedCostPerPage: 10 },
+      actor,
+    );
+
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          nonAttestedCharges: 60,
+          nonAttestedPages: 6,
+          nonAttestedCostPerPage: 10,
+          // No printing capability on Case Files — forced to 0.
+          printingCharges: 0,
+        }),
+      }),
+    );
+    expectFinalizeNeverWritesClerkSnapshot(updateMany);
+  });
+
+  it('recomputes printingCharges from pages × rate (non-judicial copy — printing capable, no attestation)', async () => {
+    const { service, updateMany } = buildHarness({
+      intakeFlow: 'non_judicial_copy_of_fir',
+      attestedCharges: 0,
+    });
+
+    await service.finalizeRemainder(
+      'tkt-1',
+      { noOfPages: 20, costPerPage: 4 },
       actor,
     );
 
@@ -163,16 +193,16 @@ describe('finalizeRemainder — editable page counts (B11)', () => {
           printingCharges: 80,
           noOfPages: 20,
           costPerPage: 4,
-          nonAttestedCharges: 60,
-          nonAttestedPages: 6,
-          nonAttestedCostPerPage: 10,
+          // No attestation capability on this flow — forced to 0.
+          attestedCharges: 0,
+          nonAttestedCharges: 0,
         }),
       }),
     );
     expectFinalizeNeverWritesClerkSnapshot(updateMany);
   });
 
-  it('no page fields → the persisted lump/persisted value is used unchanged', async () => {
+  it('no page fields → the persisted attested charge is unchanged, printing forced to 0 (Case Files)', async () => {
     const { service, updateMany } = buildHarness();
 
     await service.finalizeRemainder('tkt-1', {}, actor);
@@ -182,9 +212,32 @@ describe('finalizeRemainder — editable page counts (B11)', () => {
         data: expect.objectContaining({
           attestedCharges: 400,
           nonAttestedCharges: 0,
-          printingCharges: 150,
+          printingCharges: 0,
           attestedPages: null,
           attestedCostPerPage: null,
+          noOfPages: null,
+          costPerPage: null,
+        }),
+      }),
+    );
+    expectFinalizeNeverWritesClerkSnapshot(updateMany);
+  });
+
+  it('no page fields → the persisted printing charge is unchanged (non-judicial copy)', async () => {
+    const { service, updateMany } = buildHarness({
+      intakeFlow: 'non_judicial_copy_of_fir',
+      attestedCharges: 0,
+    });
+
+    await service.finalizeRemainder('tkt-1', {}, actor);
+
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          printingCharges: 150,
+          // No attestation capability on this flow — forced to 0.
+          attestedCharges: 0,
+          nonAttestedCharges: 0,
           noOfPages: null,
           costPerPage: null,
         }),

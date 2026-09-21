@@ -1634,9 +1634,12 @@ describe('payment model + charge capabilities (Spec 2)', () => {
     expect(paymentModelFor(undefined)).toBe('ONE_TIME');
   });
   it('exposes clerk charges + delivery for physical flows only; attestation for case files only', () => {
+    // Batch-9 Task 1 (owner decision 2026-09-21): Case Files bills its pages
+    // through the attested/non-attested counts, so the photocopy
+    // ("printing") counter is redundant there and is now false.
     expect(chargeCapabilitiesFor('judicial_case_files')).toEqual({
       attestation: true,
-      printing: true,
+      printing: false,
       delivery: true,
       pdf: true,
     });
@@ -1812,12 +1815,16 @@ describe('finalizeRemainder (Task 1.4)', () => {
       { actorUserId: 'admin-1' },
     );
 
-    // totalAmount = 5000 + 2000 + 1000 = 8000
+    // totalAmount = 5000 + 2000 attested + 0 printing (Batch-9 Task 1:
+    // judicial_case_files.printing is now false, so the dto's 1000 is
+    // capability-gated to 0 — this IS the "capability-gated" behaviour the
+    // test name refers to).
     expect(prisma.ticket.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({ id: 'tkt-fin' }),
         data: expect.objectContaining({
-          totalAmount: 8000,
+          totalAmount: 7000,
+          printingCharges: 0,
           remainderFinalizedAt: expect.any(Date),
         }),
       }),
@@ -1887,12 +1894,14 @@ describe('finalizeRemainder (Task 1.4)', () => {
       { actorUserId: 'admin-1' },
     );
 
-    // total = serviceCost 5000 + attested 2000 + printing 1000.
+    // total = serviceCost 5000 + attested 2000 + 0 printing (Batch-9 Task 1:
+    // judicial_case_files has no printing capability — the dto's 1000 is
+    // capability-gated to 0, same as the "bumps totalAmount" test above).
     // clerkCost 1500 is internal-only (rep pay-out) and NOT billed to the
     // consumer, so it is excluded from the finalized total.
     expect(prisma.ticket.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ totalAmount: 8000 }),
+        data: expect.objectContaining({ totalAmount: 7000 }),
       }),
     );
   });
@@ -1957,7 +1966,10 @@ describe('finalizeRemainder (Task 1.4)', () => {
 
     const updateCall = prisma.ticket.updateMany.mock.calls[0][0];
     expect(updateCall.data).not.toHaveProperty('paymentStatus');
-    expect(updateCall.data.totalAmount).toBe(8000); // 5000 + 3000
+    // Batch-9 Task 1: judicial_case_files has no printing capability, so
+    // the dto's 3000 is capability-gated to 0 — this test only cares about
+    // the paymentStatus assertion above, not the printing math.
+    expect(updateCall.data.totalAmount).toBe(5000); // 5000 + 0 (printing gated)
   });
 
   it('zeroes attestation but keeps printing/delivery for non-judicial physical copies', async () => {

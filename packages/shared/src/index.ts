@@ -581,8 +581,16 @@ export interface ServiceChargeCapabilities {
 // delivery / pdf but not attestation. The four DIGITAL judicial flows fall
 // through to NO_CHARGES — no clerk-added charges and, crucially, no delivery
 // leg (delivery is gated on `delivery` capability in the pricing resolver).
+// Batch-9 Task 1 (owner decision 2026-09-21): judicial_case_files.printing is
+// deliberately FALSE. Case Files bills its pages through the attested /
+// non-attested page counts, so a third "Photocopy" counter is redundant —
+// the client's own words: "he has asked for a non-attested file... it is not
+// necessary to have these two options", and his red ✗ on the Photocopy pair
+// for a Case-Files ticket confirmed it. The three non-judicial copy flows
+// (FIR / Registry-Deed / Criminal Record) have NO attestation leg at all, so
+// printing (photocopy) is their only page-charge mechanism and stays true.
 export const SERVICE_CHARGE_CAPABILITIES: Record<string, ServiceChargeCapabilities> = {
-  judicial_case_files: { attestation: true, printing: true, delivery: true, pdf: true },
+  judicial_case_files: { attestation: true, printing: false, delivery: true, pdf: true },
   non_judicial_copy_of_fir: { attestation: false, printing: true, delivery: true, pdf: true },
   non_judicial_registry_deed: { attestation: false, printing: true, delivery: true, pdf: true },
   non_judicial_criminal_record_search: { attestation: false, printing: true, delivery: true, pdf: true },

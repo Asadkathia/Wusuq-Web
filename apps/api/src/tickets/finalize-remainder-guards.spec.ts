@@ -106,10 +106,13 @@ describe('finalizeRemainder guards (audit 1.5)', () => {
         data: expect.objectContaining({
           attestedCharges: 400,
           nonAttestedCharges: 0,
-          printingCharges: 150,
+          // Batch-9 Task 1: judicial_case_files.printing is now false, so
+          // the persisted 150 is forced to 0 regardless of capability —
+          // NOT "preserved unchanged" the way attested/delivery are.
+          printingCharges: 0,
           deliveryCharges: 250,
-          // 3,000 base + 400 + 150 + 250
-          totalAmount: 3800,
+          // 3,000 base + 400 + 0 (printing, capability-gated) + 250
+          totalAmount: 3650,
         }),
       }),
     );
@@ -129,8 +132,10 @@ describe('finalizeRemainder guards (audit 1.5)', () => {
         data: expect.objectContaining({
           attestedCharges: 1000,
           deliveryCharges: 0,
-          printingCharges: 150,
-          totalAmount: 3000 + 1000 + 150,
+          // No printing capability on Case Files — forced to 0, not the
+          // persisted 150.
+          printingCharges: 0,
+          totalAmount: 3000 + 1000 + 0,
         }),
       }),
     );
