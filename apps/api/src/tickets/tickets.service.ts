@@ -2689,25 +2689,47 @@ export class TicketsService {
       );
     }
 
-    const deliveryCharges =
-      dto.deliveryCharges ?? Number(ticket.deliveryCharges);
-    const printingCharges =
-      dto.printingCharges ??
-      this.computePageCharges(dto.noOfPages, dto.costPerPage) ??
-      Number(ticket.printingCharges);
+    // Batch-9 Task 2 (§4, scope added after the Task-1 review): this was the
+    // one server path with NO chargeCapabilitiesFor gate at all. Each charge
+    // falls through `dto.<charge> ?? computePageCharges(...) ??
+    // Number(ticket.<charge>)`, so a leftover persisted value (e.g. a legacy
+    // nonzero printingCharges, or Task 1 flipping
+    // judicial_case_files.printing to false) would resurface here and get
+    // snapshotted into the clerk* payout columns even though the flow/
+    // currency combo bills the consumer nothing for it. Gate both the flat
+    // columns AND the clerk* snapshot columns the same way, forcing 0 — the
+    // snapshot columns are the ones computeClerkEarningsBreakdown pays out
+    // from, so a stale nonzero there inflates the clerk's pending-earnings
+    // figure for the entire WAITING_APPROVAL window even though finalize
+    // eventually zeroes the flat column too.
+    const caps = chargeCapabilitiesFor(
+      ticket.intakeFlow,
+      toCurrency(ticket.currency),
+    );
+
+    const deliveryCharges = caps.delivery
+      ? (dto.deliveryCharges ?? Number(ticket.deliveryCharges))
+      : 0;
+    const printingCharges = caps.printing
+      ? (dto.printingCharges ??
+        this.computePageCharges(dto.noOfPages, dto.costPerPage) ??
+        Number(ticket.printingCharges))
+      : 0;
     // C11: attested/non-attested mirror printing's precedence — explicit
     // lump wins, then pages × rate, then the persisted value.
-    const attestedCharges =
-      dto.attestedCharges ??
-      this.computePageCharges(dto.attestedPages, dto.attestedCostPerPage) ??
-      Number(ticket.attestedCharges);
-    const nonAttestedCharges =
-      dto.nonAttestedCharges ??
-      this.computePageCharges(
-        dto.nonAttestedPages,
-        dto.nonAttestedCostPerPage,
-      ) ??
-      Number(ticket.nonAttestedCharges);
+    const attestedCharges = caps.attestation
+      ? (dto.attestedCharges ??
+        this.computePageCharges(dto.attestedPages, dto.attestedCostPerPage) ??
+        Number(ticket.attestedCharges))
+      : 0;
+    const nonAttestedCharges = caps.attestation
+      ? (dto.nonAttestedCharges ??
+        this.computePageCharges(
+          dto.nonAttestedPages,
+          dto.nonAttestedCostPerPage,
+        ) ??
+        Number(ticket.nonAttestedCharges))
+      : 0;
     const additionalCharges =
       dto.additionalCharges ?? Number(ticket.additionalCharges);
 
@@ -3069,12 +3091,15 @@ export class TicketsService {
         nonAttestedCharges: caps.attestation
           ? (dto.nonAttestedCharges ?? undefined)
           : 0,
-        printingCharges: caps.printing
-          ? (dto.printingCharges ?? undefined)
-          : undefined,
-        deliveryCharges: caps.delivery
-          ? (dto.deliveryCharges ?? undefined)
-          : undefined,
+        // Batch-9 Task 2: attested/nonAttested already forced 0 when the
+        // capability is off; printing/delivery used to pass `undefined` in
+        // that branch, which Prisma treats as "leave unchanged" — not zero.
+        // A leftover nonzero value (e.g. Task 1 flipped
+        // judicial_case_files.printing to false) would survive untouched and
+        // still feed computeClerkEarningsBreakdown, paying the clerk for a
+        // charge the consumer was never billed.
+        printingCharges: caps.printing ? (dto.printingCharges ?? undefined) : 0,
+        deliveryCharges: caps.delivery ? (dto.deliveryCharges ?? undefined) : 0,
       },
     });
 

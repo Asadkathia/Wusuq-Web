@@ -58,6 +58,13 @@ function submitClerkPrisma(overrides: Record<string, unknown> = {}) {
           noOfPages: null,
           costPerPage: null,
           remainderFinalizedAt: null,
+          // Batch-9 Task 2: submitClerkCosts now gates
+          // attested/nonAttested/delivery/printing on
+          // chargeCapabilitiesFor(intakeFlow, currency). This fixture
+          // exercises nonAttested + delivery, so it needs a flow granting
+          // both — judicial_case_files (attestation + delivery, no
+          // printing).
+          intakeFlow: 'judicial_case_files',
           ...overrides,
         }),
         findUniqueOrThrow: jest

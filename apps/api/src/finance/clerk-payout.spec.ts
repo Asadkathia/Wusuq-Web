@@ -33,6 +33,13 @@ function build(ticket: Record<string, unknown>) {
 const BASE_TICKET = {
   id: 't1',
   status: 'COMPLETED',
+  // Batch-9 Task 2: updateCharge now gates the four phase-2 charge columns
+  // on chargeCapabilitiesFor(intakeFlow, currency). These fixtures exercise
+  // attestation (nonAttestedCharges) + delivery, so they need a flow that
+  // grants both — judicial_case_files (attestation: true, delivery: true).
+  // Without this every charge below is force-zeroed and the tests here
+  // would no longer be testing the capped-earnings formula they name.
+  intakeFlow: 'judicial_case_files',
   consumer: { id: 'c1', name: 'Consumer' },
   service: { id: 's1', name: 'Service', category: 'x', type: 'y' },
   batchNo: 'B1',

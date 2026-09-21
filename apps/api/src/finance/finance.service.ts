@@ -5,10 +5,12 @@ import {
 } from '@nestjs/common';
 import { Prisma, TicketStatus } from '@prisma/client';
 import {
+  chargeCapabilitiesFor,
   computeClerkEarnings,
   computeTicketTotal,
   isBaseCovered,
   sumMixedCurrencyToPkr,
+  toCurrency,
 } from '@wusuq/shared';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -300,16 +302,31 @@ export class FinanceService {
       throw new NotFoundException('Ticket not found');
     }
 
+    // Batch-9 Task 2 (§4): a flow/currency combo with no phase-2 charge
+    // capability (every USD ticket, every digital flow, and — since Task 1 —
+    // Case Files' printing) must never let an admin override land money in
+    // these columns. They still feed computeClerkEarningsBreakdown, which
+    // has no idea the consumer was never billed — same gate
+    // finalizeRemainderCore already applies at finalize.
+    const caps = chargeCapabilitiesFor(
+      ticket.intakeFlow,
+      toCurrency(ticket.currency),
+    );
+
     // Merge incoming charge fields with existing values
     const serviceCost = dto.serviceCost ?? toNumber(ticket.serviceCost);
-    const deliveryCharges =
-      dto.deliveryCharges ?? toNumber(ticket.deliveryCharges);
-    const printingCharges =
-      dto.printingCharges ?? toNumber(ticket.printingCharges);
-    const attestedCharges =
-      dto.attestedCharges ?? toNumber(ticket.attestedCharges);
-    const nonAttestedCharges =
-      dto.nonAttestedCharges ?? toNumber(ticket.nonAttestedCharges);
+    const deliveryCharges = caps.delivery
+      ? (dto.deliveryCharges ?? toNumber(ticket.deliveryCharges))
+      : 0;
+    const printingCharges = caps.printing
+      ? (dto.printingCharges ?? toNumber(ticket.printingCharges))
+      : 0;
+    const attestedCharges = caps.attestation
+      ? (dto.attestedCharges ?? toNumber(ticket.attestedCharges))
+      : 0;
+    const nonAttestedCharges = caps.attestation
+      ? (dto.nonAttestedCharges ?? toNumber(ticket.nonAttestedCharges))
+      : 0;
     const additionalCharges =
       dto.additionalCharges ?? toNumber(ticket.additionalCharges);
     const additionalServiceCost =

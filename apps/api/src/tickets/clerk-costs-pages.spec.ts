@@ -52,6 +52,10 @@ function makeTicketsService(ticketOverrides: Record<string, unknown> = {}) {
     dispatchProofUrl: null,
     trackingNo: null,
     remainderFinalizedAt: null,
+    // Batch-9 Task 2: submitClerkCosts now gates attested/nonAttested on
+    // chargeCapabilitiesFor(intakeFlow, currency). These tests exercise
+    // attestation, so they need a flow granting it — judicial_case_files.
+    intakeFlow: 'judicial_case_files',
     ...ticketOverrides,
   };
   const prisma = {

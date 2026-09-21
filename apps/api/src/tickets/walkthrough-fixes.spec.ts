@@ -313,6 +313,11 @@ describe('Task 4.1 — clerk page breakdown persisted', () => {
             noOfPages: null,
             costPerPage: null,
             remainderFinalizedAt: null,
+            // Batch-9 Task 2: submitClerkCosts now gates printingCharges on
+            // chargeCapabilitiesFor(intakeFlow, currency). This test asserts
+            // pages × rate survives the submit, so it needs a flow granting
+            // printing — non_judicial_copy_of_fir.
+            intakeFlow: 'non_judicial_copy_of_fir',
           }),
           findUniqueOrThrow: jest
             .fn()
