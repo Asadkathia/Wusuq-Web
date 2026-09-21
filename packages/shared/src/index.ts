@@ -695,6 +695,22 @@ export function resolveGatedCharge(
   fallback: number | undefined,
 ): number | undefined {
   if (currency === 'USD') return 0;
+  // A legacy `intakeFlow: null` (or otherwise unrecognized) ticket is
+  // deliberately preserved here — `undefined` means "leave this column
+  // unchanged", not "zero it" (see the docblock above). Batch-9 final
+  // review note (no behaviour change, accepted trade-off): the UI-side
+  // counterpart of this same distinction is `visibleChargeFields`
+  // (`apps/web/lib/clerk-charge-fields.ts`), which resolves a null/unknown
+  // flow to NO_CHARGES (all four rows hidden) rather than "unknown" — so a
+  // legacy null-flow ticket's phase-2 charges are correctly preserved on
+  // disk but are now UN-EDITABLE in every UI surface built on
+  // `visibleChargeFields` (the Ticket Charges board, the representative
+  // charge dialog, the admin Review & Complete dialog). That was a knowing
+  // trade-off, not an oversight: hiding is safe (nothing is silently
+  // zeroed), whereas showing an editable input this function would then
+  // refuse to gate consistently was judged worse. If a legacy ticket's
+  // phase-2 charges ever need editing again, the fix belongs in
+  // `visibleChargeFields`, not here.
   if (!flow || !isFlowKey(flow)) return undefined;
   if (!chargeCapabilitiesFor(flow, currency)[capability]) return 0;
   return dtoValue ?? fallback;
