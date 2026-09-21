@@ -8,6 +8,13 @@ import { Check, ChevronDown, ChevronRight, RefreshCw, X } from 'lucide-react';
 import { SectionHeader } from '@/components/ui/section-header';
 import { DataTableShell } from '@/components/ui/data-table-shell';
 import { StatusPill } from '@/components/ui/status-pill';
+import {
+  buildChargePatchBody,
+  CHARGE_FIELD_CAPABILITY,
+  visibleChargeFields,
+  type GatedChargeAmounts,
+  type VisibleChargeFields,
+} from '@/lib/clerk-charge-fields';
 
 type TicketRow = {
   id: string;
@@ -16,6 +23,15 @@ type TicketRow = {
   service: { id: string; name: string; category: string } | null;
   serviceCity: string | null;
   caseType: string | null;
+  // Batch-9 final review (merge blocker): needed to gate Delivery / Printing
+  // / Attested / Non-Attested through the single source
+  // `visibleChargeFields(flow, currency, setType)` — the same rule
+  // `finalize`/`submitClerkCosts`/`finance.updateCharge` already enforce
+  // server-side. Without this the board renders and POSTs those four inputs
+  // unconditionally, and the server silently force-zeroes them for every
+  // Case-Files ticket (printing) and every USD ticket (all four) — an admin
+  // types a number, sees "Charges updated.", and the row still reads 0.
+  intakeFlow?: string | null;
   charges: {
     serviceCost: number;
     deliveryCharges: number;
@@ -48,18 +64,29 @@ type Filters = {
   dateTo: string;
 };
 
-type ChargeEdit = {
-  serviceCost: string;
-  deliveryCharges: string;
-  printingCharges: string;
-  attestedCharges: string;
-  nonAttestedCharges: string;
-  additionalCharges: string;
-  additionalServiceCost: string;
-  discountPrice: string;
-};
+// Structurally identical to `GatedChargeAmounts` (`@/lib/clerk-charge-fields`)
+// — kept as a local alias only so the rest of this file's existing `ChargeEdit`
+// references don't all need renaming.
+type ChargeEdit = GatedChargeAmounts;
 
 const TICKET_STATUSES = ['UNPAID', 'PAID', 'ASSIGNED', 'IN_PROGRESS', 'WAITING_APPROVAL', 'COMPLETED', 'DELIVERED'];
+
+// The finance list doesn't carry the ticket's intake `formPayload`, so the
+// `set_type` narrowing `visibleChargeFields` accepts can't be resolved here.
+// Passing `null` (never `undefined`, which the function's type doesn't even
+// accept) is exactly the "unknown/absent set type" case the function already
+// documents: it shows BOTH attestation pairs rather than hiding a charge the
+// admin may legitimately need to enter. Only the flow/currency capability
+// gate — the one the server actually force-zeroes on — narrows anything here.
+//
+// This is display-only gating (which inputs to show). The PATCH-body gating
+// that actually stops a discarded edit from being silently submitted lives
+// in `buildChargePatchBody` (`@/lib/clerk-charge-fields`) — batch-9 final
+// review's merge blocker — kept framework-free there so it can be unit
+// tested by direct execution instead of a source-string guard.
+function visibilityFor(item: Pick<TicketRow, 'intakeFlow' | 'currency'>): VisibleChargeFields {
+  return visibleChargeFields(item.intakeFlow, toCurrency(item.currency), null);
+}
 
 function statusVariant(s: string): 'success' | 'warning' | 'neutral' | 'info' {
   if (s === 'COMPLETED' || s === 'DELIVERED') return 'success';
@@ -143,20 +170,19 @@ export function TicketChargesBoard() {
 
   const cancelEdit = () => { setEditId(null); setChargeEdit(null); };
 
-  const saveCharges = async (ticketId: string) => {
+  const saveCharges = async (item: TicketRow) => {
     if (!chargeEdit) return;
     setSaving(true);
     try {
-      await apiClient.patch(`/finance/${ticketId}/charge`, {
-        serviceCost: Number(chargeEdit.serviceCost),
-        deliveryCharges: Number(chargeEdit.deliveryCharges),
-        printingCharges: Number(chargeEdit.printingCharges),
-        attestedCharges: Number(chargeEdit.attestedCharges),
-        nonAttestedCharges: Number(chargeEdit.nonAttestedCharges),
-        additionalCharges: Number(chargeEdit.additionalCharges),
-        additionalServiceCost: Number(chargeEdit.additionalServiceCost),
-        discountPrice: Number(chargeEdit.discountPrice),
-      });
+      // For a gated-out field the server forces the column to 0 regardless
+      // of what's sent (resolveGatedCharge) — omitting it here isn't what
+      // makes the zeroing happen; it's what stops the board from showing
+      // "Charges updated." over an edit the server silently discarded
+      // (batch-9 final review merge blocker).
+      await apiClient.patch(
+        `/finance/${item.id}/charge`,
+        buildChargePatchBody(item.intakeFlow, item.currency, chargeEdit),
+      );
       setMessage('Charges updated.');
       cancelEdit();
       load();
@@ -319,12 +345,35 @@ export function TicketChargesBoard() {
                 isExpanded ? (
                   <tr key={`${item.id}-detail`} className="bg-slate-50">
                     <td colSpan={9} className="px-6 py-5">
-                      {isEditing && chargeEdit ? (
+                      {isEditing && chargeEdit ? (() => {
+                        // Batch-9 final review (merge blocker): a
+                        // capability-gated field is hidden here rather than
+                        // just excluded from the PATCH body — the server
+                        // force-zeroes these columns for a flow/currency
+                        // combo with no such capability (e.g. Printing on
+                        // every Case-Files ticket, all four on every USD
+                        // ticket), so an editable-looking input the server
+                        // silently discards is worse than no input at all.
+                        const visibility = visibilityFor(item);
+                        const visible = chargeFields.filter(({ key }) => {
+                          const capability = CHARGE_FIELD_CAPABILITY[key];
+                          return !capability || visibility[capability];
+                        });
+                        const hidden = chargeFields.filter(({ key }) => {
+                          const capability = CHARGE_FIELD_CAPABILITY[key];
+                          return capability && !visibility[capability];
+                        });
+                        return (
                         /* Edit mode */
                         <div className="space-y-4">
                           <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Edit Charges — {item.batchNo}</p>
+                          {hidden.length > 0 && (
+                            <p className="text-xs text-slate-500">
+                              Not applicable for this service{item.currency === 'USD' ? ' (flat USD pricing)' : ''}: {hidden.map(f => f.label).join(', ')}.
+                            </p>
+                          )}
                           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                            {chargeFields.map(({ key, label, hint }) => (
+                            {visible.map(({ key, label, hint }) => (
                               <label key={key} className="block">
                                 <span className="text-xs font-semibold text-slate-500">{label}</span>
                                 {hint && <span className="block text-xs text-slate-500">{hint}</span>}
@@ -341,12 +390,13 @@ export function TicketChargesBoard() {
                             <button onClick={cancelEdit} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors">
                               <X className="h-4 w-4" /> Cancel
                             </button>
-                            <button onClick={() => saveCharges(item.id)} disabled={saving} className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors">
+                            <button onClick={() => saveCharges(item)} disabled={saving} className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors">
                               <Check className="h-4 w-4" /> Save Charges
                             </button>
                           </div>
                         </div>
-                      ) : (
+                        );
+                      })() : (
                         /* View mode */
                         <div className="space-y-3">
                           <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Charge Breakdown — {item.batchNo}</p>

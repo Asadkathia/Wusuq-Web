@@ -159,6 +159,15 @@ export class FinanceService {
           service: ticket.service,
           serviceCity: ticket.serviceCity,
           caseType: ticket.caseType,
+          // Batch-9 final review (merge blocker): the board needs this to
+          // gate its charge inputs through the single source
+          // `visibleChargeFields(flow, currency, setType)` — without it the
+          // board could not tell a Case-Files ticket (printing forced to 0
+          // server-side) or a USD ticket (all four forced to 0) from any
+          // other, and would keep submitting edits the server silently
+          // discards. Same "shared formula starved of data" shape as
+          // `fxRateToPkr` (batch-3) and the clerk snapshot (batch-4 A).
+          intakeFlow: ticket.intakeFlow,
           // Finance is a staff-only surface (no consumer/rep caller class
           // reaches this endpoint), so currency + fxRateToPkr need no
           // redaction gate here — the board uses them to render a USD

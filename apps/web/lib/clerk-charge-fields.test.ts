@@ -1,4 +1,4 @@
-import { chargeFieldVisibility, readSetType, visibleChargeFields } from './clerk-charge-fields';
+import { buildChargePatchBody, readSetType, visibleChargeFields, type GatedChargeAmounts } from './clerk-charge-fields';
 
 describe('readSetType', () => {
   it('reads the three real values and rejects anything else', () => {
@@ -8,41 +8,6 @@ describe('readSetType', () => {
     for (const junk of [{}, null, undefined, { set_type: '' }, { set_type: 'nope' }]) {
       expect(readSetType(junk as never)).toBeNull();
     }
-  });
-});
-
-describe('chargeFieldVisibility (batch-7 5.1)', () => {
-  it('hides the ATTESTED pair when only non-attested was ordered', () => {
-    // The client's exact case: "he has asked for a non-attested file, so it is
-    // not necessary to have these two options."
-    expect(chargeFieldVisibility({ set_type: 'non_attested' }, true)).toEqual({
-      attested: false, nonAttested: true,
-    });
-  });
-
-  it('hides the NON-ATTESTED pair when only attested was ordered', () => {
-    expect(chargeFieldVisibility({ set_type: 'attested' }, true)).toEqual({
-      attested: true, nonAttested: false,
-    });
-  });
-
-  it('shows both when both were ordered', () => {
-    expect(chargeFieldVisibility({ set_type: 'both' }, true)).toEqual({
-      attested: true, nonAttested: true,
-    });
-  });
-
-  it('shows BOTH when no set type was recorded — never hide a chargeable line by default', () => {
-    // Legacy tickets and flows that never ask. Hiding on absence could
-    // silently lose a charge the representative needs to enter.
-    expect(chargeFieldVisibility({}, true)).toEqual({ attested: true, nonAttested: true });
-    expect(chargeFieldVisibility(null, true)).toEqual({ attested: true, nonAttested: true });
-  });
-
-  it('hides both when the flow has no attestation leg at all', () => {
-    expect(chargeFieldVisibility({ set_type: 'both' }, false)).toEqual({
-      attested: false, nonAttested: false,
-    });
   });
 });
 
@@ -146,5 +111,76 @@ describe('visibleChargeFields (batch-9 Task 1 — dynamic phase-2 rows)', () => 
       printing: false,
       delivery: false,
     });
+  });
+});
+
+describe('buildChargePatchBody (batch-9 final review — merge blocker)', () => {
+  // The admin Ticket Charges board (`ticket-charges-board.tsx`) used to
+  // render and POST Delivery / Printing / Attested / Non-Attested
+  // unconditionally, while `finance.updateCharge` (server-side,
+  // `resolveGatedCharge`) force-zeroes Printing on every Case-Files ticket
+  // and all four on every USD ticket. An admin who edited a gated field saw
+  // "Charges updated." while the server silently discarded it. This suite
+  // proves the board's own PATCH-body builder now agrees with the server's
+  // gate through the single source `visibleChargeFields`.
+  const ALL_SET: GatedChargeAmounts = {
+    serviceCost: '1000',
+    deliveryCharges: '300',
+    printingCharges: '250',
+    attestedCharges: '200',
+    nonAttestedCharges: '150',
+    additionalCharges: '50',
+    additionalServiceCost: '75',
+    discountPrice: '10',
+  };
+
+  it('a Case-Files PKR ticket omits Printing (gated false) but keeps Delivery/Attested/Non-Attested', () => {
+    const body = buildChargePatchBody('judicial_case_files', 'PKR', ALL_SET);
+    expect(body).not.toHaveProperty('printingCharges');
+    expect(body.deliveryCharges).toBe(300);
+    expect(body.attestedCharges).toBe(200);
+    expect(body.nonAttestedCharges).toBe(150);
+  });
+
+  it('a USD ticket omits all four capability-gated charges regardless of flow', () => {
+    const body = buildChargePatchBody('judicial_case_files', 'USD', ALL_SET);
+    expect(body).not.toHaveProperty('deliveryCharges');
+    expect(body).not.toHaveProperty('printingCharges');
+    expect(body).not.toHaveProperty('attestedCharges');
+    expect(body).not.toHaveProperty('nonAttestedCharges');
+  });
+
+  it('the four ungated fields are always sent, even when every capability-gated one is omitted', () => {
+    const body = buildChargePatchBody('judicial_case_files', 'USD', ALL_SET);
+    expect(body).toEqual({
+      serviceCost: 1000,
+      additionalCharges: 50,
+      additionalServiceCost: 75,
+      discountPrice: 10,
+    });
+  });
+
+  it('a non-judicial copy flow (photocopy, no attestation leg) omits both attestation charges but keeps printing/delivery', () => {
+    const body = buildChargePatchBody('non_judicial_copy_of_fir', 'PKR', ALL_SET);
+    expect(body).not.toHaveProperty('attestedCharges');
+    expect(body).not.toHaveProperty('nonAttestedCharges');
+    expect(body.printingCharges).toBe(250);
+    expect(body.deliveryCharges).toBe(300);
+  });
+
+  it('a digital PKR flow (no phase-2 charge capability at all) omits all four', () => {
+    const body = buildChargePatchBody('judicial_case_information', 'PKR', ALL_SET);
+    expect(body).not.toHaveProperty('deliveryCharges');
+    expect(body).not.toHaveProperty('printingCharges');
+    expect(body).not.toHaveProperty('attestedCharges');
+    expect(body).not.toHaveProperty('nonAttestedCharges');
+  });
+
+  it('a legacy null-flow ticket also omits all four (accepted trade-off — see resolveGatedCharge docblock)', () => {
+    const body = buildChargePatchBody(null, 'PKR', ALL_SET);
+    expect(body).not.toHaveProperty('deliveryCharges');
+    expect(body).not.toHaveProperty('printingCharges');
+    expect(body).not.toHaveProperty('attestedCharges');
+    expect(body).not.toHaveProperty('nonAttestedCharges');
   });
 });

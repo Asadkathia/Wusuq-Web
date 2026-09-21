@@ -24,7 +24,7 @@
  * by `set_type`; the printing/delivery gates are flow-capability only.
  */
 
-import { chargeCapabilitiesFor, type Currency } from '@wusuq/shared';
+import { chargeCapabilitiesFor, toCurrency, type Currency } from '@wusuq/shared';
 
 export type SetTypeSelection = 'attested' | 'non_attested' | 'both' | null;
 
@@ -45,14 +45,22 @@ export interface ChargeFieldVisibility {
 }
 
 /**
- * Attestation-pair visibility from a resolved set type + capability. Shared
- * by `chargeFieldVisibility` (payload-based, existing callers) and
- * `visibleChargeFields` (flow/currency-based, Task 1) so the two never drift.
+ * Attestation-pair visibility from a resolved set type + capability. The
+ * single derivation `visibleChargeFields` (flow/currency-based, Task 1)
+ * builds on.
  *
  * An ABSENT/unrecognised set type (legacy ticket, or a flow that never
  * asked) falls back to showing BOTH pairs rather than hiding a charge the
  * representative may legitimately need to enter — hiding by default could
  * silently strand a legacy ticket with no way to enter its charges.
+ *
+ * Batch-9 final review: this used to also back a payload-based
+ * `chargeFieldVisibility(payload, canAttest)` export, but it had no
+ * production callers — only its own tests — a second entry point into the
+ * same rule that `visibleChargeFields` owns. Two copies of a money-visibility
+ * rule is exactly the "shared formula, second copy drifts" shape CLAUDE.md
+ * warns about elsewhere in this codebase, so it was deleted rather than left
+ * to rot; call `visibleChargeFields` directly instead.
  */
 function attestationVisibility(
   setType: SetTypeSelection,
@@ -64,18 +72,6 @@ function attestationVisibility(
     attested: setType === 'attested' || setType === 'both',
     nonAttested: setType === 'non_attested' || setType === 'both',
   };
-}
-
-/**
- * @param payload      the ticket's intake payload
- * @param canAttest    chargeCapabilitiesFor(flow, currency).attestation — a
- *                     flow with no attestation leg shows neither pair
- */
-export function chargeFieldVisibility(
-  payload: Record<string, unknown> | null | undefined,
-  canAttest: boolean,
-): ChargeFieldVisibility {
-  return attestationVisibility(readSetType(payload), canAttest);
 }
 
 export interface VisibleChargeFields {
@@ -120,4 +116,80 @@ export function visibleChargeFields(
     printing: caps.printing,
     delivery: caps.delivery,
   };
+}
+
+/**
+ * The admin "Ticket Charges" board's editable money fields, as the string
+ * values a controlled `<input>` binds to. Named generically (not
+ * `ChargeEdit`, the board's own local alias) so this stays a framework-free
+ * type usable from a plain unit test with no React/apiClient import.
+ */
+export interface GatedChargeAmounts {
+  serviceCost: string;
+  deliveryCharges: string;
+  printingCharges: string;
+  attestedCharges: string;
+  nonAttestedCharges: string;
+  additionalCharges: string;
+  additionalServiceCost: string;
+  discountPrice: string;
+}
+
+/**
+ * Which `VisibleChargeFields` flag gates each `GatedChargeAmounts` key.
+ * A key absent from this map (serviceCost, additionalCharges,
+ * additionalServiceCost, discountPrice) is never capability-gated — it
+ * always shows/sends, per the owner's own instruction (see
+ * `visibleChargeFields`'s docblock).
+ */
+export const CHARGE_FIELD_CAPABILITY: Partial<Record<keyof GatedChargeAmounts, keyof VisibleChargeFields>> = {
+  deliveryCharges: 'delivery',
+  printingCharges: 'printing',
+  attestedCharges: 'attested',
+  nonAttestedCharges: 'nonAttested',
+};
+
+/**
+ * Builds the PATCH `/finance/:id/charge` body for the Ticket Charges board,
+ * omitting the four capability-gated charges when this ticket's
+ * flow/currency doesn't grant that capability (batch-9 final review, merge
+ * blocker).
+ *
+ * The board used to render and POST Delivery / Printing / Attested /
+ * Non-Attested unconditionally, while `finance.updateCharge` (server-side,
+ * `resolveGatedCharge`) force-zeroes Printing on every Case-Files ticket and
+ * all four on every USD ticket — an admin who edited a gated field saw
+ * "Charges updated." while the server silently discarded it. This is the
+ * single place the board and the server's gate are kept in agreement; it
+ * has no React/apiClient dependency so it can be unit tested by direct
+ * execution rather than a source-string guard.
+ *
+ * The finance list doesn't carry the ticket's intake `formPayload`, so the
+ * `set_type` narrowing `visibleChargeFields` accepts can't be resolved here
+ * — `null` (never `undefined`, which the function's type doesn't accept) is
+ * exactly the "unknown/absent set type" case the function already
+ * documents: it shows BOTH attestation pairs rather than hiding a charge
+ * the admin may legitimately need to enter. Only the flow/currency
+ * capability gate — the one the server actually force-zeroes on — narrows
+ * anything here.
+ */
+export function buildChargePatchBody(
+  flow: string | null | undefined,
+  currency: unknown,
+  amounts: GatedChargeAmounts,
+): Record<string, number> {
+  const visibility = visibleChargeFields(flow, toCurrency(currency), null);
+  const body: Record<string, number> = {
+    serviceCost: Number(amounts.serviceCost),
+    additionalCharges: Number(amounts.additionalCharges),
+    additionalServiceCost: Number(amounts.additionalServiceCost),
+    discountPrice: Number(amounts.discountPrice),
+  };
+  for (const [key, capability] of Object.entries(CHARGE_FIELD_CAPABILITY) as [
+    keyof GatedChargeAmounts,
+    keyof VisibleChargeFields,
+  ][]) {
+    if (visibility[capability]) body[key] = Number(amounts[key]);
+  }
+  return body;
 }
