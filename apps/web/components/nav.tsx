@@ -136,7 +136,12 @@ function buildClerkItems(counts: Record<string, number>): NavItem[] {
         { label: 'Ticket Requests', href: '/tickets/assigned', count: counts['ASSIGNED'] },
         { label: 'Assigned Tickets', href: '/tickets/in-progress', count: counts['IN_PROGRESS'] },
         { label: 'Finalized Tickets', href: '/tickets/waiting-approval', count: counts['WAITING_APPROVAL'] },
-        { label: 'Delivered Tickets', href: '/tickets/delivered', count: counts['DELIVERED'] },
+        // No "Delivered Tickets" row here (batch-9 final review) — DELIVERED
+        // already has the dedicated top-level "Delivered" item above, with
+        // an identical href/count, so this row was a literal duplicate, not
+        // a differently-labelled variant like the three above. Matches
+        // COMPLETED, which likewise has a top-level item ("Ready to
+        // Dispatch") and no submenu counterpart.
       ],
     },
     { label: 'Documents', href: '/documents', icon: FolderOpen },

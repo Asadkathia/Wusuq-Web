@@ -31,16 +31,23 @@ describe('buildClerkItems (representative nav) — Delivered entry (§8)', () =>
   const clerkBody = extractFunctionBody(navSource, 'buildClerkItems');
 
   // Matched as ONE contiguous object literal — a bare toContain/toMatch on
-  // each field separately would also be satisfied by the (pre-existing)
-  // "Delivered Tickets" row buried in the collapsed "Paralegal Tickets"
-  // children list, which is exactly the "not as a nav item" half of the bug
-  // this guard exists to catch (verified: removing only the top-level item
-  // while leaving that children-list row left this regex the only one of
-  // the three that still failed).
+  // each field separately would also be satisfied by a "Delivered Tickets"
+  // row buried in the collapsed "Paralegal Tickets" children list.
   const topLevelDeliveredItem =
     /label:\s*'Delivered',\s*href:\s*'\/tickets\/delivered',\s*icon:\s*Truck,\s*count:\s*counts\['DELIVERED'\],/;
 
   it('renders a top-level Delivered nav item (icon, href, count)', () => {
     expect(clerkBody).toMatch(topLevelDeliveredItem);
+  });
+
+  // Batch-9 final review: the §8 fix commit added a Delivered row in BOTH
+  // places — the top-level item above AND a "Delivered Tickets" row inside
+  // the "Paralegal Tickets" submenu, unlike ASSIGNED/WAITING_APPROVAL (which
+  // appear twice under genuinely different labels — "My Assigned Tickets" vs
+  // "Ticket Requests") or COMPLETED (top-level only, no submenu row). The
+  // Delivered submenu row was a literal duplicate (same href, same count,
+  // near-identical label), so it was removed; this pins that it stays gone.
+  it('does not also render a redundant "Delivered Tickets" row in the Paralegal Tickets submenu', () => {
+    expect(clerkBody).not.toMatch(/label:\s*'Delivered Tickets'/);
   });
 });
