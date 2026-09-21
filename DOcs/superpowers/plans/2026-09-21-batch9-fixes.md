@@ -24,7 +24,7 @@ Branch: `fix/batch9-client-review` (from `724b599`). Baseline: **726 API tests g
 
 ---
 
-## T1 — §3 Dynamic representative charge rows  🔴 money
+## Task 1 — §3 Dynamic representative charge rows  🔴 money
 
 **Root cause.** `clerkCostFields` (`apps/web/components/ticket-board.tsx:551-567`) is a flat,
 unconditional array of 8 entries. Every representative sees every charge row on every ticket.
@@ -61,7 +61,7 @@ photocopy pair and neither attestation pair.
 
 ---
 
-## T2 — §4 USD tickets pay representatives for charges never billed  🔴 money
+## Task 2 — §4 USD tickets pay representatives for charges never billed  🔴 money
 
 **Root cause.** `finance.service.ts` `updateCharge` (~lines 305-328) writes `deliveryCharges`,
 `printingCharges`, `attestedCharges`, `nonAttestedCharges` with **no `chargeCapabilitiesFor`
@@ -79,7 +79,25 @@ phase-2 charges.
    `attestedCharges`/`nonAttestedCharges` force `0` when the capability is off, but
    `printingCharges`/`deliveryCharges` pass `undefined`, which in Prisma means *leave unchanged*,
    not *zero*. Make all four force `0`.
-3. Tests: a USD ticket through `updateCharge` keeps all four at 0 even when the dto supplies
+3. **`tickets.service.ts` `submitClerkCosts` (~2670) — SCOPE ADDED after the Task 1 review.**
+   It has **no `chargeCapabilitiesFor` call anywhere in its body** (verified: the only call sites
+   in that file are lines 1284, 1433, 2415, 2463, 2590, 3059, 3199 — none inside it). It writes
+   the four flat charge columns AND the four `clerk*Charges` payout-snapshot columns.
+
+   The concrete leak: each charge falls through
+   `dto.<charge> ?? computePageCharges(...) ?? Number(ticket.<charge>)`, so a Case-Files ticket
+   carrying a legacy nonzero `printingCharges` re-snapshots that leftover into
+   `clerkPrintingCharges` even though Task 1 removed the input from the UI. Because
+   `computeClerkEarningsBreakdown` caps at `min(clerkSubmitted, adminFinal)` and
+   `finalizeRemainderCore` forces the final column to 0, it self-corrects AFTER finalize — but
+   through the whole `WAITING_APPROVAL` window both columns hold the leftover, so the clerk
+   dashboard's pending-earnings figure is inflated. Gate all four the same way, forcing `0`
+   when the capability is off — for the snapshot columns too, not just the flat ones.
+
+   This is the exact failure Global Constraint 3 names: Task 1 closed the UI, Task 2 as
+   originally written closed two of three server paths, and this was the third.
+
+4. Tests: a USD ticket through `updateCharge` keeps all four at 0 even when the dto supplies
    values; `saveClerkCharges` zeroes printing + delivery for a NO_CHARGES flow. Assert the
    resulting `computeClerkEarningsBreakdown` total too — the point is the payout, not the column.
 
@@ -89,7 +107,7 @@ being written against the pre-T1 capability map.
 
 ---
 
-## T3 — §1 + §2 Regenerate: wrong flow, stale set-type quantities  🔴
+## Task 3 — §1 + §2 Regenerate: wrong flow, stale set-type quantities  🔴
 
 **§2 root cause — this is worse than the client reported.** `intake-wizard.tsx` line ~1085, in
 the regenerate hydration effect:
@@ -132,7 +150,7 @@ Both order's copy count is displayed nowhere, on any ticket.
 
 ---
 
-## T4 — §6.2 next hearing + §6.1 consumer phone  (ticket-board.tsx; after T1)
+## Task 4 — §6.2 next hearing + §6.1 consumer phone  (ticket-board.tsx; after T1)
 
 **§6.2 root cause, and the code already knows the rule.** `ticket-board.tsx:2315` carries the
 comment *"Clerk: optional next-hearing capture (PENDING tickets only)"* — but the guard beneath
@@ -153,7 +171,7 @@ not, that is the finding to report rather than widening the redaction unilateral
 
 ---
 
-## T5 — §6.3 representative cannot correct submitted costs  ⚠️ money, most complex
+## Task 5 — §6.3 representative cannot correct submitted costs  ⚠️ money, most complex
 
 **Root cause.** `ticket-board.tsx:1748` renders the "Update Payments" button only when
 `!hasSubmittedClerkCosts(ticket)`, and the row is additionally gated on
@@ -161,23 +179,42 @@ not, that is the finding to report rather than widening the redaction unilateral
 So after submitting, the representative is double-gated out. Client: *"Once clerk update the
 Pages and amount, it's no way back. So we need here an update button."*
 
-**This changes the payout cap**, so it needs care. `submitClerkCosts` writes the four
-`clerk*Charges` snapshot columns, which cap representative pay at
-`min(clerkSubmitted, adminFinal)`. Re-submission re-writes the rep's own declared figure, which
-is correct — but only while the admin has not finalized.
+**CONTROLLER CORRECTION (verified in code before dispatch): the backend ALREADY supports this.
+This is a UI-gate fix only — do not re-architect `submitClerkCosts`.**
 
-**Do:** allow re-submission from `WAITING_APPROVAL` when `remainderFinalizedAt IS NULL` and
-`clerkApprovalStatus !== 'VERIFIED'`, keeping the conditional-update discipline (audit 2.1 — a
-CONDITIONAL `updateMany`, `count === 0` → 409, history row in the same transaction). Re-open the
-button under the same condition. `ensureClerkActionAllowed` must still bind it to the active
-assignee. **Do not route this through `saveClerkCharges`** — that must never write the snapshot
-columns (Global Constraint 4).
+`submitClerkCosts` (`apps/api/src/tickets/tickets.service.ts` ~2683) already accepts
+`WAITING_APPROVAL` as a valid source status:
 
-If this cannot be done without a schema change, **stop and report** rather than inventing one.
+```ts
+if (ticket.status !== 'IN_PROGRESS' && ticket.status !== 'WAITING_APPROVAL') {
+  throw new BadRequestException('Ticket must be in progress or waiting approval');
+}
+```
 
----
+and its conditional `updateMany` transitions `WAITING_APPROVAL → WAITING_APPROVAL` idempotently,
+writing the history row in the same transaction. `ensureClerkActionAllowed` already binds it to
+the active assignee. Once the admin finalizes, the ticket leaves `WAITING_APPROVAL` for
+`COMPLETED`, so the existing status check already blocks a post-finalize edit — no extra
+`remainderFinalizedAt` guard is needed, and no schema change.
 
-## T6 — §8 representative nav + §9 KPI deep link  (disjoint, low risk)
+**So the entire fix is the two UI gates in `apps/web/components/ticket-board.tsx`:**
+- the action row is wrapped in `status === 'IN_PROGRESS'` (~line 1746)
+- the button itself is additionally gated on `!hasSubmittedClerkCosts(ticket)` (~line 1748)
+
+**Do:** render "Update Payments" when `status === 'IN_PROGRESS' || status === 'WAITING_APPROVAL'`,
+and drop the `!hasSubmittedClerkCosts` gate. Label it so a re-submission is obvious (e.g.
+"Update Payments" → "Update submitted costs" once submitted). The dialog already prefills from
+the persisted columns, so re-opening shows what was submitted.
+
+**Re-submission re-writes the four `clerk*Charges` snapshot columns** — that is correct, because
+they record the REPRESENTATIVE's own declared figure and this is the representative correcting
+it. Do not route this through `saveClerkCharges`, which must never write them (Global
+Constraint 4).
+
+Add a source guard test for the loosened gate, mutation-proven, and an API test that a second
+`submitClerkCosts` from `WAITING_APPROVAL` succeeds and updates the snapshot columns.
+
+## Task 6 — §8 representative nav + §9 KPI deep link  (disjoint, low risk)
 
 **§8 root cause.** `buildClerkItems` (`apps/web/components/nav.tsx:98-134`) has **no Delivered
 entry at all** — not as a nav item, not as a count. "Ready to Dispatch" points at
@@ -200,7 +237,7 @@ status the count queries — that pairing is the actual invariant.
 
 ---
 
-## T7 — §7 mobile + cosmetics  (disjoint, low risk)
+## Task 7 — §7 mobile + cosmetics  (disjoint, low risk)
 
 **§7.1 focus-zoom — closes batch-6 item E, which was deferred for want of a device repro.** Both
 iPhone clips show the page magnifying and clipping on every input focus. `inputClass`

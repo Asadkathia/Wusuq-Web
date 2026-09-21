@@ -872,3 +872,89 @@ first; none rejected. 726 API + 367 web tests, 0 lint, 0 typecheck, build green.
 same unbounded scan `getBusinessKpis` already performs, and the drill-down must reconcile with that
 KPI exactly, so paginating one without the other breaks the reconciliation. Fixing it properly means
 moving BOTH to a SQL aggregate. Tracked, not half-done.
+
+### 2026-09-21 · branch `fix/batch9-client-review` · client review batch 9
+
+Shipped all batch-9 items (spec `DOcs/superpowers/specs/2026-09-21-client-review-batch9-findings.md`,
+plan `DOcs/superpowers/plans/2026-09-21-batch9-fixes.md`). Sources: the 19-21 Sep chat scroll, two
+desktop walkthrough videos, and **the first two iPhone recordings this project has received**.
+Verified: **757 API + 455 web tests, 0 lint errors, 0 typecheck errors**, tree clean. 18 commits,
+**not merged, not pushed**. No Prisma migration.
+
+**Durable invariants:**
+- **`SERVICE_CHARGE_CAPABILITIES.judicial_case_files.printing` is now `false`** (owner decision
+  2026-09-21). Case Files bills its pages through the attested/non-attested counts, so the photocopy
+  pair was a redundant third page counter. The three non-judicial copy flows keep `printing: true`.
+- **`visibleChargeFields(flow, currency, setType)` (`apps/web/lib/clerk-charge-fields.ts`) is THE
+  single source for which phase-2 charge rows render**, used by the representative dialog, the admin
+  Review & Complete dialog AND `/manage-cost/ticket-charges`. An absent/unrecognised `set_type` shows
+  ALL applicable rows — never none, which would strand a legacy ticket with no way to enter charges.
+  Its dead sibling `chargeFieldVisibility` was deleted; do not reintroduce a second entry point.
+- **`resolveGatedCharge(flow, currency, capability, dtoValue, fallback)` in `@wusuq/shared` is the one
+  decision point for gating a phase-2 charge column**, used by all FOUR server writers:
+  `finance.updateCharge`, `saveClerkCharges`, `submitClerkCosts`, `finalizeRemainderCore`. Order is
+  load-bearing: `USD → 0` first (definitive even with a null flow), then
+  `!flow || !isFlowKey(flow) → undefined` (**unknown ≠ no capability** — leave the column untouched
+  and reject a smuggled dto value), then `chargeCapabilitiesFor(flow, currency)` for a recognised
+  flow. **Never read `SERVICE_CHARGE_CAPABILITIES` directly here** — that map holds only the four
+  PHYSICAL flows, so membership-testing it silently classed the four digital flows as "unknown" and
+  reopened the leak.
+- **A legacy `intakeFlow: null` ticket must neither gain nor lose a charge.** Precedent:
+  `tickets.service.spec.ts` `regenerate` "falls back to the copied totals when the original cannot be
+  re-priced (no flow)". Accepted consequence: such a ticket's phase-2 charges are now **un-editable**
+  in the UI (`visibleChargeFields(null, …)` → NO_CHARGES). Documented at `resolveGatedCharge`.
+- **Consumer `phone` reaches a representative ONLY on an ACTIVE/ACCEPTED assignment** (owner decision
+  2026-09-21). `email`/`cnic`/`address`/`postalCode` stay stripped, pinned by a regression test.
+  ⚠️ `findAll` does **not** call `redactTicketForRepresentative` — it projects an explicit narrow
+  `consumer` select (`{id,name,phone}`), so that select is the backstop; a guard test pins its shape.
+  Row scoping is unchanged: only the phone FIELD is conditional, not which tickets a rep can list.
+- **Regenerate keeps the flow the consumer CHOSE.** `resolveRegenerateFlow(routeFlow, sourceFlow)` —
+  the hydration used to overwrite `draft.flow` with the source ticket's flow, so picking a different
+  service returned the old one. **Batch-7 item 1.5 had therefore never worked**, which is also why
+  the price appeared not to change. `buildRegeneratePayload(payload, targetFlow)` now prunes
+  key-level (undeclared keys) AND value-level (a value outside the target field's fixed option set),
+  closing `case_status` leaking `'Decided Case'` into Case Information — which feeds `deriveYearBand`
+  and the base price. Structural geo keys live in **`CROSS_FLOW_STRUCTURAL_KEYS`** (`intake-flows.ts`,
+  imported by both the wizard and the pruner — it was duplicated, and the copy was missing `cities`,
+  which silently emptied every Case Search regenerate and corrupted the cityCount multiplier).
+- **Next hearing is PENDING-CASE ONLY** (owner decision). `isPendingCase(costsTicket)` gates BOTH the
+  render and the submit-time write, so a ticket whose status changed cannot submit a stale date.
+- **A representative can correct already-submitted costs.** `submitClerkCosts` always accepted a
+  `WAITING_APPROVAL` source; only the UI gates were too tight. The dialog prefills from the
+  **`clerk*Charges` snapshot** (the rep's own figures) because `findAll` withholds the flat
+  consumer-money columns from reps (audit 1.1) — prefilling from those showed blank boxes.
+- **iOS focus-zoom (closes batch-6 item E, deferred since August for want of a device repro).**
+  `text-base` base + `sm:text-sm` above 640px on `inputClass`/`selectClass`/`BASE_CLASS` and the
+  promo input. **Never add `maximum-scale=1`/`user-scalable=no`** — that disables pinch-zoom.
+  ⚠️ Known follow-up: `elections-board`, `profile-board`, `users-board`, `documents-board` still have
+  the `sm:text-sm`-without-base shape (staff-only surfaces).
+
+**The one lesson this batch keeps teaching — a shared money rule fixed on ONE surface is not fixed.**
+It recurred THREE times here after four prior occurrences (batch-4 A, batch-5 A, batch-8 review, the
+`fxRateToPkr` and clerk-snapshot cases). Task 1 closed the UI; Task 2 as first scoped closed two of
+four server paths; a review found `submitClerkCosts`; another found `finalizeRemainderCore`; the
+final whole-branch review found a THIRD editing surface (`ticket-charges-board.tsx`) that the plan
+never enumerated — and `finance.list` did not even project `intakeFlow`, so it could not have gated.
+**When you change a capability or money rule, enumerate every consumer AND every endpoint that feeds
+them before writing code.**
+
+Also worth internalising: **a failing test is the alarm, not the fire.** One fix round deleted a PKR
+digital-flow regression test instead of fixing the root cause it had caught; the next review found
+the regression and the test was restored.
+
+**⚠️ Operational follow-ups (NOT done):**
+- **The ticket-data wipe has never been run.** `apps/api/scripts/clear-ticket-data.ts` (now with a
+  P2028 `timeout: 120_000` fix) is the owner-approved answer to "ledger rows survive a delete" — the
+  archive behaviour is correct by design and was deliberately NOT changed. Run with
+  `ALLOW_DESTRUCTIVE_WIPE=true … --apply --reset-wallets`. **This repo's `.env` points at the
+  production Neon DB.**
+- **§7.2's mobile date affordance was never verified on a real device** — the bug it fixes was only
+  visible on an actual iPhone.
+- Commit messages on this branch are partly misattributed: parallel implementers shared one working
+  tree and `git commit` commits the whole INDEX, not just what an agent staged. Content was verified
+  correct at HEAD by grep + full suite. **Use `git commit -- <explicit paths>` with no preceding
+  `git add` when running agents concurrently.**
+- **Client-reported §1 sub-item deliberately not coded:** clearing a stale set-type quantity when the
+  user switches set type mid-wizard is inert — `buildPricingResolveInput` selects the quantity by
+  `set_type` and `case-view.ts` now does too, so a stale `attested_qty` reaches neither the price nor
+  any screen.
