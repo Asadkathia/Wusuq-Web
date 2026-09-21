@@ -5,10 +5,10 @@ import {
 } from '@nestjs/common';
 import { Prisma, TicketStatus } from '@prisma/client';
 import {
-  chargeCapabilitiesFor,
   computeClerkEarnings,
   computeTicketTotal,
   isBaseCovered,
+  resolveGatedCharge,
   sumMixedCurrencyToPkr,
   toCurrency,
 } from '@wusuq/shared';
@@ -302,31 +302,65 @@ export class FinanceService {
       throw new NotFoundException('Ticket not found');
     }
 
-    // Batch-9 Task 2 (§4): a flow/currency combo with no phase-2 charge
-    // capability (every USD ticket, every digital flow, and — since Task 1 —
-    // Case Files' printing) must never let an admin override land money in
-    // these columns. They still feed computeClerkEarningsBreakdown, which
-    // has no idea the consumer was never billed — same gate
-    // finalizeRemainderCore already applies at finalize.
-    const caps = chargeCapabilitiesFor(
+    // Batch-9 Task 2 (§4, fix round 1): a flow/currency combo that
+    // DEFINITIVELY has no phase-2 charge capability (every USD ticket,
+    // every digital flow, and — since Task 1 — Case Files' printing) must
+    // never let an admin override land money in these columns — they still
+    // feed computeClerkEarningsBreakdown, which has no idea the consumer was
+    // never billed. But a null/unrecognized `intakeFlow` (legacy tickets
+    // predating flow tracking) is NOT the same as "definitely no charges" —
+    // those can carry real already-persisted nonzero charges (see
+    // tickets.service.spec.ts "falls back to the copied totals when the
+    // original cannot be re-priced (no flow)"). resolveGatedCharge
+    // (packages/shared) is the single place this distinction is made:
+    // `undefined` means "leave the column unchanged", never accepting a new
+    // value AND never zeroing an existing one; `0` only fires when the
+    // determination is definitive.
+    const currency = toCurrency(ticket.currency);
+    const persistedDelivery = toNumber(ticket.deliveryCharges);
+    const persistedPrinting = toNumber(ticket.printingCharges);
+    const persistedAttested = toNumber(ticket.attestedCharges);
+    const persistedNonAttested = toNumber(ticket.nonAttestedCharges);
+    const deliveryWrite = resolveGatedCharge(
       ticket.intakeFlow,
-      toCurrency(ticket.currency),
+      currency,
+      'delivery',
+      dto.deliveryCharges,
+      persistedDelivery,
+    );
+    const printingWrite = resolveGatedCharge(
+      ticket.intakeFlow,
+      currency,
+      'printing',
+      dto.printingCharges,
+      persistedPrinting,
+    );
+    const attestedWrite = resolveGatedCharge(
+      ticket.intakeFlow,
+      currency,
+      'attestation',
+      dto.attestedCharges,
+      persistedAttested,
+    );
+    const nonAttestedWrite = resolveGatedCharge(
+      ticket.intakeFlow,
+      currency,
+      'attestation',
+      dto.nonAttestedCharges,
+      persistedNonAttested,
     );
 
     // Merge incoming charge fields with existing values
     const serviceCost = dto.serviceCost ?? toNumber(ticket.serviceCost);
-    const deliveryCharges = caps.delivery
-      ? (dto.deliveryCharges ?? toNumber(ticket.deliveryCharges))
-      : 0;
-    const printingCharges = caps.printing
-      ? (dto.printingCharges ?? toNumber(ticket.printingCharges))
-      : 0;
-    const attestedCharges = caps.attestation
-      ? (dto.attestedCharges ?? toNumber(ticket.attestedCharges))
-      : 0;
-    const nonAttestedCharges = caps.attestation
-      ? (dto.nonAttestedCharges ?? toNumber(ticket.nonAttestedCharges))
-      : 0;
+    // `writeValue ?? persisted` for money computation / the breakdown
+    // snapshot: when the column is left untouched (write === undefined),
+    // the persisted value IS the correct figure to total and record —
+    // resolveGatedCharge only ever returns `undefined` when it means "keep
+    // whatever's there", never as a stand-in for zero.
+    const deliveryCharges = deliveryWrite ?? persistedDelivery;
+    const printingCharges = printingWrite ?? persistedPrinting;
+    const attestedCharges = attestedWrite ?? persistedAttested;
+    const nonAttestedCharges = nonAttestedWrite ?? persistedNonAttested;
     const additionalCharges =
       dto.additionalCharges ?? toNumber(ticket.additionalCharges);
     const additionalServiceCost =
@@ -395,10 +429,16 @@ export class FinanceService {
       where: { id: ticketId },
       data: {
         serviceCost,
-        deliveryCharges,
-        printingCharges,
-        attestedCharges,
-        nonAttestedCharges,
+        // The *Write variants, not the merged *Charges variables above: for
+        // an unknown-capability ticket these are `undefined`, and Prisma
+        // treats `undefined` in `data` as "don't touch this column" — the
+        // merged variables (used for `money`/`priceBreakdown` above) would
+        // silently write the persisted value back as a no-op today, but
+        // relying on that would be fragile; write the actual gate decision.
+        deliveryCharges: deliveryWrite,
+        printingCharges: printingWrite,
+        attestedCharges: attestedWrite,
+        nonAttestedCharges: nonAttestedWrite,
         additionalCharges,
         additionalServiceCost,
         discountPrice,

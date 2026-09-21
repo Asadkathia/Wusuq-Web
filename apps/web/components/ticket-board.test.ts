@@ -130,3 +130,25 @@ describe('dynamic phase-2 charge rows (batch-9 Task 1)', () => {
     expect(src).toMatch(/\{visibility\.printing && \(/);
   });
 });
+
+describe('next-hearing capture is PENDING-case-only (batch-9 §6.2)', () => {
+  // Owner decision 2026-09-21: "Next hearing will be only available for
+  // pending cases — decided cases are already closed and don't need a new
+  // hearing." Before this, the checkbox's render guard was only
+  // `isClerk && costsTicket.status === 'IN_PROGRESS'` — the comment above it
+  // already said "PENDING tickets only" but the code never checked. Matches
+  // on the exact guard expression (not a bare `isPendingCase` identifier,
+  // which the pre-existing line-1630 call site would already satisfy) so the
+  // test can only pass if THIS guard was actually changed.
+  it('the checkbox render guard includes isPendingCase(costsTicket)', () => {
+    expect(src).toMatch(
+      /isClerk && costsTicket\.status === 'IN_PROGRESS' && isPendingCase\(costsTicket\) && \(/,
+    );
+  });
+
+  it('the submit-time next-hearing write is also gated on isPendingCase (defense in depth)', () => {
+    expect(src).toMatch(
+      /costsTicket && isPendingCase\(costsTicket\) && nextHearingEnabled && nextHearingDate/,
+    );
+  });
+});

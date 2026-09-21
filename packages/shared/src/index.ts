@@ -610,6 +610,76 @@ export function chargeCapabilitiesFor(
   return SERVICE_CHARGE_CAPABILITIES[flow] ?? NO_CHARGES;
 }
 
+/**
+ * Batch-9 Task 2 (§4, fix round 1 — review finding): the single decision
+ * point for whether a phase-2 charge column write should be forced to 0,
+ * left untouched, or allowed through normally.
+ *
+ * `chargeCapabilitiesFor` above answers "does this flow/currency combo have
+ * this capability", and for a null/unrecognized flow it definitively
+ * answers NO (NO_CHARGES) — correct for the read-only WORKFLOW checks that
+ * use it (e.g. the dispatch state machine), where "no capability" and
+ * "capability unknown" have the same consequence (don't run the delivery
+ * leg). It is the WRONG answer for a money WRITE: a null-flow ticket is not
+ * necessarily a digital/no-charges ticket — it can be a legacy ticket
+ * created before `intakeFlow` was tracked, carrying REAL already-persisted
+ * nonzero charges (see tickets.service.spec.ts "falls back to the copied
+ * totals when the original cannot be re-priced (no flow)", fixture
+ * `intakeFlow: null, deliveryCharges: 5, printingCharges: 2,
+ * attestedCharges: 3`, which asserts those values are PRESERVED). Treating
+ * "unknown" as "definitely zero" for a money write silently destroys that
+ * data on the next unrelated edit.
+ *
+ * This function separates the two: `currency === 'USD'` is always
+ * definitive (checked first, exactly like `chargeCapabilitiesFor` — a
+ * USD ticket has no phase-2 charges regardless of flow, and that IS the
+ * client's actual reported bug this task exists to close). A flow that is a
+ * recognized key in `SERVICE_CHARGE_CAPABILITIES` is definitive. A flow
+ * that is null, or a string not in that map (typo, future/removed flow,
+ * pre-migration data), is UNKNOWN — the caller must return `undefined`
+ * (Prisma's "leave this column unchanged") rather than `0`, and must not
+ * accept a new value for it either.
+ *
+ * ONE function, not inlined at each of the three call sites
+ * (finance.service.ts updateCharge, tickets.service.ts saveClerkCharges,
+ * tickets.service.ts submitClerkCosts) — three copies of this exact class
+ * of money rule is how the §4 defect shipped in the first place (Task 1
+ * closed the UI, the first Task-2 pass closed two of three server paths,
+ * review found the third).
+ *
+ * @param flow The ticket's `intakeFlow` (nullable).
+ * @param currency The ticket's currency.
+ * @param capability Which of the four phase-2 charges this call resolves —
+ *   `attestedCharges`/`nonAttestedCharges` both use `'attestation'`.
+ * @param dtoValue The caller-supplied new value, if any.
+ * @param fallback What to fall back to when the capability is known and
+ *   granted but `dtoValue` is absent. Pass the persisted column value for a
+ *   caller that always writes a definite number (updateCharge,
+ *   submitClerkCosts' `?? computePageCharges(...) ?? persisted` chain), or
+ *   `undefined` for a partial "draft save" caller that should leave the
+ *   column alone when the dto omits it (saveClerkCharges) — `undefined` is
+ *   also exactly what an unknown determination needs, which is why passing
+ *   it through unconditionally as the final fallback is correct.
+ * @returns The value to write for this column: `0` when the flow/currency
+ *   definitively has no such capability, `undefined` when the column must
+ *   be left untouched (capability unknown, OR the capability is known and
+ *   granted but neither `dtoValue` nor `fallback` supplied a number), or
+ *   the resolved number otherwise.
+ */
+export function resolveGatedCharge(
+  flow: string | null | undefined,
+  currency: Currency | undefined,
+  capability: keyof ServiceChargeCapabilities,
+  dtoValue: number | undefined,
+  fallback: number | undefined,
+): number | undefined {
+  if (currency === 'USD') return 0;
+  const caps = flow ? SERVICE_CHARGE_CAPABILITIES[flow] : undefined;
+  if (!caps) return undefined;
+  if (!caps[capability]) return 0;
+  return dtoValue ?? fallback;
+}
+
 // Canonical render order for ticket case-details (Spec 3). Keys not listed are
 // appended after, alphabetically. Resolved through PAYLOAD_FIELD_ALIASES so
 // aliased keys land in the right slot.

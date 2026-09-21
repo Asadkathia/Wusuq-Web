@@ -5,12 +5,25 @@ import { FinanceService } from '../finance/finance.service';
 
 // Batch-9 Task 2 (§4): three server paths wrote the phase-2 charge columns
 // (deliveryCharges/printingCharges/attestedCharges/nonAttestedCharges — and,
-// for submitClerkCosts, the clerk* payout-snapshot twins) with no
-// chargeCapabilitiesFor gate. On a flow/currency combo with no such
-// capability (every USD ticket, every digital flow, and — since Task 1 —
-// Case Files' printing) the consumer was never billed these charges but
-// computeClerkEarningsBreakdown still paid the representative for them. This
-// spec proves the payout, not just the persisted column, is zeroed.
+// for submitClerkCosts, the clerk* payout-snapshot twins) with no capability
+// gate. On a flow/currency combo that DEFINITIVELY has no such capability
+// (every USD ticket, and — since Task 1 — Case Files' printing) the
+// consumer was never billed these charges but computeClerkEarningsBreakdown
+// still paid the representative for them.
+//
+// Fix round 1 (review finding): the first pass over-corrected — it also
+// force-zeroed a null/unrecognized `intakeFlow`, which is NOT the same as
+// "definitely no charges". Legacy tickets predating flow tracking can carry
+// REAL already-persisted nonzero charges (tickets.service.spec.ts "falls
+// back to the copied totals when the original cannot be re-priced (no
+// flow)"). `resolveGatedCharge` (packages/shared) now distinguishes
+// "definitive" (USD, or a flow that IS a key in SERVICE_CHARGE_CAPABILITIES)
+// from "unknown" (null flow, or a flow string not in that map) — unknown
+// never writes 0 and never accepts a new dto value either.
+//
+// This spec proves the payout (computeClerkEarningsBreakdown().total), not
+// just the persisted column, in both directions: zeroed when definitive,
+// untouched/preserved when unknown.
 
 function makeDispatcher() {
   return {
@@ -95,6 +108,7 @@ function makeTicketsService(ticketOverrides: Record<string, unknown> = {}) {
     prisma,
     tx,
     updateSpy: tx.ticket.updateMany,
+    ticket,
   };
 }
 
@@ -102,61 +116,23 @@ function repActor() {
   return { actorUserId: 'rep-1', actorRole: 'representative' };
 }
 
-describe('submitClerkCosts — chargeCapabilitiesFor gate (batch-9 Task 2)', () => {
-  it('zeroes both the flat charge columns AND the clerk* payout snapshot for a NO_CHARGES flow (digital), leaving a leftover persisted printingCharges out of the payout', async () => {
-    // The concrete leak the brief names: a Case-Files ticket with a
-    // pre-existing nonzero printingCharges (legacy, or set before Task 1
-    // flipped judicial_case_files.printing to false) must not resurrect that
-    // leftover into clerkPrintingCharges just because the dto is empty.
-    const { service, updateSpy } = makeTicketsService({
-      intakeFlow: 'judicial_case_information', // digital flow -> NO_CHARGES
-      printingCharges: 500, // legacy leftover
-      deliveryCharges: 300,
-      attestedCharges: 400,
-      nonAttestedCharges: 200,
-    });
+/** Simulates Prisma's `update`/`updateMany` semantics: a key with value
+ * `undefined` in `data` leaves that column exactly as it was; any other
+ * value overwrites it. Used to compute what the DB would actually hold
+ * after the write, so tests can assert the true post-state rather than
+ * just the shape of the `data` object. */
+function applyPrismaWrite(
+  original: Record<string, unknown>,
+  data: Record<string, unknown>,
+) {
+  const merged = { ...original };
+  for (const [k, v] of Object.entries(data)) {
+    if (v !== undefined) merged[k] = v;
+  }
+  return merged;
+}
 
-    await service.submitClerkCosts(
-      'ticket-1',
-      {
-        // Client explicitly tries to submit charges too — must still be
-        // zeroed, not just the fallback-to-persisted path.
-        deliveryCharges: 999,
-        printingCharges: 999,
-        attestedCharges: 999,
-        nonAttestedCharges: 999,
-      } as never,
-      repActor(),
-    );
-
-    const data = (
-      updateSpy.mock.calls.at(-1) as [{ data: Record<string, unknown> }]
-    )[0].data;
-
-    expect(Number(data.deliveryCharges)).toBe(0);
-    expect(Number(data.printingCharges)).toBe(0);
-    expect(Number(data.attestedCharges)).toBe(0);
-    expect(Number(data.nonAttestedCharges)).toBe(0);
-    expect(Number(data.clerkDeliveryCharges)).toBe(0);
-    expect(Number(data.clerkPrintingCharges)).toBe(0);
-    expect(Number(data.clerkAttestedCharges)).toBe(0);
-    expect(Number(data.clerkNonAttestedCharges)).toBe(0);
-
-    // The payout is the point, not the columns.
-    const payout = computeClerkEarningsBreakdown({
-      clerkCost: 400,
-      attestedCharges: Number(data.attestedCharges),
-      clerkAttestedCharges: data.clerkAttestedCharges as number,
-      nonAttestedCharges: Number(data.nonAttestedCharges),
-      clerkNonAttestedCharges: data.clerkNonAttestedCharges as number,
-      printingCharges: Number(data.printingCharges),
-      clerkPrintingCharges: data.clerkPrintingCharges as number,
-      deliveryCharges: Number(data.deliveryCharges),
-      clerkDeliveryCharges: data.clerkDeliveryCharges as number,
-    });
-    expect(payout.total).toBe(400); // clerkCost only — no phase-2 leak.
-  });
-
+describe('submitClerkCosts — capability gate (batch-9 Task 2, fix round 1)', () => {
   it('a Case-Files ticket (post-Task-1: printing capability is FALSE) zeroes printingCharges + clerkPrintingCharges but keeps attestation + delivery', async () => {
     const { service, updateSpy } = makeTicketsService({
       intakeFlow: 'judicial_case_files',
@@ -231,13 +207,112 @@ describe('submitClerkCosts — chargeCapabilitiesFor gate (batch-9 Task 2)', () 
     });
     expect(payout.total).toBe(0);
   });
+
+  it('a USD ticket with intakeFlow: null still gets zeroed (currency is definitive regardless of flow)', async () => {
+    const { service, updateSpy } = makeTicketsService({
+      intakeFlow: null,
+      currency: 'USD',
+      deliveryCharges: 300, // legacy leftover — must not survive on a USD ticket
+    });
+
+    await service.submitClerkCosts(
+      'ticket-1',
+      {
+        deliveryCharges: 500,
+        attestedCharges: 900,
+        nonAttestedCharges: 700,
+      } as never,
+      repActor(),
+    );
+
+    const data = (
+      updateSpy.mock.calls.at(-1) as [{ data: Record<string, unknown> }]
+    )[0].data;
+
+    expect(Number(data.deliveryCharges)).toBe(0);
+    expect(Number(data.attestedCharges)).toBe(0);
+    expect(Number(data.nonAttestedCharges)).toBe(0);
+    expect(Number(data.printingCharges)).toBe(0);
+    expect(Number(data.clerkDeliveryCharges)).toBe(0);
+  });
+
+  it('intakeFlow: null (unknown, PKR) — an existing persisted charge SURVIVES, and the dto cannot add a new one', async () => {
+    const { service, updateSpy, ticket } = makeTicketsService({
+      intakeFlow: null,
+      currency: 'PKR',
+      deliveryCharges: 5, // real legacy money — must not be destroyed
+      printingCharges: 2,
+      attestedCharges: 3,
+      nonAttestedCharges: 0,
+      clerkCost: 10,
+    });
+
+    await service.submitClerkCosts(
+      'ticket-1',
+      {
+        // The clerk attempts to submit NEW values — an unknown-capability
+        // ticket must neither gain nor lose a charge, so these must be
+        // rejected too, not just the persisted values preserved.
+        deliveryCharges: 999,
+        printingCharges: 999,
+        attestedCharges: 999,
+        nonAttestedCharges: 999,
+      } as never,
+      repActor(),
+    );
+
+    const data = (
+      updateSpy.mock.calls.at(-1) as [{ data: Record<string, unknown> }]
+    )[0].data;
+
+    // Prisma `undefined` = column left untouched.
+    expect(data.deliveryCharges).toBeUndefined();
+    expect(data.printingCharges).toBeUndefined();
+    expect(data.attestedCharges).toBeUndefined();
+    expect(data.nonAttestedCharges).toBeUndefined();
+    expect(data.clerkDeliveryCharges).toBeUndefined();
+    expect(data.clerkPrintingCharges).toBeUndefined();
+    expect(data.clerkAttestedCharges).toBeUndefined();
+    expect(data.clerkNonAttestedCharges).toBeUndefined();
+
+    // Reconstruct what the DB would actually hold and assert the payout is
+    // exactly what it was before this call — not 0, not the dto's 999s.
+    const finalTicket = applyPrismaWrite(ticket, data);
+    const payout = computeClerkEarningsBreakdown({
+      clerkCost: finalTicket.clerkCost as number,
+      attestedCharges: finalTicket.attestedCharges as number,
+      clerkAttestedCharges: finalTicket.clerkAttestedCharges as
+        | number
+        | null
+        | undefined,
+      nonAttestedCharges: finalTicket.nonAttestedCharges as number,
+      clerkNonAttestedCharges: finalTicket.clerkNonAttestedCharges as
+        | number
+        | null
+        | undefined,
+      printingCharges: finalTicket.printingCharges as number,
+      clerkPrintingCharges: finalTicket.clerkPrintingCharges as
+        | number
+        | null
+        | undefined,
+      deliveryCharges: finalTicket.deliveryCharges as number,
+      clerkDeliveryCharges: finalTicket.clerkDeliveryCharges as
+        | number
+        | null
+        | undefined,
+    });
+    // 10 (clerkCost) + 3 (attested) + 0 (nonAttested) + 2 (printing) +
+    // 5 (delivery) = 20 — the ORIGINAL persisted figures, no dto leak, no
+    // zeroing.
+    expect(payout.total).toBe(20);
+  });
 });
 
-describe('saveClerkCharges — printing/delivery force 0 (not undefined) for a NO_CHARGES flow (batch-9 Task 2)', () => {
+describe('saveClerkCharges — capability gate (batch-9 Task 2, fix round 1)', () => {
   function makeSaveChargesService(ticketOverrides: Record<string, unknown>) {
     const ticket = {
       id: 'ticket-1',
-      intakeFlow: 'judicial_case_information',
+      intakeFlow: 'judicial_case_files',
       currency: 'PKR',
       ...ticketOverrides,
     };
@@ -272,11 +347,14 @@ describe('saveClerkCharges — printing/delivery force 0 (not undefined) for a N
     (service as unknown as { findOne: unknown }).findOne = jest
       .fn()
       .mockResolvedValue({ id: 'ticket-1' });
-    return { service, updateSpy };
+    return { service, updateSpy, ticket };
   }
 
-  it('writes printingCharges: 0 and deliveryCharges: 0 — Prisma `undefined` would leave a leftover value unchanged', async () => {
-    const { service, updateSpy } = makeSaveChargesService({});
+  it('a USD ticket forces printingCharges: 0 and deliveryCharges: 0 — literal 0, not undefined', async () => {
+    const { service, updateSpy } = makeSaveChargesService({
+      intakeFlow: 'judicial_case_files',
+      currency: 'USD',
+    });
 
     await service.saveClerkCharges(
       'ticket-1',
@@ -292,16 +370,56 @@ describe('saveClerkCharges — printing/delivery force 0 (not undefined) for a N
     expect(data.attestedCharges).toBe(0);
     expect(data.nonAttestedCharges).toBe(0);
   });
+
+  it('intakeFlow: null (unknown, PKR) — an existing persisted charge SURVIVES a draft save that tries to change it', async () => {
+    const { service, updateSpy, ticket } = makeSaveChargesService({
+      intakeFlow: null,
+      currency: 'PKR',
+      deliveryCharges: 5,
+      printingCharges: 2,
+      attestedCharges: 3,
+      nonAttestedCharges: 0,
+      clerkCost: 10,
+    });
+
+    await service.saveClerkCharges(
+      'ticket-1',
+      {
+        deliveryCharges: 999,
+        printingCharges: 999,
+        attestedCharges: 999,
+        nonAttestedCharges: 999,
+      } as never,
+      repActor(),
+    );
+
+    const data = (
+      updateSpy.mock.calls.at(-1) as [{ data: Record<string, unknown> }]
+    )[0].data;
+    expect(data.deliveryCharges).toBeUndefined();
+    expect(data.printingCharges).toBeUndefined();
+    expect(data.attestedCharges).toBeUndefined();
+    expect(data.nonAttestedCharges).toBeUndefined();
+
+    const finalTicket = applyPrismaWrite(ticket, data);
+    const payout = computeClerkEarningsBreakdown({
+      clerkCost: finalTicket.clerkCost as number,
+      attestedCharges: finalTicket.attestedCharges as number,
+      nonAttestedCharges: finalTicket.nonAttestedCharges as number,
+      printingCharges: finalTicket.printingCharges as number,
+      deliveryCharges: finalTicket.deliveryCharges as number,
+    });
+    expect(payout.total).toBe(20); // unchanged from the persisted figures.
+  });
 });
 
-describe('FinanceService.updateCharge — chargeCapabilitiesFor gate (batch-9 Task 2)', () => {
+describe('FinanceService.updateCharge — capability gate (batch-9 Task 2, fix round 1)', () => {
   function build(ticket: Record<string, unknown>) {
     const prisma = {
       ticket: {
         findUnique: jest.fn(async () => ticket),
         update: jest.fn(async ({ data }: any) => ({
-          ...ticket,
-          ...data,
+          ...applyPrismaWrite(ticket, data),
           assignments: [{ id: 'a1' }],
         })),
       },
@@ -310,10 +428,11 @@ describe('FinanceService.updateCharge — chargeCapabilitiesFor gate (batch-9 Ta
     return {
       service: new FinanceService(prisma as never, auditLogsService as never),
       prisma,
+      ticket,
     };
   }
 
-  const USD_TICKET = {
+  const BASE_TICKET = {
     id: 't1',
     intakeFlow: 'judicial_case_files',
     currency: 'USD',
@@ -339,7 +458,7 @@ describe('FinanceService.updateCharge — chargeCapabilitiesFor gate (batch-9 Ta
   };
 
   it('a USD ticket keeps all four charges at 0 even when the dto supplies values', async () => {
-    const { service, prisma } = build(USD_TICKET);
+    const { service, prisma } = build(BASE_TICKET);
 
     const result = await service.updateCharge('t1', {
       deliveryCharges: 500,
@@ -366,7 +485,7 @@ describe('FinanceService.updateCharge — chargeCapabilitiesFor gate (batch-9 Ta
 
   it('a PKR ticket on a flow with the capability keeps the admin override', async () => {
     const { service, prisma } = build({
-      ...USD_TICKET,
+      ...BASE_TICKET,
       currency: 'PKR',
       clerkCost: 400,
     });
@@ -380,5 +499,62 @@ describe('FinanceService.updateCharge — chargeCapabilitiesFor gate (batch-9 Ta
     expect(data.deliveryCharges).toBe(300);
     expect(data.attestedCharges).toBe(900);
     expect(result.clerkPayout).toBe(400 + 300 + 900);
+  });
+
+  it('a USD ticket with intakeFlow: null still gets zeroed (currency is definitive regardless of flow)', async () => {
+    const { service, prisma } = build({
+      ...BASE_TICKET,
+      intakeFlow: null,
+      deliveryCharges: 300, // legacy leftover — must not survive on USD
+    });
+
+    const result = await service.updateCharge('t1', {
+      deliveryCharges: 500,
+      attestedCharges: 900,
+    } as never);
+
+    const data = (prisma.ticket.update.mock.calls.at(-1) as any)[0].data;
+    expect(data.deliveryCharges).toBe(0);
+    expect(data.attestedCharges).toBe(0);
+    expect(result.clerkPayout).toBe(0);
+  });
+
+  it('intakeFlow: null (unknown, PKR) — an existing persisted charge SURVIVES an edit to an unrelated field, and the dto cannot add a new charge', async () => {
+    const { service, prisma } = build({
+      ...BASE_TICKET,
+      intakeFlow: null,
+      currency: 'PKR',
+      deliveryCharges: 5,
+      printingCharges: 2,
+      attestedCharges: 3,
+      nonAttestedCharges: 0,
+      clerkCost: 10,
+      totalAmount: 20,
+      amountPaid: 0,
+    });
+
+    // Only touches discountPrice — an admin editing something unrelated must
+    // not silently erase the legacy charge columns.
+    const result = await service.updateCharge('t1', {
+      discountPrice: 1,
+      // Also try (and fail) to smuggle a new delivery charge through.
+      deliveryCharges: 999,
+    } as never);
+
+    const data = (prisma.ticket.update.mock.calls.at(-1) as any)[0].data;
+    expect(data.deliveryCharges).toBeUndefined();
+    expect(data.printingCharges).toBeUndefined();
+    expect(data.attestedCharges).toBeUndefined();
+    expect(data.nonAttestedCharges).toBeUndefined();
+
+    // The persisted charges survive — reflected in both the returned
+    // `charges` snapshot and the clerk payout.
+    expect(result.charges.deliveryCharges).toBe(5);
+    expect(result.charges.printingCharges).toBe(2);
+    expect(result.charges.attestedCharges).toBe(3);
+    expect(result.charges.nonAttestedCharges).toBe(0);
+    // 10 (clerkCost) + 3 (attested) + 2 (printing) + 5 (delivery) = 20 —
+    // unaffected by the discountPrice edit or the smuggled dto value.
+    expect(result.clerkPayout).toBe(20);
   });
 });

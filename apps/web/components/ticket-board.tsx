@@ -2324,8 +2324,13 @@ export function TicketBoard({ title, status, archived = false, immature = false 
                   </div>
                 )}
 
-                {/* Clerk: optional next-hearing capture (PENDING tickets only) */}
-                {isClerk && costsTicket.status === 'IN_PROGRESS' && (
+                {/* Clerk: optional next-hearing capture (PENDING tickets only).
+                    Owner decision 2026-09-21: "Next hearing will be only
+                    available for pending cases — decided cases are already
+                    closed and don't need a new hearing." isPendingCase reads
+                    formPayload.case_status and already excludes
+                    COMPLETED/DELIVERED; this is its second call site. */}
+                {isClerk && costsTicket.status === 'IN_PROGRESS' && isPendingCase(costsTicket) && (
                   <div className="rounded-xl border border-border-soft p-4 space-y-3">
                     <label className="flex items-center gap-3 cursor-pointer select-none">
                       <input
@@ -2383,7 +2388,7 @@ export function TicketBoard({ title, status, archived = false, immature = false 
               variant="primary"
               disabled={submittingCosts}
               onClick={async () => {
-                if (costsTicket && nextHearingEnabled && nextHearingDate) {
+                if (costsTicket && isPendingCase(costsTicket) && nextHearingEnabled && nextHearingDate) {
                   const hearingSaved = await submitNextHearing(costsTicket.id);
                   if (!hearingSaved) return;
                 }
