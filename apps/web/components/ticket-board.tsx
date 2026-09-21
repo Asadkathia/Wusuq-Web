@@ -13,6 +13,7 @@ import { TICKET_STATUSES } from '@wusuq/shared';
 import { apiClient } from '@/lib/api-client';
 import { relativeTime } from '@/lib/relative-time';
 import { prefillPhase2Charge } from '@/lib/finalize-charges';
+import { prefillOwnSubmittedCharge, resolveOwnSubmittedCharge } from '@/lib/clerk-costs-prefill';
 import { readSetType, visibleChargeFields } from '@/lib/clerk-charge-fields';
 import { parseDeliveryAddress } from '@/lib/intake-flows';
 import { paymentsClient } from '@/lib/payments-client';
@@ -709,15 +710,30 @@ export function TicketBoard({ title, status, archived = false, immature = false 
   const openCostsModal = (ticket: TicketRow) => {
     setCostsTicket(ticket);
     setClerkCosts({
-      deliveryCharges: ticket.deliveryCharges ? String(ticket.deliveryCharges) : '',
-      printingCharges: ticket.printingCharges ? String(ticket.printingCharges) : '',
+      // Fix round 1 (§6.3): a representative reopening this dialog (now
+      // possible from WAITING_APPROVAL, not just IN_PROGRESS) must see their
+      // OWN prior submission, not a blank form. `findAll` withholds the flat
+      // columns from a representative caller by design (audit 1.1) — the
+      // frozen clerk*Charges snapshot is the field that actually reaches
+      // them, and it IS their own declared figure, so it is preferred over
+      // the flat column outright (never averaged/maxed the way the admin
+      // finalize dialog does — see prefillOwnSubmittedCharge's doc comment).
+      // Strict null-vs-zero handling: a submitted 0 prefills as "0", never
+      // blank (the old `ticket.deliveryCharges ? String(...) : ''` line had
+      // exactly that falsy-check bug).
+      deliveryCharges: prefillOwnSubmittedCharge(ticket.deliveryCharges, ticket.clerkDeliveryCharges),
+      printingCharges: prefillOwnSubmittedCharge(ticket.printingCharges, ticket.clerkPrintingCharges),
       // C11: pages/rate aren't on the list row (same gap as noOfPages/costPerPage
-      // below) — left blank on open, re-entered per submission.
+      // below) — left blank on open, re-entered per submission. The lump
+      // totals these pairs would have produced are still surfaced to the
+      // representative as a read-only "Previously submitted" hint beside
+      // each computed-automatically preview box below, sourced from the
+      // same clerk snapshot — without fabricating a fake page/rate split.
       attestedPages: '',
       attestedCostPerPage: '',
       nonAttestedPages: '',
       nonAttestedCostPerPage: '',
-      additionalCharges: ticket.additionalCharges ? String(ticket.additionalCharges) : '',
+      additionalCharges: prefillOwnSubmittedCharge(ticket.additionalCharges, null),
       noOfPages: '',
       costPerPage: '',
     });
@@ -2219,6 +2235,18 @@ export function TicketBoard({ title, status, archived = false, immature = false 
               if (key === 'noOfPages' || key === 'costPerPage') return visibility.printing;
               return true;
             });
+            // Fix round 1 (§6.3): printing/attested/non-attested are pages ×
+            // rate ONLY in this dialog — there is no lump text input to
+            // prefill (that stays blank, C11's existing gap; do not
+            // fabricate a fake page/rate split for a lump snapshot total).
+            // But the representative's own previously-submitted TOTAL for
+            // each is still worth surfacing as a read-only reminder beside
+            // the "Computed automatically" preview, sourced from the same
+            // frozen clerk*Charges snapshot the delivery prefill above uses.
+            const previouslySubmitted = (
+              flat: number | string | null | undefined,
+              clerkSnapshot: number | string | null | undefined,
+            ) => resolveOwnSubmittedCharge(flat, clerkSnapshot);
             const noCaps = !caps.attestation && !caps.printing && !caps.delivery && !caps.pdf;
             return (
               <div className="space-y-6">
@@ -2272,6 +2300,16 @@ export function TicketBoard({ title, status, archived = false, immature = false 
                             {clerkCosts.noOfPages || '0'} × {clerkCosts.costPerPage || '0'}
                           </span>
                         </div>
+                        {/* Fix round 1 (§6.3): the pages/rate split itself
+                            stays un-prefilled (C11's existing, deliberate
+                            gap — those aren't on the list row), but the
+                            representative's own previously-declared TOTAL is
+                            still worth surfacing as a memory aid on reopen. */}
+                        {previouslySubmitted(costsTicket.printingCharges, costsTicket.clerkPrintingCharges) != null && (
+                          <p className="mt-1 text-xs text-slate-400">
+                            Previously submitted: PKR {previouslySubmitted(costsTicket.printingCharges, costsTicket.clerkPrintingCharges)!.toLocaleString()}
+                          </p>
+                        )}
                       </FormField>
                     )}
                     {/* Task 1: each attestation preview is gated on its OWN
@@ -2288,6 +2326,11 @@ export function TicketBoard({ title, status, archived = false, immature = false 
                             {clerkCosts.attestedPages || '0'} × {clerkCosts.attestedCostPerPage || '0'}
                           </span>
                         </div>
+                        {previouslySubmitted(costsTicket.attestedCharges, costsTicket.clerkAttestedCharges) != null && (
+                          <p className="mt-1 text-xs text-slate-400">
+                            Previously submitted: PKR {previouslySubmitted(costsTicket.attestedCharges, costsTicket.clerkAttestedCharges)!.toLocaleString()}
+                          </p>
+                        )}
                       </FormField>
                     )}
                     {visibility.nonAttested && (
@@ -2300,6 +2343,11 @@ export function TicketBoard({ title, status, archived = false, immature = false 
                             {clerkCosts.nonAttestedPages || '0'} × {clerkCosts.nonAttestedCostPerPage || '0'}
                           </span>
                         </div>
+                        {previouslySubmitted(costsTicket.nonAttestedCharges, costsTicket.clerkNonAttestedCharges) != null && (
+                          <p className="mt-1 text-xs text-slate-400">
+                            Previously submitted: PKR {previouslySubmitted(costsTicket.nonAttestedCharges, costsTicket.clerkNonAttestedCharges)!.toLocaleString()}
+                          </p>
+                        )}
                       </FormField>
                     )}
                   </div>

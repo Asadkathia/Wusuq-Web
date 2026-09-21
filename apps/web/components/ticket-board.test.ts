@@ -216,3 +216,69 @@ describe('representative can correct submitted costs (batch-9 §6.3)', () => {
     );
   });
 });
+
+describe('the representative dialog prefills from the CLERK SNAPSHOT, not the flat columns (batch-9 §6.3, fix round 1)', () => {
+  // Background: findAll deliberately withholds the flat consumer-facing
+  // charge columns (deliveryCharges, printingCharges, ...) from a
+  // representative caller (audit 1.1). Once the button gate widened to let
+  // a representative reopen this dialog, openCostsModal STILL read those
+  // withheld flat columns — so the dialog opened blank for the only role
+  // this feature serves. The fix reads the frozen clerk*Charges snapshot
+  // columns first (the representative's own prior submission), falling
+  // back to the flat column only when no snapshot was ever recorded. The
+  // pure prefill logic itself (resolveOwnSubmittedCharge /
+  // prefillOwnSubmittedCharge, incl. the strict null-vs-0 discipline) is
+  // unit-tested directly in lib/clerk-costs-prefill.test.ts — these guards
+  // only prove the real call sites in this file are actually wired to it.
+
+  it('openCostsModal prefills deliveryCharges from prefillOwnSubmittedCharge(ticket.deliveryCharges, ticket.clerkDeliveryCharges)', () => {
+    expect(src).toMatch(
+      /deliveryCharges: prefillOwnSubmittedCharge\(ticket\.deliveryCharges, ticket\.clerkDeliveryCharges\)/,
+    );
+  });
+
+  it('openCostsModal prefills printingCharges from prefillOwnSubmittedCharge(ticket.printingCharges, ticket.clerkPrintingCharges)', () => {
+    expect(src).toMatch(
+      /printingCharges: prefillOwnSubmittedCharge\(ticket\.printingCharges, ticket\.clerkPrintingCharges\)/,
+    );
+  });
+
+  it('openCostsModal no longer uses the old falsy-check prefill for delivery/printing (the genuine-0-renders-blank bug)', () => {
+    expect(src).not.toMatch(/deliveryCharges: ticket\.deliveryCharges \? String\(ticket\.deliveryCharges\) : ''/);
+    expect(src).not.toMatch(/printingCharges: ticket\.printingCharges \? String\(ticket\.printingCharges\) : ''/);
+  });
+
+  it('the pages/rate inputs (attestedPages/attestedCostPerPage/nonAttestedPages/nonAttestedCostPerPage/noOfPages/costPerPage) are still left blank on open — not fabricated from the snapshot', () => {
+    const openCostsModalMatch = src.match(
+      /const openCostsModal = \(ticket: TicketRow\) => \{[\s\S]*?\n  \};/,
+    );
+    expect(openCostsModalMatch).not.toBeNull();
+    const body = openCostsModalMatch![0];
+    expect(body).toMatch(/attestedPages: '',/);
+    expect(body).toMatch(/attestedCostPerPage: '',/);
+    expect(body).toMatch(/nonAttestedPages: '',/);
+    expect(body).toMatch(/nonAttestedCostPerPage: '',/);
+    expect(body).toMatch(/noOfPages: '',/);
+    expect(body).toMatch(/costPerPage: '',/);
+  });
+
+  it('surfaces the representative\'s own previously-submitted total for printing/attested/non-attested as a read-only hint, without fabricating a page/rate split', () => {
+    expect(src).toMatch(
+      /previouslySubmitted\(costsTicket\.printingCharges, costsTicket\.clerkPrintingCharges\)/,
+    );
+    expect(src).toMatch(
+      /previouslySubmitted\(costsTicket\.attestedCharges, costsTicket\.clerkAttestedCharges\)/,
+    );
+    expect(src).toMatch(
+      /previouslySubmitted\(costsTicket\.nonAttestedCharges, costsTicket\.clerkNonAttestedCharges\)/,
+    );
+    // The hint text itself, not just the helper call — proves it actually
+    // reaches the rendered page.
+    expect(src).toMatch(/Previously submitted: PKR/);
+  });
+
+  it('the hint is gated on a strict != null check, never a falsy check (a genuine 0 must still show the hint)', () => {
+    const hintGuards = src.match(/previouslySubmitted\([^)]+\) != null &&/g) ?? [];
+    expect(hintGuards.length).toBeGreaterThanOrEqual(3);
+  });
+});
