@@ -5,6 +5,7 @@ import { Pencil } from 'lucide-react';
 import type { IntakeField } from '@/lib/intake-flows';
 import { parseDeliveryAddress, parseBench, formatBenchJudgeName, showWhenSatisfied, parseCities } from '@/lib/intake-flows';
 import { Select } from '@/components/ui/select';
+import { humanizeValue } from '@/lib/case-view';
 
 export type BenchTypeOption = { value: string; label: string; count: number };
 
@@ -157,7 +158,15 @@ function RadioField({
   errorMsg: string;
 }) {
   const { selected, showChip, expand, collapse } = useSingleSelectCollapse(value, options);
-  const labelFor = (o: string) => customLabel(o) ?? o.replace(/_/g, ' ');
+  // batch-9 §7.3: the default (no customLabel) fallback used to be a raw
+  // underscore-to-space swap ("non_attested" -> "non attested"), relying on
+  // the button grid's `capitalize` CSS class below to title-case it on
+  // screen. The collapsed SelectionChip has no such class, so it rendered
+  // the raw lowercase text once a value was picked (the reported bug).
+  // Route through the shared case-view.ts humanizer instead — it already
+  // title-cases this exact snake_case shape — so both states agree without
+  // a second humanizer.
+  const labelFor = (o: string) => customLabel(o) ?? humanizeValue(o);
 
   if (showChip) {
     return (
@@ -228,8 +237,13 @@ const YEAR_OPTIONS: string[] = (() => {
   return years;
 })();
 
+// batch-9 §7.1: base `text-base` (16px) is load-bearing — below the `sm:`
+// breakpoint an input with no base font-size inherits a sub-16px size,
+// which iOS Safari treats as a signal to zoom the whole page in on focus
+// (confirmed by real iPhone screen recordings). `sm:text-sm` still shrinks
+// it back down on desktop/tablet widths where no zoom occurs.
 const BASE_CLASS =
-  'block w-full rounded-xl border-0 py-2.5 px-3.5 text-slate-900 shadow-sm ring-1 ring-inset ring-border-soft placeholder:text-slate-400 focus:ring-2 focus:ring-inset focus:ring-primary-600 sm:text-sm sm:leading-6';
+  'block w-full rounded-xl border-0 py-2.5 px-3.5 text-base text-slate-900 shadow-sm ring-1 ring-inset ring-border-soft placeholder:text-slate-400 focus:ring-2 focus:ring-inset focus:ring-primary-600 sm:text-sm sm:leading-6';
 
 export function renderField(
   field: IntakeField,

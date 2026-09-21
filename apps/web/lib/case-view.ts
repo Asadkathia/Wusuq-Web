@@ -33,7 +33,10 @@ function val(p: P, ...keys: string[]): string | null {
  * names with spaces, case numbers with slashes, doc bundles) untouched because
  * they don't match the all-lowercase/digit + underscore pattern.
  */
-function humanizeValue(value: string): string {
+// Exported (batch-9 §7.3) so the intake wizard's field renderer can reuse
+// this exact humanizer for the set-type "collapsed chip" label instead of
+// growing a second, subtly different one. Do not duplicate this logic.
+export function humanizeValue(value: string): string {
   if (/^[a-z0-9]+(_[a-z0-9]+)*$/.test(value)) {
     return value
       .split('_')

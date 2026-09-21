@@ -2309,8 +2309,13 @@ export function IntakeWizard({
     setLoading(false);
   };
 
-  const inputClass = 'block w-full rounded-xl border-0 py-2.5 px-3.5 text-slate-900 shadow-sm ring-1 ring-inset ring-border-soft placeholder:text-slate-400 focus:ring-2 focus:ring-primary-600 sm:text-sm';
-  const selectClass = 'mt-1 block w-full rounded-xl border-0 py-2.5 px-3 text-slate-900 ring-1 ring-inset ring-border-soft focus:ring-2 focus:ring-primary-600 sm:text-sm';
+  // batch-9 §7.1: base `text-base` (16px) is load-bearing — below the
+  // `sm:` breakpoint an input with no base font-size inherits a sub-16px
+  // size, which iOS Safari treats as a signal to zoom the whole page in on
+  // focus (confirmed by real iPhone screen recordings). `sm:text-sm` still
+  // shrinks it back down on desktop/tablet widths where no zoom occurs.
+  const inputClass = 'block w-full rounded-xl border-0 py-2.5 px-3.5 text-base text-slate-900 shadow-sm ring-1 ring-inset ring-border-soft placeholder:text-slate-400 focus:ring-2 focus:ring-primary-600 sm:text-sm';
+  const selectClass = 'mt-1 block w-full rounded-xl border-0 py-2.5 px-3 text-base text-slate-900 ring-1 ring-inset ring-border-soft focus:ring-2 focus:ring-primary-600 sm:text-sm';
   const headingTitle = isConsumerVariant ? 'Request a service' : title;
   const headingCopy = isConsumerVariant
     ? 'Choose the service you need and provide the details step by step.'
@@ -2321,6 +2326,34 @@ export function IntakeWizard({
   // CheckoutPanel uses this to relabel "Total" → "Base amount" and show a
   // disclosure note. ONE_TIME (digital) and USD flows are always false here.
   const isSplitFlow = paymentModelFor(draft.flow, currency) === 'SPLIT';
+
+  // batch-9 §7.4: `Boolean(draft.flow)` alone used to gate CheckoutPanel's
+  // "No pricing rule matched for this combination" notice, so it fired as
+  // soon as a flow was picked — well before the resolver had enough context
+  // for a null total to mean anything (no city yet so region can't be
+  // derived; Case Files before Set Type, where checkoutSummary above
+  // deliberately nulls the total out as a placeholder-suppression, not a
+  // real non-match; Case Information before Required Documents). That
+  // alarmed the consumer over an incomplete form, not a pricing failure.
+  // This only gates the live PREVIEW's notice — a genuine no-match on a
+  // COMPLETE form still surfaces (every readiness input below is satisfied,
+  // so pricingResult.matched staying false renders the real notice), and
+  // the server still rejects an unpriced submit outright (audit 1.4).
+  const hasCityForPricing = Boolean(
+    draft.payload.city_id || draft.payload.select_court_city || draft.payload.city,
+  );
+  const hasCourtTypeForPricing =
+    !draft.flow.startsWith('judicial') || Boolean(draft.payload.select_court_type);
+  const caseFilesAwaitingSetType =
+    draft.flow === 'judicial_case_files' && !draft.payload.set_type;
+  const caseInfoAwaitingBundle =
+    draft.flow === 'judicial_case_information' && !draft.payload.required_documentations;
+  const pricingNoticeReady =
+    Boolean(draft.flow) &&
+    hasCourtTypeForPricing &&
+    hasCityForPricing &&
+    !caseFilesAwaitingSetType &&
+    !caseInfoAwaitingBundle;
 
   // `w-full` on the root below is load-bearing: the wizard is mounted inside a
   // `flex flex-col` page wrapper, and `mx-auto` (auto horizontal margins) on a
@@ -2999,7 +3032,7 @@ export function IntakeWizard({
         </div>
         <CheckoutPanel
           summary={checkoutSummary}
-          hasFlow={Boolean(draft.flow)}
+          hasFlow={pricingNoticeReady}
           isSplit={isSplitFlow}
           walletSlot={walletCredit > 0 && isSelfIntake ? (
             <label className="flex cursor-pointer items-start gap-2 select-none">
@@ -3032,7 +3065,13 @@ export function IntakeWizard({
                   placeholder="Enter code"
                   disabled={promoDiscount > 0}
                   aria-label="Promo code"
-                  className="min-w-0 flex-1 rounded-xl border-0 py-2 px-3 text-sm text-slate-900 shadow-sm ring-1 ring-inset ring-border-soft placeholder:text-slate-400 focus:ring-2 focus:ring-brand-500 disabled:bg-slate-50 disabled:text-slate-500"
+                  // batch-9 §7.1: this input was `text-sm` unconditionally
+                  // (14px at every width, not just below `sm:`) — the same
+                  // iOS Safari focus-zoom class as inputClass/BASE_CLASS,
+                  // just worse (no breakpoint gate at all). `text-base`
+                  // (16px) below `sm:` stops the zoom; `sm:text-sm` keeps
+                  // the original desktop size.
+                  className="min-w-0 flex-1 rounded-xl border-0 py-2 px-3 text-base sm:text-sm text-slate-900 shadow-sm ring-1 ring-inset ring-border-soft placeholder:text-slate-400 focus:ring-2 focus:ring-brand-500 disabled:bg-slate-50 disabled:text-slate-500"
                 />
                 {promoDiscount > 0 ? (
                   <button

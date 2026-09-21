@@ -619,6 +619,48 @@ type CaseDateBlockProps = {
   onUnknownToggle: (unknown: boolean) => void;
 };
 
+// batch-9 §7.2: an empty native `type="date"` input renders NO visible
+// placeholder on iOS Safari (unlike a text input, `placeholder:text-*`
+// doesn't apply to dates at all), so a required date field like "Previous
+// case date" / "Next hearing date" looked like labelled blank space in the
+// client's iPhone recordings — no border cue told the consumer where to
+// tap. `outline` is a separate CSS property from the `ring-*`/`shadow-*`
+// box-shadow utilities baked into the shared `inputClass` string, so it
+// layers on cleanly instead of fighting the existing ring for the same
+// `box-shadow` — two same-specificity `ring-*` utilities in one class list
+// would have unpredictable override order. The mobile-only hint text
+// (`sm:hidden`) doesn't duplicate the native "dd/mm/yyyy" placeholder that
+// desktop browsers already render for an empty date input.
+function DateInput({
+  className,
+  value,
+  onChange,
+}: {
+  className: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const isEmpty = !value;
+  return (
+    <div className="relative">
+      <input
+        className={[
+          className,
+          isEmpty ? 'outline outline-2 outline-offset-2 outline-amber-400' : '',
+        ].join(' ')}
+        type="date"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
+      {isEmpty ? (
+        <span className="pointer-events-none absolute inset-y-0 left-3.5 flex items-center text-sm text-amber-700 sm:hidden">
+          Tap to select a date
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
 export function CaseDateBlock({
   caseStatus,
   isUnknown,
@@ -668,43 +710,23 @@ export function CaseDateBlock({
       {isUnknown ? (
         <label className="block">
           <FieldLabel>Any date for the case</FieldLabel>
-          <input
-            className={inputClass}
-            type="date"
-            value={caseDate}
-            onChange={(e) => onCaseDateChange(e.target.value)}
-          />
+          <DateInput className={inputClass} value={caseDate} onChange={onCaseDateChange} />
         </label>
       ) : caseStatus === 'Pending Case' ? (
         <div className="grid gap-4 md:grid-cols-2">
           <label className="block">
             <FieldLabel>Previous case date</FieldLabel>
-            <input
-              className={inputClass}
-              type="date"
-              value={caseDate}
-              onChange={(e) => onCaseDateChange(e.target.value)}
-            />
+            <DateInput className={inputClass} value={caseDate} onChange={onCaseDateChange} />
           </label>
           <label className="block">
             <FieldLabel>Next hearing date</FieldLabel>
-            <input
-              className={inputClass}
-              type="date"
-              value={futureDate}
-              onChange={(e) => onFutureDateChange(e.target.value)}
-            />
+            <DateInput className={inputClass} value={futureDate} onChange={onFutureDateChange} />
           </label>
         </div>
       ) : caseStatus === 'Decided Case' ? (
         <label className="block">
           <FieldLabel>Decided date</FieldLabel>
-          <input
-            className={inputClass}
-            type="date"
-            value={decidedDate}
-            onChange={(e) => onDecidedDateChange(e.target.value)}
-          />
+          <DateInput className={inputClass} value={decidedDate} onChange={onDecidedDateChange} />
         </label>
       ) : (
         <label className="block">
@@ -719,12 +741,7 @@ export function CaseDateBlock({
                 ? 'Institution Date'
                 : 'Case date'}
           </FieldLabel>
-          <input
-            className={inputClass}
-            type="date"
-            value={caseDate}
-            onChange={(e) => onCaseDateChange(e.target.value)}
-          />
+          <DateInput className={inputClass} value={caseDate} onChange={onCaseDateChange} />
         </label>
       )}
     </div>
