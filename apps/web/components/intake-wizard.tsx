@@ -2753,6 +2753,27 @@ export function IntakeWizard({
               futureDate={draft.payload.future_date ?? ''}
               decidedDate={draft.payload.decided_date ?? ''}
               inputClass={inputClass}
+              // Batch-9 final review (finding 6): required-ness is resolved
+              // from the step's actual field definitions (varies by flow —
+              // e.g. `decided_date` is required for Case Files/Case
+              // Information but not Case Search), the same way every other
+              // field on this step is — never hardcoded inside CaseDateBlock,
+              // which has no flow context of its own. A key the step doesn't
+              // declare at all resolves to false (resolveRequired requires a
+              // real IntakeField; a step that never asks for that date has
+              // nothing to resolve).
+              caseDateRequired={(() => {
+                const f = activeStep?.fields.find((ff) => ff.key === 'case_date');
+                return f ? resolveRequired(f, activeCourtTier) : false;
+              })()}
+              futureDateRequired={(() => {
+                const f = activeStep?.fields.find((ff) => ff.key === 'future_date');
+                return f ? resolveRequired(f, activeCourtTier) : false;
+              })()}
+              decidedDateRequired={(() => {
+                const f = activeStep?.fields.find((ff) => ff.key === 'decided_date');
+                return f ? resolveRequired(f, activeCourtTier) : false;
+              })()}
               onCaseDateChange={(v) => setPayloadField('case_date', v)}
               onFutureDateChange={(v) => setPayloadField('future_date', v)}
               onDecidedDateChange={(v) => setPayloadField('decided_date', v)}

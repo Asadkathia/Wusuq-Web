@@ -472,6 +472,23 @@ export function TicketBoard({ title, status, archived = false, immature = false 
 
   // Admin "Review & Complete": one step — verify the clerk receipt, finalize
   // any phase-2 charges, and complete the ticket (digital flows auto-deliver).
+  //
+  // Batch-9 final review note (no behaviour change): the `visibility.attested`
+  // / `visibility.nonAttested` / `visibility.printing` / `visibility.delivery`
+  // narrowing used in the summary below (phase2Total / finalizeTotal) is
+  // UI-only — it decides what this DIALOG previews, not what gets submitted.
+  // `finalizeRemainderCore` (server) has no equivalent set-type narrowing of
+  // its own; it trusts whatever `attestedPages`/`attestedCostPerPage` etc.
+  // the caller sends via `resolveGatedCharge`, which gates on flow/currency
+  // capability only, never on `set_type`. Today the pagePair() helper below
+  // only ever sends a pair the admin actually typed into a rendered (i.e.
+  // visibility-gated) field, so this can't currently diverge — but if a
+  // future caller of `POST /tickets/:id/finalize-remainder` ever sent
+  // `attestedPages`/`attestedCostPerPage` while `visibility.attested` is
+  // false, this dialog's phase2Total preview would exclude that line while
+  // the server-persisted total includes it (a quote≠charge drift, the same
+  // class of bug CLAUDE.md documents elsewhere). Keep the two in mind
+  // together if either side of the pair changes.
   const submitFinalize = async () => {
     if (!finalizeTicket) return;
     setFinalizing(true);

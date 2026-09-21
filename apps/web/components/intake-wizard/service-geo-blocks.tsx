@@ -617,6 +617,15 @@ type CaseDateBlockProps = {
   onFutureDateChange: (value: string) => void;
   onDecidedDateChange: (value: string) => void;
   onUnknownToggle: (unknown: boolean) => void;
+  // Batch-9 final review (finding 6): required-ness varies per flow/tier
+  // (e.g. `decided_date` is required for Case Files/Case Information but not
+  // Case Search) — CaseDateBlock has no flow context of its own, so the
+  // caller resolves each via `resolveRequired(field, tier)` against the
+  // step's real IntakeField definitions and passes the result down. All
+  // default to false so an omitted prop never over-emphasizes a field.
+  caseDateRequired?: boolean;
+  futureDateRequired?: boolean;
+  decidedDateRequired?: boolean;
 };
 
 // batch-9 §7.2: an empty native `type="date"` input renders NO visible
@@ -628,32 +637,57 @@ type CaseDateBlockProps = {
 // box-shadow utilities baked into the shared `inputClass` string, so it
 // layers on cleanly instead of fighting the existing ring for the same
 // `box-shadow` — two same-specificity `ring-*` utilities in one class list
-// would have unpredictable override order. The mobile-only hint text
-// (`sm:hidden`) doesn't duplicate the native "dd/mm/yyyy" placeholder that
-// desktop browsers already render for an empty date input.
+// would have unpredictable override order.
+//
+// Batch-9 final review (finding 6): the original version fired the outline
+// on EVERY empty date field, required or not — none of CaseDateBlock's
+// fields are backend-required in every flow (e.g. `decided_date` is
+// required for Case Files/Case Information but not for Case Search; plain
+// `case_date` is never required anywhere), so an optional "Decided date" or
+// the unknown-case "Any date for the case" field got the same emphasis as a
+// genuinely required one. And `outline-amber-400` — amber being this
+// codebase's near-universal "needs attention/warning" colour — read as a
+// validation error on a field nobody had touched yet. Gate it on the
+// caller-supplied `required` (resolved per-field, per-flow, per-tier by the
+// caller via `resolveRequired`) and use a neutral, informational
+// `outline-brand-300` (this codebase's soft-highlight token — see
+// `future-tickets-banner.tsx` / `step-rail.tsx` — never the validation-error
+// `rose-500` used elsewhere in this wizard) rather than amber.
+//
+// The "Tap to select a date" hint is a different concern — a pure
+// discoverability aid for iOS Safari's invisible placeholder — and stays
+// for ANY empty date field regardless of required-ness. It used to be
+// absolutely positioned INSIDE the input's box, directly on top of wherever
+// a browser that DOES render a native placeholder (Android Chrome, below
+// 640px) puts its own "dd/mm/yyyy" text — two overlapping pieces of text
+// with no way to tell iOS from Android via CSS alone. Rendering it as a
+// normal-flow caption BELOW the input instead removes the stacking context
+// entirely, so it can no longer overlay a native placeholder on any OS.
 function DateInput({
   className,
   value,
   onChange,
+  required = false,
 }: {
   className: string;
   value: string;
   onChange: (value: string) => void;
+  required?: boolean;
 }) {
   const isEmpty = !value;
   return (
-    <div className="relative">
+    <div>
       <input
         className={[
           className,
-          isEmpty ? 'outline outline-2 outline-offset-2 outline-amber-400' : '',
+          isEmpty && required ? 'outline outline-2 outline-offset-2 outline-brand-300' : '',
         ].join(' ')}
         type="date"
         value={value}
         onChange={(e) => onChange(e.target.value)}
       />
       {isEmpty ? (
-        <span className="pointer-events-none absolute inset-y-0 left-3.5 flex items-center text-sm text-amber-700 sm:hidden">
+        <span className="mt-1 block text-xs text-slate-500 sm:hidden">
           Tap to select a date
         </span>
       ) : null}
@@ -672,6 +706,9 @@ export function CaseDateBlock({
   onFutureDateChange,
   onDecidedDateChange,
   onUnknownToggle,
+  caseDateRequired = false,
+  futureDateRequired = false,
+  decidedDateRequired = false,
 }: CaseDateBlockProps) {
   return (
     <div className="md:col-span-2 rounded-2xl border border-border-soft bg-surface-muted/50 p-5 space-y-5">
@@ -710,23 +747,23 @@ export function CaseDateBlock({
       {isUnknown ? (
         <label className="block">
           <FieldLabel>Any date for the case</FieldLabel>
-          <DateInput className={inputClass} value={caseDate} onChange={onCaseDateChange} />
+          <DateInput className={inputClass} value={caseDate} onChange={onCaseDateChange} required={caseDateRequired} />
         </label>
       ) : caseStatus === 'Pending Case' ? (
         <div className="grid gap-4 md:grid-cols-2">
           <label className="block">
             <FieldLabel>Previous case date</FieldLabel>
-            <DateInput className={inputClass} value={caseDate} onChange={onCaseDateChange} />
+            <DateInput className={inputClass} value={caseDate} onChange={onCaseDateChange} required={caseDateRequired} />
           </label>
           <label className="block">
             <FieldLabel>Next hearing date</FieldLabel>
-            <DateInput className={inputClass} value={futureDate} onChange={onFutureDateChange} />
+            <DateInput className={inputClass} value={futureDate} onChange={onFutureDateChange} required={futureDateRequired} />
           </label>
         </div>
       ) : caseStatus === 'Decided Case' ? (
         <label className="block">
           <FieldLabel>Decided date</FieldLabel>
-          <DateInput className={inputClass} value={decidedDate} onChange={onDecidedDateChange} />
+          <DateInput className={inputClass} value={decidedDate} onChange={onDecidedDateChange} required={decidedDateRequired} />
         </label>
       ) : (
         <label className="block">
@@ -741,7 +778,7 @@ export function CaseDateBlock({
                 ? 'Institution Date'
                 : 'Case date'}
           </FieldLabel>
-          <DateInput className={inputClass} value={caseDate} onChange={onCaseDateChange} />
+          <DateInput className={inputClass} value={caseDate} onChange={onCaseDateChange} required={caseDateRequired} />
         </label>
       )}
     </div>

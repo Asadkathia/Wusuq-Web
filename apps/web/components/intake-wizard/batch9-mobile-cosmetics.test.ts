@@ -70,11 +70,27 @@ describe('§7.2 empty date inputs are visible on mobile', () => {
     expect(geoBlocksSource).toMatch(/const isEmpty = !value;/);
   });
 
-  it('DateInput adds a visible outline (independent of the shared ring/shadow classes) only when empty', () => {
+  it('DateInput adds a visible outline (independent of the shared ring/shadow classes) only when empty AND required', () => {
+    // Batch-9 final review (finding 6): the original unconditional
+    // `isEmpty ? '...' : ''` fired the outline on every empty date field,
+    // including genuinely optional ones ("Any date for the case", "Decided
+    // date" on flows where it isn't required) — it now also requires the
+    // caller-resolved `required` prop, so this regex intentionally no
+    // longer matches the pre-fix (bare `isEmpty ?`) shape.
     const start = geoBlocksSource.indexOf('function DateInput(');
     const end = geoBlocksSource.indexOf('\n}\n', start);
     const block = geoBlocksSource.slice(start, end);
-    expect(block).toMatch(/isEmpty \? 'outline outline-2[^']*'/);
+    expect(block).toMatch(/isEmpty && required \? 'outline outline-2[^']*'/);
+  });
+
+  it('the empty-date outline uses a neutral, informational colour — never the amber/warning token', () => {
+    // "reading as a validation error" was the exact review complaint about
+    // `outline-amber-400` (this codebase's near-universal warning colour).
+    const start = geoBlocksSource.indexOf('function DateInput(');
+    const end = geoBlocksSource.indexOf('\n}\n', start);
+    const block = geoBlocksSource.slice(start, end);
+    expect(block).not.toMatch(/outline-amber/);
+    expect(block).toMatch(/outline-brand-300/);
   });
 
   it('DateInput renders a visible hint when empty', () => {
@@ -83,6 +99,31 @@ describe('§7.2 empty date inputs are visible on mobile', () => {
     const block = geoBlocksSource.slice(start, end);
     expect(block).toMatch(/isEmpty \? \(/);
     expect(block).toMatch(/Tap to select a date/);
+  });
+
+  it('the hint is a normal-flow caption, never absolutely positioned over the input (batch-9 final review finding 6)', () => {
+    // Pre-fix: `absolute inset-y-0 left-3.5 ...` stacked the hint directly
+    // on top of wherever a browser that DOES render a native date
+    // placeholder (Android Chrome, below 640px) draws its own
+    // "dd/mm/yyyy" text — two overlapping pieces of text. Rendering it in
+    // normal flow below the input removes the stacking context, so it can
+    // no longer overlay a native placeholder on any OS.
+    const start = geoBlocksSource.indexOf('function DateInput(');
+    const end = geoBlocksSource.indexOf('\n}\n', start);
+    const block = geoBlocksSource.slice(start, end);
+    expect(block).not.toMatch(/absolute inset-y-0/);
+    expect(block).toMatch(/className="mt-1 block text-xs text-slate-500 sm:hidden"/);
+  });
+
+  it('CaseDateBlock passes a resolved `required` prop through to each DateInput call', () => {
+    const start = geoBlocksSource.indexOf('export function CaseDateBlock(');
+    const end = geoBlocksSource.indexOf('\n}\n', start);
+    const block = geoBlocksSource.slice(start, end);
+    const dateInputCalls = block.match(/<DateInput\b[^/]*\/>/g) ?? [];
+    expect(dateInputCalls.length).toBe(5);
+    for (const call of dateInputCalls) {
+      expect(call).toMatch(/required=\{(caseDateRequired|futureDateRequired|decidedDateRequired)\}/);
+    }
   });
 
   it('CaseDateBlock routes every date field through DateInput, not a raw <input type="date">', () => {
