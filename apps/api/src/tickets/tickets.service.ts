@@ -318,7 +318,15 @@ export class TicketsService {
         // tie-breaker for rows updated in the same tick.
         orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
         include: {
-          consumer: { select: { id: true, name: true } },
+          // `phone` is fetched for every caller of findAll — safe because the
+          // WHERE clause already scopes the row set per caller class (a
+          // representative's query is forced to their own assignments via
+          // `query.representativeId = user.sub` in the controller; a
+          // consumer's to `consumerId = user.sub`; staff see everything
+          // regardless). The representative-visibility carve-out for the
+          // phone itself lives in `redactTicketForRepresentative` — this
+          // `select` only has to make the column available to project.
+          consumer: { select: { id: true, name: true, phone: true } },
           service: {
             select: { id: true, name: true, category: true, type: true },
           },
@@ -596,9 +604,11 @@ export class TicketsService {
   /**
    * Representative view of a ticket: strips consumer money fields (totals,
    * amount paid, per-charge columns, tax/discount/promo, the price breakdown)
-   * and consumer PII (email/phone/CNIC/address), keeping the representative's
-   * own clerk cost (their pay-out). Case details, documents, status history
-   * and the clerk report stay — the rep needs them to do the work.
+   * and consumer PII (email/CNIC/address/postalCode), keeping the
+   * representative's own clerk cost (their pay-out). Case details, documents,
+   * status history and the clerk report stay — the rep needs them to do the
+   * work. `consumer.phone` is DELIBERATELY kept — see the comment at the
+   * delete site (batch-9 §6.1, owner-approved, assignment-scoped only).
    */
   private redactTicketForRepresentative<
     T extends {
@@ -623,10 +633,20 @@ export class TicketsService {
     delete safe.taxAmount;
     delete safe.priceBreakdown;
     // Consumer PII — the rep does not need the consumer's contact details.
+    // EXCEPTION (owner decision 2026-09-21, batch-9 §6.1): the ASSIGNED
+    // representative keeps `phone` — dispatching documents via TCS needs a
+    // recipient number alongside the delivery address, and every path that
+    // reaches this method has already proven the caller IS the assignee
+    // (findOne does an `assignment.findFirst` scoped to the caller before
+    // calling this; the mutation-result and findAll callers are all bound
+    // to the active assignment via `ensureClerkActionAllowed` /
+    // `assignments: { some: { representativeId } }`). That upstream check is
+    // what makes exposing the phone here safe — do not widen this further
+    // (e.g. to email/cnic/address) and do not remove the phone exception
+    // without re-verifying every call site is still assignment-scoped.
     if (ticket.consumer) {
       const consumer = { ...ticket.consumer };
       delete consumer.email;
-      delete consumer.phone;
       delete consumer.cnic;
       delete consumer.address;
       delete consumer.postalCode;

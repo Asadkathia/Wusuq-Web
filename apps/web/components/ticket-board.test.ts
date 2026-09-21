@@ -131,6 +131,19 @@ describe('dynamic phase-2 charge rows (batch-9 Task 1)', () => {
   });
 });
 
+describe('consumer phone beside the delivery address (batch-9 §6.1)', () => {
+  // Client ask, verbatim: "we need client Phone number with the address."
+  // The API's redactTicketForRepresentative keeps consumer.phone only for
+  // the assigned representative (see apps/api/src/tickets/tickets.service.ts
+  // and tickets-security.spec.ts) — this guards the FE actually renders it.
+  it('renders costsTicket.consumer.phone beside the delivery address', () => {
+    expect(src).toMatch(/\{costsTicket\.consumer\.phone \? \(/);
+    expect(src).toMatch(
+      /<p className="mt-1 text-slate-800">\{costsTicket\.consumer\.phone\}<\/p>/,
+    );
+  });
+});
+
 describe('next-hearing capture is PENDING-case-only (batch-9 §6.2)', () => {
   // Owner decision 2026-09-21: "Next hearing will be only available for
   // pending cases — decided cases are already closed and don't need a new

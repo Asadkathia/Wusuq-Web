@@ -114,7 +114,12 @@ type TicketRow = {
   formPayload?: Record<string, unknown> | null;
   case?: { caseNo: string | null; court: string | null; caseYear: number | null } | null;
   assignmentStatus?: 'ACTIVE' | 'ACCEPTED' | 'REJECTED' | 'SUPERSEDED' | null;
-  consumer: { id: string; name: string };
+  // `phone` is present only when the caller is the assigned representative
+  // (batch-9 §6.1, owner-approved) — the API's redactTicketForRepresentative
+  // keeps it, unlike email/cnic/address, so a representative dispatching
+  // documents via TCS has a contact number for the recipient. Absent/null
+  // for other callers or when the consumer has none on file.
+  consumer: { id: string; name: string; phone?: string | null };
   service: { id: string; name: string; category: string; type: string };
 };
 
@@ -2210,11 +2215,17 @@ export function TicketBoard({ title, status, archived = false, immature = false 
                   </p>
                 ) : (
                   <>
-                  {/* Batch-7 5.3 */}
+                  {/* Batch-7 5.3, batch-9 §6.1 */}
                   {caps.delivery && deliveryAddressLine(costsTicket) ? (
                     <div className="rounded-xl border border-border-soft bg-slate-50 px-4 py-3 text-sm">
                       <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Deliver to</p>
                       <p className="mt-1 text-slate-800">{deliveryAddressLine(costsTicket)}</p>
+                      {/* Client phone alongside the address — the recipient
+                          number for TCS dispatch. Renders nothing when the
+                          consumer has none on file (never an empty label). */}
+                      {costsTicket.consumer.phone ? (
+                        <p className="mt-1 text-slate-800">{costsTicket.consumer.phone}</p>
+                      ) : null}
                     </div>
                   ) : null}
                   <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3">

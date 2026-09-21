@@ -177,7 +177,14 @@ describe('Task 1.1 — findOne representative redaction', () => {
     const consumer = result.consumer as Record<string, unknown>;
     expect(consumer.name).toBe('Owner');
     expect(consumer).not.toHaveProperty('email');
-    expect(consumer).not.toHaveProperty('phone');
+    // Batch-9 §6.1 (owner-approved 2026-09-21): the ASSIGNED representative
+    // now KEEPS consumer.phone — dispatching documents via TCS needs a
+    // recipient number alongside the delivery address. This assertion used
+    // to require phone stripped; it's updated, not weakened, to match the
+    // explicit carve-out (email/cnic/address/postalCode still stripped — see
+    // tickets-security.spec.ts's dedicated regression guard for the full
+    // field list).
+    expect(consumer.phone).toBe('+923001234567');
     expect(consumer).not.toHaveProperty('cnic');
   });
 });

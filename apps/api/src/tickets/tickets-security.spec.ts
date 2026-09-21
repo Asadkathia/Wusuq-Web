@@ -243,6 +243,66 @@ describe('findOne ownership scoping (report 3.1)', () => {
   });
 });
 
+describe('representative consumer-phone carve-out (batch-9 §6.1, owner-approved)', () => {
+  // Client ask, verbatim: "we need client Phone number with the address" —
+  // a representative dispatching documents via TCS needs a recipient number
+  // alongside the delivery address. Scoped narrowly: ONLY the ASSIGNED
+  // representative, and ONLY the phone — every other PII field must stay
+  // stripped, which is the regression guard the second test below is for.
+
+  it('an assigned representative RECEIVES consumer.phone via findOne', async () => {
+    const prisma = {
+      ticket: { findUnique: jest.fn().mockResolvedValue(fullTicket()) },
+      assignment: { findFirst: jest.fn().mockResolvedValue({ id: 'asg-1' }) },
+    };
+    const service = makeService(prisma);
+
+    const result = (await service.findOne('ticket-1', {
+      role: 'representative',
+      userId: 'rep-A',
+    })) as Record<string, unknown>;
+    const consumer = result.consumer as Record<string, unknown>;
+    expect(consumer.phone).toBe('+923001234567');
+  });
+
+  it('the other consumer PII fields stay stripped for a representative — the carve-out must not widen', async () => {
+    const prisma = {
+      ticket: { findUnique: jest.fn().mockResolvedValue(fullTicket()) },
+      assignment: { findFirst: jest.fn().mockResolvedValue({ id: 'asg-1' }) },
+    };
+    const service = makeService(prisma);
+
+    const result = (await service.findOne('ticket-1', {
+      role: 'representative',
+      userId: 'rep-A',
+    })) as Record<string, unknown>;
+    const consumer = result.consumer as Record<string, unknown>;
+    expect(consumer).not.toHaveProperty('email');
+    expect(consumer).not.toHaveProperty('cnic');
+    expect(consumer).not.toHaveProperty('address');
+    expect(consumer).not.toHaveProperty('postalCode');
+    // And the pre-existing money redaction is untouched by this change.
+    expect(result).not.toHaveProperty('totalAmount');
+    expect(result).not.toHaveProperty('amountPaid');
+  });
+
+  it("a consumer-class caller's own redaction is unchanged — still sees their own full consumer record", async () => {
+    const prisma = {
+      ticket: { findUnique: jest.fn().mockResolvedValue(fullTicket()) },
+    };
+    const service = makeService(prisma);
+
+    const result = (await service.findOne('ticket-1', {
+      role: 'consumer',
+      userId: 'consumer-B',
+    })) as Record<string, unknown>;
+    const consumer = result.consumer as Record<string, unknown>;
+    expect(consumer.phone).toBe('+923001234567');
+    expect(consumer.email).toBe('b@example.com');
+    expect(consumer.cnic).toBe('12345-1234567-1');
+  });
+});
+
 describe('resolveDocumentDownload consumer guards (report 3.1)', () => {
   function docPrisma(doc: Record<string, unknown>) {
     return {
