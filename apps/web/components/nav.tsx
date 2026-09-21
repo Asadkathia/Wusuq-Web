@@ -120,12 +120,23 @@ function buildClerkItems(counts: Record<string, number>): NavItem[] {
       count: counts['COMPLETED'],
     },
     {
+      // §8: a ticket leaves COMPLETED once it reaches DELIVERED, so without
+      // this item a representative's delivered tickets vanish from the nav
+      // entirely — the client's rep dashboard showed "Delivered 2" with
+      // nothing in the left nav to find them from.
+      label: 'Delivered',
+      href: '/tickets/delivered',
+      icon: Truck,
+      count: counts['DELIVERED'],
+    },
+    {
       label: 'Paralegal Tickets',
       icon: Ticket,
       children: [
         { label: 'Ticket Requests', href: '/tickets/assigned', count: counts['ASSIGNED'] },
         { label: 'Assigned Tickets', href: '/tickets/in-progress', count: counts['IN_PROGRESS'] },
         { label: 'Finalized Tickets', href: '/tickets/waiting-approval', count: counts['WAITING_APPROVAL'] },
+        { label: 'Delivered Tickets', href: '/tickets/delivered', count: counts['DELIVERED'] },
       ],
     },
     { label: 'Documents', href: '/documents', icon: FolderOpen },

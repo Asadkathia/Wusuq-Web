@@ -827,6 +827,92 @@ export class DashboardService {
     return { amount: totalAmountPkr, unconvertedCount };
   }
 
+  /**
+   * The super-admin "pending actions" list — a pure transform of already-
+   * resolved counts/dates into deep-linked action rows. Extracted from
+   * `computeSummary` so the deepLink <-> count pairing has direct test
+   * coverage (mirrors why `getBusinessKpis` was extracted) — see
+   * `pending-actions.spec.ts`.
+   *
+   * §9: the `clerk_submitted` count queries `clerkApprovalStatus:'SUBMITTED'`
+   * with NO status filter, but `submitClerkCosts` (tickets.service.ts) only
+   * ever writes that value in the SAME atomic update that sets
+   * `status: 'WAITING_APPROVAL'` (and `sendBackToClerk`/`reviewAndComplete`
+   * move it to REJECTED/VERIFIED, never leaving it SUBMITTED on any other
+   * status). So every ticket this count includes is, by construction, in
+   * WAITING_APPROVAL — its deepLink MUST be the same list the
+   * `waiting_approval` action links to, or the destination structurally
+   * cannot contain any of the tickets being counted.
+   */
+  private buildPendingActions(input: {
+    pendingVerifications: number;
+    oldestPendingVerificationAt: Date | null | undefined;
+    pendingTicketsCount: number;
+    oldestPendingTicketAt: Date | null | undefined;
+    waitingApprovalCount: number;
+    oldestWaitingApprovalAt: Date | null | undefined;
+    clerkSubmittedCount: number;
+    stuckInProgressCount: number;
+    agedOutstandingAmount: number;
+  }) {
+    const ageHours = (d: Date | null | undefined): number | null =>
+      d ? Math.round((Date.now() - new Date(d).getTime()) / 36e5) : null;
+
+    return [
+      {
+        key: 'wallet_verifications',
+        label: 'Wallet receipts to verify',
+        count: input.pendingVerifications,
+        oldestAgeHours: ageHours(input.oldestPendingVerificationAt),
+        deepLink: '/wallet?tab=pending',
+        severity: 'warning' as const,
+      },
+      {
+        key: 'unpaid_tickets',
+        label: 'Tickets awaiting payment',
+        count: input.pendingTicketsCount,
+        oldestAgeHours: ageHours(input.oldestPendingTicketAt),
+        deepLink: '/tickets/unpaid',
+        severity: 'info' as const,
+      },
+      {
+        key: 'waiting_approval',
+        label: 'Tickets waiting approval',
+        count: input.waitingApprovalCount,
+        oldestAgeHours: ageHours(input.oldestWaitingApprovalAt),
+        deepLink: '/tickets/waiting-approval',
+        severity: 'info' as const,
+      },
+      {
+        key: 'clerk_submitted',
+        label: 'Representative submissions to verify',
+        count: input.clerkSubmittedCount,
+        oldestAgeHours: null,
+        // §9: see the method-level doc above — this MUST stay identical to
+        // the 'waiting_approval' deepLink above; it was '/tickets/in-progress',
+        // a list that structurally cannot contain a WAITING_APPROVAL ticket.
+        deepLink: '/tickets/waiting-approval',
+        severity: 'info' as const,
+      },
+      {
+        key: 'stuck_in_progress',
+        label: 'Tickets stuck in progress > 7 days',
+        count: input.stuckInProgressCount,
+        oldestAgeHours: null,
+        deepLink: '/tickets/in-progress',
+        severity: 'danger' as const,
+      },
+      {
+        key: 'aged_outstanding',
+        label: 'Outstanding > 30 days (PKR)',
+        count: Math.max(0, Math.round(input.agedOutstandingAmount)),
+        oldestAgeHours: null,
+        deepLink: '/finance',
+        severity: 'danger' as const,
+      },
+    ];
+  }
+
   private async computeSummary(range: string) {
     const daysStr = range.replace('d', '');
     const days = parseInt(daysStr, 10);
@@ -1095,61 +1181,19 @@ export class DashboardService {
       this.getAgedOutstandingKpi(thirtyDaysAgo),
     ]);
 
-    const ageHours = (d: Date | null | undefined): number | null =>
-      d ? Math.round((Date.now() - new Date(d).getTime()) / 36e5) : null;
-
     const agedOutstandingAmount = agedOutstandingKpi.amount;
 
-    const pendingActions = [
-      {
-        key: 'wallet_verifications',
-        label: 'Wallet receipts to verify',
-        count: pendingVerifications,
-        oldestAgeHours: ageHours(oldestPendingVerification?.createdAt),
-        deepLink: '/wallet?tab=pending',
-        severity: 'warning' as const,
-      },
-      {
-        key: 'unpaid_tickets',
-        label: 'Tickets awaiting payment',
-        count: pendingTicketsCount,
-        oldestAgeHours: ageHours(oldestPendingTicket?.createdAt),
-        deepLink: '/tickets/unpaid',
-        severity: 'info' as const,
-      },
-      {
-        key: 'waiting_approval',
-        label: 'Tickets waiting approval',
-        count: waitingApprovalCount,
-        oldestAgeHours: ageHours(oldestWaitingApproval?.updatedAt),
-        deepLink: '/tickets/waiting-approval',
-        severity: 'info' as const,
-      },
-      {
-        key: 'clerk_submitted',
-        label: 'Representative submissions to verify',
-        count: clerkSubmittedCount,
-        oldestAgeHours: null,
-        deepLink: '/tickets/in-progress',
-        severity: 'info' as const,
-      },
-      {
-        key: 'stuck_in_progress',
-        label: 'Tickets stuck in progress > 7 days',
-        count: stuckInProgressCount,
-        oldestAgeHours: null,
-        deepLink: '/tickets/in-progress',
-        severity: 'danger' as const,
-      },
-      {
-        key: 'aged_outstanding',
-        label: 'Outstanding > 30 days (PKR)',
-        count: Math.max(0, Math.round(agedOutstandingAmount)),
-        oldestAgeHours: null,
-        deepLink: '/finance',
-        severity: 'danger' as const,
-      },
-    ];
+    const pendingActions = this.buildPendingActions({
+      pendingVerifications,
+      oldestPendingVerificationAt: oldestPendingVerification?.createdAt,
+      pendingTicketsCount,
+      oldestPendingTicketAt: oldestPendingTicket?.createdAt,
+      waitingApprovalCount,
+      oldestWaitingApprovalAt: oldestWaitingApproval?.updatedAt,
+      clerkSubmittedCount,
+      stuckInProgressCount,
+      agedOutstandingAmount,
+    });
 
     // Cases-with-suggestions row (case workflow redesign §2.5).
     // Counts open, non-deleted cases that have at least one active
