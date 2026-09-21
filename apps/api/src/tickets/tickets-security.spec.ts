@@ -286,6 +286,33 @@ describe('representative consumer-phone carve-out (batch-9 §6.1, owner-approved
     expect(result).not.toHaveProperty('amountPaid');
   });
 
+  it('a representative with only a REJECTED/SUPERSEDED assignment can still open the ticket but does NOT receive the phone (batch-9 final review finding 5)', async () => {
+    const findFirst = jest.fn(async (args: any) => {
+      // Row-visibility check: ANY assignment (unfiltered by status) — this
+      // representative has one (e.g. a rejected one), so the ticket stays
+      // visible. That half is pre-existing and unchanged by this fix.
+      if (!args?.where?.status) return { id: 'asg-old' };
+      // Status-filtered check (this fix): no ACTIVE/ACCEPTED assignment.
+      return null;
+    });
+    const prisma = {
+      ticket: { findUnique: jest.fn().mockResolvedValue(fullTicket()) },
+      assignment: { findFirst },
+    };
+    const service = makeService(prisma);
+
+    const result = (await service.findOne('ticket-1', {
+      role: 'representative',
+      userId: 'rep-A',
+    })) as Record<string, unknown>;
+    const consumer = result.consumer as Record<string, unknown>;
+    expect(consumer).not.toHaveProperty('phone');
+    // The rest of the redaction is untouched — row is still returned, just
+    // without the phone carve-out.
+    expect(consumer).not.toHaveProperty('email');
+    expect(result).not.toHaveProperty('totalAmount');
+  });
+
   it("a consumer-class caller's own redaction is unchanged — still sees their own full consumer record", async () => {
     const prisma = {
       ticket: { findUnique: jest.fn().mockResolvedValue(fullTicket()) },

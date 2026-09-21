@@ -318,14 +318,20 @@ export class TicketsService {
         // tie-breaker for rows updated in the same tick.
         orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
         include: {
-          // `phone` is fetched for every caller of findAll — safe because the
-          // WHERE clause already scopes the row set per caller class (a
-          // representative's query is forced to their own assignments via
-          // `query.representativeId = user.sub` in the controller; a
-          // consumer's to `consumerId = user.sub`; staff see everything
-          // regardless). The representative-visibility carve-out for the
-          // phone itself lives in `redactTicketForRepresentative` — this
-          // `select` only has to make the column available to project.
+          // `phone` is fetched for every caller of findAll. `findAll` does
+          // NOT call `redactTicketForRepresentative` — it builds its own
+          // explicit ALLOWLIST response below (`consumer: ...`), so this
+          // `select` only makes the column available to project; the actual
+          // phone-visibility decision for a representative caller is made
+          // there, gated on an ACTIVE/ACCEPTED assignment (batch-9 final
+          // review finding 5) — the WHERE clause's
+          // `assignments: { some: { representativeId } }` scopes which
+          // ROWS a rep can list (any assignment, including a rejected one —
+          // pre-existing, unchanged by this fix), which is a different
+          // question from whether THIS phone should be in THIS response.
+          // Staff/consumer callers are unaffected (narrow select of
+          // `{id, name, phone}` only — no email/cnic/address ever reaches
+          // this query).
           consumer: { select: { id: true, name: true, phone: true } },
           service: {
             select: { id: true, name: true, category: true, type: true },
@@ -384,11 +390,43 @@ export class TicketsService {
     // consumer can spoof representativeId).
     const isRep = Boolean(opts?.forRepresentative);
     const pureConsumer = Boolean(opts?.forConsumer) && !isRep;
+
+    // Batch-9 final review finding 5: the WHERE clause's
+    // `assignments: { some: { representativeId } }` returns every ticket the
+    // rep has EVER had an assignment on, active or not — that row-scoping is
+    // pre-existing and unchanged here. But the consumer's phone (owner
+    // decision 2026-09-21, §6.1) was approved for the ASSIGNED
+    // representative, and a REJECTED/SUPERSEDED assignment is not that. A
+    // single scoped lookup of which of THIS page's tickets the caller
+    // currently holds an ACTIVE/ACCEPTED assignment on — never widened to
+    // the money/PII fields already gated by `isRep` above.
+    const activeAssignmentTicketIds =
+      isRep && query.representativeId
+        ? new Set(
+            (
+              await this.prisma.assignment.findMany({
+                where: {
+                  ticketId: { in: items.map((t) => t.id) },
+                  representativeId: query.representativeId,
+                  status: { in: ['ACTIVE', 'ACCEPTED'] },
+                },
+                select: { ticketId: true },
+              })
+            ).map((a) => a.ticketId),
+          )
+        : null;
     return {
       items: items.map((ticket) => ({
         id: ticket.id,
         batchNo: ticket.batchNo,
-        consumer: ticket.consumer,
+        // Batch-9 final review finding 5: a representative whose only
+        // assignment(s) on this ticket are REJECTED/SUPERSEDED must not
+        // receive the consumer's phone — only the WHERE-clause row
+        // visibility is unconditional, never the phone field itself.
+        consumer:
+          isRep && ticket.consumer && !activeAssignmentTicketIds?.has(ticket.id)
+            ? { id: ticket.consumer.id, name: ticket.consumer.name }
+            : ticket.consumer,
         service: ticket.service,
         serviceCity: ticket.serviceCity,
         caseType: ticket.caseType,
@@ -578,7 +616,26 @@ export class TicketsService {
       // Audit 1.1: a representative is scoped to their assignment and must
       // never see consumer money (totals, amount paid, per-charge columns) or
       // consumer PII — only their own internal clerk cost.
-      return this.redactTicketForRepresentative(ticket);
+      //
+      // Batch-9 final review finding 5: row VISIBILITY above stays scoped to
+      // ANY assignment (pre-existing, unrelated to this fix — a rep can
+      // still open a ticket they were once assigned to). The consumer's
+      // phone is a narrower, separate question: it was approved
+      // (owner decision 2026-09-21, §6.1) for the ASSIGNED representative
+      // only, so it's kept only when this caller currently holds an
+      // ACTIVE/ACCEPTED assignment — not a REJECTED/SUPERSEDED one.
+      const activeAssignment = await this.prisma.assignment.findFirst({
+        where: {
+          ticketId: id,
+          representativeId: caller.userId,
+          status: { in: ['ACTIVE', 'ACCEPTED'] },
+        },
+        select: { id: true },
+      });
+      return this.redactTicketForRepresentative(
+        ticket,
+        Boolean(activeAssignment),
+      );
     }
 
     return ticket;
@@ -614,7 +671,7 @@ export class TicketsService {
     T extends {
       consumer?: Record<string, unknown> | null;
     },
-  >(ticket: T) {
+  >(ticket: T, keepPhone = true) {
     const safe: Record<string, unknown> = { ...ticket };
     // Consumer money — back-office / consumer-only, never shown to the rep.
     delete safe.totalAmount;
@@ -635,21 +692,27 @@ export class TicketsService {
     // Consumer PII — the rep does not need the consumer's contact details.
     // EXCEPTION (owner decision 2026-09-21, batch-9 §6.1): the ASSIGNED
     // representative keeps `phone` — dispatching documents via TCS needs a
-    // recipient number alongside the delivery address, and every path that
-    // reaches this method has already proven the caller IS the assignee
-    // (findOne does an `assignment.findFirst` scoped to the caller before
-    // calling this; the mutation-result and findAll callers are all bound
-    // to the active assignment via `ensureClerkActionAllowed` /
-    // `assignments: { some: { representativeId } }`). That upstream check is
-    // what makes exposing the phone here safe — do not widen this further
-    // (e.g. to email/cnic/address) and do not remove the phone exception
-    // without re-verifying every call site is still assignment-scoped.
+    // recipient number alongside the delivery address. `keepPhone` defaults
+    // to `true` because every call site that does NOT pass it explicitly is
+    // already scoped to the caller's own ACTIVE/ACCEPTED assignment before
+    // reaching this method (`redactMutationResultForCaller`'s callers all
+    // run `ensureClerkActionAllowed`, which filters on
+    // `status: { in: ['ACTIVE', 'ACCEPTED'] }`). `findOne` and `findAll`
+    // (batch-9 final review finding 5) pass it explicitly, computed from a
+    // status-filtered assignment lookup, because their own row-visibility
+    // checks intentionally do NOT filter by status (a rep can still open/
+    // list a ticket from a REJECTED/SUPERSEDED assignment — that's the
+    // separate, pre-existing "which tickets can a rep see" question) — do
+    // not widen `keepPhone` further (e.g. to email/cnic/address) and do not
+    // change its default without re-verifying every call site is still
+    // assignment-scoped.
     if (ticket.consumer) {
       const consumer = { ...ticket.consumer };
       delete consumer.email;
       delete consumer.cnic;
       delete consumer.address;
       delete consumer.postalCode;
+      if (!keepPhone) delete consumer.phone;
       safe.consumer = consumer;
     }
     return safe as T;
@@ -3285,8 +3348,8 @@ export class TicketsService {
 
     // Batch-9 Task 2 (§4, fix round 2): this is the fourth site the money
     // rule touches — reachable directly via the live
-    // `POST /tickets/:id/finalize-remainder` endpoint, which bypasses
-    // `reviewAndComplete`'s `hasCaps` guard (~line 2416-2426). It used to
+    // `POST /tickets/:id/finalize-remainder` endpoint, which bypasses the
+    // `hasCaps` guard inside `reviewAndComplete`. It used to
     // force literal 0 unconditionally for a null-flow ticket, which
     // destroys legacy pre-flow-tracking money data exactly like the other
     // three sites did before round 1. Routed through the same
