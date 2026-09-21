@@ -1748,16 +1748,29 @@ export function TicketBoard({ title, status, archived = false, immature = false 
                             <Upload className="h-3.5 w-3.5" /> Upload Work Documents
                           </button>
                         )}
+                        {/* Batch-9 §6.3: "Once clerk update the Pages and
+                            amount, it's no way back." The button used to be
+                            double-gated (IN_PROGRESS-only AND
+                            !hasSubmittedClerkCosts), so once a submit moved
+                            the ticket to WAITING_APPROVAL the representative
+                            had no way to correct a typo. The backend already
+                            accepts a WAITING_APPROVAL resubmit (conditional
+                            updateMany, blocked only once remainderFinalizedAt
+                            is set) — this is a UI-gate fix only. The dialog
+                            prefills from the persisted columns, so reopening
+                            shows exactly what was submitted; the label makes
+                            a resubmission obvious. */}
+                        {(status === 'IN_PROGRESS' || status === 'WAITING_APPROVAL') && (
+                          <button
+                            onClick={() => openCostsModal(ticket)}
+                            className="bg-slate-900 px-3 py-1.5 rounded-md flex items-center gap-1 text-white hover:bg-slate-800"
+                          >
+                            <CheckSquare className="h-3.5 w-3.5" />
+                            {hasSubmittedClerkCosts(ticket) ? 'Update submitted costs' : 'Update Payments'}
+                          </button>
+                        )}
                         {status === 'IN_PROGRESS' && (
                           <>
-                            {!hasSubmittedClerkCosts(ticket) ? (
-                              <button
-                                onClick={() => openCostsModal(ticket)}
-                                className="bg-slate-900 px-3 py-1.5 rounded-md flex items-center gap-1 text-white hover:bg-slate-800"
-                              >
-                                <CheckSquare className="h-3.5 w-3.5" /> Update Payments
-                              </button>
-                            ) : null}
                             {canUploadForAdminApproval(ticket) ? (
                               <button onClick={() => { setReceiptTicket(ticket); setReceiptFile(null); }} className="text-amber-600 hover:text-amber-900 bg-amber-50 hover:bg-amber-100 px-3 py-1.5 rounded-md flex items-center gap-1">
                                 <CheckSquare className="h-3.5 w-3.5" /> Submit to Admin

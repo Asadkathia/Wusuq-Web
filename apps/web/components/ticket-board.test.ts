@@ -165,3 +165,54 @@ describe('next-hearing capture is PENDING-case-only (batch-9 §6.2)', () => {
     );
   });
 });
+
+describe('representative can correct submitted costs (batch-9 §6.3)', () => {
+  // Client, verbatim: "Once clerk update the Pages and amount, it's no way
+  // back. So we need here an update button." Before this, the "Update
+  // Payments" button was double-gated (status === 'IN_PROGRESS' wrapping the
+  // row, AND !hasSubmittedClerkCosts(ticket) on the button itself), so once a
+  // submit moved the ticket to WAITING_APPROVAL the button vanished entirely
+  // — a representative could never reopen the dialog to fix a typo. The
+  // backend already accepts a WAITING_APPROVAL resubmit; this was a UI-gate
+  // fix only. Matches on the button's actual onClick call site
+  // (openCostsModal, which has exactly one JSX call site in this file) so
+  // the assertion can only pass against the real button, not some unrelated
+  // status check elsewhere in the 2000+-line file.
+  const buttonBlock = (() => {
+    const idx = src.indexOf('onClick={() => openCostsModal(ticket)}');
+    expect(idx).toBeGreaterThan(-1);
+    // The button's opening `{...&& (` guard sits a few lines above its
+    // onClick; grab a generous window around it for the assertions below.
+    return src.slice(Math.max(0, idx - 400), idx + 400);
+  })();
+
+  it("the button's render guard covers WAITING_APPROVAL as well as IN_PROGRESS", () => {
+    expect(buttonBlock).toMatch(
+      /\{\(status === 'IN_PROGRESS' \|\| status === 'WAITING_APPROVAL'\) && \(/,
+    );
+  });
+
+  it('the button is no longer additionally gated on !hasSubmittedClerkCosts(ticket)', () => {
+    expect(buttonBlock).not.toMatch(/!hasSubmittedClerkCosts\(ticket\)/);
+  });
+
+  it('the label switches to make a resubmission obvious once costs were already submitted', () => {
+    expect(buttonBlock).toMatch(
+      /\{hasSubmittedClerkCosts\(ticket\) \? 'Update submitted costs' : 'Update Payments'\}/,
+    );
+  });
+
+  it('the next-hearing capture (batch-9 §6.2) stays independently IN_PROGRESS-only — widening this button must not widen that gate', () => {
+    // Regression guard for the exact interaction the brief warned about:
+    // re-read the full file (not the button-local window) so a change that
+    // accidentally loosened the next-hearing guard to also allow
+    // WAITING_APPROVAL would be caught here even though it lives ~600 lines
+    // away from the button.
+    expect(src).toMatch(
+      /isClerk && costsTicket\.status === 'IN_PROGRESS' && isPendingCase\(costsTicket\) && \(/,
+    );
+    expect(src).not.toMatch(
+      /costsTicket\.status === 'IN_PROGRESS' \|\| costsTicket\.status === 'WAITING_APPROVAL'\) && isPendingCase/,
+    );
+  });
+});
