@@ -1,8 +1,13 @@
-import { applyAuthoritativeHearingDates, buildRegeneratePayload } from './regenerate-ticket';
+import {
+  applyAuthoritativeHearingDates,
+  buildRegeneratePayload,
+  resolveRegenerateFlow,
+} from './regenerate-ticket';
 import { judicialFlows } from './intake-flows';
 
 const caseFilesFlow = judicialFlows.find((f) => f.key === 'judicial_case_files')!;
 const caseInformationFlow = judicialFlows.find((f) => f.key === 'judicial_case_information')!;
+const caseSearchFlow = judicialFlows.find((f) => f.key === 'judicial_case_search')!;
 
 
 describe('applyAuthoritativeHearingDates (batch-5 D)', () => {
@@ -182,5 +187,108 @@ describe('buildRegeneratePayload — set-type quantity prune (batch-9 §1(a))', 
     );
     expect(out.attested_qty).toBeUndefined();
     expect(out.non_attested_qty).toBeUndefined();
+  });
+});
+
+describe('resolveRegenerateFlow (fix-round-1 Important 1)', () => {
+  it('the route flow WINS over a DIFFERENT source flow', () => {
+    // This is the whole point of batch-9 §2 / batch-7 1.5: a consumer
+    // regenerating a Case Files ticket but picking Power of Attorney on the
+    // service picker must get a Power of Attorney ticket, not Case Files.
+    expect(resolveRegenerateFlow('judicial_power_of_attorney', 'judicial_case_files')).toBe(
+      'judicial_power_of_attorney',
+    );
+  });
+
+  it('the route flow wins even when it equals the source flow', () => {
+    expect(resolveRegenerateFlow('judicial_case_files', 'judicial_case_files')).toBe(
+      'judicial_case_files',
+    );
+  });
+
+  it('falls back to the source flow when no route flow is pinned', () => {
+    expect(resolveRegenerateFlow(null, 'judicial_case_files')).toBe('judicial_case_files');
+    expect(resolveRegenerateFlow(undefined, 'judicial_case_files')).toBe('judicial_case_files');
+    expect(resolveRegenerateFlow('', 'judicial_case_files')).toBe('judicial_case_files');
+  });
+
+  it('returns an empty string when neither flow is available', () => {
+    expect(resolveRegenerateFlow(null, undefined)).toBe('');
+    expect(resolveRegenerateFlow('', '')).toBe('');
+  });
+});
+
+describe('buildRegeneratePayload — `cities` survives Case Search regenerate (fix-round-1 CRITICAL)', () => {
+  it('keeps `cities` on a SAME-flow Case Search regenerate — this is the shipped regression', () => {
+    // `cities` is the Case Search multi-city payload key, written by
+    // stringifyCities() via a dedicated CityBlock — it is NEVER a declared
+    // IntakeField.key anywhere (grep confirms). Missing from the structural
+    // allowlist, it was dropped on EVERY Case Search regenerate, INCLUDING
+    // same-flow (the dominant real-world case — regenerating without
+    // switching services), silently emptying the multi-city selection and
+    // corrupting the cityCount pricing multiplier (per-city base × cityCount
+    // + SEARCH_BOTH_SURCHARGE per city).
+    const citiesValue = JSON.stringify(['cmCITY1', 'cmCITY2']);
+    const out = buildRegeneratePayload({ cities: citiesValue }, caseSearchFlow);
+    expect(out.cities).toBe(citiesValue);
+  });
+
+  it('keeps `cities` across a flow switch too — it is structural, not flow-specific', () => {
+    const citiesValue = JSON.stringify(['cmCITY1']);
+    const out = buildRegeneratePayload({ cities: citiesValue }, caseInformationFlow);
+    expect(out.cities).toBe(citiesValue);
+  });
+});
+
+describe('buildRegeneratePayload — value-level option-set prune (fix-round-1 Important 2)', () => {
+  it('drops an out-of-option-set case_status when regenerating cross-flow', () => {
+    // Case Files allows 'Decided Case'; Case Information deliberately does
+    // not (CLAUDE.md: "a decided case has no live info to fetch" — Case
+    // Information only offers Pending/Unknown). A stale 'Decided Case'
+    // would otherwise reach deriveYearBand and corrupt the resolved price.
+    const out = buildRegeneratePayload({ case_status: 'Decided Case' }, caseInformationFlow);
+    expect(out.case_status).toBeUndefined();
+  });
+
+  it('drops an out-of-option-set delivery_mode when regenerating cross-flow', () => {
+    // Case Files: TCS / Uber / Self Collection (physical). Case Information:
+    // portal / whatsapp / other_no (digital). Same key, disjoint values.
+    const out = buildRegeneratePayload({ delivery_mode: 'TCS' }, caseInformationFlow);
+    expect(out.delivery_mode).toBeUndefined();
+  });
+
+  it('KEEPS an in-option-set value for the target flow', () => {
+    const out = buildRegeneratePayload(
+      { case_status: 'Pending Case', delivery_mode: 'portal' },
+      caseInformationFlow,
+    );
+    expect(out.case_status).toBe('Pending Case');
+    expect(out.delivery_mode).toBe('portal');
+  });
+
+  it('drops a required_documentations bundle key the target flow does not offer', () => {
+    // doc_complete_file is Case-Files-only; absent from Case Information's
+    // option list (the partial overlap CLAUDE.md/the review both flag).
+    const out = buildRegeneratePayload(
+      { required_documentations: 'doc_complete_file' },
+      caseInformationFlow,
+    );
+    expect(out.required_documentations).toBeUndefined();
+  });
+
+  it('keeps an overlapping required_documentations bundle key', () => {
+    const out = buildRegeneratePayload(
+      { required_documentations: 'doc_only_petition' },
+      caseInformationFlow,
+    );
+    expect(out.required_documentations).toBe('doc_only_petition');
+  });
+
+  it('leaves a dynamically-populated select field alone (declared options: [])', () => {
+    // case_type is populated from the /case-types API at runtime, so its
+    // static declaration is options: [] — an EMPTY declared list carries no
+    // information about validity and must not be read as "nothing valid".
+    const out = buildRegeneratePayload({ case_type: 'Civil Suit' }, caseInformationFlow);
+    expect(out.case_type).toBe('Civil Suit');
   });
 });

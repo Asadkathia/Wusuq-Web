@@ -386,6 +386,35 @@ export function resolveRequired(field: IntakeField, tier: CourtTier | null): boo
   return Boolean(field.required);
 }
 
+/**
+ * Cross-flow structural keys that are NEVER declared as a literal
+ * `IntakeField.key` in this file's step definitions — they're rendered by
+ * dedicated components (the court/city picker, the Case Search `CityBlock`,
+ * the FIR police-station block, …) instead of the flat field loop, and every
+ * flow that needs them relies on that state without "declaring" it the way
+ * a business field like `attested_qty` is declared.
+ *
+ * SINGLE SOURCE (batch-9 fix-round-1): this used to be duplicated verbatim
+ * between `intake-wizard.tsx` (`GEO_HANDLED_KEYS`, driving which declared
+ * fields the flat render/validation loop skips) and `regenerate-ticket.ts`
+ * (driving which UNDECLARED keys survive a cross-flow regenerate prune) —
+ * exactly the class of invariant this codebase single-sources elsewhere
+ * (`buildPricingResolveInput`, `computeTicketTotal`, …) because copies
+ * drift. `cities` (the Case Search multi-city payload key, written by
+ * `stringifyCities` via the dedicated `CityBlock`, never a declared field)
+ * was missing from both copies and was silently dropped on EVERY Case
+ * Search regenerate, including same-flow — the worst kind of regression,
+ * since same-flow is the dominant real-world case. Add new geo/structural
+ * keys here, never re-duplicate this set.
+ */
+export const CROSS_FLOW_STRUCTURAL_KEYS: ReadonlySet<string> = new Set([
+  'province', 'district_id', 'station_id', 'other_station_id', 'city_type', 'office_name',
+  'select_court', 'select_court_city',
+  'documents_upload_note', 'select_service',
+  'city', 'city_id',
+  'cities',
+]);
+
 export type IntakeStep = {
   title: string;
   fields: IntakeField[];

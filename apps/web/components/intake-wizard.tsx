@@ -5,12 +5,12 @@ import { useMemo, useEffect, useState, useCallback, useRef, startTransition } fr
 import { useRouter, useSearchParams } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { buildFutureTicketsPayload } from '@/lib/future-tickets';
-import { buildRegeneratePayload, applyAuthoritativeHearingDates } from '@/lib/regenerate-ticket';
+import { buildRegeneratePayload, applyAuthoritativeHearingDates, resolveRegenerateFlow } from '@/lib/regenerate-ticket';
 import { PanelCard } from '@/components/ui/panel-card';
 import { ChevronRight, CheckCircle2, FolderOpen, Pencil, Sparkles, X } from 'lucide-react';
 import type { IntakeFlow, IntakeStep, CourtTier } from '@/lib/intake-flows';
 import { orderRequiredFirst } from '@/lib/field-order';
-import { courtTierFromCourtType, resolveRequired, docBundleLabel, normalizeDraftPayload, isStructuredAddressComplete, computeYearBand, parseBench, showWhenSatisfied, parseCities, stringifyCities, isFlowAvailableForCurrency, parseDeliveryAddress } from '@/lib/intake-flows';
+import { courtTierFromCourtType, resolveRequired, docBundleLabel, normalizeDraftPayload, isStructuredAddressComplete, computeYearBand, parseBench, showWhenSatisfied, parseCities, stringifyCities, isFlowAvailableForCurrency, parseDeliveryAddress, CROSS_FLOW_STRUCTURAL_KEYS } from '@/lib/intake-flows';
 import { BENCH_TYPE_LABELS } from '@/lib/bench-types';
 import type { YearBand } from '@/lib/intake-flows';
 import { judgeDesignationsForCaseType } from '@/lib/judge-designations';
@@ -177,12 +177,11 @@ function hasValue(value: string | undefined) {
   return Boolean(value && value.trim().length > 0);
 }
 
-const GEO_HANDLED_KEYS = new Set([
-  'province', 'district_id', 'station_id', 'other_station_id', 'city_type', 'office_name',
-  'select_court', 'select_court_city',
-  'documents_upload_note', 'select_service',
-  'city', 'city_id',
-]);
+// Batch-9 fix-round-1: was a private duplicate of `regenerate-ticket.ts`'s
+// own copy of this same set — single-sourced as `CROSS_FLOW_STRUCTURAL_KEYS`
+// in `intake-flows.ts` (see its docblock for why: the duplication is exactly
+// how `cities` went missing from both lists and broke Case Search).
+const GEO_HANDLED_KEYS = CROSS_FLOW_STRUCTURAL_KEYS;
 
 // Batch-6 D1: fields the wizard renders at a hoisted position of its own,
 // ABOVE the dedicated geo blocks. Skipped by the flat-field loop so they don't
@@ -1062,10 +1061,12 @@ export function IntakeWizard({
         // list — `regenerateHref` always lands the consumer on the
         // [flowKey] page for whichever service tile they picked, which
         // passes exactly that one flow (`flows={[flow]}`; see the
-        // `[flowKey]/page.tsx` routes). Prune the copied payload against
-        // THAT flow, never `source.intakeFlow` — using the source's flow
-        // here is exactly the bug this closes.
-        const targetFlow = flows[0];
+        // `[flowKey]/page.tsx` routes). `resolveRegenerateFlow` is the ONE
+        // decision of which flow wins — used both to set draft.flow below
+        // and to resolve the actual IntakeFlow object the prune runs
+        // against, so the two can never diverge (fix-round-1 Important 1).
+        const targetFlowKey = resolveRegenerateFlow(flows[0]?.key, source.intakeFlow);
+        const targetFlow = flows.find((f) => f.key === targetFlowKey) ?? flows[0];
         const nextPayload = normalizeDraftPayload(
           // Batch-5 D: a regenerated ticket is the same case again, so carry the
           // clerk-recorded hearing dates across. Copying formPayload alone left
@@ -1085,16 +1086,15 @@ export function IntakeWizard({
             // row rather than mutating the active draft for this flow.
             draftId: undefined,
             // Batch-9 §2 (closes batch-7 1.5): KEEP the flow the consumer
-            // already chose via the route (`current.flow` was seeded from
-            // `flows[0]?.key` at mount — see the initial draft `useState`
-            // above). This used to unconditionally overwrite it with the
-            // SOURCE ticket's `intakeFlow`, silently reverting any flow
-            // switch: picking Power of Attorney produced a Case Files
-            // ticket, and the price "not changing" was really the SERVICE
-            // not changing. Only fall back to the source's flow when the
-            // wizard somehow mounted without a pinned flow. Do not
-            // "simplify" this back — see batch-9 task-3 brief.
-            flow: (current.flow || source.intakeFlow) as typeof current.flow,
+            // already chose via the route — same resolution as
+            // `targetFlowKey` above, so draft.flow and the pruned payload
+            // always agree on which flow won. This used to unconditionally
+            // overwrite it with the SOURCE ticket's `intakeFlow`, silently
+            // reverting any flow switch: picking Power of Attorney produced
+            // a Case Files ticket, and the price "not changing" was really
+            // the SERVICE not changing. Do not "simplify" this back — see
+            // batch-9 task-3 brief + `resolveRegenerateFlow`'s unit tests.
+            flow: (targetFlowKey || current.flow) as typeof current.flow,
             // Land at step 1 so staff can review the full form before submitting.
             step: 1,
             payload: nextPayload,
