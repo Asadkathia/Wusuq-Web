@@ -57,7 +57,9 @@ const SUMMARY_FIELDS: Array<{ keys: string[]; label: string }> = [
   { keys: ['case_type_other'], label: 'Case Type (Other)' },
   { keys: ['set_type'], label: 'Set Type' },
   { keys: ['sets'], label: 'Sets' },
-  { keys: ['attested_qty'], label: 'Attested Copies' },
+  // NOTE: the copy-count quantity is intentionally absent here — it's
+  // computed by setTypeQuantityEntries() below, keyed off `set_type`. See
+  // batch-9 §1(b).
   { keys: ['want_pdf_before_dispatch'], label: 'PDF Copy' },
   { keys: ['search_method'], label: 'Search Method' },
   { keys: ['subject_full_name'], label: 'Subject Name' },
@@ -101,6 +103,37 @@ function benchOf(p: P): CaseView['bench'] {
   return { designation, judges: names, type };
 }
 
+/**
+ * The Case Files copy-count is one of four mutually-exclusive keys —
+ * `attested_qty` / `non_attested_qty` / `both_attested_qty` /
+ * `both_non_attested_qty` — each gated in the wizard by
+ * `showWhen: { field: 'set_type', … }`. Batch-9 §1(b): rendering
+ * `attested_qty` unconditionally (the old behaviour) showed a stale
+ * "Attested Copies" count on a Non-Attested order, and showed NOTHING for a
+ * genuine Non-Attested or Both order (those two keys were absent from
+ * SUMMARY_FIELDS entirely). Read only the key(s) that match the payload's
+ * own `set_type` — 'both' shows both counts.
+ */
+function setTypeQuantityEntries(p: P): Array<{ label: string; value: string }> {
+  const setType = val(p, 'set_type');
+  const entries: Array<{ label: string; value: string }> = [];
+  if (setType === 'attested') {
+    const qty = val(p, 'attested_qty');
+    if (qty) entries.push({ label: 'Attested Copies', value: humanizeValue(qty) });
+  } else if (setType === 'non_attested') {
+    const qty = val(p, 'non_attested_qty');
+    if (qty) entries.push({ label: 'Non-Attested Copies', value: humanizeValue(qty) });
+  } else if (setType === 'both') {
+    const attestedQty = val(p, 'both_attested_qty');
+    if (attestedQty) entries.push({ label: 'Attested Copies', value: humanizeValue(attestedQty) });
+    const nonAttestedQty = val(p, 'both_non_attested_qty');
+    if (nonAttestedQty) {
+      entries.push({ label: 'Non-Attested Copies', value: humanizeValue(nonAttestedQty) });
+    }
+  }
+  return entries;
+}
+
 function hearingsOf(
   p: P,
   opts?: { scheduledDate?: string | null; previousHearingDate?: string | null },
@@ -132,6 +165,7 @@ export function buildCaseView(
     const v = val(payload, ...f.keys);
     if (v) summary.push({ label: f.label, value: humanizeValue(v) });
   }
+  summary.push(...setTypeQuantityEntries(payload));
   const bundle = val(payload, 'required_documentations');
   if (bundle) {
     summary.push({ label: 'Document Bundle', value: docBundleLabel(bundle, resolvedTier) });

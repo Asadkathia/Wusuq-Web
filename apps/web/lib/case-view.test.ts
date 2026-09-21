@@ -143,6 +143,11 @@ describe('buildCaseView', () => {
       decided_date: '2025-03-15',
       case_type_other: 'Corruption',
       sets: '3',
+      // batch-9 §1(b): set_type must be present for the quantity to render
+      // at all now — attested_qty alone used to render unconditionally,
+      // which is exactly the bug that showed "Attested Copies: 1" on a
+      // Non-Attested ticket.
+      set_type: 'attested',
       attested_qty: '2',
       subject_full_name: 'Ali Hassan',
       subject_cnic: '35202-1234567-1',
@@ -166,6 +171,45 @@ describe('buildCaseView', () => {
     // names and CNIC values are not humanized (spaces / hyphens)
     expect(v.summary.find((r) => r.label === 'Subject Name')?.value).toBe('Ali Hassan');
     expect(v.summary.find((r) => r.label === 'Subject CNIC')?.value).toBe('35202-1234567-1');
+  });
+
+  // ── Batch-9 §1(b): set-type-gated copy count ────────────────────────────
+
+  it('shows "Attested Copies" (and no other qty label) for an attested order', () => {
+    const v = buildCaseView({ set_type: 'attested', attested_qty: '2' }, null);
+    const labels = v.summary.map((r) => r.label);
+    expect(labels).toContain('Attested Copies');
+    expect(labels).not.toContain('Non-Attested Copies');
+    expect(v.summary.find((r) => r.label === 'Attested Copies')?.value).toBe('2');
+  });
+
+  it('shows "Non-Attested Copies" (and no "Attested Copies") for a non-attested order', () => {
+    const v = buildCaseView(
+      { set_type: 'non_attested', non_attested_qty: '3', attested_qty: '1' },
+      null,
+    );
+    const labels = v.summary.map((r) => r.label);
+    expect(labels).toContain('Non-Attested Copies');
+    expect(labels).not.toContain('Attested Copies');
+    expect(v.summary.find((r) => r.label === 'Non-Attested Copies')?.value).toBe('3');
+  });
+
+  it('"both" shows both counts, read from the both_* keys', () => {
+    const v = buildCaseView(
+      { set_type: 'both', both_attested_qty: '2', both_non_attested_qty: '4' },
+      null,
+    );
+    expect(v.summary.find((r) => r.label === 'Attested Copies')?.value).toBe('2');
+    expect(v.summary.find((r) => r.label === 'Non-Attested Copies')?.value).toBe('4');
+  });
+
+  it('renders no copy-count row when set_type is absent, even if a stale qty key is present', () => {
+    // Simulates a stale attested_qty left over from an earlier selection
+    // that showWhen merely hid rather than cleared.
+    const v = buildCaseView({ attested_qty: '1' }, null);
+    const labels = v.summary.map((r) => r.label);
+    expect(labels).not.toContain('Attested Copies');
+    expect(labels).not.toContain('Non-Attested Copies');
   });
 
   // ── Finding 3: police station dual-key ──────────────────────────────────

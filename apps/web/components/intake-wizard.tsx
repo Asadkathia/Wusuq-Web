@@ -1058,6 +1058,14 @@ export function IntakeWizard({
       }>(`/tickets/${encodeURIComponent(regenerateFromTicketId)}`)
       .then((source) => {
         if (!source?.formPayload) return;
+        // Batch-9 §2 (closes batch-7 1.5): `flows` is THIS route's own flow
+        // list — `regenerateHref` always lands the consumer on the
+        // [flowKey] page for whichever service tile they picked, which
+        // passes exactly that one flow (`flows={[flow]}`; see the
+        // `[flowKey]/page.tsx` routes). Prune the copied payload against
+        // THAT flow, never `source.intakeFlow` — using the source's flow
+        // here is exactly the bug this closes.
+        const targetFlow = flows[0];
         const nextPayload = normalizeDraftPayload(
           // Batch-5 D: a regenerated ticket is the same case again, so carry the
           // clerk-recorded hearing dates across. Copying formPayload alone left
@@ -1065,7 +1073,7 @@ export function IntakeWizard({
           // the ticket rather than the consumer typing it at intake — which is
           // the normal case, and what the client demonstrated.
           applyAuthoritativeHearingDates(
-            buildRegeneratePayload(source.formPayload),
+            buildRegeneratePayload(source.formPayload, targetFlow),
             source.scheduledDate,
             source.previousHearingDate,
           ),
@@ -1076,7 +1084,17 @@ export function IntakeWizard({
             // Drop the previous draftId so the next autosave creates a fresh
             // row rather than mutating the active draft for this flow.
             draftId: undefined,
-            flow: (source.intakeFlow as typeof current.flow) ?? current.flow,
+            // Batch-9 §2 (closes batch-7 1.5): KEEP the flow the consumer
+            // already chose via the route (`current.flow` was seeded from
+            // `flows[0]?.key` at mount — see the initial draft `useState`
+            // above). This used to unconditionally overwrite it with the
+            // SOURCE ticket's `intakeFlow`, silently reverting any flow
+            // switch: picking Power of Attorney produced a Case Files
+            // ticket, and the price "not changing" was really the SERVICE
+            // not changing. Only fall back to the source's flow when the
+            // wizard somehow mounted without a pinned flow. Do not
+            // "simplify" this back — see batch-9 task-3 brief.
+            flow: (current.flow || source.intakeFlow) as typeof current.flow,
             // Land at step 1 so staff can review the full form before submitting.
             step: 1,
             payload: nextPayload,
