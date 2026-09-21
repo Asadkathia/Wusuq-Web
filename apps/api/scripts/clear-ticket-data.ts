@@ -123,21 +123,38 @@ async function main() {
     return;
   }
 
-  const deleted = await prisma.$transaction(async (tx) => {
-    const out: Array<[string, number]> = [];
-    for (const step of STEPS) {
-      const { count } = await step.wipe(tx);
-      out.push([step.label, count]);
-    }
-    if (resetWallets) {
-      const { count } = await tx.user.updateMany({
-        where: { walletBalance: { not: 0 } },
-        data: { walletBalance: 0 },
-      });
-      out.push(['User.walletBalance reset', count]);
-    }
-    return out;
-  });
+  const deleted = await prisma.$transaction(
+    async (tx) => {
+      const out: Array<[string, number]> = [];
+      for (const step of STEPS) {
+        const { count } = await step.wipe(tx);
+        out.push([step.label, count]);
+      }
+      if (resetWallets) {
+        const { count } = await tx.user.updateMany({
+          where: { walletBalance: { not: 0 } },
+          data: { walletBalance: 0 },
+        });
+        out.push(['User.walletBalance reset', count]);
+      }
+      return out;
+    },
+    {
+      // Prisma's DEFAULT interactive-transaction timeout is 5000 ms, and this
+      // body makes ~16 sequential round trips (one deleteMany per table, plus
+      // the wallet reset). Against Neon in ap-southeast-1 that lands right on
+      // the limit — a first run aborted at 5103 ms on step 13 of 15 with
+      // P2028. It rolled back cleanly, which is exactly why every step lives
+      // in ONE transaction, but a wipe that fails on latency alone is useless.
+      //
+      // Raise the ceiling rather than splitting the work: separate
+      // transactions would delete children and then leave orphaned parents
+      // behind on a mid-way failure, which is the whole thing this design
+      // prevents. These are generous ceilings, not expected durations.
+      timeout: 120_000,
+      maxWait: 30_000,
+    },
+  );
 
   console.log('\nDone:');
   for (const [label, n] of deleted) {
