@@ -2330,8 +2330,8 @@ export function IntakeWizard({
   // batch-9 §7.4: `Boolean(draft.flow)` alone used to gate CheckoutPanel's
   // "No pricing rule matched for this combination" notice, so it fired as
   // soon as a flow was picked — well before the resolver had enough context
-  // for a null total to mean anything (no city yet so region can't be
-  // derived; Case Files before Set Type, where checkoutSummary above
+  // for a null total to mean anything (for JUDICIAL flows: no city yet so
+  // region can't be derived; Case Files before Set Type, where checkoutSummary above
   // deliberately nulls the total out as a placeholder-suppression, not a
   // real non-match; Case Information before Required Documents). That
   // alarmed the consumer over an incomplete form, not a pricing failure.
@@ -2339,9 +2339,27 @@ export function IntakeWizard({
   // COMPLETE form still surfaces (every readiness input below is satisfied,
   // so pricingResult.matched staying false renders the real notice), and
   // the server still rejects an unpriced submit outright (audit 1.4).
-  const hasCityForPricing = Boolean(
-    draft.payload.city_id || draft.payload.select_court_city || draft.payload.city,
-  );
+  // Fix round 1 (review): this MUST stay conditioned on judicial flows only
+  // — do not make it unconditional again. Non-judicial flows (FIR,
+  // Registry/Deed, Criminal Record) price off NON_JUDICIAL_BASE_RATES,
+  // which are region-agnostic (seeded with region=null, matching every
+  // region including undefined) — see CLAUDE.md "Non-judicial base rates".
+  // The debounced resolve effect above already reflects this: its
+  // `needsCourtType` gate only waits on `select_court_type` for judicial
+  // flows, so a non-judicial resolve fires (and can genuinely come back
+  // unmatched) the instant the flow is picked, with no city involved at
+  // all. Requiring a city here for those three flows would leave a real
+  // no-match notice suppressed while the resolver has already answered.
+  // (Investigated: for the two flows with no city picker — batch-6 D4 —
+  // `handleDistrictChange` stamps `payload.city` to the chosen DISTRICT
+  // name once a district is picked, so the raw city fallback isn't
+  // literally unreachable forever for them either; the point stands
+  // regardless, since city has zero bearing on whether their flat,
+  // region-agnostic rate resolves.) Judicial flows keep the city
+  // requirement — their region-keyed rules genuinely need one.
+  const hasCityForPricing =
+    !draft.flow.startsWith('judicial') ||
+    Boolean(draft.payload.city_id || draft.payload.select_court_city || draft.payload.city);
   const hasCourtTypeForPricing =
     !draft.flow.startsWith('judicial') || Boolean(draft.payload.select_court_type);
   const caseFilesAwaitingSetType =

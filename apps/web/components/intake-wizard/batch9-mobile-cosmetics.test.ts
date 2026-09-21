@@ -129,7 +129,12 @@ describe('§7.3 set-type chip uses the shared case-view.ts humanizer, not a seco
 // ── §7.4 — "No pricing rule matched" must not alarm an incomplete form ─────
 describe('§7.4 pricing-notice readiness gate', () => {
   it('defines readiness checks for court type, city, Set Type and Required Documents', () => {
-    expect(wizardSource).toMatch(/const hasCityForPricing = Boolean\(/);
+    // hasCityForPricing must be conditioned on judicial flows only (fix
+    // round 1) — see the dedicated behavioral describe block below, which
+    // is what actually proves this, not this shape-only regex.
+    expect(wizardSource).toMatch(
+      /const hasCityForPricing =\s*\n?\s*!draft\.flow\.startsWith\('judicial'\) \|\|\s*\n?\s*Boolean\(/,
+    );
     expect(wizardSource).toMatch(/const hasCourtTypeForPricing =/);
     expect(wizardSource).toMatch(
       /const caseFilesAwaitingSetType =\s*\n?\s*draft\.flow === 'judicial_case_files' && !draft\.payload\.set_type;/,
@@ -158,5 +163,108 @@ describe('§7.4 pricing-notice readiness gate', () => {
     const invocation = wizardSource.slice(start, end);
     expect(invocation).toMatch(/hasFlow=\{pricingNoticeReady\}/);
     expect(invocation).not.toMatch(/hasFlow=\{Boolean\(draft\.flow\)\}/);
+  });
+});
+
+// ── §7.4 fix round 1 — pricingNoticeReady must be BEHAVIORALLY reachable ───
+// A source-level regex (as used above) can confirm the SHAPE of the
+// readiness gate but cannot tell a real fix from a plausible-looking one —
+// both the buggy and the fixed version of `hasCityForPricing` are valid
+// `const ... = Boolean(...)`-shaped expressions. This block instead
+// extracts the exact const-declaration chain (hasCityForPricing through
+// pricingNoticeReady) as source text and executes it with `new Function`
+// against mock `draft` objects, so the assertions exercise the real
+// boolean logic — not just its shape. Regression this guards against
+// (fix round 1): `hasCityForPricing` ANDed the city requirement
+// unconditionally for every flow, so `pricingNoticeReady` could never
+// become true for the FIR/Registry-Deed/Criminal-Record flows on a device
+// or test fixture that never populates `city_id`/`select_court_city`/
+// `city` — verified against the pre-fix commit (a1cfb98) that this exact
+// fixture returns `false` there and `true` here.
+function evalPricingNoticeReady(draft: { flow: string; payload: Record<string, string> }): boolean {
+  const start = wizardSource.indexOf('const hasCityForPricing =');
+  if (start === -1) throw new Error('hasCityForPricing declaration not found');
+  const endMarker = '!caseInfoAwaitingBundle;';
+  const endMarkerIdx = wizardSource.indexOf(endMarker, start);
+  if (endMarkerIdx === -1) throw new Error('pricingNoticeReady statement end not found');
+  const block = wizardSource.slice(start, endMarkerIdx + endMarker.length);
+  const fn = new Function('draft', `${block}\nreturn pricingNoticeReady;`) as (
+    d: typeof draft,
+  ) => boolean;
+  return fn(draft);
+}
+
+describe('§7.4 fix round 1 — pricingNoticeReady is reachable for non-judicial flows', () => {
+  it('is true for a complete FIR intake with no city fields set at all', () => {
+    // Batch-6 D4: the FIR/Criminal-Record flows have no step-1 city picker
+    // (LocationBlock stops at district) — city_id/select_court_city are
+    // NEVER set for these flows. A complete, submittable FIR form still
+    // must be able to show a genuine no-match notice (audit 1.4).
+    expect(
+      evalPricingNoticeReady({
+        flow: 'non_judicial_copy_of_fir',
+        payload: { fir_mode: 'I have an FIR number', station_id: 'stn-1' },
+      }),
+    ).toBe(true);
+  });
+
+  it('is true for a complete Criminal Record Search intake with no city fields set', () => {
+    expect(
+      evalPricingNoticeReady({
+        flow: 'non_judicial_criminal_record_search',
+        payload: { cnic: '12345-1234567-1', station_id: 'stn-1' },
+      }),
+    ).toBe(true);
+  });
+
+  it('does NOT require a city for Registry/Deed either (non-judicial)', () => {
+    expect(
+      evalPricingNoticeReady({
+        flow: 'non_judicial_registry_deed',
+        payload: {},
+      }),
+    ).toBe(true);
+  });
+
+  // ── The two original repro cases must stay suppressed (no regression) ──
+  it('stays false for judicial Case Files before Set Type is chosen, even with a city', () => {
+    expect(
+      evalPricingNoticeReady({
+        flow: 'judicial_case_files',
+        payload: { select_court_type: 'Lower Court', city_id: 'city-1', set_type: '' },
+      }),
+    ).toBe(false);
+  });
+
+  it('stays false for judicial Case Information before Required Documents is chosen, even with a city', () => {
+    expect(
+      evalPricingNoticeReady({
+        flow: 'judicial_case_information',
+        payload: {
+          select_court_type: 'Lower Court',
+          city_id: 'city-1',
+          required_documentations: '',
+        },
+      }),
+    ).toBe(false);
+  });
+
+  // ── Judicial flows still require a city (region genuinely needed) ──────
+  it('stays false for a judicial flow with a court type but no city yet', () => {
+    expect(
+      evalPricingNoticeReady({
+        flow: 'judicial_case_filing',
+        payload: { select_court_type: 'Lower Court' },
+      }),
+    ).toBe(false);
+  });
+
+  it('is true for a complete judicial flow (court type + city + no awaiting fields)', () => {
+    expect(
+      evalPricingNoticeReady({
+        flow: 'judicial_case_files',
+        payload: { select_court_type: 'Lower Court', city_id: 'city-1', set_type: 'attested' },
+      }),
+    ).toBe(true);
   });
 });
