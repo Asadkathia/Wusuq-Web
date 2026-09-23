@@ -10,12 +10,12 @@ import { consumerIntakeTour } from './consumer/intake';
 import { consumerMyTicketsTour } from './consumer/my-tickets';
 import { consumerPayTour } from './consumer/pay';
 import { consumerWalletTour } from './consumer/wallet';
+import { consumerDraftsTour } from './consumer/drafts';
+import { consumerCaseFilesTour } from './consumer/case-files';
+import { consumerDocumentsTour } from './consumer/documents';
+import { consumerInvoicesTour } from './consumer/invoices';
+import { consumerProfileTour } from './consumer/profile';
 import type { TourDefinition } from './types';
-
-/** Temporary stand-in while a tour's content is being written (Tasks 4–6 remove all uses). */
-function placeholderTour(id: TourId): TourDefinition {
-  return { id, menuLabel: id, steps: [] };
-}
 
 export const TOUR_DEFINITIONS: Record<TourId, TourDefinition> = {
   'consumer.getting-started': consumerGettingStarted,
@@ -25,9 +25,9 @@ export const TOUR_DEFINITIONS: Record<TourId, TourDefinition> = {
   'consumer.my-tickets': consumerMyTicketsTour,
   'consumer.pay': consumerPayTour,
   'consumer.wallet': consumerWalletTour,
-  'consumer.drafts': placeholderTour('consumer.drafts'),
-  'consumer.case-files': placeholderTour('consumer.case-files'),
-  'consumer.documents': placeholderTour('consumer.documents'),
-  'consumer.invoices': placeholderTour('consumer.invoices'),
-  'consumer.profile': placeholderTour('consumer.profile'),
+  'consumer.drafts': consumerDraftsTour,
+  'consumer.case-files': consumerCaseFilesTour,
+  'consumer.documents': consumerDocumentsTour,
+  'consumer.invoices': consumerInvoicesTour,
+  'consumer.profile': consumerProfileTour,
 };

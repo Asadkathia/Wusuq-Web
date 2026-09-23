@@ -11,6 +11,7 @@ import { PanelCard } from '@/components/ui/panel-card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { StatusPill } from '@/components/ui/status-pill';
 import { useToast } from '@/components/ui/toast';
+import { useModuleTour } from '@/components/tours/use-module-tour';
 
 type InvoiceRow = {
   id: string;
@@ -41,6 +42,10 @@ function statusVariant(status: string): 'success' | 'warning' | 'info' {
 export function ConsumerInvoicesBoard() {
   const [invoices, setInvoices] = useState<InvoiceRow[]>([]);
   const [loading, setLoading] = useState(false);
+  // `loading` starts `false`, so `!loading` is already true before the first
+  // fetch even starts — it cannot gate the tour's `ready` prop. `loaded` is a
+  // separate flag, set only once the initial fetch has actually resolved.
+  const [loaded, setLoaded] = useState(false);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const toast = useToast();
 
@@ -53,12 +58,15 @@ export function ConsumerInvoicesBoard() {
       toast.error('Unable to load invoices', err?.message);
     } finally {
       setLoading(false);
+      setLoaded(true);
     }
   }, [toast]);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  useModuleTour('consumer.invoices', { ready: loaded });
 
   const handleDownload = async (invoice: InvoiceRow) => {
     if (downloadingId) return;
@@ -86,7 +94,7 @@ export function ConsumerInvoicesBoard() {
           ))}
         </div>
       ) : invoices.length === 0 ? (
-        <PanelCard className="text-center py-16">
+        <PanelCard data-tour="invoices.list" className="text-center py-16">
           <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-50 text-brand-500">
             <FileText className="h-6 w-6" />
           </div>
@@ -96,7 +104,7 @@ export function ConsumerInvoicesBoard() {
           </p>
         </PanelCard>
       ) : (
-        <div className="space-y-3">
+        <div data-tour="invoices.list" className="space-y-3">
           {invoices.map((inv) => (
             <PanelCard
               key={inv.id}

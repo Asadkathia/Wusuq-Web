@@ -11,6 +11,7 @@ import { PanelCard } from '@/components/ui/panel-card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { IconButton } from '@/components/ui/icon-button';
 import { useToast } from '@/components/ui/toast';
+import { useModuleTour } from '@/components/tours/use-module-tour';
 
 type DraftRow = {
   id: string;
@@ -57,6 +58,10 @@ function flowLabel(flow: string): string {
 export function DraftsBoard() {
   const [drafts, setDrafts] = useState<DraftRow[]>([]);
   const [loading, setLoading] = useState(false);
+  // `loading` starts `false`, so `!loading` is already true before the first
+  // fetch even starts — it cannot gate the tour's `ready` prop. `loaded` is a
+  // separate flag, set only once the initial fetch has actually resolved.
+  const [loaded, setLoaded] = useState(false);
   const toast = useToast();
 
   const loadDrafts = useCallback(async () => {
@@ -68,12 +73,15 @@ export function DraftsBoard() {
       toast.error('Unable to load drafts', err?.message);
     } finally {
       setLoading(false);
+      setLoaded(true);
     }
   }, [toast]);
 
   useEffect(() => {
     loadDrafts();
   }, [loadDrafts]);
+
+  useModuleTour('consumer.drafts', { ready: loaded });
 
   const rows = useMemo(() => drafts, [drafts]);
 
@@ -109,7 +117,7 @@ export function DraftsBoard() {
           ))}
         </div>
       ) : rows.length === 0 ? (
-        <PanelCard className="text-center py-16">
+        <PanelCard data-tour="drafts.list" className="text-center py-16">
           <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-50 text-brand-500">
             <FileEdit className="h-6 w-6" />
           </div>
@@ -124,11 +132,12 @@ export function DraftsBoard() {
           </Link>
         </PanelCard>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2">
-          {rows.map((draft) => (
+        <div data-tour="drafts.list" className="grid gap-3 sm:grid-cols-2">
+          {rows.map((draft, index) => (
             <DraftCard
               key={draft.id}
               draft={draft}
+              isFirst={index === 0}
               onDeleted={(id) => setDrafts((prev) => prev.filter((d) => d.id !== id))}
             />
           ))}
@@ -140,9 +149,11 @@ export function DraftsBoard() {
 
 function DraftCard({
   draft,
+  isFirst,
   onDeleted,
 }: {
   draft: DraftRow;
+  isFirst: boolean;
   onDeleted: (id: string) => void;
 }) {
   const href = draftHref(draft.flow);
@@ -191,6 +202,7 @@ function DraftCard({
           <button
             type="button"
             aria-label="Delete draft"
+            data-tour={isFirst ? 'drafts.delete' : undefined}
             onClick={handleDelete}
             disabled={deleting}
             className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-300 transition-colors hover:bg-rose-50 hover:text-rose-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/40 disabled:opacity-50"

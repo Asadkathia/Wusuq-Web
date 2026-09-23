@@ -73,4 +73,9 @@ describe('tour registry integrity', () => {
       if (next) expect(next.href.startsWith('/')).toBe(true);
     }
   });
+
+  it('every tour has at least one step (no placeholders left)', () => {
+    const empty = TOUR_IDS.filter((id) => TOUR_DEFINITIONS[id].steps.length === 0);
+    expect(empty).toEqual([]);
+  });
 });

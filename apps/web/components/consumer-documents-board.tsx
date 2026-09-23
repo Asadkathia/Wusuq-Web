@@ -12,6 +12,7 @@ import { StatusPill } from '@/components/ui/status-pill';
 import { useToast } from '@/components/ui/toast';
 import { documentCategoryLabel } from '@wusuq/shared';
 import { DocumentPreview } from '@/components/document-preview';
+import { useModuleTour } from '@/components/tours/use-module-tour';
 
 type DocumentItem = {
   id: string;
@@ -49,6 +50,10 @@ function fileKindLabel(type: string): string {
 export function ConsumerDocumentsBoard() {
   const [items, setItems] = useState<DocumentItem[]>([]);
   const [loading, setLoading] = useState(false);
+  // `loading` starts `false`, so `!loading` is already true before the first
+  // fetch even starts — it cannot gate the tour's `ready` prop. `loaded` is a
+  // separate flag, set only once the initial fetch has actually resolved.
+  const [loaded, setLoaded] = useState(false);
   const [search, setSearch] = useState('');
   const [userId, setUserId] = useState('');
   const [previewDoc, setPreviewDoc] = useState<{ url: string; name: string } | null>(null);
@@ -72,10 +77,13 @@ export function ConsumerDocumentsBoard() {
       toast.error('Unable to load documents', err?.message);
     } finally {
       setLoading(false);
+      setLoaded(true);
     }
   }, [userId, toast]);
 
   useEffect(() => { load(); }, [load]);
+
+  useModuleTour('consumer.documents', { ready: loaded });
 
   const filtered = useMemo(() => {
     const s = search.trim().toLowerCase();
@@ -124,7 +132,7 @@ export function ConsumerDocumentsBoard() {
           ))}
         </div>
       ) : filtered.length === 0 ? (
-        <PanelCard className="text-center py-16">
+        <PanelCard data-tour="documents.list" className="text-center py-16">
           <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-50 text-brand-500">
             <Folder className="h-6 w-6" />
           </div>
@@ -132,8 +140,8 @@ export function ConsumerDocumentsBoard() {
           <p className="mt-1 text-sm text-slate-500">They&rsquo;ll appear here as tickets are completed.</p>
         </PanelCard>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {filtered.map((doc) => (
+        <div data-tour="documents.list" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {filtered.map((doc, index) => (
             <div
               key={doc.id}
               className="group rounded-2xl bg-surface p-4 ring-1 ring-border-soft shadow-elev-1 transition-[box-shadow,transform] duration-200 ease-silk hover:-translate-y-0.5 hover:shadow-elev-2"
@@ -165,6 +173,7 @@ export function ConsumerDocumentsBoard() {
                 <div className="flex items-center gap-3">
                   <button
                     type="button"
+                    data-tour={index === 0 ? 'documents.preview' : undefined}
                     disabled={!doc.ticket?.id}
                     onClick={() => {
                       if (!doc.ticket?.id) return;

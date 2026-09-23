@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Upload } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import { useModuleTour } from '@/components/tours/use-module-tour';
 import { CohortGroup } from './case-files-board/cohort-group';
 import { UploadDrawer } from './case-files-board/upload-drawer';
 
@@ -92,6 +93,10 @@ export function CaseFilesBoard() {
     return [...map.values()];
   }, [cohorts, files]);
 
+  // `loading` starts `true` here, so `!loading` is only true once the
+  // initial fetch has actually resolved (see `refresh`'s `finally`).
+  useModuleTour('consumer.case-files', { ready: !loading });
+
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 py-6">
       <header className="flex flex-wrap items-end justify-between gap-3">
@@ -106,6 +111,7 @@ export function CaseFilesBoard() {
         </div>
         <button
           type="button"
+          data-tour="case-files.upload"
           onClick={() => setDrawerOpen(true)}
           className="inline-flex items-center gap-2 rounded-xl bg-brand-500 px-4 py-2 text-sm font-semibold text-white shadow-elev-1 transition-colors hover:bg-brand-600"
         >
@@ -117,14 +123,17 @@ export function CaseFilesBoard() {
       {loading ? (
         <p className="text-sm text-slate-500">Loading…</p>
       ) : grouped.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-border-soft bg-surface-muted/40 px-6 py-12 text-center">
+        <div
+          data-tour="case-files.list"
+          className="rounded-2xl border border-dashed border-border-soft bg-surface-muted/40 px-6 py-12 text-center"
+        >
           <p className="text-sm text-slate-600">No case files yet.</p>
           <p className="mt-1 text-xs text-slate-500">
             Click <strong>Upload new</strong> to add your first file.
           </p>
         </div>
       ) : (
-        <div className="space-y-3">
+        <div data-tour="case-files.list" className="space-y-3">
           {grouped.map(({ cohort, files: cohortFiles }) => (
             <CohortGroup
               key={`${cohort.serviceId}|${cohort.cityId}|${cohort.courtName}`}

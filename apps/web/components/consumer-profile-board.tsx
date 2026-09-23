@@ -15,6 +15,7 @@ import { Select } from '@/components/ui/select';
 import { CountryPicker } from '@/components/ui/country-picker';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/components/ui/toast';
+import { useModuleTour } from '@/components/tours/use-module-tour';
 import { phoneMaxLength, phonePlaceholder, validateLocalPhone } from '@/lib/phone';
 import {
   EMPTY_STREET_ADDRESS,
@@ -53,6 +54,10 @@ export function ConsumerProfileBoard() {
   const [tab, setTab] = useState('general');
   const [loading, setLoading] = useState(false);
   const [pwLoading, setPwLoading] = useState(false);
+  // `loading` above only tracks the save-form submit, not the initial
+  // `/users/me` fetch — set once that fetch resolves so the tour never plays
+  // over still-blank fields.
+  const [loaded, setLoaded] = useState(false);
 
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -124,12 +129,15 @@ export function ConsumerProfileBoard() {
           setCountryCode(r.country);
         }
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setLoaded(true));
     apiClient
       .get<GeoRow[]>('/geo/provinces')
       .then((rows) => setProvinces(rows))
       .catch(() => {});
   }, []);
+
+  useModuleTour('consumer.profile', { ready: loaded });
 
   // Resolve a pending server-supplied province name to its id once the
   // province list has loaded.
@@ -332,7 +340,7 @@ export function ConsumerProfileBoard() {
                 </FormField>
               </div>
 
-              <div className="space-y-4 border-t border-border-soft pt-5">
+              <div data-tour="profile.type" className="space-y-4 border-t border-border-soft pt-5">
                 <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
                   <UserIcon className="h-4 w-4 text-brand-500" /> User type
                 </div>
@@ -401,7 +409,7 @@ export function ConsumerProfileBoard() {
                 </div>
               </div>
 
-              <div className="space-y-4 border-t border-border-soft pt-5">
+              <div data-tour="profile.details" className="space-y-4 border-t border-border-soft pt-5">
                 <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
                   <Home className="h-4 w-4 text-brand-500" /> Address
                 </div>
