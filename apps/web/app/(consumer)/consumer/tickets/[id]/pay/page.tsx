@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button';
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/components/ui/toast';
+import { useModuleTour } from '@/components/tours/use-module-tour';
 
 interface TicketSummary {
   id: string;
@@ -113,6 +114,9 @@ export default function PayTicketPage() {
   const [walletCredit, setWalletCredit] = useState(0);
   const [payingFromWallet, setPayingFromWallet] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  // The ready rule: this page has no plain `loading` boolean, so track
+  // whether the initial ticket fetch has resolved (success OR error) directly.
+  const [initialLoadDone, setInitialLoadDone] = useState(false);
 
   const [, startTransition] = useTransition();
   const hasFetched = useRef(false);
@@ -154,6 +158,8 @@ export default function PayTicketPage() {
               ? err.message
               : 'Failed to load ticket';
         startTransition(() => setLoadError(message));
+      } finally {
+        if (!cancelled) startTransition(() => setInitialLoadDone(true));
       }
     })();
 
@@ -171,6 +177,8 @@ export default function PayTicketPage() {
     if (!ticket) return;
     startTransition(() => setAmountStr(computeAmountField(ticket, method)));
   }, [ticket, method]);
+
+  useModuleTour('consumer.pay', { ready: initialLoadDone });
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -451,7 +459,7 @@ export default function PayTicketPage() {
               </span>
             </div>
           ) : null}
-          <div className="flex items-center justify-between border-t border-border-soft pt-3">
+          <div className="flex items-center justify-between border-t border-border-soft pt-3" data-tour="pay.amount">
             <span className="text-sm font-medium text-slate-700">Amount due now</span>
             <span className="text-lg font-semibold text-slate-900">
               {formatMoney(dueNow, currency)}
@@ -473,7 +481,7 @@ export default function PayTicketPage() {
           The wallet and the ticket are always the same currency (Ticket.currency
           snapshots User.currency at intake), so no conversion applies here. */}
       {walletCredit > 0 && dueNow > 0 ? (
-        <PanelCard className="mb-4 border-brand-200 bg-brand-50/40">
+        <PanelCard className="mb-4 border-brand-200 bg-brand-50/40" data-tour="pay.wallet">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h2 className="text-sm font-semibold text-slate-900">Pay from wallet balance</h2>
@@ -507,7 +515,9 @@ export default function PayTicketPage() {
             <Building2 className="h-4 w-4 text-brand-600" />
             <h2 className="text-sm font-semibold text-slate-900">Payment details</h2>
           </div>
-          <PaymentMethodDetails settings={bankDetails} method={method} onChange={setMethod} />
+          <div data-tour="pay.method">
+            <PaymentMethodDetails settings={bankDetails} method={method} onChange={setMethod} />
+          </div>
         </PanelCard>
       ) : (
         <PanelCard className="mb-4">
@@ -584,6 +594,7 @@ export default function PayTicketPage() {
                   ? 'border-emerald-300 bg-emerald-50/40'
                   : 'border-border-soft hover:bg-surface-muted',
               ].join(' ')}
+              data-tour="pay.receipt"
             >
               <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-50 text-brand-500 shrink-0">
                 {receiptFile ? (

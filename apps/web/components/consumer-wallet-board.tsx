@@ -24,6 +24,7 @@ import { PanelCard } from '@/components/ui/panel-card';
 import { StatusPill } from '@/components/ui/status-pill';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/toast';
+import { useModuleTour } from '@/components/tours/use-module-tour';
 import {
   Dialog,
   DialogContent,
@@ -89,6 +90,10 @@ export function ConsumerWalletBoard() {
 
   useEffect(() => { load(); }, [load]);
 
+  // `loading` starts `true` (line ~73), so `!loading` is only true once the
+  // initial fetch has resolved (success or error) — the ready rule here.
+  useModuleTour('consumer.wallet', { ready: !loading });
+
   return (
     <div className="space-y-6">
       <div className="flex items-end justify-between flex-col sm:flex-row gap-4">
@@ -101,13 +106,14 @@ export function ConsumerWalletBoard() {
           size="md"
           leftIcon={<Plus className="h-4 w-4" />}
           onClick={() => setTopupOpen(true)}
+          data-tour="wallet.topup"
         >
           Top up
         </Button>
       </div>
 
       {/* Balance hero */}
-      <div className="relative overflow-hidden rounded-2xl bg-brand-500 p-8 text-white shadow-elev-2">
+      <div className="relative overflow-hidden rounded-2xl bg-brand-500 p-8 text-white shadow-elev-2" data-tour="wallet.balance">
         <div className="pointer-events-none absolute -top-24 -right-24 h-72 w-72 rounded-full bg-brand-400 opacity-40 blur-[100px]" />
         <div className="pointer-events-none absolute -bottom-24 -left-16 h-64 w-64 rounded-full bg-brand-700 opacity-50 blur-[120px]" />
 
@@ -177,7 +183,7 @@ export function ConsumerWalletBoard() {
           </div>
         </div>
 
-        <div className="mt-5 divide-y divide-border-soft rounded-xl ring-1 ring-border-soft bg-surface overflow-hidden">
+        <div className="mt-5 divide-y divide-border-soft rounded-xl ring-1 ring-border-soft bg-surface overflow-hidden" data-tour="wallet.history">
           {loading ? (
             Array.from({ length: 4 }).map((_, i) => (
               <div key={i} className="p-4">

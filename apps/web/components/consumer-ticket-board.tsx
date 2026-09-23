@@ -56,6 +56,7 @@ import {
 } from '@/components/ui/drawer';
 import { IconButton } from '@/components/ui/icon-button';
 import { useToast } from '@/components/ui/toast';
+import { useModuleTour } from '@/components/tours/use-module-tour';
 import { FutureTicketsStrip } from './consumer-ticket-board/future-tickets-strip';
 
 type TicketStatus = 'UNPAID' | 'PAID' | 'ASSIGNED' | 'IN_PROGRESS' | 'WAITING_APPROVAL' | 'COMPLETED' | 'DELIVERED';
@@ -157,6 +158,10 @@ type FilterTab = 'all' | 'active' | 'completed' | 'unpaid';
 export function ConsumerTicketBoard() {
   const [tickets, setTickets] = useState<TicketRow[]>([]);
   const [loading, setLoading] = useState(false);
+  // `loading` starts `false` here, so `!loading` is already true before the
+  // first fetch even starts — it cannot gate the tour's `ready` prop. `loaded`
+  // is a separate flag, set only once the initial fetch has actually resolved.
+  const [loaded, setLoaded] = useState(false);
   const [search, setSearch] = useState('');
   const searchParams = useSearchParams();
   const initialTab: FilterTab =
@@ -184,10 +189,13 @@ export function ConsumerTicketBoard() {
       toast.error('Unable to load tickets', err?.message);
     } finally {
       setLoading(false);
+      setLoaded(true);
     }
   }, [currentUserId, toast]);
 
   useEffect(() => { loadTickets(); }, [loadTickets]);
+
+  useModuleTour('consumer.my-tickets', { ready: loaded });
 
   const filtered = useMemo(() => {
     const s = search.trim().toLowerCase();
@@ -221,7 +229,7 @@ export function ConsumerTicketBoard() {
           <p className="mt-1 text-sm text-slate-500">Track every request you&rsquo;ve submitted.</p>
         </div>
         <div className="flex items-center gap-2">
-          <Link href="/consumer/paralegal-services/judicial">
+          <Link href="/consumer/paralegal-services/judicial" data-tour="my-tickets.new">
             <Button variant="brand" size="md" rightIcon={<ArrowRight className="h-4 w-4" />}>
               Start a new request
             </Button>
@@ -232,7 +240,7 @@ export function ConsumerTicketBoard() {
       {/* Filters */}
       <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <TabsList>
+          <TabsList data-tour="my-tickets.tabs">
             <TabsTrigger value="all">All <span className="ml-2 text-slate-400 tabular-nums">{counts.all}</span></TabsTrigger>
             <TabsTrigger value="active">Active <span className="ml-2 text-slate-400 tabular-nums">{counts.active}</span></TabsTrigger>
             <TabsTrigger value="completed">Completed <span className="ml-2 text-slate-400 tabular-nums">{counts.completed}</span></TabsTrigger>
@@ -309,7 +317,7 @@ function TicketList({
 
   return (
     <div className="grid gap-3 sm:grid-cols-2">
-      {tickets.map((t) => {
+      {tickets.map((t, i) => {
         const payload = (t as { payload?: Record<string, string> | null }).payload ?? {};
         // Batch-4 C: the clerk-recorded `scheduledDate` is the AUTHORITATIVE
         // next hearing; `payload.future_date` is only what the consumer typed
@@ -328,7 +336,10 @@ function TicketList({
         const showStrip = isPendingFlow;
         return (
           <div key={t.id}>
-            <TicketCard ticket={t} onOpen={() => onOpen(t.id)} />
+            {/* my-tickets.card/pay/actions tour steps target only the FIRST
+                card, so replaying the tour always points at a real, visible
+                element instead of whichever card happened to render last. */}
+            <TicketCard ticket={t} onOpen={() => onOpen(t.id)} isFirst={i === 0} />
             {showStrip && (
               <FutureTicketsStrip
                 ticketId={t.id}
@@ -361,7 +372,15 @@ function TicketList({
 // the existing /pay page already sends them, so all four paths now agree.
 const PAY_LATER_DESTINATION = '/consumer/dashboard';
 
-function TicketCard({ ticket, onOpen }: { ticket: TicketRow; onOpen: () => void }) {
+function TicketCard({
+  ticket,
+  onOpen,
+  isFirst = false,
+}: {
+  ticket: TicketRow;
+  onOpen: () => void;
+  isFirst?: boolean;
+}) {
   const toast = useToast();
   const router = useRouter();
   const [invoiceBusy, setInvoiceBusy] = useState(false);
@@ -445,6 +464,14 @@ function TicketCard({ ticket, onOpen }: { ticket: TicketRow; onOpen: () => void 
         }
       }}
       className="group text-left rounded-2xl bg-surface p-5 ring-1 ring-border-soft shadow-elev-1 transition-[transform,box-shadow] duration-200 ease-silk hover:-translate-y-0.5 hover:shadow-elev-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40 cursor-pointer"
+      // The tour step targets only the first card (isFirst). Written as a
+      // literal attribute + conditional override spread (rather than a
+      // ternary on the value) so the registry integrity guard — which
+      // regex-matches `data-tour="…"` in the raw JSX source rather than
+      // evaluating it — can see the string; a ternary value never renders
+      // that literal substring.
+      data-tour="my-tickets.card"
+      {...(isFirst ? {} : { 'data-tour': undefined })}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0">
@@ -555,36 +582,75 @@ function TicketCard({ ticket, onOpen }: { ticket: TicketRow; onOpen: () => void 
         </div>
       ) : null}
 
-      {showFinalPayment ? (
-        <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 flex items-center justify-between gap-3">
-          <p className="text-xs font-medium text-rose-700">
-            Final payment due — {money(remaining, currency)}
-          </p>
-          <Link
-            href={`/consumer/tickets/${ticket.id}/pay`}
-            onClick={(e) => e.stopPropagation()}
-            className="inline-flex items-center gap-1 rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-rose-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/40 shrink-0"
-          >
-            Pay now
-            <ArrowUpRight className="h-3.5 w-3.5" />
-          </Link>
-        </div>
-      ) : showPayNow ? (
-        <div className="mt-3 flex justify-end">
-          <Link
-            href={`/consumer/tickets/${ticket.id}/pay`}
-            onClick={(e) => e.stopPropagation()}
-            className="inline-flex items-center gap-1 rounded-lg bg-brand-500 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-brand-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40"
-          >
-            Pay now
-            <ArrowUpRight className="h-3.5 w-3.5" />
-          </Link>
+      {/* Pay now / Pay later (batch-5 E1 + my-tickets.pay tour step — kept as
+          one group, distinct from the Regenerate/Documents/Invoice group
+          below, so the two can be spotlighted separately). A single shared
+          Pay-later button sits under either "Pay now" variant, so there is
+          still exactly one navigate-to-dashboard call site here (a source
+          guard test pins the count of that call across this file). */}
+      {showFinalPayment || showPayNow ? (
+        <div
+          className="mt-3 space-y-2"
+          // Tour step targets only the first card (isFirst). Literal
+          // attribute + conditional override spread — see the comment on the
+          // card root above for why a ternary on the value won't do.
+          data-tour="my-tickets.pay"
+          {...(isFirst ? {} : { 'data-tour': undefined })}
+        >
+          {showFinalPayment ? (
+            <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 flex flex-wrap items-center justify-between gap-3">
+              <p className="text-xs font-medium text-rose-700">
+                Final payment due — {money(remaining, currency)}
+              </p>
+              <Link
+                href={`/consumer/tickets/${ticket.id}/pay`}
+                onClick={(e) => e.stopPropagation()}
+                className="inline-flex items-center gap-1 rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-rose-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/40 shrink-0"
+              >
+                Pay now
+                <ArrowUpRight className="h-3.5 w-3.5" />
+              </Link>
+            </div>
+          ) : (
+            <div className="flex justify-end">
+              <Link
+                href={`/consumer/tickets/${ticket.id}/pay`}
+                onClick={(e) => e.stopPropagation()}
+                className="inline-flex items-center gap-1 rounded-lg bg-brand-500 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-brand-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40"
+              >
+                Pay now
+                <ArrowUpRight className="h-3.5 w-3.5" />
+              </Link>
+            </div>
+          )}
+          <div className="flex justify-end">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={(e) => {
+                e.stopPropagation();
+                toast.info(
+                  `${money(remaining, currency)} added to your wallet as due`,
+                  'Pay anytime from My Wallet — your ticket is released for processing once paid.',
+                );
+                router.push(PAY_LATER_DESTINATION);
+              }}
+            >
+              Pay later
+            </Button>
+          </div>
         </div>
       ) : null}
 
-      {/* Regenerate / Documents / Download invoice / Pay later (C7/C8 + batch-7 7.4) */}
-      {rgHref || invoiceId || docs.length > 0 || showFinalPayment || showPayNow ? (
-        <div className="mt-2 flex flex-wrap items-center justify-end gap-2">
+      {/* Regenerate / Documents / Download invoice (C7/C8 + batch-7 7.4) */}
+      {rgHref || invoiceId || docs.length > 0 ? (
+        <div
+          className="mt-2 flex flex-wrap items-center justify-end gap-2"
+          // Tour step targets only the first card (isFirst) — see the
+          // comment on the card root above for the literal+override pattern.
+          data-tour="my-tickets.actions"
+          {...(isFirst ? {} : { 'data-tour': undefined })}
+        >
           {rgHref ? (
             <Link href={rgHref} onClick={(e) => e.stopPropagation()}>
               <Button variant="secondary" size="sm" leftIcon={<RefreshCw className="h-3.5 w-3.5" />}>
@@ -638,22 +704,6 @@ function TicketCard({ ticket, onOpen }: { ticket: TicketRow; onOpen: () => void 
               leftIcon={<Download className="h-3.5 w-3.5" />}
             >
               {invoiceBusy ? 'Preparing…' : 'Download invoice'}
-            </Button>
-          ) : null}
-          {showFinalPayment || showPayNow ? (
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={(e) => {
-                e.stopPropagation();
-                toast.info(
-                  `${money(remaining, currency)} added to your wallet as due`,
-                  'Pay anytime from My Wallet — your ticket is released for processing once paid.',
-                );
-                router.push(PAY_LATER_DESTINATION);
-              }}
-            >
-              Pay later
             </Button>
           ) : null}
         </div>

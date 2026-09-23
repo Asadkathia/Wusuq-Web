@@ -33,6 +33,7 @@ import { StatusPill } from '@/components/ui/status-pill';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
 import { formatMoney } from '@wusuq/shared';
+import { useModuleTour } from '@/components/tours/use-module-tour';
 import { ProfileCompletionBanner } from './profile-completion-banner';
 
 type TrendPoint = { date: string; count: number };
@@ -200,6 +201,10 @@ export default function ConsumerDashboardPage() {
     load();
   }, []);
 
+  // `loading` starts `true` (line ~163), so `!loading` is only true once the
+  // initial fetch has resolved (success or error) — the ready rule for this page.
+  useModuleTour('consumer.dashboard', { ready: !loading });
+
   return (
     <div className="mx-auto max-w-7xl space-y-8">
       <ProfileCompletionBanner />
@@ -279,7 +284,7 @@ export default function ConsumerDashboardPage() {
       </section>
 
       {/* Summary strip */}
-      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4" data-tour="dashboard.kpis">
         <SummaryCard
           // Matches the wallet page's own hero wording (consumer-wallet-board.tsx):
           // `walletBalance` here is already the NET figure (prepaid credit minus
@@ -328,7 +333,7 @@ export default function ConsumerDashboardPage() {
 
       {/* Activity + hearing */}
       <section className="grid gap-6 lg:grid-cols-3">
-        <PanelCard className="lg:col-span-2">
+        <PanelCard className="lg:col-span-2" data-tour="dashboard.activity">
           <div className="flex items-center justify-between">
             <div>
               <h3 className="text-sm font-semibold text-slate-900">Recent activity</h3>
@@ -431,7 +436,7 @@ export default function ConsumerDashboardPage() {
         </PanelCard>
 
         <div className="space-y-6">
-          <PanelCard>
+          <PanelCard data-tour="dashboard.next-hearing">
             <div className="flex items-center gap-2.5">
               <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600">
                 <CalendarClock className="h-4 w-4" />
@@ -495,7 +500,7 @@ export default function ConsumerDashboardPage() {
           the portal page's consumer branch is a different component that
           consumers never reach (the root router sends them here). */}
       {summary?.ticketTrend && summary.ticketTrend.length > 0 ? (
-        <section className="rounded-2xl bg-surface p-5 ring-1 ring-border-soft shadow-elev-1">
+        <section className="rounded-2xl bg-surface p-5 ring-1 ring-border-soft shadow-elev-1" data-tour="dashboard.volume">
           <h3 className="mb-4 text-sm font-semibold text-slate-900">Ticket Volume Trend</h3>
           <div className="h-64 w-full">
             <ResponsiveContainer width="100%" height="100%">
