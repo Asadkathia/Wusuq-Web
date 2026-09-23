@@ -464,14 +464,8 @@ function TicketCard({
         }
       }}
       className="group text-left rounded-2xl bg-surface p-5 ring-1 ring-border-soft shadow-elev-1 transition-[transform,box-shadow] duration-200 ease-silk hover:-translate-y-0.5 hover:shadow-elev-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40 cursor-pointer"
-      // The tour step targets only the first card (isFirst). Written as a
-      // literal attribute + conditional override spread (rather than a
-      // ternary on the value) so the registry integrity guard — which
-      // regex-matches `data-tour="…"` in the raw JSX source rather than
-      // evaluating it — can see the string; a ternary value never renders
-      // that literal substring.
-      data-tour="my-tickets.card"
-      {...(isFirst ? {} : { 'data-tour': undefined })}
+      // The tour step targets only the first card (isFirst).
+      data-tour={isFirst ? 'my-tickets.card' : undefined}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0">
@@ -591,11 +585,8 @@ function TicketCard({
       {showFinalPayment || showPayNow ? (
         <div
           className="mt-3 space-y-2"
-          // Tour step targets only the first card (isFirst). Literal
-          // attribute + conditional override spread — see the comment on the
-          // card root above for why a ternary on the value won't do.
-          data-tour="my-tickets.pay"
-          {...(isFirst ? {} : { 'data-tour': undefined })}
+          // Tour step targets only the first card (isFirst).
+          data-tour={isFirst ? 'my-tickets.pay' : undefined}
         >
           {showFinalPayment ? (
             <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 flex flex-wrap items-center justify-between gap-3">
@@ -646,10 +637,8 @@ function TicketCard({
       {rgHref || invoiceId || docs.length > 0 ? (
         <div
           className="mt-2 flex flex-wrap items-center justify-end gap-2"
-          // Tour step targets only the first card (isFirst) — see the
-          // comment on the card root above for the literal+override pattern.
-          data-tour="my-tickets.actions"
-          {...(isFirst ? {} : { 'data-tour': undefined })}
+          // Tour step targets only the first card (isFirst).
+          data-tour={isFirst ? 'my-tickets.actions' : undefined}
         >
           {rgHref ? (
             <Link href={rgHref} onClick={(e) => e.stopPropagation()}>
