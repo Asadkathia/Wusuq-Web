@@ -7,8 +7,9 @@
 Teach users the application in context. A short **getting-started** tour introduces the
 shell; each **module** (My Tickets, Order a service, Wallet, …) has its own tour that plays
 automatically the first time the user opens that module and can be replayed at any time.
-Module tours chain into **workflows** (order → pay → track → download) via a "Next: …"
-final step.
+Module tours chain into **workflows** via a "Next: …" final step where the next page has a
+fixed URL (dashboard → My Tickets → Wallet); pages with dynamic URLs (pay, intake) auto-play
+their own tour when the user reaches them.
 
 Representatives are out of scope (not requested).
 
@@ -30,13 +31,14 @@ Rejected: custom Radix-Popover engine (we'd own overlay/scroll/reposition/mobile
 
 ### Shared — `packages/shared`
 
-- `TOUR_REGISTRY_META`: `Record<TourId, { version: number; audience: 'consumer' | 'staff'; permission?: Permission }>`
+- `TOUR_IDS` + `TOUR_META`: `Record<TourId, { version: number; audience: 'consumer' | 'staff'; permission?: Permission }>`
   — the **only** list of valid tour ids. The API validates against it; the web registry is
   typed against `TourId` so a step file cannot reference an unknown tour.
 - `TOUR_AUTO_OFF_ID = 'tours.auto-off'` — a reserved id used to persist the
   "don't show tours automatically" preference in the same table (no new column).
-- Pure `shouldAutoPlay(input)` — the auto-play decision (see Runtime). Lives in shared so it
-  is unit-testable framework-free.
+- `tourAppliesToRole(id, role)` — audience/permission check (framework-free).
+- The pure auto-play decision `shouldAutoPlay` lives in `apps/web/lib/tours/auto-play.ts`
+  (it only concerns browser state; the API never needs it) and is unit-tested there.
 
 ### Database — additive migration
 
@@ -51,8 +53,7 @@ model UserTourProgress {
   status    TourStatus
   updatedAt DateTime   @updatedAt
   user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  @@unique([userId, tourId])
-  @@index([userId])
+  @@unique([userId, tourId])   // leading userId also serves WHERE userId = …
 }
 ```
 
@@ -87,7 +88,7 @@ lib/tours/
   registry.ts              TourId → TourDefinition (imports the step files)
   consumer/*.ts            one data file per consumer tour (text + targets, no JSX)
   staff/*.ts               phase 2
-  auto-play.ts             thin wrapper over shared shouldAutoPlay + browser-state readers
+  auto-play.ts             pure shouldAutoPlay decision (browser state read by the caller)
   tour-theme.css           driver.js overrides using globals.css tokens
 components/tours/
   tour-provider.tsx        loads progress once; start(tourId); isSeen; queue; persistence
@@ -95,7 +96,7 @@ components/tours/
   use-module-tour.ts       useModuleTour(tourId, { ready }) — the one line a page adds
 ```
 
-- `TourProvider` is mounted in both `(consumer)` and `(portal)` layouts.
+- `TourProvider` is mounted in the `(consumer)` layout in phase 1 and the `(portal)` layout in phase 2.
 - `driver.js` is loaded with a dynamic `import()` inside the provider so it never ships on
   pages where no tour starts and never runs during SSR.
 
@@ -108,8 +109,9 @@ interface TourStep {
   optional?: boolean;       // skip silently when the target is missing
   title: string;
   body: string;
-  next?: { label: string; href: string; tourId: TourId }; // final-step workflow chain
 }
+// The workflow chain lives on the tour, not the step:
+// TourDefinition.next?: { label: string; href: string; tourId: TourId }
 ```
 
 Targets are **`data-tour="<id>"` attributes**, never CSS classes or text.
@@ -138,7 +140,12 @@ target → tour aborts, **not** marked seen, `console.warn` in development.
 auth for a low-harm outcome.)
 
 **Persistence failure** — the tour still closes; the result is held in a session-scoped
-in-memory set so it does not loop; the write is retried on the next page load.
+in-memory set so it does not loop, and queued in localStorage (`wusuq_tour_pending`) to be
+merged over the server rows and re-sent on the next load.
+
+**Progress load failure** — fail closed: if `GET /tours/progress` errors or returns a
+non-array, nothing auto-plays (manual replay still works). This also keeps existing
+Playwright specs, whose catch-all mocks return `{}`, free of tour overlays.
 
 **Completion semantics** — reaching the last step and clicking Done / a "Next" chain link →
 `COMPLETED`. Close / Esc / "Skip tour" → `DISMISSED`.
@@ -149,12 +156,12 @@ in-memory set so it does not loop; the write is retried on the next page load.
 
 | Tour id | Page | Covers | Chains to |
 |---|---|---|---|
-| `consumer.getting-started` | any | sidebar, top bar, wallet chip, bell, "?" menu | `consumer.services` |
+| `consumer.getting-started` | any | sidebar, top bar, wallet chip, bell, "?" menu | (current page's tour follows) |
 | `consumer.dashboard` | `/consumer/dashboard` | ticket counts, next hearing, activity, volume graph | `consumer.my-tickets` |
-| `consumer.services` | paralegal-services | judicial vs non-judicial, choosing a service | `consumer.intake` |
-| `consumer.intake` | intake wizard | step rail, required fields, city/court picker, autosave & drafts, checkout panel, promo, wallet opt-in | `consumer.my-tickets` |
-| `consumer.my-tickets` | `/consumer/my-tickets` | status tabs, card, Pay / Pay later, Invoice/Doc/TCS, Regenerate, Order Future Tickets, detail drawer | `consumer.pay` |
-| `consumer.pay` | pay page | payment method details, mandatory receipt | `consumer.wallet` |
+| `consumer.services` | paralegal-services | judicial vs non-judicial, choosing a service | — (intake auto-plays on open) |
+| `consumer.intake` | intake wizard | step rail, required fields, city/court picker, autosave & drafts, checkout panel, promo, wallet opt-in | — (never navigate away from a half-filled form) |
+| `consumer.my-tickets` | `/consumer/my-tickets` | status tabs, card, Pay / Pay later, Invoice/Doc/TCS, Regenerate, Order Future Tickets, detail drawer | `consumer.wallet` |
+| `consumer.pay` | pay page | payment method details, mandatory receipt | — (dynamic page, auto-plays on open) |
 | `consumer.wallet` | `/consumer/my-wallet` | net = credit − commitments, top-up, history, pay a ticket from wallet | — |
 | `consumer.drafts` | drafts | resume / delete drafts | — |
 | `consumer.case-files` | case-files + my-cases | uploading & viewing case files, cases | — |
@@ -181,7 +188,7 @@ edit wording without touching components.
 ## Styling & accessibility
 
 - `tour-theme.css` overrides driver.js with `globals.css` tokens (brand-500 buttons, card
-  radius/shadow); dark mode follows the tokens.
+  radius/shadow). (The app has no dark theme today; the tokens are the single place to add one.)
 - Popover shows "Step n of m", Back / Next / Skip tour.
 - Keyboard: ←/→/Esc; focus moves into the popover and is **restored** to the previously
   focused element on close.
@@ -191,7 +198,7 @@ edit wording without touching components.
 
 - **API unit:** unknown id → 400; stale version → 400; upsert idempotent; caller A cannot
   read or write caller B's rows (IDOR); delete only removes the caller's own row.
-- **Shared unit:** `shouldAutoPlay` truth table (version bump, auto-off, impersonation,
+- **Web unit:** `shouldAutoPlay` truth table (version bump, auto-off, impersonation,
   ready, dialog open, permission).
 - **Web unit (node Jest):** role filter; queue ordering (getting-started before module);
   **registry integrity guard** — every step `target`/`mobileTarget` appears in source as a
