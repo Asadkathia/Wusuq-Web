@@ -323,7 +323,7 @@ export function ConsumerProfileBoard() {
                 <FormField label="Country" htmlFor="country">
                   <CountryPicker value={countryCode} onChange={setCountryCode} />
                 </FormField>
-                <FormField label="Phone" htmlFor="phone">
+                <FormField label="Phone" htmlFor="phone" data-tour="profile.phone">
                   <div className="flex items-stretch gap-2">
                     <span className="flex items-center rounded-xl border border-border-soft bg-surface-muted/50 px-3 text-sm font-medium text-slate-700">
                       {countryCode ? `+${findCountry(countryCode).dial}` : '+—'}

@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { HTMLAttributes, ReactNode } from 'react';
 
 type FormFieldProps = {
   label?: string;
@@ -7,11 +7,14 @@ type FormFieldProps = {
   required?: boolean;
   htmlFor?: string;
   children: ReactNode;
-};
+} & Omit<HTMLAttributes<HTMLDivElement>, 'children' | 'className'>;
 
-export function FormField({ label, hint, error, required, htmlFor, children }: FormFieldProps) {
+// Forwards arbitrary div attributes (e.g. `data-tour`) onto the root, mirroring
+// PanelCard's `...rest` pattern — no existing caller passes `className`, so the
+// hardcoded root class stays fixed rather than merged.
+export function FormField({ label, hint, error, required, htmlFor, children, ...rest }: FormFieldProps) {
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-1.5" {...rest}>
       {label ? (
         <label htmlFor={htmlFor} className="block text-sm font-medium text-slate-700">
           {label}
