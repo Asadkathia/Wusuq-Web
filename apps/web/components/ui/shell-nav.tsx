@@ -208,7 +208,10 @@ export function ShellNavBody({ items, variant, onNavigate }: ShellNavBodyProps) 
 
 export function ShellNav({ items, variant }: ShellNavProps) {
   return (
-    <aside className="sticky top-0 hidden h-screen w-[248px] shrink-0 border-r border-border-soft bg-surface lg:block">
+    <aside
+      data-tour="shell.sidebar"
+      className="sticky top-0 hidden h-screen w-[248px] shrink-0 border-r border-border-soft bg-surface lg:block"
+    >
       <ShellNavBody items={items} variant={variant} />
     </aside>
   );

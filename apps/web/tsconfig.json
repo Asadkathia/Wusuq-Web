@@ -14,8 +14,7 @@
       }
     ],
     "paths": {
-      "@/*": ["./*"],
-      "@wusuq/shared": ["../../packages/shared/src/index.ts"]
+      "@/*": ["./*"]
     }
   },
   "include": [

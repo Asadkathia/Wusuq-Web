@@ -6,6 +6,7 @@ import { Bell, LogOut, Menu as MenuIcon, User, Wallet, X } from 'lucide-react';
 import { startTransition, useEffect, useState } from 'react';
 import { formatMoney } from '@wusuq/shared';
 import { apiClient } from '@/lib/api-client';
+import { TourMenu } from '@/components/tours/tour-menu';
 import { IconButton } from './icon-button';
 import { Menu, MenuContent, MenuItem, MenuLabel, MenuSeparator, MenuTrigger } from './menu';
 import { ShellNavBody, type NavItem } from './shell-nav';
@@ -164,6 +165,7 @@ export function ShellTopbar({ variant, walletHref, profileHref = '/profile', onS
               <IconButton
                 icon={<MenuIcon className="h-5 w-5" />}
                 aria-label="Open navigation"
+                data-tour="shell.mobile-menu"
                 className="lg:hidden"
               />
             </DialogPrimitive.Trigger>
@@ -205,6 +207,7 @@ export function ShellTopbar({ variant, walletHref, profileHref = '/profile', onS
         {variant === 'consumer' && walletBalance !== null ? (
           <Link
             href={walletHref ?? '/consumer/my-wallet'}
+            data-tour="shell.wallet"
             title={
               walletBalance < 0
                 ? 'You owe this amount — tap to pay'
@@ -223,10 +226,12 @@ export function ShellTopbar({ variant, walletHref, profileHref = '/profile', onS
           </Link>
         ) : null}
 
+        <TourMenu />
+
         {/* Notifications */}
         <Menu onOpenChange={(open) => { if (open) loadNotifications(); }}>
           <MenuTrigger asChild>
-            <div className="relative">
+            <div className="relative" data-tour="shell.notifications">
               <IconButton
                 icon={<Bell className="h-5 w-5" />}
                 aria-label={`Notifications${unread > 0 ? ` (${unread} unread)` : ''}`}
