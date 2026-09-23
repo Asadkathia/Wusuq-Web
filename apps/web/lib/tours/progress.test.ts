@@ -1,4 +1,5 @@
-import { mergeProgress, normalizeProgress, readPending, writePending, PENDING_KEY } from './progress';
+import { applyProgressUpdate, mergeProgress, normalizeProgress, readPending, writePending, PENDING_KEY } from './progress';
+import type { TourProgressRow } from './types';
 
 describe('normalizeProgress', () => {
   it('returns null for a non-array body (fail closed)', () => {
@@ -52,5 +53,34 @@ describe('pending writes', () => {
       { tourId: 'a', version: 2, status: 'COMPLETED' },
       { tourId: 'b', version: 1, status: 'COMPLETED' },
     ]);
+  });
+});
+
+describe('applyProgressUpdate', () => {
+  it('keeps null sticky — a failed initial load stays fail-closed even after a manual persist/auto-off edit', () => {
+    // Models: progress failed to load (null) → user manually starts and
+    // completes a tour, or toggles auto-off → the update must NOT turn null
+    // into an array, or every later shouldAutoPlay check (which gates on
+    // `progress === null`) would start trusting data we never confirmed.
+    const addRow = (rows: TourProgressRow[]) =>
+      mergeProgress(rows, [{ tourId: 'consumer.wallet', version: 1, status: 'COMPLETED' }]);
+    const result = applyProgressUpdate(null, addRow);
+    expect(result).toBeNull();
+  });
+
+  it('applies the update normally once progress has actually loaded', () => {
+    const current = [{ tourId: 'a', version: 1, status: 'DISMISSED' as const }];
+    const result = applyProgressUpdate(current, (rows) =>
+      mergeProgress(rows, [{ tourId: 'b', version: 1, status: 'COMPLETED' }]),
+    );
+    expect(result).toEqual([
+      { tourId: 'a', version: 1, status: 'DISMISSED' },
+      { tourId: 'b', version: 1, status: 'COMPLETED' },
+    ]);
+  });
+
+  it('removing a row (auto-off toggled back on) also stays null when progress is unknown', () => {
+    const removeAutoOff = (rows: TourProgressRow[]) => rows.filter((r) => r.tourId !== 'tours.auto-off');
+    expect(applyProgressUpdate(null, removeAutoOff)).toBeNull();
   });
 });

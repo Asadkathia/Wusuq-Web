@@ -4,11 +4,11 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "pnpm --filter @wusuq/shared build && next build",
     "start": "next start",
     "lint": "eslint",
-    "typecheck": "tsc --noEmit",
-    "test": "NODE_OPTIONS=--experimental-vm-modules jest",
+    "typecheck": "pnpm --filter @wusuq/shared build && tsc --noEmit",
+    "test": "pnpm --filter @wusuq/shared build && NODE_OPTIONS=--experimental-vm-modules jest",
     "format": "echo 'No formatter configured for web yet'"
   },
   "dependencies": {

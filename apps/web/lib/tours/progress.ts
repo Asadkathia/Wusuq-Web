@@ -73,3 +73,18 @@ export function mergeProgress(server: TourProgressRow[], pending: TourProgressRo
   for (const p of pending) byId.set(p.tourId, p);
   return [...byId.values()];
 }
+
+/**
+ * Applies a local optimistic edit to progress state while keeping "unknown"
+ * (null — the initial load failed) sticky. A load failure must stay
+ * fail-closed for the rest of the session: an in-session `persist()` or
+ * `setAutoOff()` call must never turn `null` into an array, or every
+ * `shouldAutoPlay` check downstream (which gates on `progress === null`)
+ * would start trusting a cache we never actually confirmed.
+ */
+export function applyProgressUpdate(
+  current: TourProgressRow[] | null,
+  update: (rows: TourProgressRow[]) => TourProgressRow[],
+): TourProgressRow[] | null {
+  return current === null ? null : update(current);
+}

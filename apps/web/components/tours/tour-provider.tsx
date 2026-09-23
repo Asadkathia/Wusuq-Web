@@ -22,7 +22,7 @@ import 'driver.js/dist/driver.css';
 import { GETTING_STARTED_ID, isTourSeen, shouldAutoPlay } from '@/lib/tours/auto-play';
 import { isDialogOpen, isImpersonating, readStoredRole } from '@/lib/tours/browser-state';
 import {
-  clearProgress, fetchProgress, mergeProgress, readPending, saveProgress, writePending,
+  applyProgressUpdate, clearProgress, fetchProgress, mergeProgress, readPending, saveProgress, writePending,
 } from '@/lib/tours/progress';
 import { TOUR_DEFINITIONS } from '@/lib/tours/registry';
 import type { TourProgressRow } from '@/lib/tours/types';
@@ -48,6 +48,11 @@ export function TourProvider({ children }: { children: ReactNode }) {
   const [running, setRunning] = useState(false);
   const [pageTour, setPageTour] = useState<PageTour | null>(null);
   const [requested, setRequested] = useState<TourId | null>(null);
+  // Optimistic override of the auto-off toggle. Kept separate from `progress`
+  // (rather than forced into it) so the ? menu reflects the click instantly
+  // even when `progress` is null (load failed) and must stay null — see
+  // `applyProgressUpdate`.
+  const [autoOffLocal, setAutoOffLocal] = useState<boolean | null>(null);
   const sessionSeen = useRef<Set<string>>(new Set());
 
   // Load progress once; flush anything a previous session failed to save.
@@ -87,7 +92,7 @@ export function TourProvider({ children }: { children: ReactNode }) {
       version: TOUR_META[tourId].version,
       status: outcome === 'completed' ? 'COMPLETED' : 'DISMISSED',
     };
-    setProgress((current) => mergeProgress(current ?? [], [row]));
+    setProgress((current) => applyProgressUpdate(current, (rows) => mergeProgress(rows, [row])));
     void saveProgress(row.tourId, row.version, row.status).then((ok) => {
       if (ok) return;
       writePending(localStorage, mergeProgress(readPending(localStorage), [row]));
@@ -106,6 +111,12 @@ export function TourProvider({ children }: { children: ReactNode }) {
           setRequested(def.next.tourId);
           router.push(def.next.href);
         }
+      }).catch((error: unknown) => {
+        // runTour catches everything internally and always calls onEnd; this
+        // is a last-resort backstop so `running` can never get stuck true for
+        // the rest of the session if something still slips through.
+        console.error(`[tours] ${tourId} runTour rejected`, error);
+        setRunning(false);
       });
     },
     [running, persist, router],
@@ -126,6 +137,10 @@ export function TourProvider({ children }: { children: ReactNode }) {
     if (requestedReady) {
       const id = requested as TourId;
       const timer = window.setTimeout(() => {
+        // Re-check: a dialog can open, or impersonation can start, in the
+        // 400ms between scheduling and firing — neither is a React
+        // dependency of this effect, so only a fresh check here catches it.
+        if (isDialogOpen() || isImpersonating()) return;
         setRequested(null);
         play(id);
       }, 400);
@@ -162,7 +177,10 @@ export function TourProvider({ children }: { children: ReactNode }) {
 
     const candidate = gettingStartedCandidate ? GETTING_STARTED_ID : pageCandidateId;
     if (!candidate) return;
-    const timer = window.setTimeout(() => play(candidate), 400);
+    const timer = window.setTimeout(() => {
+      if (isDialogOpen() || isImpersonating()) return;
+      play(candidate);
+    }, 400);
     return () => window.clearTimeout(timer);
   }, [progress, pageTour, running, requested, role, play]);
 
@@ -181,15 +199,21 @@ export function TourProvider({ children }: { children: ReactNode }) {
     [role],
   );
 
-  const autoOff = progress?.some((r) => r.tourId === TOUR_AUTO_OFF_ID) ?? false;
+  const autoOff = autoOffLocal ?? (progress?.some((r) => r.tourId === TOUR_AUTO_OFF_ID) ?? false);
 
   const setAutoOff = useCallback((off: boolean) => {
+    // The toggle reflects the click immediately regardless of whether
+    // `progress` could load; `progress` itself stays null (fail-closed) if it
+    // was already null — see `applyProgressUpdate`.
+    setAutoOffLocal(off);
     if (off) {
-      setProgress((current) => mergeProgress(current ?? [], [{ tourId: TOUR_AUTO_OFF_ID, version: 1, status: 'DISMISSED' }]));
+      setProgress((current) =>
+        applyProgressUpdate(current, (rows) => mergeProgress(rows, [{ tourId: TOUR_AUTO_OFF_ID, version: 1, status: 'DISMISSED' }])),
+      );
       void saveProgress(TOUR_AUTO_OFF_ID, 1, 'DISMISSED');
       return;
     }
-    setProgress((current) => (current ?? []).filter((r) => r.tourId !== TOUR_AUTO_OFF_ID));
+    setProgress((current) => applyProgressUpdate(current, (rows) => rows.filter((r) => r.tourId !== TOUR_AUTO_OFF_ID)));
     void clearProgress(TOUR_AUTO_OFF_ID);
   }, []);
 
