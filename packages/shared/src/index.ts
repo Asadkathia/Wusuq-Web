@@ -1520,3 +1520,5 @@ export function documentCategoryLabel(category?: string | null): string {
       return 'Document';
   }
 }
+
+export * from './tours.js';

@@ -34,6 +34,7 @@ import { PaymentSettingsModule } from './payment-settings/payment-settings.modul
 import { SettingsModule } from './settings/settings.module';
 import { PromosModule } from './promos/promos.module';
 import { InvoicesModule } from './invoices/invoices.module';
+import { ToursModule } from './tours/tours.module';
 
 @Module({
   imports: [
@@ -88,6 +89,7 @@ import { InvoicesModule } from './invoices/invoices.module';
     SettingsModule,
     PromosModule,
     InvoicesModule,
+    ToursModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

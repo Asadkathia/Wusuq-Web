@@ -200,6 +200,7 @@ model User {
   personalFiles      PersonalFile[]
   storageUsage       UserStorageUsage?
   invoices           Invoice[]
+  tourProgress       UserTourProgress[]
 }
 
 model Service {
@@ -929,4 +930,23 @@ model PaymentSettings {
   instructions    String?
   updatedAt       DateTime @updatedAt
   updatedByUserId String?
+}
+
+enum TourStatus {
+  COMPLETED
+  DISMISSED
+}
+
+/// One row per (user, guided tour). Written by upsert so concurrent tabs cannot
+/// lose each other's progress. `version` is the tour version the user saw.
+model UserTourProgress {
+  id        String     @id @default(cuid())
+  userId    String
+  tourId    String
+  version   Int
+  status    TourStatus
+  updatedAt DateTime   @updatedAt
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, tourId])
 }
