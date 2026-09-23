@@ -32,6 +32,7 @@ import {
 } from './intake-wizard/service-geo-blocks';
 import { CheckoutPanel, type CheckoutItem, type CheckoutSummary } from './intake-wizard/checkout-panel';
 import { paymentModelFor } from '@wusuq/shared';
+import { useModuleTour } from '@/components/tours/use-module-tour';
 
 // ─── Static lookup tables ────────────────────────────────────────────────────
 // Courts and court→city relationships come from the /geo/cities/:id/courts
@@ -395,6 +396,13 @@ export function IntakeWizard({
   // explicit. Dismissed automatically as soon as the user opens Start Fresh
   // or successfully submits.
   const [resumedDraftAt, setResumedDraftAt] = useState<string | null>(null);
+  // Guided tours (Task 5): flips true once the plain-intake "resume an active
+  // draft?" check below has resolved either way (found one / none exists /
+  // request failed) — the signal that the form is no longer silently about to
+  // be overwritten by a hydrated draft. Stays false forever in edit/regenerate/
+  // future-tickets mode (that effect never runs there — see its early return),
+  // which is fine because `intakeTourReady` also gates on those ids directly.
+  const [draftHydrationSettled, setDraftHydrationSettled] = useState(false);
 
   const geo = useGeo();
   const [geoIds, setGeoIds] = useState({ provinceId: '', districtId: '', cityId: '' });
@@ -1370,6 +1378,10 @@ export function IntakeWizard({
       } catch {
         // No active draft / not authenticated yet — leave the wizard in its
         // initial state.
+      } finally {
+        // Settles whether a draft was found, none existed, or the request
+        // failed — any of those means the form is done deciding what to show.
+        if (!cancelled) setDraftHydrationSettled(true);
       }
     })();
     return () => {
@@ -1378,6 +1390,20 @@ export function IntakeWizard({
   // We intentionally only run this once per (consumerId, first-flow) pairing.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draft.consumerId, flows[0]?.key, editTicketId, futureFromTicketId, regenerateFromTicketId]);
+
+  // Guided tours (Task 5): the active step must be resolved AND the plain-
+  // intake "resume an active draft?" check must have settled, so the tour
+  // never highlights a form the resumed-draft hydration is about to rewrite
+  // out from under it. Edit/regenerate/future-tickets are staff or returning-
+  // user flows the consumer tour doesn't cover — forced off outright rather
+  // than waiting on their own (unrelated) prefill effects to settle.
+  const intakeTourReady =
+    Boolean(activeStep) &&
+    draftHydrationSettled &&
+    !editTicketId &&
+    !regenerateFromTicketId &&
+    !futureFromTicketId;
+  useModuleTour('consumer.intake', { ready: intakeTourReady });
 
   useEffect(() => {
     if (!apiError) return;
@@ -2450,7 +2476,7 @@ export function IntakeWizard({
         >
           {activeStep?.title}
         </h3>
-        <div className="mb-6 grid gap-6 md:grid-cols-2">
+        <div className="mb-6 grid gap-6 md:grid-cols-2" data-tour="intake.form">
 
           {isCityCourtStep && (
             <>
@@ -2910,7 +2936,10 @@ export function IntakeWizard({
               </span>
             </button>
             {savedLabel ? (
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700 ring-1 ring-inset ring-emerald-100">
+              <span
+                className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700 ring-1 ring-inset ring-emerald-100"
+                data-tour="intake.autosave"
+              >
                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
                 {savedLabel}
               </span>
@@ -2967,7 +2996,7 @@ export function IntakeWizard({
           </div>
 
           {/* Desktop */}
-          <div className="hidden sm:flex items-center justify-between">
+          <div className="hidden sm:flex items-center justify-between" data-tour="intake.nav">
             <div className="flex items-center gap-3">
               <button
                 type="button"

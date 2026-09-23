@@ -59,6 +59,7 @@ export function CheckoutPanel({ summary, hasFlow, isSplit, promoSlot, walletSlot
     <aside
       className="w-full lg:w-80 lg:shrink-0 lg:sticky lg:top-6 lg:self-start"
       aria-label="Price summary"
+      data-tour="intake.checkout"
     >
       <div className="rounded-2xl border border-border-soft bg-surface shadow-elev-1">
         <header className="flex items-center gap-3 border-b border-border-soft px-5 py-4">

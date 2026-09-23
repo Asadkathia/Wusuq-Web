@@ -1,4 +1,5 @@
 import { ServicePicker } from '@/components/service-picker';
+import { ModuleTour } from '@/components/tours/module-tour';
 import { judicialFlows } from '@/lib/intake-flows';
 
 
@@ -19,13 +20,16 @@ export default async function ConsumerJudicialServicesPage({
     ? `regenerateFromTicketId=${encodeURIComponent(regenerateFromTicketId)}`
     : undefined;
   return (
-    <ServicePicker
-      linkQuery={linkQuery}
-      flows={judicialFlows}
-      variant="consumer"
-      basePath="/consumer/paralegal-services/judicial"
-      title="Judicial Services"
-      subtitle="Pick the service you'd like our paralegals to handle for your case."
-    />
+    <>
+      <ModuleTour tourId="consumer.services" />
+      <ServicePicker
+        linkQuery={linkQuery}
+        flows={judicialFlows}
+        variant="consumer"
+        basePath="/consumer/paralegal-services/judicial"
+        title="Judicial Services"
+        subtitle="Pick the service you'd like our paralegals to handle for your case."
+      />
+    </>
   );
 }

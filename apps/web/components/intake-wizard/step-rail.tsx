@@ -28,7 +28,7 @@ export function StepRail({ selectedFlow, currentStep, onStepClick }: StepRailPro
   const progressPct = Math.round(((currentStep - 1) / Math.max(totalSteps - 1, 1)) * 100);
 
   return (
-    <nav aria-label="Progress">
+    <nav aria-label="Progress" data-tour="intake.steps">
       {/* Mobile compact header */}
       <div className="md:hidden">
         <button

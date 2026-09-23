@@ -1,4 +1,5 @@
 import { ServicePicker } from '@/components/service-picker';
+import { ModuleTour } from '@/components/tours/module-tour';
 import { nonJudicialFlows } from '@/lib/intake-flows';
 
 // 5-14-26 addendum: "copy of fir is not only copy of fir its also search
@@ -42,13 +43,16 @@ export default async function ConsumerNonJudicialServicesPage({
     ? `regenerateFromTicketId=${encodeURIComponent(regenerateFromTicketId)}`
     : undefined;
   return (
-    <ServicePicker
-      linkQuery={linkQuery}
-      flows={tiles}
-      variant="consumer"
-      basePath="/consumer/paralegal-services/non-judicial"
-      title="Non-Judicial Services"
-      subtitle="Choose the document or registry service you need."
-    />
+    <>
+      <ModuleTour tourId="consumer.services" />
+      <ServicePicker
+        linkQuery={linkQuery}
+        flows={tiles}
+        variant="consumer"
+        basePath="/consumer/paralegal-services/non-judicial"
+        title="Non-Judicial Services"
+        subtitle="Choose the document or registry service you need."
+      />
+    </>
   );
 }

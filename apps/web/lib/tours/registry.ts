@@ -5,6 +5,8 @@
 import type { TourId } from '@wusuq/shared';
 import { consumerGettingStarted } from './consumer/getting-started';
 import { consumerDashboardTour } from './consumer/dashboard';
+import { consumerServicesTour } from './consumer/services';
+import { consumerIntakeTour } from './consumer/intake';
 import { consumerMyTicketsTour } from './consumer/my-tickets';
 import { consumerPayTour } from './consumer/pay';
 import { consumerWalletTour } from './consumer/wallet';
@@ -18,8 +20,8 @@ function placeholderTour(id: TourId): TourDefinition {
 export const TOUR_DEFINITIONS: Record<TourId, TourDefinition> = {
   'consumer.getting-started': consumerGettingStarted,
   'consumer.dashboard': consumerDashboardTour,
-  'consumer.services': placeholderTour('consumer.services'),
-  'consumer.intake': placeholderTour('consumer.intake'),
+  'consumer.services': consumerServicesTour,
+  'consumer.intake': consumerIntakeTour,
   'consumer.my-tickets': consumerMyTicketsTour,
   'consumer.pay': consumerPayTour,
   'consumer.wallet': consumerWalletTour,
