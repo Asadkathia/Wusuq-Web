@@ -133,7 +133,10 @@ including a deep link; the page's module tour is queued and plays after it ends.
 **Missing targets** — optional step with missing target → skipped. Required step with missing
 target → tour aborts, **not** marked seen, `console.warn` in development.
 
-**Mobile** — below `lg`, a step uses `mobileTarget` if declared, otherwise renders centred.
+**Mobile** — below `lg`, a step uses `mobileTarget` if declared and visible. A declared
+`mobileTarget` that is missing/hidden never aborts the tour: it falls back to the desktop
+`target` if that happens to be visible, else renders centred. A step with no `mobileTarget`
+at all still follows the normal required/optional rule against `target`.
 
 **Impersonation** — no auto-play and no persistence; manual replay still works. (A JWT
 `impersonatedBy` claim enforcing this server-side was considered and deferred: it touches
@@ -148,7 +151,13 @@ non-array, nothing auto-plays (manual replay still works). This also keeps exist
 Playwright specs, whose catch-all mocks return `{}`, free of tour overlays.
 
 **Completion semantics** — reaching the last step and clicking Done / a "Next" chain link →
-`COMPLETED`. Close / Esc / "Skip tour" → `DISMISSED`.
+`COMPLETED`. Close (✕) / Esc / an overlay click → `DISMISSED`. There is no separate "Skip
+tour" text button — driver.js's own close control (and Esc) is the skip affordance.
+
+**Interaction** — driver.js's `disableActiveInteraction: true` is set globally: the
+highlighted element is not clickable while its step is on screen. Several targets are live
+controls (Pay now/later, delete a draft, wallet top-up, sidebar/mobile-menu links, service
+tiles, case-files upload) that must not be triggerable from underneath the tour overlay.
 
 ## Tour catalogue
 
@@ -164,13 +173,19 @@ Playwright specs, whose catch-all mocks return `{}`, free of tour overlays.
 | `consumer.pay` | pay page | payment method details, mandatory receipt | — (dynamic page, auto-plays on open) |
 | `consumer.wallet` | `/consumer/my-wallet` | net = credit − commitments, top-up, history, pay a ticket from wallet | — |
 | `consumer.drafts` | drafts | resume / delete drafts | — |
-| `consumer.case-files` | case-files + my-cases | uploading & viewing case files, cases | — |
-| `consumer.documents` | documents + files | deliverables from Wusuq, personal storage | — |
+| `consumer.case-files` | `/consumer/case-files` | uploading a case file, files grouped by case | — |
+| `consumer.documents` | `/consumer/documents` | deliverables from Wusuq, preview before download | — |
 | `consumer.invoices` | invoices | viewing & downloading invoices | — |
-| `consumer.profile` | profile | address, phone, user type | — |
+| `consumer.profile` | profile | phone → user type → address | — |
 
 The intake tour targets only the chrome **shared by every flow** (step rail, checkout panel,
 navigation) — one tour, not eight flow-specific ones that would drift.
+
+`consumer.case-files` and `consumer.documents` live **only** on their own named page
+(`/consumer/case-files`, `/consumer/documents`) — the visually similar My Cases and My
+Storage pages do not render the same `data-tour` targets, so these two tours do not run
+there. This is a deliberate scope cut, not a bug to widen later without re-checking the
+target elements exist on both pages.
 
 ### Phase 2 — staff/admin
 
@@ -189,7 +204,11 @@ edit wording without touching components.
 
 - `tour-theme.css` overrides driver.js with `globals.css` tokens (brand-500 buttons, card
   radius/shadow). (The app has no dark theme today; the tokens are the single place to add one.)
-- Popover shows "Step n of m", Back / Next / Skip tour.
+- Popover shows "Step n of m", Back / Next (Done on the last step). No separate "Skip tour"
+  button — the popover's own close (✕) and Esc are the skip affordance (see Completion
+  semantics above).
+- The highlighted element itself is not clickable during its step
+  (`disableActiveInteraction: true`) — the popover's Back/Next/close controls remain usable.
 - Keyboard: ←/→/Esc; focus moves into the popover and is **restored** to the previously
   focused element on close.
 - `prefers-reduced-motion: reduce` disables driver.js animation.
