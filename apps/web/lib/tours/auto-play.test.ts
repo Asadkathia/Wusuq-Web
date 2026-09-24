@@ -1,5 +1,5 @@
 import { TOUR_AUTO_OFF_ID, TOUR_META } from '@wusuq/shared';
-import { isTourSeen, shouldAutoPlay, type AutoPlayInput } from './auto-play';
+import { isOnboardingPath, isTourSeen, shouldAutoPlay, type AutoPlayInput } from './auto-play';
 
 const v = TOUR_META['consumer.wallet'].version;
 const base: AutoPlayInput = {
@@ -52,5 +52,18 @@ describe('shouldAutoPlay', () => {
     expect(
       shouldAutoPlay({ ...base, progress: [{ tourId: 'consumer.wallet', version: v - 1, status: 'COMPLETED' }] }),
     ).toBe(true);
+  });
+});
+
+describe('isOnboardingPath', () => {
+  it('matches the onboarding wizard and any of its sub-steps', () => {
+    expect(isOnboardingPath('/consumer/onboarding')).toBe(true);
+    expect(isOnboardingPath('/consumer/onboarding/address')).toBe(true);
+  });
+
+  it('does not match other consumer pages, null, or a lookalike prefix', () => {
+    expect(isOnboardingPath('/consumer/dashboard')).toBe(false);
+    expect(isOnboardingPath(null)).toBe(false);
+    expect(isOnboardingPath('/consumer/onboarding-archive')).toBe(false);
   });
 });

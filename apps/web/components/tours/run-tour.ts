@@ -8,6 +8,11 @@
  * driver()/drive() throwing) is caught here rather than left as an unhandled
  * rejection, which would otherwise leave the caller's "a tour is running"
  * state stuck forever.
+ *
+ * `onDriver`, if given, is called synchronously with a handle to the live
+ * driver.js instance as soon as it exists (before `drive()`), so the caller
+ * can force-close it later — e.g. on unmount, so a tour never keeps a
+ * spotlight/overlay alive over a page that no longer owns it.
  */
 import type { TourDefinition } from '@/lib/tours/types';
 import { resolveSteps } from '@/lib/tours/resolve-steps';
@@ -15,7 +20,15 @@ import { isMobileViewport, isTargetVisible, prefersReducedMotion } from '@/lib/t
 
 export type TourOutcome = 'completed' | 'dismissed' | 'aborted';
 
-export async function runTour(def: TourDefinition, onEnd: (outcome: TourOutcome) => void): Promise<void> {
+export interface TourHandle {
+  destroy: () => void;
+}
+
+export async function runTour(
+  def: TourDefinition,
+  onEnd: (outcome: TourOutcome) => void,
+  onDriver?: (handle: TourHandle) => void,
+): Promise<void> {
   const resolved = resolveSteps(def.steps, { isMobile: isMobileViewport(), isVisible: isTargetVisible });
   if (!resolved.ok || resolved.steps.length === 0) {
     if (!resolved.ok && process.env.NODE_ENV !== 'production') {
@@ -48,6 +61,12 @@ export async function runTour(def: TourDefinition, onEnd: (outcome: TourOutcome)
       stagePadding: 6,
       stageRadius: 12,
       allowClose: true,
+      // driver.js defaults to leaving the highlighted element clickable under
+      // the spotlight. Several of our targets are live controls (Pay
+      // now/later, delete a draft, wallet top-up, sidebar/mobile-menu links,
+      // service tiles, case-files upload) — clicking them mid-tour would
+      // navigate, open a dialog, or mutate data underneath the popover.
+      disableActiveInteraction: true,
       steps: resolved.steps.map((s) => ({
         ...(s.element ? { element: s.element } : {}),
         popover: { title: s.title, description: s.body, ...(s.side ? { side: s.side } : {}) },
@@ -61,6 +80,7 @@ export async function runTour(def: TourDefinition, onEnd: (outcome: TourOutcome)
         end(outcome);
       },
     });
+    onDriver?.({ destroy: () => d.destroy() });
     d.drive();
   } catch (error) {
     console.error(`[tours] ${def.id} failed to start`, error);

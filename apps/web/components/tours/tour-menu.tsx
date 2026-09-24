@@ -30,9 +30,7 @@ export function TourMenu() {
   return (
     <Menu>
       <MenuTrigger asChild>
-        <div data-tour="shell.tour-menu">
-          <IconButton icon={<HelpCircle className="h-5 w-5" />} aria-label="Guided tours" />
-        </div>
+        <IconButton icon={<HelpCircle className="h-5 w-5" />} aria-label="Guided tours" data-tour="shell.tour-menu" />
       </MenuTrigger>
       <MenuContent align="end" className="w-64">
         {pageTourAvailable && pageTourId ? (

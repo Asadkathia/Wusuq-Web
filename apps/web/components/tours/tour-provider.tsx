@@ -4,45 +4,57 @@
  * - Loads progress once (+ merges and flushes writes queued by failed saves).
  *   Unloadable progress → no auto-play (fail closed).
  * - Plays getting-started first, on whichever page the user lands on, then the
- *   current page's module tour.
+ *   current page's module tour. Auto-play is also suppressed while the
+ *   consumer is inside the onboarding wizard (manual replay still works).
  * - One tour at a time. Never auto-plays over an open dialog, while
  *   impersonating, or before the page reports `ready`.
  * - Persists COMPLETED/DISMISSED (never while impersonating); 'aborted' is not
- *   persisted so the tour plays properly next time.
+ *   persisted so the tour plays properly next time. A manually-started tour
+ *   (the ? menu, or a "Next: …" chain link) that aborts shows a toast; a bare
+ *   auto-play candidate aborts silently.
  * - Chains: the last step's link marks the tour completed, requests the next
- *   tour and navigates; the next page plays it as soon as it is ready.
+ *   tour and navigates; the next page plays it as soon as it is ready — even
+ *   while impersonating, since `requested` only ever comes from an explicit
+ *   click and `persist()` already skips writes under impersonation.
+ * - Destroys any live driver.js instance on unmount so a tour can never keep
+ *   its overlay alive over a page that no longer owns it, and skips
+ *   persisting an outcome that arrives after unmount.
  */
 'use client';
 
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { TOUR_AUTO_OFF_ID, TOUR_IDS, TOUR_META, tourAppliesToRole, type TourId } from '@wusuq/shared';
 import '@/lib/tours/tour-theme.css';
 import 'driver.js/dist/driver.css';
-import { GETTING_STARTED_ID, isTourSeen, shouldAutoPlay } from '@/lib/tours/auto-play';
-import { isDialogOpen, isImpersonating, readStoredRole } from '@/lib/tours/browser-state';
+import { useToast } from '@/components/ui/toast';
+import { GETTING_STARTED_ID, isOnboardingPath, isTourSeen, shouldAutoPlay } from '@/lib/tours/auto-play';
+import { isDialogOpen, isImpersonating, readStoredRole, readStoredUserId } from '@/lib/tours/browser-state';
 import {
-  applyProgressUpdate, clearProgress, fetchProgress, mergeProgress, readPending, saveProgress, writePending,
+  applyProgressUpdate,
+  applySaveResultToPending,
+  clearProgress,
+  fetchProgress,
+  flushPending,
+  mergeProgress,
+  readPending,
+  reconcilePendingAfterFlush,
+  saveProgress,
+  writePending,
 } from '@/lib/tours/progress';
 import { TOUR_DEFINITIONS } from '@/lib/tours/registry';
 import type { TourProgressRow } from '@/lib/tours/types';
 import { TourContext, type TourApi } from './tour-context';
-import { runTour, type TourOutcome } from './run-tour';
+import { runTour, type TourHandle, type TourOutcome } from './run-tour';
 
 type PageTour = { id: TourId; ready: boolean };
 
-/** Runs each still-unsent pending row and reports the ones that failed again. */
-async function flushPending(pending: TourProgressRow[]): Promise<TourProgressRow[]> {
-  const stillFailing: TourProgressRow[] = [];
-  for (const row of pending) {
-    const ok = await saveProgress(row.tourId, row.version, row.status);
-    if (!ok) stillFailing.push(row);
-  }
-  return stillFailing;
-}
+const ABORT_MESSAGE = "This tour isn't available right now — try again once the page has finished loading.";
 
 export function TourProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
+  const pathname = usePathname();
+  const toast = useToast();
   const [progress, setProgress] = useState<TourProgressRow[] | null>(null);
   const [role, setRole] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
@@ -54,13 +66,16 @@ export function TourProvider({ children }: { children: ReactNode }) {
   // `applyProgressUpdate`.
   const [autoOffLocal, setAutoOffLocal] = useState<boolean | null>(null);
   const sessionSeen = useRef<Set<string>>(new Set());
+  const mountedRef = useRef(true);
+  const driverHandleRef = useRef<TourHandle | null>(null);
 
   // Load progress once; flush anything a previous session failed to save.
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       const nextRole = readStoredRole();
-      const pending = readPending(localStorage);
+      const userId = readStoredUserId();
+      const pending = readPending(localStorage, userId);
       const server = await fetchProgress();
       if (cancelled) return;
       if (server === null) {
@@ -77,10 +92,26 @@ export function TourProvider({ children }: { children: ReactNode }) {
       });
       if (isImpersonating() || pending.length === 0) return;
       const stillFailing = await flushPending(pending);
-      if (!cancelled) writePending(localStorage, stillFailing);
+      if (cancelled) return;
+      // Re-read the queue at write time and merge, rather than overwriting
+      // it with this flush's own snapshot — a concurrent persist() call may
+      // have queued something new (or a newer version of the same tour)
+      // while the flush was in flight.
+      const current = readPending(localStorage, userId);
+      writePending(localStorage, userId, reconcilePendingAfterFlush(current, pending, stillFailing));
     })();
     return () => {
       cancelled = true;
+    };
+  }, []);
+
+  // Destroy any live driver.js instance on unmount, and stop the in-flight
+  // tour's callback from touching state or persisting after that.
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+      driverHandleRef.current?.destroy();
+      driverHandleRef.current = null;
     };
   }, []);
 
@@ -93,33 +124,47 @@ export function TourProvider({ children }: { children: ReactNode }) {
       status: outcome === 'completed' ? 'COMPLETED' : 'DISMISSED',
     };
     setProgress((current) => applyProgressUpdate(current, (rows) => mergeProgress(rows, [row])));
-    void saveProgress(row.tourId, row.version, row.status).then((ok) => {
-      if (ok) return;
-      writePending(localStorage, mergeProgress(readPending(localStorage), [row]));
+    const userId = readStoredUserId();
+    void saveProgress(row.tourId, row.version, row.status).then((result) => {
+      // Re-read the queue right before writing — a concurrent flush/persist
+      // may have changed it since this save started.
+      const pending = readPending(localStorage, userId);
+      writePending(localStorage, userId, applySaveResultToPending(pending, result, row));
     });
   }, []);
 
   const play = useCallback(
-    (tourId: TourId) => {
+    (tourId: TourId, opts: { silent?: boolean } = {}) => {
       if (running) return;
       const def = TOUR_DEFINITIONS[tourId];
       setRunning(true);
-      void runTour(def, (outcome) => {
-        setRunning(false);
-        persist(tourId, outcome);
-        if (outcome === 'completed' && def.next) {
-          setRequested(def.next.tourId);
-          router.push(def.next.href);
-        }
-      }).catch((error: unknown) => {
+      void runTour(
+        def,
+        (outcome) => {
+          driverHandleRef.current = null;
+          if (!mountedRef.current) return;
+          setRunning(false);
+          persist(tourId, outcome);
+          if (outcome === 'aborted' && !opts.silent) {
+            toast.info(ABORT_MESSAGE);
+          }
+          if (outcome === 'completed' && def.next) {
+            setRequested(def.next.tourId);
+            router.push(def.next.href);
+          }
+        },
+        (handle) => {
+          driverHandleRef.current = handle;
+        },
+      ).catch((error: unknown) => {
         // runTour catches everything internally and always calls onEnd; this
         // is a last-resort backstop so `running` can never get stuck true for
         // the rest of the session if something still slips through.
         console.error(`[tours] ${tourId} runTour rejected`, error);
-        setRunning(false);
+        if (mountedRef.current) setRunning(false);
       });
     },
-    [running, persist, router],
+    [running, persist, router, toast],
   );
 
   // Auto-play: a requested (chained) tour first, else getting-started, else
@@ -131,34 +176,43 @@ export function TourProvider({ children }: { children: ReactNode }) {
       (progress !== null && isTourSeen(GETTING_STARTED_ID, progress));
     const impersonating = isImpersonating();
     const dialogOpen = isDialogOpen();
+    const onboarding = isOnboardingPath(pathname);
 
     const requestedReady =
       requested !== null && pageTour?.id === requested && pageTour.ready && !running && !dialogOpen;
     if (requestedReady) {
       const id = requested as TourId;
       const timer = window.setTimeout(() => {
-        // Re-check: a dialog can open, or impersonation can start, in the
-        // 400ms between scheduling and firing — neither is a React
-        // dependency of this effect, so only a fresh check here catches it.
-        if (isDialogOpen() || isImpersonating()) return;
+        // Re-check: a dialog can open in the 400ms between scheduling and
+        // firing — not a React dependency of this effect, so only a fresh
+        // check here catches it. Impersonation is deliberately NOT
+        // re-checked here (unlike the auto-play candidate below): `requested`
+        // is only ever set by an explicit click (the ? menu's "other tours"
+        // list, or a tour's own "Next: …" chain link), and `persist()`
+        // already refuses to write while impersonating, so playing it is
+        // safe and expected.
+        if (isDialogOpen()) return;
         setRequested(null);
         play(id);
       }, 400);
       return () => window.clearTimeout(timer);
     }
 
-    const gettingStartedCandidate = shouldAutoPlay({
-      tourId: GETTING_STARTED_ID,
-      appliesToRole: tourAppliesToRole(GETTING_STARTED_ID, role),
-      progress,
-      sessionSeen: sessionSeen.current,
-      impersonating,
-      ready: true,
-      tourRunning: running,
-      dialogOpen,
-      gettingStartedDone,
-    });
+    const gettingStartedCandidate =
+      !onboarding &&
+      shouldAutoPlay({
+        tourId: GETTING_STARTED_ID,
+        appliesToRole: tourAppliesToRole(GETTING_STARTED_ID, role),
+        progress,
+        sessionSeen: sessionSeen.current,
+        impersonating,
+        ready: true,
+        tourRunning: running,
+        dialogOpen,
+        gettingStartedDone,
+      });
     const pageCandidateId =
+      !onboarding &&
       !gettingStartedCandidate &&
       pageTour !== null &&
       shouldAutoPlay({
@@ -179,10 +233,10 @@ export function TourProvider({ children }: { children: ReactNode }) {
     if (!candidate) return;
     const timer = window.setTimeout(() => {
       if (isDialogOpen() || isImpersonating()) return;
-      play(candidate);
+      play(candidate, { silent: true });
     }, 400);
     return () => window.clearTimeout(timer);
-  }, [progress, pageTour, running, requested, role, play]);
+  }, [progress, pageTour, running, requested, role, play, pathname]);
 
   const registerPageTour = useCallback((tourId: TourId, ready: boolean) => {
     setPageTour({ id: tourId, ready });

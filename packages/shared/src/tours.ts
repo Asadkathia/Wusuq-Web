@@ -8,6 +8,12 @@
  * Bump a tour's `version` when its content changes materially: every user who
  * saw an older version sees it once more.
  */
+// `index.ts` re-exports this module, so importing from `./index.js` here
+// creates a circular import. The named imports below are safe because they
+// are only ever used inside function bodies (`tourAppliesToRole`) — using
+// one at module top level (e.g. in a top-level const initializer) would hit
+// a TDZ error, since this module can finish evaluating before `index.ts` has
+// finished setting up the bindings it re-exports.
 import { ROLE_PERMISSIONS, isConsumerRole, isStaffRole, type Permission, type UserRole } from './index.js';
 
 export const TOUR_IDS = [

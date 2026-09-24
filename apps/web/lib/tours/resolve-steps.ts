@@ -2,6 +2,10 @@
  * Turns tour data into concrete driver steps for the current viewport.
  * Optional steps with a missing target are skipped; a missing REQUIRED target
  * aborts the tour (caller does not mark it seen, so it plays properly later).
+ * A `mobileTarget` miss on mobile is never a reason to abort — it falls back
+ * to the desktop `target` (if visible) or a centred card, because the
+ * mobile-only element (e.g. a menu button that only renders once a drawer is
+ * open) can legitimately be absent even though the step is otherwise fine.
  */
 import type { TourStep } from './types';
 
@@ -31,6 +35,17 @@ export function resolveSteps(
     }
     if (opts.isVisible(target)) {
       out.push({ element: tourSelector(target), ...card });
+      continue;
+    }
+    if (opts.isMobile && step.mobileTarget) {
+      // The mobile target is missing/hidden — fall back to the desktop
+      // target if it happens to be visible, else centre the card. Never
+      // abort for this case alone.
+      if (step.target && opts.isVisible(step.target)) {
+        out.push({ element: tourSelector(step.target), ...card });
+      } else {
+        out.push(card);
+      }
       continue;
     }
     if (step.optional) continue;

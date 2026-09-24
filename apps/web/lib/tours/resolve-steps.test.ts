@@ -43,6 +43,30 @@ describe('resolveSteps', () => {
     expect(r).toEqual({ ok: true, steps: [{ title: 'x', body: 'y' }] });
   });
 
+  it('falls back to the desktop target when a mobileTarget is hidden on mobile (never aborts)', () => {
+    const r = resolveSteps([{ target: 'desk', mobileTarget: 'mob', title: 'x', body: 'y' }], {
+      isMobile: true,
+      isVisible: visible(['desk']),
+    });
+    expect(r).toEqual({ ok: true, steps: [{ element: '[data-tour="desk"]', title: 'x', body: 'y' }] });
+  });
+
+  it('centres the card when both mobileTarget and the desktop target are hidden on mobile (never aborts)', () => {
+    const r = resolveSteps([{ target: 'desk', mobileTarget: 'mob', title: 'x', body: 'y' }], {
+      isMobile: true,
+      isVisible: visible([]),
+    });
+    expect(r).toEqual({ ok: true, steps: [{ title: 'x', body: 'y' }] });
+  });
+
+  it('centres the card for a hidden mobileTarget even with no desktop target at all', () => {
+    const r = resolveSteps([{ mobileTarget: 'mob', title: 'x', body: 'y' }], {
+      isMobile: true,
+      isVisible: visible([]),
+    });
+    expect(r).toEqual({ ok: true, steps: [{ title: 'x', body: 'y' }] });
+  });
+
   it('builds attribute selectors', () => {
     expect(tourSelector('shell.sidebar')).toBe('[data-tour="shell.sidebar"]');
   });

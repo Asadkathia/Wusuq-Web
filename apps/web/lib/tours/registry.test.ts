@@ -74,6 +74,32 @@ describe('tour registry integrity', () => {
     }
   });
 
+  it("every chain's href matches the target tour's own registered href (a stale copy would send the chain to the wrong page)", () => {
+    const mismatched: string[] = [];
+    for (const id of TOUR_IDS) {
+      const next = TOUR_DEFINITIONS[id].next;
+      if (!next) continue;
+      const target = TOUR_DEFINITIONS[next.tourId];
+      if (target.href !== next.href) {
+        mismatched.push(`${id} → next.href="${next.href}" but ${next.tourId}.href="${String(target.href)}"`);
+      }
+    }
+    expect(mismatched).toEqual([]);
+  });
+
+  it('every tour with an href is actually mounted on that page (useModuleTour/<ModuleTour> call, not just a registry entry)', () => {
+    const missing: string[] = [];
+    for (const id of TOUR_IDS) {
+      const def = TOUR_DEFINITIONS[id];
+      if (!def.href) continue;
+      const mounted =
+        new RegExp(`useModuleTour\\(\\s*['"\`]${id}['"\`]`).test(source) ||
+        new RegExp(`<ModuleTour\\s+tourId=['"\`]${id}['"\`]`).test(source);
+      if (!mounted) missing.push(id);
+    }
+    expect(missing).toEqual([]);
+  });
+
   it('every tour has at least one step (no placeholders left)', () => {
     const empty = TOUR_IDS.filter((id) => TOUR_DEFINITIONS[id].steps.length === 0);
     expect(empty).toEqual([]);

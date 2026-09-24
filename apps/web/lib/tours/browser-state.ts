@@ -44,6 +44,17 @@ export function readStoredRole(): string | null {
   }
 }
 
+/** The signed-in user's id, used to scope the pending-tour-writes queue per user. */
+export function readStoredUserId(): string | null {
+  if (!hasWindow()) return null;
+  try {
+    const u = JSON.parse(window.localStorage.getItem('wusuq_user') ?? 'null') as { id?: unknown } | null;
+    return typeof u?.id === 'string' ? u.id : null;
+  } catch {
+    return null;
+  }
+}
+
 export function prefersReducedMotion(): boolean {
   return hasWindow() && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 }

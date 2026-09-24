@@ -26,6 +26,17 @@ export function isTourSeen(tourId: TourId, rows: TourProgressRow[]): boolean {
   return !!row && row.version >= TOUR_META[tourId].version;
 }
 
+/**
+ * Auto-play (not manual replay) is suppressed while the consumer is inside
+ * the onboarding wizard — a tour popping up over an in-progress, unrelated
+ * flow they haven't finished is confusing. `pathname` is whatever
+ * `usePathname()` returns (`null` during the first server render).
+ */
+export function isOnboardingPath(pathname: string | null): boolean {
+  if (!pathname) return false;
+  return pathname === '/consumer/onboarding' || pathname.startsWith('/consumer/onboarding/');
+}
+
 export function shouldAutoPlay(i: AutoPlayInput): boolean {
   if (i.progress === null) return false;
   if (!i.appliesToRole || i.impersonating || !i.ready) return false;
