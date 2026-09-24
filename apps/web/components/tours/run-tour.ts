@@ -48,7 +48,23 @@ export async function runTour(
   try {
     const { driver } = await import('driver.js');
     const returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    let outcome: TourOutcome = 'dismissed';
+
+    // Every close path ends the tour HERE, explicitly. driver.js only fires
+    // `onDestroyed` once a step's highlight animation has finished (it
+    // records the active step at the END of the transition but shows the
+    // popover halfway through), so a tour closed in its first ~400ms would
+    // otherwise never report back — leaving the provider's "running" flag
+    // stuck and the dismissal unsaved. `onDestroyStarted` fires on every
+    // close attempt (Esc, the X, overlay) regardless of animation state;
+    // with it set, driver.js leaves the actual destroy to us.
+    const finish = (outcome: TourOutcome) => {
+      // Idempotent: the unmount handle may call this after the tour already
+      // ended — don't re-destroy or steal focus back.
+      if (ended) return;
+      d.destroy();
+      returnFocus?.focus();
+      end(outcome);
+    };
 
     const d = driver({
       animate: !prefersReducedMotion(),
@@ -71,16 +87,10 @@ export async function runTour(
         ...(s.element ? { element: s.element } : {}),
         popover: { title: s.title, description: s.body, ...(s.side ? { side: s.side } : {}) },
       })),
-      onDoneClick: () => {
-        outcome = 'completed';
-        d.destroy();
-      },
-      onDestroyed: () => {
-        returnFocus?.focus();
-        end(outcome);
-      },
+      onDoneClick: () => finish('completed'),
+      onDestroyStarted: () => finish('dismissed'),
     });
-    onDriver?.({ destroy: () => d.destroy() });
+    onDriver?.({ destroy: () => finish('dismissed') });
     d.drive();
   } catch (error) {
     console.error(`[tours] ${def.id} failed to start`, error);

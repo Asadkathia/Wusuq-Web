@@ -19,3 +19,19 @@ it('driver.js is configured with disableActiveInteraction: true', () => {
   const src = readFileSync(join(here, 'run-tour.ts'), 'utf8');
   expect(src).toMatch(/disableActiveInteraction:\s*true/);
 });
+
+/**
+ * driver.js 1.8 records the active step only when a highlight's animation
+ * FINISHES, yet shows the popover halfway through, and its destroy routine
+ * fires `onDestroyed` only when an active step is recorded. A tour closed
+ * during the first ~400ms (Esc, the X, an unmount) therefore never fired
+ * `onDestroyed`: nothing was persisted and the provider's "running" flag
+ * stayed true for the rest of the session. The runner must end the tour on
+ * `onDestroyStarted` (called on every close attempt, whatever the animation
+ * state) and on its own destroy calls — never on `onDestroyed` alone.
+ */
+it('ends the tour from onDestroyStarted, not only from onDestroyed', () => {
+  const src = readFileSync(join(here, 'run-tour.ts'), 'utf8');
+  expect(src).toMatch(/onDestroyStarted:\s*\(\)\s*=>\s*\{?\s*finish\('dismissed'\)/);
+  expect(src).toMatch(/onDoneClick:\s*\(\)\s*=>\s*\{?\s*finish\('completed'\)/);
+});
