@@ -106,8 +106,14 @@ export function TourProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // Destroy any live driver.js instance on unmount, and stop the in-flight
-  // tour's callback from touching state or persisting after that.
+  // tour's callback from touching state or persisting after that. The setup
+  // assignment is load-bearing under React Strict Mode (dev, App Router
+  // default): mount → cleanup → remount runs this effect's cleanup once
+  // before the "real" mount, so without re-arming `mountedRef` here it would
+  // stay `false` forever and every tour after the first would silently no-op
+  // at the `!mountedRef.current` check in `play()`.
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
       mountedRef.current = false;
       driverHandleRef.current?.destroy();

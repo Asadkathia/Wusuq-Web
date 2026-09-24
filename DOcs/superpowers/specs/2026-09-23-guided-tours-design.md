@@ -143,8 +143,10 @@ at all still follows the normal required/optional rule against `target`.
 auth for a low-harm outcome.)
 
 **Persistence failure** — the tour still closes; the result is held in a session-scoped
-in-memory set so it does not loop, and queued in localStorage (`wusuq_tour_pending`) to be
-merged over the server rows and re-sent on the next load.
+in-memory set so it does not loop. A retryable failure (network error, 5xx, 408, 429) is
+queued in localStorage under a **per-user key**, `wusuq_tour_pending:<userId>`, to be
+merged over the server rows (higher version wins) and re-sent on the next load; any other
+4xx is treated as non-retryable and dropped rather than queued forever.
 
 **Progress load failure** — fail closed: if `GET /tours/progress` errors or returns a
 non-array, nothing auto-plays (manual replay still works). This also keeps existing

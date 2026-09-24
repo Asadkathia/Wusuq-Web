@@ -67,6 +67,22 @@ describe('resolveSteps', () => {
     expect(r).toEqual({ ok: true, steps: [{ title: 'x', body: 'y' }] });
   });
 
+  it('drops (does not centre) an OPTIONAL step whose mobileTarget and desktop target are both hidden', () => {
+    const r = resolveSteps(
+      [{ target: 'desk', mobileTarget: 'mob', optional: true, title: 'x', body: 'y' }],
+      { isMobile: true, isVisible: visible([]) },
+    );
+    expect(r).toEqual({ ok: true, steps: [] });
+  });
+
+  it('still falls back to a visible desktop target for an OPTIONAL step with a hidden mobileTarget', () => {
+    const r = resolveSteps(
+      [{ target: 'desk', mobileTarget: 'mob', optional: true, title: 'x', body: 'y' }],
+      { isMobile: true, isVisible: visible(['desk']) },
+    );
+    expect(r).toEqual({ ok: true, steps: [{ element: '[data-tour="desk"]', title: 'x', body: 'y' }] });
+  });
+
   it('builds attribute selectors', () => {
     expect(tourSelector('shell.sidebar')).toBe('[data-tour="shell.sidebar"]');
   });

@@ -22,6 +22,16 @@ function requestedTourBlock(): string {
   return src.slice(start, end);
 }
 
+/** The unmount-cleanup useEffect block (mountedRef + driverHandleRef), isolated from the rest of the file. */
+function unmountEffectBlock(): string {
+  const start = src.indexOf('// Destroy any live driver.js instance on unmount');
+  const end = src.indexOf('const persist = useCallback');
+  if (start === -1 || end === -1 || end <= start) {
+    throw new Error('unmount effect markers not found — has tour-provider.tsx been restructured?');
+  }
+  return src.slice(start, end);
+}
+
 describe('I2 — requested (chained/menu) tours must still play while impersonating', () => {
   it('the requested-tour timer does not re-check isImpersonating()', () => {
     expect(requestedTourBlock()).not.toMatch(/isImpersonating/);
@@ -40,6 +50,15 @@ describe('I2 — requested (chained/menu) tours must still play while impersonat
 describe('driver.js is destroyed on unmount', () => {
   it('the unmount cleanup destroys any live driver handle', () => {
     expect(src).toMatch(/driverHandleRef\.current\?\.destroy\(\)/);
+  });
+
+  it('re-arms mountedRef to true on (re)mount, before the cleanup — required so React Strict Mode\'s dev mount→cleanup→remount cycle does not leave it false forever', () => {
+    const block = unmountEffectBlock();
+    const setupIdx = block.indexOf('mountedRef.current = true;');
+    const cleanupIdx = block.indexOf('return () => {');
+    expect(setupIdx).toBeGreaterThan(-1);
+    expect(cleanupIdx).toBeGreaterThan(-1);
+    expect(setupIdx).toBeLessThan(cleanupIdx);
   });
 
   it('the play() callback bails out once unmounted, before touching state or persisting', () => {

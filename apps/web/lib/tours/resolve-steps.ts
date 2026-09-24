@@ -6,6 +6,9 @@
  * to the desktop `target` (if visible) or a centred card, because the
  * mobile-only element (e.g. a menu button that only renders once a drawer is
  * open) can legitimately be absent even though the step is otherwise fine.
+ * When NEITHER target is visible, the ordinary optional/required rule still
+ * applies on top of that fallback: an optional step is dropped, a required
+ * one centres.
  */
 import type { TourStep } from './types';
 
@@ -39,13 +42,16 @@ export function resolveSteps(
     }
     if (opts.isMobile && step.mobileTarget) {
       // The mobile target is missing/hidden — fall back to the desktop
-      // target if it happens to be visible, else centre the card. Never
-      // abort for this case alone.
+      // target if it happens to be visible.
       if (step.target && opts.isVisible(step.target)) {
         out.push({ element: tourSelector(step.target), ...card });
-      } else {
-        out.push(card);
+        continue;
       }
+      // Neither target is visible. An optional step is still silently
+      // dropped (same rule as below); a required step centres rather than
+      // aborting — a mobileTarget miss alone must never abort the tour.
+      if (step.optional) continue;
+      out.push(card);
       continue;
     }
     if (step.optional) continue;
