@@ -2,7 +2,16 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "outDir": "dist",
-    "rootDir": "src"
+    "rootDir": "src",
+    // Under `pnpm -r build`, both api's and web's build scripts prebuild
+    // shared concurrently while the other reads `dist`. Incremental +
+    // in-`dist` build info means an unchanged shared emits nothing on a
+    // second build in the same session (fast, no clobbering); putting the
+    // cache inside `dist` (not the package root) means `rm -rf dist` always
+    // forces a full emit — same reasoning as the API's rootDir/tsBuildInfo
+    // fix documented under Deployment in the root CLAUDE.md.
+    "incremental": true,
+    "tsBuildInfoFile": "./dist/.tsbuildinfo"
   },
   "include": ["src/**/*"]
 }
