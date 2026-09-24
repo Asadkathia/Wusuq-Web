@@ -40,29 +40,6 @@ async function seedAuth(
   );
 }
 
-// Mirrors TOUR_IDS in packages/shared/src/tours.ts. Kept as a literal list —
-// no spec in tests/e2e cross-imports a workspace package (Playwright
-// resolves this directory from the repo root, where only apps/web/apps/api
-// declare @wusuq/shared as a dependency, not the root package.json), so
-// every other spec in this directory duplicates the small bits of shared
-// shape it needs rather than reaching across the workspace boundary. If a
-// 13th consumer tour is registered, add its id here too — it only widens
-// the "every tour already seen" seed in the replay-from-menu test below.
-const ALL_CONSUMER_TOUR_IDS = [
-  'consumer.getting-started',
-  'consumer.dashboard',
-  'consumer.services',
-  'consumer.intake',
-  'consumer.my-tickets',
-  'consumer.pay',
-  'consumer.wallet',
-  'consumer.drafts',
-  'consumer.case-files',
-  'consumer.documents',
-  'consumer.invoices',
-  'consumer.profile',
-];
-
 type ProgressRow = { tourId: string; version: number; status: 'COMPLETED' | 'DISMISSED' };
 type PutCall = { tourId: string; body: unknown };
 
@@ -210,12 +187,12 @@ test.describe('Guided tours (consumer)', () => {
     await seedAuth(page, { id: 'consumer-1', role: 'consumer', email: 'consumer1@wusuq.com' });
     await mockAllApiCalls(page);
     await mockEmptyTicketsList(page);
-    const seenProgress: ProgressRow[] = ALL_CONSUMER_TOUR_IDS.map((tourId) => ({
-      tourId,
-      version: 1,
-      status: 'COMPLETED',
-    }));
-    await mockToursProgress(page, () => ({ status: 200, body: seenProgress }));
+    // `shouldAutoPlay` refuses to play ANY tour once a `tours.auto-off` row
+    // exists, regardless of its status — a single seeded row is enough to
+    // suppress every auto-play candidate for this test, without having to
+    // enumerate and mark every real tour id as seen.
+    const autoOffProgress: ProgressRow[] = [{ tourId: 'tours.auto-off', version: 1, status: 'DISMISSED' }];
+    await mockToursProgress(page, () => ({ status: 200, body: autoOffProgress }));
 
     await page.goto('/consumer/my-tickets');
     await page.waitForTimeout(2000);
@@ -251,6 +228,47 @@ test.describe('Guided tours (consumer)', () => {
 
     await page.keyboard.press('Escape');
     await expect(page.locator('.driver-popover')).toHaveCount(0);
+    await page.waitForTimeout(500);
+    expect(puts).toHaveLength(0);
+  });
+
+  test('impersonating: "?" chains still play (I2) — Getting started plays manually, and a requested other-tour plays after navigation', async ({ page }) => {
+    await seedAuth(
+      page,
+      { id: 'consumer-1', role: 'consumer', email: 'consumer1@wusuq.com' },
+      { impersonating: true },
+    );
+    await mockAllApiCalls(page);
+    await mockEmptyTicketsList(page);
+    await mockToursProgress(page, () => ({ status: 200, body: [] }));
+    const puts = await recordToursProgressPuts(page);
+
+    await page.goto('/consumer/my-tickets');
+    await page.waitForTimeout(2000);
+    await expect(page.locator('.driver-popover')).toHaveCount(0);
+
+    // "Getting started" still plays manually while impersonating (unchanged
+    // by I2 — start() never had an impersonation gate).
+    await page.locator('[aria-label="Guided tours"]').click();
+    await page.getByRole('menuitem', { name: 'Getting started' }).click();
+    await expect(popoverTitle(page)).toHaveText('Welcome to Wusuq', { timeout: 5000 });
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.driver-popover')).toHaveCount(0);
+
+    // I2: requesting "Wallet" from the ? menu's "Other tours" list navigates
+    // to /consumer/my-wallet and the requested tour must still auto-start
+    // there once the page registers as ready — before this fix, the
+    // requested-tour timer re-checked isImpersonating() and silently bailed
+    // forever, so the "?" → other-tour jump navigated but never played.
+    await page.locator('[aria-label="Guided tours"]').click();
+    await page.getByRole('menuitem', { name: 'Wallet' }).click();
+    await expect(page).toHaveURL(/\/consumer\/my-wallet$/);
+    await expect(popoverTitle(page)).toHaveText('Your balance', { timeout: 8000 });
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.driver-popover')).toHaveCount(0);
+
+    // Persistence stays suppressed throughout — impersonation blocks
+    // `persist()` regardless of how the tour was started.
     await page.waitForTimeout(500);
     expect(puts).toHaveLength(0);
   });
