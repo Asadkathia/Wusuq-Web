@@ -27,7 +27,7 @@ export const consumerMyTicketsTour: TourDefinition = {
       target: 'my-tickets.actions',
       optional: true,
       title: 'Invoice, documents and more',
-      body: 'Download your invoice and delivered documents, reorder a service for the same case, or book the next hearing.',
+      body: 'Download your invoice and delivered documents, or reorder a service for the same case.',
     },
     {
       target: 'my-tickets.new',
@@ -36,8 +36,8 @@ export const consumerMyTicketsTour: TourDefinition = {
       body: 'Start a new request any time from Paralegal Services.',
     },
     {
-      title: 'No tickets yet?',
-      body: 'When you place your first order, it appears here with its live status.',
+      title: 'Tracking your orders',
+      body: 'Every order you place appears here with its live status.',
     },
   ],
   next: {

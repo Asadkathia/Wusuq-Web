@@ -18,7 +18,7 @@ export const consumerIntakeTour: TourDefinition = {
     {
       target: 'intake.form',
       title: 'Case details',
-      body: 'Choose your city and court first — the rest of the form adapts to them.',
+      body: 'Fill in your case details. The form adapts to the location and court you choose.',
     },
     {
       target: 'intake.autosave',
